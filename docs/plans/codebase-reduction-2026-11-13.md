@@ -1,6 +1,6 @@
 # Codebase size and redundancy reduction — 2026-11-13
 
-Status: in progress. Phase 1 is done; see the closure ledger.
+Status: all phases implemented; phase 5's prose cuts await owner review. See the closure ledger.
 
 Baseline: clean `main` at `0ee05171`, 1,313 tracked files, about 340,000 tracked
 text lines.
@@ -312,6 +312,28 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   none has a surviving check that catches the same defect, which Boundaries
   requires before a removal, and the rest of the review proposes no removals.
 
+- Phase 2. `scripts/verification-launch.mts` is the one launch definition
+  (disposable root, Seatbelt preflight, Chrome for Testing or an exact binary,
+  exclusive extension and host-resolver flags, fixture trust, Firefox local
+  DNS, deferred close), with its own test. All 43 self-launching verifiers use
+  it; the 27 that were `.mjs` are converted to TypeScript as the policy
+  requires. Six move from try/finally to the resource stack. The terrain LOD
+  and visual verifiers share `scripts/terrain-cdp.mts`. It went in
+  `browser-verification-fixtures.mjs`'s place as a new module so that
+  1,130-line legacy file did not need converting. `chrome-launch-guard.test`
+  now also scans `.mts` scripts, which it had skipped. Net lines: +182 in
+  scripts and tests, because the conversions add types; the launcher and CDP
+  extraction themselves remove about 160. Browser proof: every verifier run
+  alone from a frozen `git archive` tree, hidden, before phase 2 (87 runs at
+  `8da71189`) and after (88 runs across three frozen trees at `68fb15cc`,
+  `ff4a704a` and `8e22754c`): identical exit codes and identical reported case
+  counts. Ten verifiers already failed at the baseline and fail identically
+  after: inline-buddies (both browsers), ascent-weather `--peak` (both),
+  climber-list-ui, custom-layer-settings (both), peak-link-order `--firefox`,
+  photo-library-status; custom-overlays `--firefox` failed twice before and
+  passed once and failed once after, so it is a pre-existing flake. Those
+  failures are not caused by this work and are not fixed by it.
+
 ### Changed but not fully proven
 
 - Phase 5. Incident narratives are cut to their rules: three in `AGENTS.md`
@@ -326,7 +348,8 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
 ### Not started
 
-Phase 2, and an optional follow-up: the eight repeated route-handler lookups
-in `background.ts` could become one ordered `Object.hasOwn` loop (about −12
+Optional follow-ups: the eight repeated route-handler lookups in
+`background.ts` could become one ordered `Object.hasOwn` loop (about −12
 lines), but that changes how inherited names such as `constructor` resolve,
-so it needs its own commit. 
+so it needs its own commit. The ten verifiers that fail at the phase 2
+baseline need their own investigation.
