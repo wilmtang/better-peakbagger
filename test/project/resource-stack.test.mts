@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { createHash, createPublicKey } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -45,8 +46,10 @@ test('Chrome fixture verifiers use shared launch trust instead of late or broad 
         'verify-map-handoffs', 'verify-report-photos', 'verify-ascent-backup-lifecycle',
         'verify-terrain-visual', 'verify-terrain-lod', 'render-showcase', 'verify-map-controls',
     ]) {
-        const source = await readFile(path.join(projectRoot, 'scripts', `${name}${['verify-capture-flow', 'verify-report-photos', 'verify-terrain-visual', 'verify-terrain-lod', 'verify-extension'].includes(name) ? '.mts' : '.mjs'}`), 'utf8');
-        assert.match(source, /\.\.\.(?:fixture|certificate|cert)!?\.chromeTrustArgs/, name);
+        const file = ['.mts', '.mjs'].map(extension => path.join(projectRoot, 'scripts', `${name}${extension}`)).find(candidate => existsSync(candidate));
+        assert.ok(file, `${name} exists`);
+        const source = await readFile(file, 'utf8');
+        assert.match(source, /(?:\.\.\.|trustArgs:\s*)(?:fixture|certificate|cert)!?\.chromeTrustArgs/, name);
         assert.doesNotMatch(source, /['"]--ignore-certificate-errors['"]/, name);
         assert.doesNotMatch(source, /ignoreHTTPSErrors:\s*true/, name);
         assert.doesNotMatch(source, /X509Certificate/, name);
