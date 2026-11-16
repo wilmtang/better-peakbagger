@@ -170,9 +170,9 @@ commit; the count may fall only by the cases the ledger names.
 #### Phase 3 review — 2026-11-16 (proposal; nothing deleted)
 
 Read: every test title in `test/project/` (71 test files, 10,284 lines), the
-bodies of its source-text tests, and the source-text assertions in the 16
-other test files that read authored source (not the 36 the first count gave,
-which included `dist/` readers). Findings:
+bodies of its source-text tests, and the source-text assertions in the
+roughly 16–20 other test files that read authored source, CSS or HTML (not the
+36 the first count gave, which included `dist/` readers). Findings:
 
 - `test/project/` is not redundant. All but about a dozen of its 454 declared tests (537 executed)
   execute script logic with fixtures: release evidence and publisher state
@@ -188,23 +188,25 @@ which included `dist/` readers). Findings:
   is a browser verifier that `npm test` does not run:
   1. `release.test.mts` "Firefox verification waits for rendered postconditions
      instead of fixed frames" and "Firefox topo actions re-center overlay…"
-     (about 90 lines) pin the text of `verify-firefox-extension.mts`. The
+     (about 75 lines, `release.test.mts:600-674`) pin the text of `verify-firefox-extension.mts`. The
      surviving check is that verifier itself; what it cannot show is a
      reintroduced fixed sleep that still passes on an idle machine.
   2. `copied-runtime-impact.test.mjs` "Firefox GPU gestures…", "Chrome solar
      bearing…", "Chrome terrain verification waits out…" and "Chrome
      tilted-peak verification…" pin GPU-verifier text, with the same trade-off
      against `verify -- terrain`.
-  3. `sun-calculator.test.mjs` (lines 696–704) and `photo-page.test.mts` pin
-     exact `block-size` values in CSS. The surviving checks are the browser
-     geometry probes (`readSunCalculatorGeometry` in both extension
-     verifiers, `verify-layout-stability.mts`); the pins are the only
-     `npm test`-level guard against layout jitter.
+  3. `sun-calculator.test.mjs` (lines 696–704) pins exact `block-size`
+     values, and `photo-page.test.mts` (lines 244–247) pins `height` and
+     `min-height` on `.editor-body`. The surviving checks are browser geometry
+     probes: `readSunCalculatorGeometry` in both extension verifiers for the
+     calculator, and `verify-report-photos.mts` for the editor body. The pins
+     are the only `npm test`-level guard against that layout jitter.
   Recommendation: keep 3, remove 1 and 2 only if verifier-text pins are judged
   less valuable than the churn they cause on every verifier edit.
 - Table-driven rewrites (data-only cases, no coverage change): the five
   optional-host-permission tests in `manifest-capture.test.mts` (ImgBB, Gaia,
-  CalTopo, AllTrails, onX; about 10 lines saved). No other data-only group of
+  CalTopo, AllTrails, onX; a little under 10 lines saved, since onX's extra
+  identity-host exclusion needs an optional table field). No other data-only group of
   more than two cases was found in the files read.
 
 ### Phase 4 — Runtime structure (about −100, less sprawl)
@@ -314,9 +316,12 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   references and incident wording and has none to cut; the plain-HTTP fixture
   section in `development.md` stays because its symptom list is a debugging
   aid, not a narrative. Each cut needs the owner's eye, per the plan. Checks:
-  project tests (537 pass).
+  project tests (537 pass); lint was not run because only Markdown changed.
 
 ### Not started
 
-Phase 2. Phase 3 removals and the table-driven rewrite await the
+Phase 2, and an optional follow-up: the eight repeated route-handler lookups
+in `background.ts` could become one ordered `Object.hasOwn` loop (about −12
+lines), but that changes how inherited names such as `constructor` resolve,
+so it needs its own commit. Phase 3 removals and the table-driven rewrite await the
 owner's choice on the proposal above.
