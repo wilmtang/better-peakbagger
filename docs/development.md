@@ -919,15 +919,14 @@ member against an unchanged sibling is exactly the breakage grouping prevents.
 The npm updater also uses `versioning-strategy: increase`: Dependabot raises the
 minimum in every matching manifest range even when an older caret already
 admits the release. That makes already-satisfied TipTap siblings visible to the
-group. This alone did not prevent PR #19 from mixing 3.30.6 with 3.31.3 during
-lockfile resolution. Direct TipTap requirements therefore use one exact version,
+group. That alone does not stop lockfile resolution from mixing TipTap
+versions. Direct TipTap requirements therefore use one exact version,
 and the policy check requires every top-level and nested TipTap installation to
 match it. Keep the family grouped and update its exact pins together; do not use
 `--legacy-peer-deps` to accept an inconsistent update.
 
-Existing Dependabot PRs can retain an older updater job definition: the
-2026-09-06 recreation of #19 still used the former `editor`/`vendored` groups and
-`requirements-update-strategy: null`, despite the current default-branch config.
+An existing Dependabot PR can retain an older updater job definition, including
+groups and a requirements strategy the default-branch config no longer has.
 When diagnosing recurrence, inspect the **Dependabot Updates** job definition as
 well as the PR test logs. Recreating an old PR is not evidence that the new
 configuration ran; verify a fresh scheduled update uses the current groups and
@@ -1058,10 +1057,8 @@ it is the place to look rather than the green auto-merge job. The sweep holds no
 merge authority and does not bypass the required checks.
 
 GitHub's **Automatically delete head branches** setting is enabled, but a missed
-deletion otherwise has no retry: PR #69 merged with native auto-merge while its
-unchanged tooling branch remained. The API exposed no reason for the omission;
-the branch was unprotected and the active branch rules targeted only `main`.
-A separate `cleanup-branches` job in the same scheduled workflow retries cleanup
+deletion otherwise has no retry, and GitHub can skip it without reporting why
+even for an unprotected branch. A separate `cleanup-branches` job in the same scheduled workflow retries cleanup
 with its own contents-write token; the queue job keeps contents-read access.
 It considers only same-repository Dependabot PRs merged into `main`, paginates
 all branches and PRs, and leaves branches used by any open PR alone. A branch

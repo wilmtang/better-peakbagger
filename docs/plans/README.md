@@ -1,7 +1,7 @@
 # Active plans
 
 - [Codebase size and redundancy reduction](codebase-reduction-2026-11-13.md)
-  — phase 1 and phase 4 step 1 are done; see its ledger for the rest.
+  — phases 1, 4 and 5 are done or recorded, phase 3 is a proposal awaiting the owner; see its ledger.
 
 - [November 11 bugs, performance, engineering and UX audit](codebase-audit-2026-11-11.md)
   — 18 findings, remediated and reviewed except where its ledger says otherwise

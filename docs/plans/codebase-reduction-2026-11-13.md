@@ -306,9 +306,17 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
 
 ### Changed but not fully proven
 
-Nothing yet.
+- Phase 5. Incident narratives are cut to their rules: three in `AGENTS.md`
+  (the dead-extension aside, the terrain auto-click flake, the plain-HTTP
+  incident list) and three Dependabot incidents in `docs/development.md`
+  (PR #19's mixed TipTap versions and stale job definition, PR #69's missed
+  branch deletion). `docs/architecture.md` was scanned for dates, PR
+  references and incident wording and has none to cut; the plain-HTTP fixture
+  section in `development.md` stays because its symptom list is a debugging
+  aid, not a narrative. Each cut needs the owner's eye, per the plan. Checks:
+  project tests (537 pass).
 
 ### Not started
 
-Phases 2 and 5. Phase 3 removals and the table-driven rewrite await the
+Phase 2. Phase 3 removals and the table-driven rewrite await the
 owner's choice on the proposal above.
