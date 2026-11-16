@@ -131,7 +131,11 @@ const buddyScreenshotDir = process.env.BPB_VERIFY_BUDDY_SCREENSHOTS_DIR
 let launcher: typeof import('./verification-launch.mts');
 try {
     launcher = await import('./verification-launch.mts');
-} catch {
+} catch (error) {
+    // Only a missing Playwright install gets the install hint; a broken
+    // launcher module must surface its own error.
+    const missing = error as NodeJS.ErrnoException;
+    if (missing.code !== 'ERR_MODULE_NOT_FOUND' || !/'playwright'/.test(missing.message)) throw error;
     console.error('This check needs Playwright: npm install && npx playwright install chromium');
     process.exit(1);
 }

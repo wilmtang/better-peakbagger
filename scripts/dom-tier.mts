@@ -237,8 +237,8 @@ export async function runDomTier(args: readonly string[], suites?: DomSuite[]): 
     let failure: unknown = null, executed = 0;
     try {
         for (const engine of selection.engines) {
-            if (engine === 'chrome') assertChromeLaunchAllowed();
             // Full Chrome for Testing in new headless mode, not the headless shell.
+            if (engine === 'chrome') assertChromeLaunchAllowed();
             const browser = await (engine === 'chrome'
                 ? chromium.launch({ channel: 'chromium', headless: true })
                 : firefox.launch({ headless: true }));
