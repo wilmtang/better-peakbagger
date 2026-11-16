@@ -45,7 +45,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['snow'], [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']]],
         [['snow-map'], [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']]],
         [['peak-card-placement'], [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']]],
-        [['map-controls'], [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']]],
+        [['map-controls'], [['verify-map-controls.mts'], ['verify-map-controls.mts', '--firefox']]],
         [['terrain'], [['verify-terrain-visual.mts']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mts', '/tmp/terrain evidence']]],
         [['terrain', 'firefox'], [['verify-firefox-terrain.mts']]],
