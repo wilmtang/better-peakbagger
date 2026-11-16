@@ -4,7 +4,7 @@
 /* global document, innerWidth */
 
 import assert from 'node:assert/strict';
-import { verifyGpxHeader } from './verify-gpx-header.mjs';
+import { verifyGpxHeader } from './verify-gpx-header.mts';
 
 // Same observable contract for real Chrome and Firefox; caller owns a hidden
 // test profile, HTTPS fixture transport, settings, and reliable teardown.

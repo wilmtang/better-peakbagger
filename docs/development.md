@@ -1286,7 +1286,7 @@ GitHub Git Data endpoint, including an external ref race and unrelated root file
 No real backup repository is test scratch space.
 
 Set `BPB_VERIFY_IGNORED_SCREENSHOT_DIR` to an existing output directory for light/
-dark site and manager screenshots. `node scripts/verify-climber-list-ui.mjs`
+dark site and manager screenshots. `node scripts/verify-climber-list-ui.mts`
 checks the real Settings bundle with synthetic worker replies, long names,
 1,500-entry counts and a 200% equivalent reduced CSS viewport at DPR 2. It proves
 layout, not live GitHub. Firefox logs measured CSS viewport dimensions; native

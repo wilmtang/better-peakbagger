@@ -111,7 +111,7 @@ independent of the existing targets.
 - [terrain-lod-criteria.mts](terrain-lod-criteria.mts)
 - [terrain-lod-probe.mjs](terrain-lod-probe.mjs)
 - [terrain-readiness-diagnostics.mjs](terrain-readiness-diagnostics.mjs)
-- [verify-gpx-header.mjs](verify-gpx-header.mjs)
+- [verify-gpx-header.mts](verify-gpx-header.mts)
 - [verify-gpx-segments.mjs](verify-gpx-segments.mjs)
 - [verify-map-controls.mjs](verify-map-controls.mjs)
 - [verify-map-handoffs.mjs](verify-map-handoffs.mjs)
@@ -137,7 +137,7 @@ independent of the existing targets.
 - [climber-regression-baseline.mjs](climber-regression-baseline.mjs)
 - [signed-out-extension-verification.mjs](signed-out-extension-verification.mjs) — real-manifest Buddy recovery and signed-out local Favorite persistence in both browser gates.
 - [verify-climber-hover-card.mjs](verify-climber-hover-card.mjs)
-- [verify-climber-list-ui.mjs](verify-climber-list-ui.mjs)
+- [verify-climber-list-ui.mts](verify-climber-list-ui.mts)
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)
 - [verify-climber-transitions.mjs](verify-climber-transitions.mjs)
 - [verify-inline-buddies.mjs](verify-inline-buddies.mjs)
@@ -156,7 +156,7 @@ independent of the existing targets.
 - [verify-custom-overlays.mts](verify-custom-overlays.mts) — real unpacked editor, 18 transition and 24 keyboard-help cases at asserted content widths/zoom, negative geometry checks, direct HTTPS/CORS tiles, packaged workers and hardware 2D/3D rendering. `--loading-only` explicitly excludes editor/help matrices; unknown or duplicate selections fail before launch.
 - [verify-custom-overlay-lifecycle.mjs](verify-custom-overlay-lifecycle.mjs) — `chrome|firefox startup|lifetime|cache`: real Leaflet and bundled renderer, fresh asynchronous startup, bounded canvas/listener ownership and real HTTP-cache revalidation with changed pixels, conditional responses and ordinary reuse at desktop/narrow widths; controlled providers, without the Settings editor or worker.
 - [verify-custom-overlay-replacement.mts](verify-custom-overlay-replacement.mts) — hidden hardware Chrome at 1000×760: real MapLibre raster pixels through held replacement, viewport cancellation, rendered acceptance and source/listener teardown; controlled HTTPS provider, without the Settings editor or worker.
-- [verify-custom-layer-settings.mjs](verify-custom-layer-settings.mjs) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
+- [verify-custom-layer-settings.mts](verify-custom-layer-settings.mts) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
 - [verify-custom-layer-menu.mts](verify-custom-layer-menu.mts) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
 - [verify-private-layers.mjs](verify-private-layers.mjs) — protected query parameters and automatic TileJSON detection in real Settings, private map settings-file round-trip, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
 - [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.

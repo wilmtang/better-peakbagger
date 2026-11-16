@@ -21,7 +21,7 @@ const targets: Record<string, VerifierCommand[]> = {
     'layout-stability': [['verify-layout-stability.mts']],
     'fixture-preflight': [['verify-fixture-preflight.mjs']],
     dom: [['verify-dom.mts']],
-    'gpx-header': [['verify-gpx-header.mjs']],
+    'gpx-header': [['verify-gpx-header.mts']],
     'multi-summit': [['verify-multi-summit.mjs']],
     'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
     'profile-editor': [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']],
