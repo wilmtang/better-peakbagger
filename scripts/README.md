@@ -120,7 +120,7 @@ independent of the existing targets.
 - [verify-map-layers.mts](verify-map-layers.mts)
 - [verify-vector-map.mts](verify-vector-map.mts)
 - [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
-- [verify-peak-link-order.mjs](verify-peak-link-order.mjs)
+- [verify-peak-link-order.mts](verify-peak-link-order.mts)
 - [verify-peak-map-layout.mts](verify-peak-map-layout.mts)
 - [verify-terrain-cache-owners.mts](verify-terrain-cache-owners.mts)
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
@@ -140,7 +140,7 @@ independent of the existing targets.
 - [verify-climber-list-ui.mts](verify-climber-list-ui.mts)
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)
 - [verify-climber-transitions.mjs](verify-climber-transitions.mjs)
-- [verify-inline-buddies.mjs](verify-inline-buddies.mjs)
+- [verify-inline-buddies.mts](verify-inline-buddies.mts)
 - [verify-profile-editor.mts](verify-profile-editor.mts)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
 - [verify-profile-units.mts](verify-profile-units.mts)
@@ -161,7 +161,7 @@ independent of the existing targets.
 - [verify-private-layers.mjs](verify-private-layers.mjs) — protected query parameters and automatic TileJSON detection in real Settings, private map settings-file round-trip, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
 - [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
 - [verify-peak-cards.mjs](verify-peak-cards.mjs)
-- [verify-summit-cloud.mjs](verify-summit-cloud.mjs) — hidden Chrome/Firefox
+- [verify-summit-cloud.mts](verify-summit-cloud.mts) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
 - [verify-peak-weather-3d.mts](verify-peak-weather-3d.mts)

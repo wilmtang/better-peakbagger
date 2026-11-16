@@ -26,7 +26,7 @@ test('verification targets preserve the existing checks and browser order with o
         [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
         [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],
         [['report-security'], [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
-        [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
+        [['inline-buddies'], [['verify-inline-buddies.mts'], ['verify-inline-buddies.mts', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mts']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
