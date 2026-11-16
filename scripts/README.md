@@ -107,6 +107,7 @@ independent of the existing targets.
 
 ## Maps, terrain and GPX
 
+- [terrain-cdp.mts](terrain-cdp.mts) — Chrome DevTools Protocol plumbing shared by the terrain verifiers: debugging-port wait, WebSocket connection and page evaluation.
 - [terrain-dem-fixture.mjs](terrain-dem-fixture.mjs)
 - [terrain-lod-criteria.mts](terrain-lod-criteria.mts)
 - [terrain-lod-probe.mjs](terrain-lod-probe.mjs)
