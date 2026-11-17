@@ -9,6 +9,10 @@
   (the worker was converted to TypeScript first). F1, F2, F6b and F18 wait on
   browser measurements.
 
+- [CI: Linux by default, macOS only for hardware WebGL](ci-macos-gpu-only.md)
+  — proposed. Firefox surfaces move first. Current-Chrome extension loading on
+  Linux is a time-boxed spike, and backup layout is an owner decision.
+
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,
   parallel browser checks and a protected post-upload Chrome checkpoint.
