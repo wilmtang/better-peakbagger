@@ -107,9 +107,13 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     const ordinary = await load('workflows/test.yml');
     const surfaceJob = ordinary.jobs['peak-surfaces'];
     assert.equal(surfaceJob.needs, undefined, 'surface failures must not wait behind layout or preflight installation');
+    assert.equal(surfaceJob['runs-on'], "${{ matrix.browser == 'chrome' && 'macos-15-intel' || 'ubuntu-24.04' }}");
+    const surfaceRunner = new Function('matrix', `return ${surfaceJob['runs-on'].slice(3, -2)};`);
+    assert.equal(surfaceRunner({ browser: 'chrome' }), 'macos-15-intel');
+    assert.equal(surfaceRunner({ browser: 'firefox' }), 'ubuntu-24.04');
     assert.deepEqual(surfaceJob.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.deepEqual(surfaceJob.strategy.matrix.surface, ['snow', 'cards', 'cards-placement', 'interactions']);
-    assert.equal(surfaceJob.strategy['max-parallel'], 4);
+    assert.equal(surfaceJob.strategy['max-parallel'], undefined, 'Linux Firefox surfaces must not wait behind a macOS slot cap');
     assert.equal(surfaceJob.strategy['fail-fast'], false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('peak-surfaces'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SURFACE_RESULT" = success/);

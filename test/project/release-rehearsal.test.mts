@@ -35,7 +35,7 @@ test('four independent browser jobs execute frozen archives without rebuilding o
     assert.equal(matrix.if, "github.event_name == 'workflow_dispatch'");
     assert.deepEqual(matrix.needs, 'prepare');
     assert.deepEqual(matrix.strategy.matrix.include.map(item => [item.browser, item.version, item.runner]), [
-        ['chrome', 'current', 'macos-15-intel'], ['firefox', 'current', 'macos-15-intel'],
+        ['chrome', 'current', 'macos-15-intel'], ['firefox', 'current', 'ubuntu-24.04'],
         ['chrome', '128', 'ubuntu-24.04'], ['firefox', '152.0', 'ubuntu-24.04'],
     ]);
     assert.equal(matrix.env.BPB_VERIFY_REPETITIONS, '${{ inputs.repetitions }}');

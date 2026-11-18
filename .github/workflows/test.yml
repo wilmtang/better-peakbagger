@@ -287,12 +287,11 @@ jobs:
 
   peak-surfaces:
     name: Peak surface (${{ matrix.browser }}, ${{ matrix.surface }})
-    runs-on: macos-15-intel
+    runs-on: ${{ matrix.browser == 'chrome' && 'macos-15-intel' || 'ubuntu-24.04' }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      # Keep capacity for package/native-toolbar and hardware GPU jobs.
-      max-parallel: 4
+      # Chrome's 4 cells stay within the 5-slot macOS cap; Firefox runs on Linux.
       matrix:
         browser: [chrome, firefox]
         surface: [snow, cards, cards-placement, interactions]
@@ -343,7 +342,7 @@ jobs:
 
   snow-map:
     name: SNOTEL map GPU (${{ matrix.browser }})
-    # Hardware WebGL is required; each verifier rejects software fallback.
+    # Kept on macOS solely for free hardware WebGL (Metal); each verifier rejects software fallback.
     runs-on: macos-15
     timeout-minutes: 20
     strategy:
@@ -464,8 +463,8 @@ jobs:
     name: Chrome copied-runtime GPU smoke
     needs: dependency-impact
     if: needs.dependency-impact.outputs.copied-runtime == 'true'
-    # Standard macOS 15 is an arm64 M1 runner. The verifier reports the WebGL
-    # renderer and fails closed if the hosted environment exposes software GL.
+    # Kept on macOS solely for free hardware WebGL (arm64 Metal); standard Linux
+    # runners lack a GPU and the verifier fails closed on software GL.
     runs-on: macos-15
     timeout-minutes: 20
     env:
@@ -550,7 +549,8 @@ jobs:
     name: Firefox copied-runtime GPU smoke
     needs: dependency-impact
     if: needs.dependency-impact.outputs.copied-runtime == 'true'
-    # Firefox uses ANGLE Metal on macOS; native OpenGL stalls in hosted VMs.
+    # Kept on macOS solely for free hardware WebGL (ANGLE Metal); standard Linux
+    # runners lack a GPU and native OpenGL stalls in hosted VMs.
     runs-on: macos-15
     timeout-minutes: 20
     env:
