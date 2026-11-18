@@ -63,8 +63,8 @@ hash identity in `ci-packages-SHA-ATTEMPT` for seven days. Its other required
 jobs supply Node, scale, lint, layout and cross-platform coverage.
 
 Rehearsal acquires that artifact by immutable ID, hard-checks GitHub's archive
-SHA-256 and inner package hashes, then fans out current Chrome/current Firefox
-on separate Intel macOS runners and Chrome 128/Firefox 152 on separate Ubuntu
+SHA-256 and inner package hashes, then fans out current Chrome, current
+Firefox, Chrome 128, and Firefox 152 across separate Ubuntu (`ubuntu-24.04`)
 runners. Every browser requires three consecutive passes with fresh profiles
 and teardown by default. `-f repetitions=1` is diagnostic only; five is also
 supported. Each Chrome pass extracts a new copy; both canonical ZIP hashes are
