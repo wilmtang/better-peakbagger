@@ -3,84 +3,84 @@
 //
 // Better Peakbagger — options page controller.
 
-import { initOrderSettings } from './order-settings.js';
+import { initOrderSettings } from './order-settings.ts';
 import { settings as S } from '../src/settings/settings.ts';
 import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.ts';
 import { panelTheme as Theme } from '../src/theme/panel-theme.ts';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
-import { initGithubBackup } from './github.js';
-import { initIgnoredBackup } from './ignored-backup.js';
-import { initFavoritesBackup } from './favorites-backup.js';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
+import { initGithubBackup } from './github.ts';
+import { initIgnoredBackup } from './ignored-backup.ts';
+import { initFavoritesBackup } from './favorites-backup.ts';
 import { initImgbbKey } from './imgbb.ts';
-import { initSettingsBackup } from './settings-backup.js';
-import { initPhotoBackup } from './photos.js';
+import { initSettingsBackup } from './settings-backup.ts';
+import { initPhotoBackup } from './photos.ts';
 import { initSectionNav } from '../src/ui/section-nav.ts';
 import { initUnitSettings } from './unit-settings.ts';
-import { initCustomLayers } from './custom-layers.js';
-import { initInstagramDisplay } from './instagram-display.js';
+import { initCustomLayers } from './custom-layers.ts';
+import { initInstagramDisplay } from './instagram-display.ts';
+import type { Settings, SettingsPatch } from './settings-patch-route.ts';
 
 (() => {
-    'use strict';
     const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
     // Variable feedback belongs below controls, including in stacked rows.
     for (const id of ['terrain-cache-usage', 'settings-backup-github-status', 'favorites-github-status',
         'ignored-github-status', 'photos-github-status']) {
         const feedback = document.getElementById(id);
-        feedback?.closest('.row')?.append(feedback);
+        if (feedback) feedback.closest('.row')?.append(feedback);
     }
     try {
-        const registration = extensionApi.runtime.sendMessage({ type: 'OPTIONS_TAB_REGISTER' });
+        const registration: Promise<unknown> | undefined = extensionApi.runtime.sendMessage({ type: 'OPTIONS_TAB_REGISTER' });
         if (registration?.catch) void registration.catch(() => {});
     } catch { /* the worker will discover or create the tab on demand */ }
-    const themeEl = document.getElementById('theme');
-    const showSunMoonEl = document.getElementById('show-sun-moon');
-    const showWeatherEl = document.getElementById('show-weather');
-    const showSummitCloudEl = document.getElementById('show-summit-cloud');
-    const showSnotelEl = document.getElementById('show-snotel');
-    const enable3dMapEl = document.getElementById('enable-3d-map');
-    const enableGarminInboxEl = document.getElementById('enable-garmin-inbox');
-    const enableReportEditorEl = document.getElementById('enable-report-editor');
-    const reportEditorDependentEls = document.querySelectorAll('[data-report-editor-dependent]');
-    const loadInstagramEl = document.getElementById('load-instagram-automatically');
-    const addReportCreditEl = document.getElementById('add-report-credit');
-    const removeGpxTimestampsEl = document.getElementById('remove-gpx-timestamps');
-    const retainWaypointsEl = document.getElementById('retain-waypoints');
-    const fillAscentDetailsEl = document.getElementById('fill-ascent-details');
-    const fillTripInfoEl = document.getElementById('fill-trip-info');
-    const fillWildernessNightsEl = document.getElementById('fill-wilderness-nights');
-    const fillExternalUrlEl = document.getElementById('fill-external-url');
-    const chartSeriesEl = document.getElementById('chart-series');
-    const mapRouteColorEl = document.getElementById('map-route-color');
-    const mapRouteWidthEl = document.getElementById('map-route-width');
-    const mapRouteCasingColorEl = document.getElementById('map-route-casing-color');
-    const mapRouteCasingWidthEl = document.getElementById('map-route-casing-width');
-    const mapRouteResetEl = document.getElementById('map-route-reset');
-    const mapViewportWidthEl = document.getElementById('map-viewport-width');
-    const mapViewportHeightEl = document.getElementById('map-viewport-height');
-    const mapViewportResetEl = document.getElementById('map-viewport-reset');
-    const terrainCacheRowEl = document.getElementById('terrain-cache-row');
-    const terrainCacheLimitEl = document.getElementById('terrain-cache-limit');
-    const terrainCacheUsageEl = document.getElementById('terrain-cache-usage');
-    const rememberMapLayerEl = document.getElementById('remember-map-layer');
-    const betaTrEl = document.getElementById('beta-tr');
-    const betaTrWordsEl = document.getElementById('beta-tr-words');
-    const betaGpsEl = document.getElementById('beta-gps');
-    const betaLinkEl = document.getElementById('beta-link');
-    const betaSortDateDescEl = document.getElementById('beta-sort-date-desc');
-    const statusEl = document.getElementById('status');
-    const statusErrorEl = document.getElementById('status-error');
-    const statusErrorTextEl = document.getElementById('status-error-text');
-    const statusErrorDismissEl = document.getElementById('status-error-dismiss');
-    const aboutVersionEl = document.getElementById('about-version');
+    const themeEl = document.getElementById('theme') as HTMLSelectElement;
+    const showSunMoonEl = document.getElementById('show-sun-moon') as HTMLInputElement;
+    const showWeatherEl = document.getElementById('show-weather') as HTMLInputElement;
+    const showSummitCloudEl = document.getElementById('show-summit-cloud') as HTMLInputElement;
+    const showSnotelEl = document.getElementById('show-snotel') as HTMLInputElement;
+    const enable3dMapEl = document.getElementById('enable-3d-map') as HTMLInputElement;
+    const enableGarminInboxEl = document.getElementById('enable-garmin-inbox') as HTMLInputElement;
+    const enableReportEditorEl = document.getElementById('enable-report-editor') as HTMLInputElement;
+    const reportEditorDependentEls = document.querySelectorAll<HTMLElement>('[data-report-editor-dependent]');
+    const loadInstagramEl = document.getElementById('load-instagram-automatically') as HTMLInputElement;
+    const addReportCreditEl = document.getElementById('add-report-credit') as HTMLInputElement;
+    const removeGpxTimestampsEl = document.getElementById('remove-gpx-timestamps') as HTMLInputElement;
+    const retainWaypointsEl = document.getElementById('retain-waypoints') as HTMLInputElement;
+    const fillAscentDetailsEl = document.getElementById('fill-ascent-details') as HTMLInputElement;
+    const fillTripInfoEl = document.getElementById('fill-trip-info') as HTMLInputElement;
+    const fillWildernessNightsEl = document.getElementById('fill-wilderness-nights') as HTMLInputElement;
+    const fillExternalUrlEl = document.getElementById('fill-external-url') as HTMLInputElement;
+    const chartSeriesEl = document.getElementById('chart-series') as HTMLSelectElement;
+    const mapRouteColorEl = document.getElementById('map-route-color') as HTMLInputElement;
+    const mapRouteWidthEl = document.getElementById('map-route-width') as HTMLInputElement;
+    const mapRouteCasingColorEl = document.getElementById('map-route-casing-color') as HTMLInputElement;
+    const mapRouteCasingWidthEl = document.getElementById('map-route-casing-width') as HTMLInputElement;
+    const mapRouteResetEl = document.getElementById('map-route-reset') as HTMLButtonElement;
+    const mapViewportWidthEl = document.getElementById('map-viewport-width') as HTMLInputElement;
+    const mapViewportHeightEl = document.getElementById('map-viewport-height') as HTMLInputElement;
+    const mapViewportResetEl = document.getElementById('map-viewport-reset') as HTMLButtonElement;
+    const terrainCacheRowEl = document.getElementById('terrain-cache-row') as HTMLElement;
+    const terrainCacheLimitEl = document.getElementById('terrain-cache-limit') as HTMLInputElement;
+    const terrainCacheUsageEl = document.getElementById('terrain-cache-usage') as HTMLElement;
+    const rememberMapLayerEl = document.getElementById('remember-map-layer') as HTMLInputElement;
+    const betaTrEl = document.getElementById('beta-tr') as HTMLInputElement;
+    const betaTrWordsEl = document.getElementById('beta-tr-words') as HTMLInputElement;
+    const betaGpsEl = document.getElementById('beta-gps') as HTMLInputElement;
+    const betaLinkEl = document.getElementById('beta-link') as HTMLInputElement;
+    const betaSortDateDescEl = document.getElementById('beta-sort-date-desc') as HTMLInputElement;
+    const statusEl = document.getElementById('status') as HTMLElement;
+    const statusErrorEl = document.getElementById('status-error') as HTMLElement;
+    const statusErrorTextEl = document.getElementById('status-error-text') as HTMLElement;
+    const statusErrorDismissEl = document.getElementById('status-error-dismiss') as HTMLElement;
+    const aboutVersionEl = document.getElementById('about-version') as HTMLElement;
 
     // About section — version and store destination from the extension runtime.
     const manifest = extensionApi.runtime.getManifest();
     aboutVersionEl.textContent = `Version ${manifest.version}`;
-    document.getElementById('about-rate-us').href = extensionApi.runtime.getURL('').startsWith('moz-extension://')
+    (document.getElementById('about-rate-us') as HTMLAnchorElement).href = extensionApi.runtime.getURL('').startsWith('moz-extension://')
         ? 'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/reviews/'
         : 'https://chromewebstore.google.com/detail/better-peakbagger/kndjohodnpdoejmjkiiakejfehoodedn/reviews';
 
-    const applyTheme = theme => Theme.apply(theme);
+    const applyTheme = (theme: string): void => Theme.apply(theme);
 
     const { flash } = OptionsUtils.createStatusFlash({
         statusEl,
@@ -91,7 +91,7 @@ import { initInstagramDisplay } from './instagram-display.js';
     initCustomLayers({ extensionApi, flash });
     initInstagramDisplay({ extensionApi, flash });
 
-    const formatCacheBytes = bytes => {
+    const formatCacheBytes = (bytes: number): string => {
         if (bytes < 1024) return `${Math.max(0, Math.floor(bytes))} B`;
         if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
         const megabytes = bytes / (1024 * 1024);
@@ -99,7 +99,7 @@ import { initInstagramDisplay } from './instagram-display.js';
     };
 
     let cacheUsageRevision = 0;
-    const refreshCacheUsage = async () => {
+    const refreshCacheUsage = async (): Promise<void> => {
         const revision = ++cacheUsageRevision;
         terrainCacheUsageEl.textContent = 'Checking current cache…';
         const usage = await TerrainCache.getUsage();
@@ -115,7 +115,7 @@ import { initInstagramDisplay } from './instagram-display.js';
         }
     };
 
-    const syncTerrainCacheVisibility = enabled => {
+    const syncTerrainCacheVisibility = (enabled: boolean): void => {
         const show = enabled === true;
         const becameVisible = show && terrainCacheRowEl.hidden;
         terrainCacheRowEl.hidden = !show;
@@ -123,13 +123,13 @@ import { initInstagramDisplay } from './instagram-display.js';
         else if (!show) cacheUsageRevision++;
     };
 
-    const syncReportEditorDependentVisibility = enabled => {
+    const syncReportEditorDependentVisibility = (enabled: boolean): void => {
         for (const element of reportEditorDependentEls) element.hidden = enabled !== true;
     };
 
-    let confirmedSettings = null;
+    let confirmedSettings: Settings | null = null;
     let settingsRevision = 0;
-    const populate = settings => {
+    const populate = (settings: Settings): void => {
         confirmedSettings = { ...settings };
         unitSettings.populate(settings);
         themeEl.value = settings.theme;
@@ -174,8 +174,8 @@ import { initInstagramDisplay } from './instagram-display.js';
         applyTheme(settings.theme);
     };
 
-    let saveQueue = Promise.resolve();
-    const save = patch => {
+    let saveQueue: Promise<unknown> = Promise.resolve();
+    const save = (patch: SettingsPatch): Promise<Settings> => {
         const revision = ++settingsRevision;
         const operation = saveQueue.then(async () => {
             const next = await S.set(patch);
@@ -231,12 +231,12 @@ import { initInstagramDisplay } from './instagram-display.js';
     showSnotelEl.addEventListener('change', () => save({ showSnotel: showSnotelEl.checked }));
     enable3dMapEl.addEventListener('change', () => {
         syncTerrainCacheVisibility(enable3dMapEl.checked);
-        save({ enable3dMap: enable3dMapEl.checked });
+        void save({ enable3dMap: enable3dMapEl.checked });
     });
     enableGarminInboxEl.addEventListener('change', () => save({ enableGarminInbox: enableGarminInboxEl.checked }));
     enableReportEditorEl.addEventListener('change', () => {
         syncReportEditorDependentVisibility(enableReportEditorEl.checked);
-        save({ enableReportEditor: enableReportEditorEl.checked });
+        void save({ enableReportEditor: enableReportEditorEl.checked });
     });
     addReportCreditEl.addEventListener('change', () => save({ addReportCredit: addReportCreditEl.checked }));
     removeGpxTimestampsEl.addEventListener('change', () => save({ removeGpxTimestamps: removeGpxTimestampsEl.checked }));
@@ -248,36 +248,36 @@ import { initInstagramDisplay } from './instagram-display.js';
     chartSeriesEl.addEventListener('change', () => save({ chartDefaultSeries: chartSeriesEl.value }));
     mapRouteColorEl.addEventListener('change', () => save({ mapRouteColor: mapRouteColorEl.value }));
     mapRouteWidthEl.addEventListener('change', () => {
-        save({ mapRouteWidth: mapRouteWidthEl.value }).then(populate).catch(() => {});
+        save({ mapRouteWidth: parseInt(mapRouteWidthEl.value, 10) }).then(populate).catch(() => {});
     });
     mapRouteCasingColorEl.addEventListener('change', () => save({ mapRouteCasingColor: mapRouteCasingColorEl.value }));
     mapRouteCasingWidthEl.addEventListener('change', () => {
-        save({ mapRouteCasingWidth: mapRouteCasingWidthEl.value }).then(populate).catch(() => {});
+        save({ mapRouteCasingWidth: parseInt(mapRouteCasingWidthEl.value, 10) }).then(populate).catch(() => {});
     });
     mapRouteResetEl.addEventListener('click', () => {
         save({
             mapRouteColor: S.DEFAULTS.mapRouteColor,
             mapRouteWidth: S.DEFAULTS.mapRouteWidth,
             mapRouteCasingColor: S.DEFAULTS.mapRouteCasingColor,
-            mapRouteCasingWidth: S.DEFAULTS.mapRouteCasingWidth
+            mapRouteCasingWidth: S.DEFAULTS.mapRouteCasingWidth,
         }).then(settings => {
             populate(settings);
             flash('Route appearance reset');
         }).catch(() => {});
     });
     mapViewportWidthEl.addEventListener('change', () => {
-        save({ mapViewportWidth: mapViewportWidthEl.value }).then(populate).catch(() => {});
+        save({ mapViewportWidth: parseInt(mapViewportWidthEl.value, 10) }).then(populate).catch(() => {});
     });
     mapViewportHeightEl.addEventListener('change', () => {
-        save({ mapViewportHeight: mapViewportHeightEl.value }).then(populate).catch(() => {});
+        save({ mapViewportHeight: parseInt(mapViewportHeightEl.value, 10) }).then(populate).catch(() => {});
     });
     terrainCacheLimitEl.addEventListener('change', () => {
-        save({ terrainCacheLimitMb: terrainCacheLimitEl.value }).then(populate).catch(() => {});
+        save({ terrainCacheLimitMb: parseInt(terrainCacheLimitEl.value, 10) }).then(populate).catch(() => {});
     });
     mapViewportResetEl.addEventListener('click', () => {
         save({
             mapViewportWidth: S.DEFAULTS.mapViewportWidth,
-            mapViewportHeight: S.DEFAULTS.mapViewportHeight
+            mapViewportHeight: S.DEFAULTS.mapViewportHeight,
         }).then(settings => {
             populate(settings);
             flash('Map size reset');
@@ -285,13 +285,17 @@ import { initInstagramDisplay } from './instagram-display.js';
     });
     rememberMapLayerEl.addEventListener('change', () => save({
         rememberMapLayer: rememberMapLayerEl.checked,
-        ...(!rememberMapLayerEl.checked && { mapLastLayer: '' })
+        ...(!rememberMapLayerEl.checked && { mapLastLayer: '' }),
     }));
 
     // "Has beta" definition. An empty definition is never valid: block
     // unchecking the last signal instead of silently resetting later.
-    const betaSignals = [[betaTrEl, 'betaTr'], [betaGpsEl, 'betaGps'], [betaLinkEl, 'betaLink']];
-    for (const [el, key] of betaSignals) {
+    const betaSignals: readonly [HTMLInputElement, (checked: boolean) => SettingsPatch][] = [
+        [betaTrEl, betaTr => ({ betaTr })],
+        [betaGpsEl, betaGps => ({ betaGps })],
+        [betaLinkEl, betaLink => ({ betaLink })],
+    ];
+    for (const [el, toPatch] of betaSignals) {
         el.addEventListener('change', () => {
             if (!betaTrEl.checked && !betaGpsEl.checked && !betaLinkEl.checked) {
                 el.checked = true;
@@ -299,13 +303,13 @@ import { initInstagramDisplay } from './instagram-display.js';
                 return;
             }
             betaTrWordsEl.disabled = !betaTrEl.checked;
-            save({ [key]: el.checked });
+            void save(toPatch(el.checked));
         });
     }
     betaTrWordsEl.addEventListener('change', () => {
         const value = Math.max(1, parseInt(betaTrWordsEl.value, 10) || 1);
         betaTrWordsEl.value = String(value);
-        save({ betaTrMinWords: value });
+        void save({ betaTrMinWords: value });
     });
     // Independent of the "has beta" signals (it has no at-least-one invariant).
     loadInstagramEl.addEventListener('change', () => save({ loadInstagramAutomatically: loadInstagramEl.checked }));
@@ -331,9 +335,9 @@ import { initInstagramDisplay } from './instagram-display.js';
     });
 
     // Reflect the system theme live while "Follow system" is selected.
-    if (window.matchMedia) {
+    if (typeof window.matchMedia === 'function') {
         const mq = window.matchMedia('(prefers-color-scheme: dark)');
-        const onChange = () => { if (themeEl.value === 'system') applyTheme('system'); };
+        const onChange = (): void => { if (themeEl.value === 'system') applyTheme('system'); };
         if (mq.addEventListener) mq.addEventListener('change', onChange);
         else if (mq.addListener) mq.addListener(onChange);
     }
@@ -341,8 +345,8 @@ import { initInstagramDisplay } from './instagram-display.js';
     initSectionNav();
 
     const initialRevision = settingsRevision;
-    const initialSettings = S.get();
-    initialSettings.then(settings => {
+    const initialSettings: Promise<Settings> = S.get();
+    void initialSettings.then(settings => {
         if (initialRevision === settingsRevision) populate(settings);
     });
 })();

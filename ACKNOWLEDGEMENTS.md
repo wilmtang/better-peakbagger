@@ -116,7 +116,7 @@ events locally in the browser without a network service.
 ### Svelte
 
 Better Peakbagger precompiles UI components with Svelte and bundles only its
-client runtime helpers (`esm-env` and `clsx`) into `options/options.js` for the
+client runtime helpers (`esm-env` and `clsx`) into `dist/options/options.js` for the
 Units settings panel.
 
 - Project: [Svelte](https://svelte.dev/)

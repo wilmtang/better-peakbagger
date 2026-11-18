@@ -11,7 +11,7 @@
 
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.ts';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
 export const IMGBB_ORIGINS = ['https://api.imgbb.com/*'];
 

@@ -258,7 +258,7 @@ List files exclude Buddy cache/owner metadata, native Buddy membership, settings
 credentials, sync baselines and filter state. Import never edits Peakbagger's
 Buddy List. Existing automatic backups or ignored sync, if already enabled on
 this device, can transfer the resulting list change. See [file formats](../src/favorites/climber-files.ts),
-[file controls](../options/climber-files.js), and [list policy](../src/background/climber-list-policy.js).
+[file controls](../options/climber-files.ts), and [list policy](../src/background/climber-list-policy.js).
 
 ## GitHub behavior and overwrite protection
 

@@ -27,21 +27,21 @@ export const srcFile = (f: string, projectRoot?: string | number) =>
 // Page bundles (options, popup) mix shared src/ modules with page-local files.
 // Page-local names resolve here; every other name falls back to src/.
 const PAGE_LOCAL_RELATIVE: Record<string, readonly [string, string]> = {
-    'options-main.js': ['options', 'options.js'],
+    'options-main.js': ['options', 'options.ts'],
     'garmin-settings-page.js': ['options', 'garmin.ts'],
     'garmin-inbox-page.js': ['options', 'inbox.ts'],
     'inbox-toolbar-setting-page.js': ['options', 'inbox-toolbar-setting.ts'],
-    'options-drafts.js': ['options', 'drafts.js'],
-    'options-drafts-page.js': ['options', 'drafts-page.js'],
-    'options-favorites.js': ['options', 'favorites.js'],
-    'options-favorites-page.js': ['options', 'favorites-page.js'],
-    'options-buddy-refresh.js': ['options', 'buddy-refresh.js'],
-    'options-ignored.js': ['options', 'ignored.js'],
-    'options-favorites-backup.js': ['options', 'favorites-backup.js'],
-    'options-utils.js': ['options', 'options-utils.js'],
+    'options-drafts.js': ['options', 'drafts.ts'],
+    'options-drafts-page.js': ['options', 'drafts-page.ts'],
+    'options-favorites.js': ['options', 'favorites.ts'],
+    'options-favorites-page.js': ['options', 'favorites-page.ts'],
+    'options-buddy-refresh.js': ['options', 'buddy-refresh.ts'],
+    'options-ignored.js': ['options', 'ignored.ts'],
+    'options-favorites-backup.js': ['options', 'favorites-backup.ts'],
+    'options-utils.js': ['options', 'options-utils.ts'],
     'popup-main.js': ['popup', 'popup.ts'],
     'photos-main.js': ['photos', 'photos.ts'],
-    'photos-guide.js': ['photos', 'guide.js'],
+    'photos-guide.js': ['photos', 'guide.ts'],
 };
 export function resolvePageSource(name: string, projectRoot?: string | number) {
     const base = typeof projectRoot === 'string' ? projectRoot : root;

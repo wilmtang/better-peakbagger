@@ -13,8 +13,8 @@ import { settingsReadCounts } from '../helpers/source-policies.mts';
 
 const FAIL_SOFT = Object.freeze({
     'photos/photos.ts': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
-    'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
-    'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
+    'options/options.ts': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
+    'options/favorites-page.ts': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.ts': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
     'src/ascent/ascent-gaia.ts': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
     'src/background/github-routes.js': [

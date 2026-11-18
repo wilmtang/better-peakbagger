@@ -3,20 +3,20 @@
 //
 // Better Peakbagger — entry point for the standalone Favorite climbers page.
 //
-// The list controller is options/favorites.js, unchanged. It only ever needed
+// The list controller is options/favorites.ts, unchanged. It only ever needed
 // its own elements, a way to report transient status, and a `save` that
 // persists the two settings it owns (the source choice and the buddy-removal
 // sync). This page supplies all three; the GitHub backup for the list lives on
 // the Settings page and is driven separately.
 
-import { settings as S } from '../src/settings/settings.ts';
-import { initFavorites } from './favorites.js';
-import { initIgnored } from './ignored.js';
-import { initClimberFiles } from './climber-files.js';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { settings as S, type SettingsData } from '../src/settings/settings.ts';
+import { initFavorites } from './favorites.ts';
+import { initIgnored } from './ignored.ts';
+import { initClimberFiles } from './climber-files.ts';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
 const extensionApi = (typeof browser !== 'undefined' && browser.storage) ? browser : chrome;
-const byId = id => document.getElementById(id);
+const byId = (id: string) => document.getElementById(id);
 
 const statusEl = byId('status');
 const statusErrorEl = byId('status-error');
@@ -28,7 +28,7 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
     'status-error': statusErrorEl,
     'status-error-text': statusErrorTextEl,
     'status-error-dismiss': statusErrorDismissEl,
-})) {
+}) && statusEl && statusErrorEl && statusErrorTextEl && statusErrorDismissEl) {
     const { flash, dismissStatus } = OptionsUtils.createStatusFlash({
         statusEl,
         statusErrorEl,
@@ -38,14 +38,14 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
 
     // The two settings this page owns are optimistic; on a write failure restore
     // the confirmed value and report it, the way the Settings page does.
-    let confirmed = null;
+    let confirmed: SettingsData | null = null;
     let settingsRevision = 0;
-    const accept = next => {
+    const accept = (next: SettingsData): void => {
         settingsRevision++;
         confirmed = { ...next };
         favorites.populate(next);
     };
-    const save = async patch => {
+    const save = async (patch: Partial<SettingsData>): Promise<SettingsData | null> => {
         const revision = ++settingsRevision;
         try {
             const next = await S.set(patch);
@@ -64,7 +64,7 @@ if (!OptionsUtils.logMissingElements('favorite climbers page', {
     initClimberFiles(extensionApi);
     S.subscribe(accept);
     const initialRevision = settingsRevision;
-    void S.get().then(settings => {
-        if (initialRevision === settingsRevision) accept(settings);
+    void S.get().then(loaded => {
+        if (initialRevision === settingsRevision) accept(loaded);
     });
 }

@@ -3,15 +3,15 @@
 //
 // Better Peakbagger — entry point for the standalone trip-report draft manager.
 //
-// The manager itself is options/drafts.js, unchanged: it only ever needed its
+// The manager itself is options/drafts.ts, unchanged: it only ever needed its
 // own nine elements and a way to report transient status, never anything else
 // on the Settings page. This page supplies both.
 
-import { initDrafts } from './drafts.js';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { initDrafts } from './drafts.ts';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
-const extensionApi = globalThis.browser || globalThis.chrome;
-const byId = id => document.getElementById(id);
+const extensionApi = (globalThis as { browser?: typeof chrome }).browser || globalThis.chrome;
+const byId = (id: string): HTMLElement | null => document.getElementById(id);
 
 const statusEl = byId('status');
 const statusErrorEl = byId('status-error');
@@ -23,7 +23,7 @@ if (!OptionsUtils.logMissingElements('draft manager page', {
     'status-error': statusErrorEl,
     'status-error-text': statusErrorTextEl,
     'status-error-dismiss': statusErrorDismissEl,
-})) {
+}) && statusEl && statusErrorEl && statusErrorTextEl && statusErrorDismissEl) {
     const { flash } = OptionsUtils.createStatusFlash({
         statusEl,
         statusErrorEl,

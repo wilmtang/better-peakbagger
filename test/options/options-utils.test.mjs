@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { optionsUtils as Utils } from '../../options/options-utils.js';
+import { optionsUtils as Utils } from '../../options/options-utils.ts';
 
 test('options busy runner rejects overlap and always clears its state', async () => {
     let busy = false;

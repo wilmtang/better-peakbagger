@@ -3,26 +3,106 @@
 //
 // Better Peakbagger — device-local trip-report draft manager.
 
-import { reportDrafts as Drafts } from '../src/reports/report-drafts.ts';
+import {
+    reportDrafts as Drafts,
+    type ParsedReportDraftKey,
+    type ReportDraftRecord,
+} from '../src/reports/report-drafts.ts';
 import { reportMarkup as Markup } from '../src/reports/report-markup.ts';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
-export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chrome, flash } = {}) => {
-    const store = extensionApi?.storage?.local;
+export type DraftsFlash = (message?: string, options?: { error?: boolean }) => unknown;
+
+export type DraftsExtensionApi = {
+    storage?: {
+        local?: {
+            get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+        };
+        onChanged?: {
+            addListener(listener: (changes: Record<string, unknown>, areaName: string) => void): void;
+        };
+    };
+    runtime: {
+        sendMessage(message: unknown): Promise<unknown>;
+    };
+} | typeof chrome;
+
+export interface InitDraftsOptions {
+    extensionApi?: DraftsExtensionApi;
+    flash?: DraftsFlash;
+}
+
+export interface DraftsController {
+    refresh(): Promise<void> | void;
+}
+
+interface DraftEntry {
+    key: string;
+    record: ReportDraftRecord;
+    parsed: ParsedReportDraftKey;
+}
+
+interface PendingDraftDelete {
+    record: ReportDraftRecord;
+    savedAt: number;
+    title: string;
+    timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    restoring: boolean;
+    deleting: boolean;
+    generation: string | null;
+}
+
+interface BulkDeleteEntry {
+    record: ReportDraftRecord;
+    generation: string | null;
+}
+
+interface PendingBulkDelete {
+    records: Map<string, BulkDeleteEntry>;
+    timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    restoring: boolean;
+    deleting: boolean;
+}
+
+interface DraftMutationItemResult {
+    draftKey: string;
+    deleted?: boolean;
+    restored?: boolean;
+    record?: ReportDraftRecord;
+    generation?: string;
+}
+
+interface DraftMutationResponse {
+    ok?: boolean;
+    deleted?: boolean;
+    restored?: boolean;
+    record?: ReportDraftRecord;
+    generation?: string;
+    results?: DraftMutationItemResult[];
+}
+
+export const initDrafts = ({
+    extensionApi = ((globalThis as { browser?: DraftsExtensionApi }).browser
+        || (globalThis as { chrome?: DraftsExtensionApi }).chrome),
+    flash = () => {},
+}: InitDraftsOptions = {}): DraftsController => {
+    const store = extensionApi?.storage?.local as {
+        get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+    } | undefined;
     const listEl = document.getElementById('drafts-list');
     const emptyEl = document.getElementById('drafts-empty');
     const deleteAllEl = document.getElementById('drafts-delete-all');
     const undoAllEl = document.getElementById('drafts-undo-all');
     const undoAllLabelEl = undoAllEl?.querySelector('span');
-    const undoAllButtonEl = document.getElementById('drafts-undo-all-button');
+    const undoAllButtonEl = document.getElementById('drafts-undo-all-button') as HTMLButtonElement | null;
     const confirmationEl = document.getElementById('drafts-delete-all-confirmation');
     const confirmationTitleEl = document.getElementById('drafts-delete-all-confirmation-title');
     const confirmationCancelEl = document.getElementById('drafts-delete-all-cancel');
     const confirmationConfirmEl = document.getElementById('drafts-delete-all-confirm');
     const copyFallbackEl = document.getElementById('drafts-copy-fallback');
-    const copyFallbackValueEl = document.getElementById('drafts-copy-fallback-value');
+    const copyFallbackValueEl = document.getElementById('drafts-copy-fallback-value') as HTMLTextAreaElement | null;
     const copyFallbackDismissEl = document.getElementById('drafts-copy-fallback-dismiss');
-    if (!store || OptionsUtils.logMissingElements('draft manager', {
+    if (!store || !extensionApi || OptionsUtils.logMissingElements('draft manager', {
         'drafts-list': listEl,
         'drafts-empty': emptyEl,
         'drafts-delete-all': deleteAllEl,
@@ -36,67 +116,84 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         'drafts-copy-fallback': copyFallbackEl,
         'drafts-copy-fallback-value': copyFallbackValueEl,
         'drafts-copy-fallback-dismiss': copyFallbackDismissEl,
-    })) return { refresh() {} };
+    }) || !listEl || !emptyEl || !deleteAllEl || !undoAllEl || !undoAllLabelEl
+        || !undoAllButtonEl || !confirmationEl || !confirmationTitleEl
+        || !confirmationCancelEl || !confirmationConfirmEl || !copyFallbackEl
+        || !copyFallbackValueEl || !copyFallbackDismissEl) {
+        return { refresh() {} };
+    }
     // Manual-copy recovery must not push the draft's original actions away.
     listEl.after(copyFallbackEl);
 
     const DAY_MS = 24 * 60 * 60 * 1000;
     const UNDO_MS = 6000;
-    const pendingDeletes = new Map();
-    let pendingBulk = null;
-    let currentDrafts = [];
+    const pendingDeletes = new Map<string, PendingDraftDelete>();
+    let pendingBulk: PendingBulkDelete | null = null;
+    let currentDrafts: DraftEntry[] = [];
     let refreshRevision = 0;
-    let refreshTimer = null;
-    let copyFallbackReturn = null;
-    const sendMutation = message => extensionApi.runtime.sendMessage(message);
+    let refreshTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    let copyFallbackReturn: { key: string; control: HTMLElement } | null = null;
+    const sendMutation = (message: Record<string, unknown>): Promise<DraftMutationResponse | undefined> =>
+        extensionApi.runtime.sendMessage(message) as Promise<DraftMutationResponse | undefined>;
 
-    const draftTitle = draft => {
-        const label = draft.record.label && typeof draft.record.label === 'object'
-            ? draft.record.label
-            : {};
-        const peak = typeof label.peak === 'string' ? label.peak.trim().slice(0, 200) : '';
-        const date = typeof label.date === 'string' ? label.date.trim().slice(0, 20) : '';
+    const draftTitle = (draft: DraftEntry): string => {
+        const rawLabel = draft.record.label;
+        const label = rawLabel && typeof rawLabel === 'object'
+            ? rawLabel as { peak?: unknown; date?: unknown }
+            : null;
+        const peak = typeof label?.peak === 'string' ? label.peak.trim().slice(0, 200) : '';
+        const date = typeof label?.date === 'string' ? label.date.trim().slice(0, 20) : '';
         const base = peak || Drafts.fallbackTitle(draft.parsed);
         return date ? `${base} · ${date}` : base;
     };
 
-    const markdownFor = record => record.mode === 'markdown' && typeof record.source === 'string'
-        ? record.source
-        : Markup.bracketToMarkdown(record.text);
+    const markdownFor = (record: ReportDraftRecord): string =>
+        record.mode === 'markdown' && typeof record.source === 'string'
+            ? record.source
+            : Markup.bracketToMarkdown(record.text);
 
-    const excerptFor = record => {
-        let source;
+    const excerptFor = (record: ReportDraftRecord): string => {
+        let source: string;
         try { source = markdownFor(record); }
         catch (error) { source = record.text; }
         const oneLine = String(source).replace(/\s+/g, ' ').trim();
         return oneLine.length > 160 ? `${oneLine.slice(0, 159)}…` : oneLine;
     };
 
-    const savedLabel = savedAt => new Date(savedAt).toLocaleString([], {
+    const savedLabel = (savedAt: number): string => new Date(savedAt).toLocaleString([], {
         month: 'short',
         day: 'numeric',
         hour: 'numeric',
         minute: '2-digit'
     });
 
-    const expiryLabel = record => {
+    const expiryLabel = (record: ReportDraftRecord): string => {
         const remaining = Drafts.remainingMs(record, Date.now());
         return remaining <= DAY_MS ? 'Expires today' : `Expires in ${Math.ceil(remaining / DAY_MS)} days`;
     };
 
-    const undoControlFor = key => [...listEl.children]
+    const listRows = (): HTMLElement[] => [...listEl.children] as HTMLElement[];
+
+    const undoControlFor = (key: string): HTMLElement | null | undefined => listRows()
         .find(item => item.dataset.draftKey === key)
-        ?.querySelector('[data-action="undo"]');
+        ?.querySelector<HTMLElement>('[data-action="undo"]');
 
-    const ownsRowFocus = key => document.activeElement === document.body
+    const ownsRowFocus = (key: string): boolean => document.activeElement === document.body
         || document.activeElement === listEl
-        || document.activeElement?.closest('.draft-item')?.dataset.draftKey === key;
+        || document.activeElement?.closest<HTMLElement>('.draft-item')?.dataset.draftKey === key;
 
-    const undoDelete = async key => {
+    const draftRowControl = (key: string | undefined): HTMLElement | null | undefined => {
+        if (!key) return null;
+        return listRows()
+            .find(item => item.dataset.draftKey === key)
+            ?.querySelector<HTMLElement>('a, button');
+    };
+
+    const undoDelete = async (key: string): Promise<void> => {
         const pending = pendingDeletes.get(key);
         if (!pending || pending.restoring) return;
         globalThis.clearTimeout(pending.timer);
-        pending.timer = null;
+        pending.timer = undefined;
         pending.restoring = true;
         render();
         try {
@@ -124,13 +221,13 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
-    const beginDelete = async draft => {
+    const beginDelete = async (draft: DraftEntry): Promise<void> => {
         if (pendingDeletes.has(draft.key)) return;
-        const pending = {
+        const pending: PendingDraftDelete = {
             record: draft.record,
             savedAt: draft.record.savedAt,
             title: draftTitle(draft),
-            timer: null,
+            timer: undefined,
             restoring: false,
             deleting: true,
             generation: null,
@@ -152,6 +249,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
                 if (ownsRowFocus(draft.key)) draftRowControl(draft.key)?.focus();
                 return;
             }
+            if (!result.record || !result.generation) throw new Error('draft delete failed');
             pending.record = result.record;
             pending.generation = result.generation;
             pending.deleting = false;
@@ -176,25 +274,21 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
-    const draftRowControl = key => [...listEl.children]
-        .find(item => item.dataset.draftKey === key)
-        ?.querySelector('a, button');
-
-    const dismissCopyFallback = ({ restoreFocus = true } = {}) => {
+    const dismissCopyFallback = ({ restoreFocus = true }: { restoreFocus?: boolean } = {}): void => {
         copyFallbackEl.hidden = true;
         copyFallbackValueEl.value = '';
         if (restoreFocus) {
             const control = copyFallbackReturn?.control?.isConnected
                 ? copyFallbackReturn.control
-                : [...listEl.children]
+                : listRows()
                     .find(item => item.dataset.draftKey === copyFallbackReturn?.key)
-                    ?.querySelector('[data-action="copy"]');
+                    ?.querySelector<HTMLElement>('[data-action="copy"]');
             control?.focus();
         }
         copyFallbackReturn = null;
     };
 
-    const showCopyFallback = (markdown, draft, control) => {
+    const showCopyFallback = (markdown: string, draft: DraftEntry, control: HTMLElement): void => {
         copyFallbackReturn = { key: draft.key, control };
         copyFallbackValueEl.value = markdown;
         copyFallbackEl.hidden = false;
@@ -211,8 +305,8 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         dismissCopyFallback();
     });
 
-    const copyDraft = async (draft, control) => {
-        let markdown;
+    const copyDraft = async (draft: DraftEntry, control: HTMLElement): Promise<void> => {
+        let markdown: string;
         try {
             markdown = markdownFor(draft.record);
         } catch {
@@ -224,17 +318,21 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             if (!clipboard || typeof clipboard.writeText !== 'function') throw new Error('Clipboard unavailable');
             await clipboard.writeText(markdown);
             if (!copyFallbackEl.hidden) dismissCopyFallback({ restoreFocus: false });
-            control.querySelector('span').textContent = 'Copied';
+            const label = control.querySelector('span');
+            if (label) label.textContent = 'Copied';
             flash('Copied');
             globalThis.setTimeout(() => {
-                if (control.isConnected) control.querySelector('span').textContent = 'Copy Markdown';
+                if (control.isConnected) {
+                    const resetLabel = control.querySelector('span');
+                    if (resetLabel) resetLabel.textContent = 'Copy Markdown';
+                }
             }, 1400);
         } catch {
             showCopyFallback(markdown, draft, control);
         }
     };
 
-    const renderDraftRow = draft => {
+    const renderDraftRow = (draft: DraftEntry): HTMLLIElement => {
         const title = draftTitle(draft);
         const item = document.createElement('li');
         item.className = 'draft-item';
@@ -263,7 +361,8 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         actions.className = 'draft-actions';
         const open = document.createElement('a');
         open.className = 'panel-button secondary';
-        open.href = Drafts.editUrl(draft.parsed);
+        const editHref = Drafts.editUrl(draft.parsed);
+        if (editHref) open.href = editHref;
         open.target = '_blank';
         open.rel = 'noopener';
         open.textContent = 'Open';
@@ -282,7 +381,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         return item;
     };
 
-    const renderDeletedRow = (key, pending) => {
+    const renderDeletedRow = (key: string, pending: PendingDraftDelete): { item: HTMLLIElement; savedAt: number } => {
         const item = document.createElement('li');
         item.className = 'draft-item draft-item-deleted';
         item.dataset.draftKey = key;
@@ -303,14 +402,19 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         return { item, savedAt: pending.savedAt };
     };
 
-    const render = () => {
+    const hideDeleteAllConfirmation = ({ restoreFocus = true }: { restoreFocus?: boolean } = {}): void => {
+        confirmationEl.hidden = true;
+        if (restoreFocus && deleteAllEl.isConnected && !deleteAllEl.hidden) deleteAllEl.focus();
+    };
+
+    const render = (): void => {
         const restoreFocus = OptionsUtils.listFocusRestorer(listEl, 'draftKey', () => {
             const target = listEl.hidden ? emptyEl : listEl;
             target.tabIndex = -1;
             return target;
         });
         const bulkKeys = new Set(pendingBulk ? pendingBulk.records.keys() : []);
-        const rows = currentDrafts
+        const rows: { savedAt: number; item: HTMLLIElement; fresh?: boolean }[] = currentDrafts
             .filter(draft => !pendingDeletes.has(draft.key) && !bulkKeys.has(draft.key))
             .map(draft => ({ savedAt: draft.record.savedAt, item: renderDraftRow(draft), fresh: true }));
         for (const [key, pending] of pendingDeletes) rows.push(renderDeletedRow(key, pending));
@@ -342,13 +446,14 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         restoreFocus();
     };
 
-    const refresh = async () => {
+    const refresh = async (): Promise<void> => {
         const revision = ++refreshRevision;
         try {
             const everything = await store.get(null);
             const now = Date.now();
             const validEntries = Object.entries(everything || {})
-                .filter(([key, record]) => key.startsWith(Drafts.PREFIX) && Drafts.validRecord(record));
+                .filter((entry): entry is [string, ReportDraftRecord] =>
+                    entry[0].startsWith(Drafts.PREFIX) && Drafts.validRecord(entry[1]));
             if (revision !== refreshRevision) return;
             const expiredEntries = validEntries
                 .filter(([, record]) => now - record.savedAt > Drafts.TTL_MS);
@@ -363,8 +468,12 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
             }
             if (revision !== refreshRevision) return;
             currentDrafts = validEntries
-                .filter(([key]) => !expiredKeys.includes(key) && Drafts.parseKey(key))
-                .map(([key, record]) => ({ key, record, parsed: Drafts.parseKey(key) }))
+                .filter(([key]) => !expiredKeys.includes(key))
+                .map(([key, record]) => {
+                    const parsed = Drafts.parseKey(key);
+                    return parsed ? { key, record, parsed } : null;
+                })
+                .filter((draft): draft is DraftEntry => draft !== null)
                 .sort((a, b) => b.record.savedAt - a.record.savedAt);
             render();
         } catch (error) {
@@ -375,15 +484,10 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
-    const hideDeleteAllConfirmation = ({ restoreFocus = true } = {}) => {
-        confirmationEl.hidden = true;
-        if (restoreFocus && deleteAllEl.isConnected && !deleteAllEl.hidden) deleteAllEl.focus();
-    };
-
     // The native confirm() cannot follow the extension's dark theme, cannot be
     // styled, and blocks the page. This is the third host for the in-page block
     // the favorites mirror and the settings import already use.
-    const askDeleteAll = () => {
+    const askDeleteAll = (): void => {
         const count = currentDrafts.filter(draft => !pendingDeletes.has(draft.key)).length;
         if (!count || pendingBulk) return;
         confirmationTitleEl.textContent = count === 1
@@ -393,27 +497,30 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         confirmationConfirmEl.focus();
     };
 
-    const beginDeleteAll = async () => {
+    const beginDeleteAll = async (): Promise<void> => {
         if (pendingBulk) return;
-        const records = new Map(currentDrafts
+        const records = new Map<string, BulkDeleteEntry>(currentDrafts
             .filter(draft => !pendingDeletes.has(draft.key))
-            .map(draft => [draft.key, draft.record]));
+            .map(draft => [draft.key, { record: draft.record, generation: null }]));
         if (!records.size) return;
         hideDeleteAllConfirmation({ restoreFocus: false });
-        const pending = { records, timer: null, restoring: false, deleting: true };
+        const pending: PendingBulkDelete = { records, timer: undefined, restoring: false, deleting: true };
         pendingBulk = pending;
         render();
         try {
             const result = await sendMutation({
                 type: 'REPORT_DRAFT_DELETE_MANY',
-                entries: [...records].map(([draftKey, record]) => ({
+                entries: [...records].map(([draftKey, { record }]) => ({
                     draftKey,
                     expectedGeneration: record[Drafts.GENERATION_FIELD] || null,
                     expectedSavedAt: record.savedAt,
                 })),
             });
-            if (!result?.ok) throw new Error('draft bulk delete failed');
-            const deleted = result.results.filter(item => item.deleted);
+            if (!result?.ok || !Array.isArray(result.results)) throw new Error('draft bulk delete failed');
+            const deleted = result.results.filter(
+                (item): item is DraftMutationItemResult & { record: ReportDraftRecord; generation: string } =>
+                    Boolean(item.deleted && item.record && item.generation),
+            );
             pending.records = new Map(deleted.map(item => [item.draftKey, {
                 record: item.record,
                 generation: item.generation,
@@ -451,11 +558,11 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
         }
     };
 
-    const undoDeleteAll = async () => {
+    const undoDeleteAll = async (): Promise<void> => {
         if (!pendingBulk || pendingBulk.restoring) return;
         const pending = pendingBulk;
         globalThis.clearTimeout(pending.timer);
-        pending.timer = null;
+        pending.timer = undefined;
         pending.restoring = true;
         render();
         try {
@@ -467,7 +574,7 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
                     record: value.record,
                 })),
             });
-            if (!result?.ok) throw new Error('draft bulk restore failed');
+            if (!result?.ok || !Array.isArray(result.results)) throw new Error('draft bulk restore failed');
             if (pendingBulk === pending) pendingBulk = null;
             await refresh();
             const restored = result.results.filter(item => item.restored).length;
@@ -495,8 +602,11 @@ export const initDrafts = ({ extensionApi = globalThis.browser || globalThis.chr
     });
     undoAllButtonEl.addEventListener('click', () => { void undoDeleteAll(); });
 
-    if (extensionApi.storage.onChanged) {
-        extensionApi.storage.onChanged.addListener((changes, area) => {
+    const storageOnChanged = extensionApi.storage?.onChanged as {
+        addListener?: (listener: (changes: Record<string, unknown>, areaName: string) => void) => void;
+    } | undefined;
+    if (storageOnChanged?.addListener) {
+        storageOnChanged.addListener((changes, area) => {
             if (area !== 'local' || !Object.keys(changes).some(key => key.startsWith(Drafts.PREFIX))) return;
             globalThis.clearTimeout(refreshTimer);
             refreshTimer = globalThis.setTimeout(() => { void refresh(); }, 20);

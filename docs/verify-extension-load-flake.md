@@ -29,7 +29,7 @@ between runs.
 The Buddy import fallback opens a helper tab and waits for a real round trip: a
 blank tab, an extension-helper navigation, Peakbagger's own Buddy List over the
 network, then the content script that writes the cache. `SITE_TAB_REFRESH_MS`
-in [`options/favorites.js`](../options/favorites.js) budgets 8s for all of it,
+in [`options/favorites.ts`](../options/favorites.ts) budgets 8s for all of it,
 and that budget was the natural suspect.
 
 It is not the cause. With the verifier instrumented to time the fallback from
@@ -48,7 +48,7 @@ showed `fallbackImport: false` alongside an `importStatus` of "Merge complete: 6
 added, 0 removed" and all six favorites present. The state was right; the probe
 had already given up.
 
-A controlled A/B — only `options/favorites.js` swapped between the flat budget
+A controlled A/B — only `options/favorites.ts` swapped between the flat budget
 and a progress-extended one, same load, same run count — produced baseline 2/3
 and 3/5 against patched 1/3 and 1/5. No evidence the change helped, a hint it
 hurt, nothing conclusive either way.

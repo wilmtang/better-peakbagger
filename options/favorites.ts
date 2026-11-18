@@ -3,14 +3,22 @@
 //
 // Better Peakbagger — Favorite climbers settings manager.
 
-import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.ts';
+import {
+    favoriteClimbers as F,
+    type BuddyCache,
+    type BuddyEntry,
+    type FavoriteClimberEntry,
+    type FavoriteClimbersList,
+    type FavoriteSourceKind,
+} from '../src/favorites/favorite-climbers.ts';
 import { beginBuddyCacheRead, publishBuddyCache } from '../src/favorites/buddy-cache.ts';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.ts';
 import { isPeakbaggerPageOrigin, PEAKBAGGER_HOSTS, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.ts';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.ts';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.ts';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { runtimeMessage as RuntimeMessage, type RuntimeMessageResponse } from '../src/ui/runtime-message.ts';
+import type { SettingsData } from '../src/settings/settings.ts';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
 const UNDO_MS = 6000;
 // Covers the helper tab's whole round trip: a blank tab, an extension-helper
@@ -21,41 +29,119 @@ const UNDO_MS = 6000;
 // replaced it with a progress-extended budget on the assumption it was firing,
 // which measurement showed it was not.
 const SITE_TAB_REFRESH_MS = 8000;
-const SOURCE_FILTERS = ['all', 'buddy', 'manual'];
+const SOURCE_FILTERS = ['all', 'buddy', 'manual'] as const;
 
-export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {}) => {
+type FavoritesSource = 'buddies' | 'custom';
+type FavoritesSourceFilter = (typeof SOURCE_FILTERS)[number];
+
+export interface FavoritesFlashOptions {
+    error?: boolean;
+}
+
+export interface InitFavoritesOptions {
+    extensionApi?: typeof chrome;
+    flash?: (message?: string, options?: FavoritesFlashOptions) => number | void;
+    dismissStatus?: (expectedToken?: number) => boolean | void;
+    save?: (patch: Partial<SettingsData>) => Promise<unknown>;
+}
+
+export interface FavoritesController {
+    populate(settings?: Partial<SettingsData> | null): void;
+}
+
+interface BuddyFailureState {
+    ownerCid: number | null;
+    fetchedAt: number;
+    failedAt: number;
+}
+
+interface PendingDelete {
+    entry: FavoriteClimberEntry;
+    timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+}
+
+interface PendingBulkReplacement {
+    snapshot: FavoriteClimbersList;
+    message: string;
+    timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    appliedSignature: string | undefined;
+}
+
+interface PendingReplacementState {
+    replacement: FavoriteClimbersList;
+    favoritesSignature: string;
+    added: number;
+    removed: number;
+}
+
+interface FavoritesMutateResponse extends RuntimeMessageResponse {
+    ok?: boolean;
+    favorites?: FavoriteClimbersList;
+    signature?: string;
+    details?: {
+        added?: number;
+        removed?: number;
+        skipped?: number;
+    };
+    error?: {
+        code?: string;
+        message?: string;
+    };
+}
+
+interface BuddyPageReadResponse {
+    url?: string;
+    cache?: {
+        entries?: unknown;
+        [key: string]: unknown;
+    } | null;
+}
+
+interface CompletionSummaryCounts {
+    added: number;
+    removed: number;
+    total: number;
+    skipped?: number;
+}
+
+export const initFavorites = ({
+    extensionApi,
+    flash = () => 0,
+    dismissStatus,
+    save = async () => {},
+}: InitFavoritesOptions = {}): FavoritesController => {
     const store = extensionApi?.storage?.local;
-    const sourceEls = Array.from(document.querySelectorAll('input[name="favorites-source"]'));
-    const buddyPanelEl = document.getElementById('favorites-buddy-panel');
-    const customPanelEl = document.getElementById('favorites-custom-panel');
-    const buddyStatusEl = document.getElementById('favorites-buddy-status');
-    const refreshBuddiesEl = document.getElementById('favorites-refresh-buddies');
-    const addFormEl = document.getElementById('favorites-add-form');
-    const addInputEl = document.getElementById('favorites-add-input');
-    const addButtonEl = document.getElementById('favorites-add-button');
-    const limitEl = document.getElementById('favorites-limit');
-    const sortEl = document.getElementById('favorites-sort');
-    const searchEl = document.getElementById('favorites-search');
+    const sourceEls = Array.from(document.querySelectorAll<HTMLInputElement>('input[name="favorites-source"]'));
+    const buddyPanelEl = document.getElementById('favorites-buddy-panel') as HTMLElement;
+    const customPanelEl = document.getElementById('favorites-custom-panel') as HTMLElement;
+    const buddyStatusEl = document.getElementById('favorites-buddy-status') as HTMLElement;
+    const refreshBuddiesEl = document.getElementById('favorites-refresh-buddies') as HTMLButtonElement;
+    const addFormEl = document.getElementById('favorites-add-form') as HTMLFormElement;
+    const addInputEl = document.getElementById('favorites-add-input') as HTMLInputElement;
+    const addButtonEl = document.getElementById('favorites-add-button') as HTMLButtonElement;
+    const limitEl = document.getElementById('favorites-limit') as HTMLElement;
+    const sortEl = document.getElementById('favorites-sort') as HTMLSelectElement;
+    const searchEl = document.getElementById('favorites-search') as HTMLInputElement;
     const sourceFilterEls = SOURCE_FILTERS.map(value =>
-        document.querySelector(`[data-favorites-source-filter="${value}"]`));
-    const countEl = document.getElementById('favorites-count');
-    const mergeEl = document.getElementById('favorites-merge-buddies');
-    const mirrorEl = document.getElementById('favorites-mirror-buddies');
-    const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy');
-    const importStatusEl = document.getElementById('favorites-import-status');
-    const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation');
-    const mirrorConfirmationTitleEl = document.getElementById('favorites-mirror-confirmation-title');
-    const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact');
-    const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary');
-    const mirrorCancelEl = document.getElementById('favorites-mirror-cancel');
-    const mirrorConfirmEl = document.getElementById('favorites-mirror-confirm');
-    const emptyEl = document.getElementById('favorites-empty');
-    const listEl = document.getElementById('favorites-list');
-    const undoAllEl = document.getElementById('favorites-undo-all');
-    const undoMessageEl = document.getElementById('favorites-undo-message');
-    const undoAllButtonEl = document.getElementById('favorites-undo-all-button');
+        document.querySelector(`[data-favorites-source-filter="${value}"]`) as HTMLButtonElement);
+    const countEl = document.getElementById('favorites-count') as HTMLElement;
+    const mergeEl = document.getElementById('favorites-merge-buddies') as HTMLButtonElement;
+    const mirrorEl = document.getElementById('favorites-mirror-buddies') as HTMLButtonElement;
+    const removeWithBuddyEl = document.getElementById('favorites-remove-with-buddy') as HTMLInputElement;
+    const importStatusEl = document.getElementById('favorites-import-status') as HTMLElement;
+    const mirrorConfirmationEl = document.getElementById('favorites-mirror-confirmation') as HTMLElement;
+    const mirrorConfirmationTitleEl = document.getElementById('favorites-mirror-confirmation-title') as HTMLElement;
+    const mirrorConfirmationImpactEl = document.getElementById('favorites-mirror-confirmation-impact') as HTMLElement;
+    const mirrorConfirmationSummaryEl = document.getElementById('favorites-mirror-confirmation-summary') as HTMLElement;
+    const mirrorCancelEl = document.getElementById('favorites-mirror-cancel') as HTMLButtonElement;
+    const mirrorConfirmEl = document.getElementById('favorites-mirror-confirm') as HTMLButtonElement;
+    const emptyEl = document.getElementById('favorites-empty') as HTMLElement;
+    const listEl = document.getElementById('favorites-list') as HTMLElement;
+    const undoAllEl = document.getElementById('favorites-undo-all') as HTMLElement;
+    const undoMessageEl = document.getElementById('favorites-undo-message') as HTMLElement;
+    const undoAllButtonEl = document.getElementById('favorites-undo-all-button') as HTMLButtonElement;
 
-    if (!store || OptionsUtils.logMissingElements('favorite climbers', {
+    if (!extensionApi || !store || OptionsUtils.logMissingElements('favorite climbers', {
         'input[name="favorites-source"]': sourceEls,
         'favorites-buddy-panel': buddyPanelEl,
         'favorites-custom-panel': customPanelEl,
@@ -88,27 +174,27 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
 
     limitEl.textContent = F.LIMIT.toLocaleString('en-US');
 
-    let source = 'buddies';
-    let sourceFilter = 'all';
-    let favorites = F.cleanFavorites(null);
-    let buddyCache = null;
-    let buddyState = 'idle';
-    let buddyError = null;
-    let buddyFailure = null;
-    let buddyErrorFlashToken = null;
-    let importBuddyError = null;
+    let source: FavoritesSource = 'buddies';
+    let sourceFilter: FavoritesSourceFilter = 'all';
+    let favorites: FavoriteClimbersList = F.cleanFavorites(null);
+    let buddyCache: BuddyCache | null = null;
+    let buddyState: 'idle' | 'loading' = 'idle';
+    let buddyError: unknown = null;
+    let buddyFailure: BuddyFailureState | null = null;
+    let buddyErrorFlashToken: number | null = null;
+    let importBuddyError: unknown = null;
     let buddyOrigin = PEAKBAGGER_ORIGIN;
-    let refreshPromise = null;
+    let refreshPromise: Promise<BuddyCache | null> | null = null;
     let refreshRevision = 0;
-    let refreshTimer = null;
-    let pendingBulk = null;
-    let pendingReplacement = null;
+    let refreshTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    let pendingBulk: PendingBulkReplacement | null = null;
+    let pendingReplacement: PendingReplacementState | null = null;
     let replacementBusy = false;
-    const pendingDeletes = new Map();
+    const pendingDeletes = new Map<number, PendingDelete>();
 
     const send = RuntimeMessage.bind(extensionApi);
 
-    const relativeAge = fetchedAt => {
+    const relativeAge = (fetchedAt: number): string => {
         const elapsed = Math.max(0, Date.now() - fetchedAt);
         const minutes = Math.floor(elapsed / 60000);
         if (minutes < 1) return 'updated just now';
@@ -119,46 +205,48 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return `updated ${days} day${days === 1 ? '' : 's'} ago`;
     };
 
-    const setBusy = busy => {
+    const setBusy = (busy: boolean): void => {
         refreshBuddiesEl.disabled = busy;
         mergeEl.disabled = busy;
         mirrorEl.disabled = busy;
     };
 
-    const appendPeakbaggerLink = (target, {
+    const appendPeakbaggerLink = (target: HTMLElement, {
         label = 'Open Buddy List',
         href = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN),
-    } = {}) => {
+    }: { label?: string; href?: string | null } = {}): void => {
         const link = document.createElement('a');
-        link.href = href;
+        link.href = href ?? '';
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = label;
         target.append(' ', link);
     };
 
-    const appendBuddyRecovery = (error, target = buddyStatusEl) => {
+    const appendBuddyRecovery = (error: unknown, target: HTMLElement = buddyStatusEl): void => {
         const recovery = PeakbaggerError.recovery(error, {
-            url: F.signedInBuddyListUrl(buddyOrigin),
+            url: F.signedInBuddyListUrl(buddyOrigin) ?? undefined,
             label: 'Open Buddy List',
         });
         if (recovery) appendPeakbaggerLink(target, recovery);
     };
 
-    const renderImportStatus = (message = '', error = null) => {
+    const renderImportStatus = (message = '', error: unknown = null): void => {
         importBuddyError = error;
         importStatusEl.textContent = message;
         importStatusEl.hidden = !message;
         if (message && error) appendBuddyRecovery(error, importStatusEl);
     };
 
-    const flashBuddyError = () => {
-        buddyErrorFlashToken = flash(PeakbaggerError.message(buddyError), { error: true });
+    const flashBuddyError = (): void => {
+        const token = flash(PeakbaggerError.message(buddyError), { error: true });
+        buddyErrorFlashToken = typeof token === 'number' ? token : null;
     };
 
-    const acceptBuddyCache = raw => {
+    const acceptBuddyCache = (raw: unknown): void => {
         const next = F.cleanBuddyCache(raw);
-        if (next && buddyFailure && Array.isArray(raw.entries) && next.entries.length === raw.entries.length
+        const rawEntries = raw && typeof raw === 'object' ? (raw as { entries?: unknown }).entries : null;
+        if (next && buddyFailure && Array.isArray(rawEntries) && next.entries.length === rawEntries.length
             && (buddyFailure.ownerCid == null || next.ownerCid === buddyFailure.ownerCid)
             && next.fetchedAt > buddyFailure.fetchedAt && next.fetchedAt >= buddyFailure.failedAt) {
             const recoveredError = buddyError;
@@ -171,9 +259,9 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         buddyCache = next;
     };
 
-    const favoritesSignature = () => F.backupSignature(favorites);
+    const favoritesSignature = (): string => F.backupSignature(favorites);
 
-    const completionCopy = (operation, { added, removed, total, skipped = 0 }) => {
+    const completionCopy = (operation: string, { added, removed, total, skipped = 0 }: CompletionSummaryCounts): string => {
         const climbers = total === 1 ? 'climber' : 'climbers';
         const skippedCopy = skipped > 0
             ? ` ${skipped} ${skipped === 1 ? 'buddy was' : 'buddies were'} not added because custom favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
@@ -181,7 +269,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return `${operation} complete: ${added} added, ${removed} removed. Custom list now has ${total} ${climbers}.${skippedCopy}`;
     };
 
-    const setReplacementBusy = busy => {
+    const setReplacementBusy = (busy: boolean): void => {
         replacementBusy = busy;
         for (const radio of sourceEls) radio.disabled = busy;
         mirrorCancelEl.disabled = busy;
@@ -194,20 +282,23 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         }
     };
 
-    const dismissReplacementConfirmation = ({ restoreFocus = false } = {}) => {
+    const dismissReplacementConfirmation = ({ restoreFocus = false }: { restoreFocus?: boolean } = {}): boolean => {
         if (replacementBusy) return false;
         pendingReplacement = null;
         mirrorConfirmationEl.hidden = true;
         if (restoreFocus && !mirrorEl.disabled) {
             const disclosure = mirrorEl.closest('details:not([open])');
-            (disclosure?.querySelector('summary') || mirrorEl).focus();
+            (disclosure?.querySelector<HTMLElement>('summary') || mirrorEl).focus();
         }
         return true;
     };
 
     // Restore lives on the Backup & sync surface now; this confirmation is only
     // the mirror action's, so it no longer branches on kind or reparents.
-    const showReplacementConfirmation = ({ replacement }, { focus = true } = {}) => {
+    const showReplacementConfirmation = (
+        { replacement }: { kind?: string; replacement: FavoriteClimbersList },
+        { focus = true }: { focus?: boolean } = {},
+    ): void => {
         const { added, removed } = F.membershipChanges(favorites.entries, replacement.entries);
         const total = replacement.entries.length;
         const addedNoun = added === 1 ? 'buddy' : 'buddies';
@@ -225,7 +316,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         if (focus) mirrorCancelEl.focus();
     };
 
-    const renderBuddyStatus = () => {
+    const renderBuddyStatus = (): void => {
         buddyStatusEl.textContent = '';
         if (buddyState === 'loading') {
             buddyStatusEl.textContent = 'Refreshing…';
@@ -248,12 +339,12 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         }
     };
 
-    const sourceLabel = value => value === 'buddy' ? 'Buddy' : 'Manual';
-    const addedLabel = addedAt => new Date(addedAt).toLocaleDateString([], {
-        year: 'numeric', month: 'short', day: 'numeric'
+    const sourceLabel = (value: FavoriteSourceKind): string => value === 'buddy' ? 'Buddy' : 'Manual';
+    const addedLabel = (addedAt: number): string => new Date(addedAt).toLocaleDateString([], {
+        year: 'numeric', month: 'short', day: 'numeric',
     });
 
-    const renderFavoriteRow = entry => {
+    const renderFavoriteRow = (entry: FavoriteClimberEntry): HTMLLIElement => {
         const item = document.createElement('li');
         item.className = 'favorite-item';
         item.dataset.cid = String(entry.cid);
@@ -261,7 +352,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         body.className = 'favorite-body';
         const name = document.createElement('a');
         name.className = 'favorite-name';
-        name.href = F.climberPageUrl(entry.cid);
+        name.href = F.climberPageUrl(entry.cid) ?? '';
         name.target = '_blank';
         name.rel = 'noopener noreferrer';
         name.textContent = entry.name;
@@ -283,7 +374,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return item;
     };
 
-    const renderDeletedRow = entry => {
+    const renderDeletedRow = (entry: FavoriteClimberEntry): HTMLLIElement => {
         const item = document.createElement('li');
         item.className = 'favorite-item favorite-item-deleted';
         item.dataset.cid = String(entry.cid);
@@ -300,19 +391,18 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return item;
     };
 
-    const renderList = () => {
+    const renderList = (): void => {
         const restoreFocus = OptionsUtils.listFocusRestorer(listEl, 'cid', () =>
             customPanelEl.hidden ? sourceEls.find(radio => radio.checked) : searchEl);
         const compare = sortEl.value === 'name' ? F.byName : F.byAddedAtDesc;
         const query = searchEl.value.trim();
-        const matchesSource = entry => sourceFilter === 'all' || entry.source === sourceFilter;
-        const sourceCounts = favorites.entries.reduce((counts, entry) => {
+        const matchesSource = (entry: FavoriteClimberEntry): boolean => sourceFilter === 'all' || entry.source === sourceFilter;
+        const sourceCounts = favorites.entries.reduce<Record<FavoritesSourceFilter, number>>((counts, entry) => {
             counts[entry.source]++;
             return counts;
-        }, { buddy: 0, manual: 0 });
-        sourceCounts.all = favorites.entries.length;
+        }, { all: favorites.entries.length, buddy: 0, manual: 0 });
         for (const button of sourceFilterEls) {
-            const value = button.dataset.favoritesSourceFilter;
+            const value = button.dataset.favoritesSourceFilter as FavoritesSourceFilter;
             const count = sourceCounts[value];
             const countNode = button.querySelector('[data-favorites-source-count]');
             if (countNode) countNode.textContent = count.toLocaleString('en-US');
@@ -330,7 +420,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             .filter(entry => !pendingDeletes.has(entry.cid))
             .filter(matchesSource)
             .map(entry => ({ entry, score: F.fuzzyScore(entry, query) }))
-            .filter(row => row.score != null);
+            .filter((row): row is { entry: FavoriteClimberEntry; score: number } => row.score != null);
         activeRows.sort((left, right) => query
             ? left.score - right.score || compare(left.entry, right.entry)
             : compare(left.entry, right.entry));
@@ -368,7 +458,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         restoreFocus();
     };
 
-    const renderPanels = () => {
+    const renderPanels = (): void => {
         for (const radio of sourceEls) radio.checked = radio.value === source;
         buddyPanelEl.hidden = source !== 'buddies';
         customPanelEl.hidden = source !== 'custom';
@@ -376,21 +466,22 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         renderList();
     };
 
-    const mutateFavorites = async mutation => {
-        const response = await send({ type: F.MUTATION_MESSAGE_TYPE, mutation });
+    const mutateFavorites = async (mutation: Record<string, unknown>): Promise<FavoritesMutateResponse> => {
+        const response = await send<FavoritesMutateResponse>({ type: F.MUTATION_MESSAGE_TYPE, mutation });
         if (response?.favorites) {
             favorites = F.cleanFavorites(response.favorites);
             renderList();
         }
         if (!response?.ok) {
-            const error = new Error(response?.error?.message || 'Favorite climbers are unavailable. Try again.');
-            error.code = response?.error?.code || 'unavailable';
-            throw error;
+            throw Object.assign(
+                new Error(response?.error?.message || 'Favorite climbers are unavailable. Try again.'),
+                { code: response?.error?.code || 'unavailable' },
+            );
         }
         return response;
     };
 
-    const refresh = async () => {
+    const refresh = async (): Promise<void> => {
         const revision = ++refreshRevision;
         try {
             const values = await store.get([F.FAVORITES_KEY, F.BUDDY_CACHE_KEY]);
@@ -401,17 +492,17 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             if (pendingReplacement && !replacementBusy) {
                 showReplacementConfirmation(pendingReplacement, { focus: false });
             }
-        } catch (error) {
+        } catch {
             if (revision !== refreshRevision) return;
             flash('Favorite climbers are unavailable', { error: true });
         }
     };
 
-    const loadSignedInBuddies = async () => {
-        const url = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN);
+    const loadSignedInBuddies = async (): Promise<{ ownerCid: number; entries: BuddyEntry[]; fetchedAt?: number }> => {
+        const url = F.signedInBuddyListUrl(PEAKBAGGER_ORIGIN) ?? '';
         const result = await fetchPeakbaggerDocument(url, { kind: 'buddies' });
         if (result.kind !== 'ok') {
-            if (['signed-out', 'cloudflare'].includes(result.error?.code)) {
+            if (result.error?.code === 'signed-out' || result.error?.code === 'cloudflare') {
                 const fallback = await loadBuddiesInSiteTab();
                 if (fallback.cache) return fallback.cache;
                 // Only an unavailable fallback leaves the original diagnosis
@@ -437,7 +528,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
     // failure the user needs told about.
     const UNAVAILABLE = { cache: null, timedOut: false };
 
-    const loadBuddiesInSiteTab = async () => {
+    const loadBuddiesInSiteTab = async (): Promise<{ cache: BuddyCache | null; timedOut: boolean }> => {
         const tabs = extensionApi.tabs;
         const changes = extensionApi.storage.onChanged;
         let helperUrl = extensionApi.runtime.getURL?.('options/buddy-refresh.html');
@@ -451,19 +542,20 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         // This keeps first-party cookies/clearance on the user's working host.
         if (tabs.query) {
             try {
-                const siteQuery = { url: [...PEAKBAGGER_HOSTS].map(host => `https://${host}/*`) };
+                const siteQuery: chrome.tabs.QueryInfo = { url: [...PEAKBAGGER_HOSTS].map(host => `https://${host}/*`) };
                 const siteTabs = await (promiseTabs
                     ? tabs.query(siteQuery)
-                    : new Promise((resolve, reject) => tabs.query(siteQuery, result => {
+                    : new Promise<chrome.tabs.Tab[]>((resolve, reject) => tabs.query(siteQuery, result => {
                         if (extensionApi.runtime.lastError) reject(new Error('Site tabs are unavailable.'));
                         else resolve(result);
                     })));
-                const buddyTab = tab => {
-                    const url = new URL(tab.url);
+                const buddyTab = (candidate: chrome.tabs.Tab & { url: string }): boolean => {
+                    const url = new URL(candidate.url);
                     return /^\/report\/report\.aspx$/i.test(url.pathname) && url.searchParams.get('r') === 'b';
                 };
-                const candidates = siteTabs.filter(tab => {
-                    try { return isPeakbaggerPageOrigin(new URL(tab.url).origin); }
+                const candidates = siteTabs.filter((candidate): candidate is chrome.tabs.Tab & { url: string } => {
+                    if (!candidate.url) return false;
+                    try { return isPeakbaggerPageOrigin(new URL(candidate.url).origin); }
                     catch { return false; }
                 }).sort((a, b) => Number(buddyTab(b)) - Number(buddyTab(a))
                     || Number(!!b.active) - Number(!!a.active) || (b.lastAccessed || 0) - (a.lastAccessed || 0));
@@ -472,7 +564,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         }
         if (buddyOrigin !== PEAKBAGGER_ORIGIN) helperUrl += `#origin=${encodeURIComponent(buddyOrigin)}`;
         const buddyUrl = F.signedInBuddyListUrl(buddyOrigin);
-        const createTab = details => promiseTabs
+        const createTab = (details: chrome.tabs.CreateProperties): Promise<chrome.tabs.Tab | undefined> => promiseTabs
             ? tabs.create(details)
             : new Promise((resolve, reject) => {
                 tabs.create(details, created => {
@@ -481,7 +573,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
                     else resolve(created);
                 });
             });
-        const removeTab = tabId => {
+        const removeTab = (tabId: number): void => {
             if (promiseTabs) {
                 void tabs.remove(tabId).catch(() => {});
                 return;
@@ -490,65 +582,70 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         };
 
         const startedAt = Date.now();
-        let listener = null;
-        let timer = null;
-        let tab = null;
-        let updatedListener = null;
+        let listener: ((changes: Record<string, chrome.storage.StorageChange>, area: string) => void) | null = null;
+        let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+        let tab: chrome.tabs.Tab | null = null;
+        let updatedListener: ((tabId: number, change: chrome.tabs.OnUpdatedInfo) => void) | null = null;
         let finished = false;
         let reading = false;
         let readAgain = false;
-        let readHelper;
-        const cachePromise = new Promise(resolve => {
-            const finish = value => {
-                if (finished) return;
-                finished = true;
-                if (timer != null) globalThis.clearTimeout(timer);
-                if (listener) changes.removeListener(listener);
-                listener = null;
-                timer = null;
-                resolve(value);
-            };
-            readHelper = async () => {
-                if (finished || !Number.isInteger(tab?.id)) return;
-                if (reading) { readAgain = true; return; }
-                reading = true;
-                try {
-                    const message = { type: F.BUDDY_PAGE_READ_TYPE };
-                    const response = await (promiseTabs ? tabs.sendMessage(tab.id, message)
-                        : new Promise((resolveRead, rejectRead) => tabs.sendMessage(tab.id, message, reply => {
+        let resolveCache!: (value: BuddyCache | null) => void;
+        const cachePromise = new Promise<BuddyCache | null>(resolve => {
+            resolveCache = resolve;
+        });
+        const finish = (value: BuddyCache | null): void => {
+            if (finished) return;
+            finished = true;
+            if (timer != null) globalThis.clearTimeout(timer);
+            if (listener) changes.removeListener(listener);
+            listener = null;
+            timer = null;
+            resolveCache(value);
+        };
+        const readHelper = async (): Promise<void> => {
+            const tabId = tab?.id;
+            if (finished || typeof tabId !== 'number' || !Number.isInteger(tabId)) return;
+            if (reading) { readAgain = true; return; }
+            reading = true;
+            try {
+                const message = { type: F.BUDDY_PAGE_READ_TYPE };
+                const response = await (promiseTabs
+                    ? tabs.sendMessage<typeof message, BuddyPageReadResponse | null | undefined>(tabId, message)
+                    : new Promise<BuddyPageReadResponse | null | undefined>((resolveRead, rejectRead) =>
+                        tabs.sendMessage<typeof message, BuddyPageReadResponse | null | undefined>(tabId, message, reply => {
                             if (extensionApi.runtime.lastError) rejectRead(new Error('Buddy List is not ready.'));
                             else resolveRead(reply);
                         })));
-                    const cache = F.cleanBuddyCache(response?.cache);
-                    if (response?.url === buddyUrl && cache && cache.fetchedAt >= startedAt
-                        && Array.isArray(response.cache.entries)
-                        && cache.entries.length === response.cache.entries.length) finish(cache);
-                } catch { /* the helper can still be navigating or challenged */ }
-                finally {
-                    reading = false;
-                    if (readAgain) { readAgain = false; void readHelper(); }
-                }
-            };
-            listener = (updates, area) => {
-                if (area !== 'local' || !updates[F.BUDDY_CACHE_KEY]) return;
-                void readHelper();
-            };
-            changes.addListener(listener);
-            if (tabs.onUpdated?.addListener && tabs.onUpdated?.removeListener) {
-                updatedListener = (tabId, change) => {
-                    if (tabId === tab?.id && change.status === 'complete') void readHelper();
-                };
-                tabs.onUpdated.addListener(updatedListener);
+                const cache = F.cleanBuddyCache(response?.cache);
+                if (response?.url === buddyUrl && cache && cache.fetchedAt >= startedAt
+                    && Array.isArray(response?.cache?.entries)
+                    && cache.entries.length === response.cache.entries.length) finish(cache);
+            } catch { /* the helper can still be navigating or challenged */ }
+            finally {
+                reading = false;
+                if (readAgain) { readAgain = false; void readHelper(); }
             }
-            timer = globalThis.setTimeout(() => finish(null), SITE_TAB_REFRESH_MS);
-        });
+        };
+        listener = (updates, area) => {
+            if (area !== 'local' || !updates[F.BUDDY_CACHE_KEY]) return;
+            void readHelper();
+        };
+        changes.addListener(listener);
+        if (tabs.onUpdated && typeof tabs.onUpdated.addListener === 'function'
+            && typeof tabs.onUpdated.removeListener === 'function') {
+            updatedListener = (tabId, change) => {
+                if (tabId === tab?.id && change.status === 'complete') void readHelper();
+            };
+            tabs.onUpdated.addListener(updatedListener);
+        }
+        timer = globalThis.setTimeout(() => finish(null), SITE_TAB_REFRESH_MS);
 
         try {
             // Start at the packaged helper itself. A provisional about:blank
             // followed by an immediate update can strand Chrome 128 at loading.
             // The helper is local; its own redirect reaches the first-party site.
-            tab = await createTab({ url: helperUrl, active: false });
-            if (!Number.isInteger(tab?.id)) return UNAVAILABLE;
+            tab = (await createTab({ url: helperUrl, active: false })) ?? null;
+            if (typeof tab?.id !== 'number' || !Number.isInteger(tab.id)) return UNAVAILABLE;
             // Completion/cache events may precede create's callback. Reconcile
             // this exact helper immediately as well as on later notifications.
             void readHelper();
@@ -560,40 +657,46 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             finished = true;
             if (timer != null) globalThis.clearTimeout(timer);
             if (listener) changes.removeListener(listener);
-            if (updatedListener) tabs.onUpdated.removeListener(updatedListener);
-            if (Number.isInteger(tab?.id)) {
-                try { removeTab(tab.id); }
+            if (updatedListener) tabs.onUpdated?.removeListener(updatedListener);
+            const tabId = tab?.id;
+            if (typeof tabId === 'number' && Number.isInteger(tabId)) {
+                try { removeTab(tabId); }
                 catch { /* the user or browser already closed it */ }
             }
         }
     };
 
-    const refreshBuddies = () => {
+    const refreshBuddies = (): Promise<BuddyCache | null> => {
         if (refreshPromise) return refreshPromise;
         buddyState = 'loading';
         buddyError = null;
         buddyFailure = null;
         setBusy(true);
         renderBuddyStatus();
-        refreshPromise = (async () => {
+        refreshPromise = (async (): Promise<BuddyCache | null> => {
             const snapshot = await beginBuddyCacheRead(extensionApi);
             const refreshed = await loadSignedInBuddies();
-            const next = { ownerCid: refreshed.ownerCid, entries: refreshed.entries, fetchedAt: refreshed.fetchedAt ?? Date.now() };
+            const next: BuddyCache = { ownerCid: refreshed.ownerCid, entries: refreshed.entries, fetchedAt: refreshed.fetchedAt ?? Date.now() };
             try { await publishBuddyCache(extensionApi, snapshot, next); }
             catch (error) {
-                if (error.code !== 'storage') throw error;
+                const code = (error as { code?: unknown } | null | undefined)?.code;
+                if (code !== 'storage') throw error;
                 if (!buddyCache) buddyCache = next;
                 buddyError = PeakbaggerError.failure('storage', { resource: 'buddies' });
                 return next;
             }
             acceptBuddyCache((await store.get(F.BUDDY_CACHE_KEY))[F.BUDDY_CACHE_KEY]);
             return next;
-        })().catch(error => {
-            buddyError = error && error.code
+        })().catch((error: unknown) => {
+            const err = error as { code?: unknown } | null | undefined;
+            buddyError = err && err.code
                 ? error
                 : PeakbaggerError.failure('network', { resource: 'buddies' });
-            buddyFailure = { ownerCid: buddyCache?.ownerCid ?? null,
-                fetchedAt: buddyCache?.fetchedAt ?? -1, failedAt: Date.now() };
+            buddyFailure = {
+                ownerCid: buddyCache?.ownerCid ?? null,
+                fetchedAt: buddyCache?.fetchedAt ?? -1,
+                failedAt: Date.now(),
+            };
             return null;
         }).finally(() => {
             buddyState = 'idle';
@@ -604,9 +707,9 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return refreshPromise;
     };
 
-    const beginDelete = async entry => {
+    const beginDelete = async (entry: FavoriteClimberEntry): Promise<void> => {
         if (pendingDeletes.has(entry.cid)) return;
-        const pending = { entry, timer: null };
+        const pending: PendingDelete = { entry, timer: undefined };
         pending.timer = globalThis.setTimeout(() => {
             pendingDeletes.delete(entry.cid);
             renderList();
@@ -614,7 +717,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         pendingDeletes.set(entry.cid, pending);
         try {
             await mutateFavorites({ kind: 'remove', cid: entry.cid });
-        } catch (error) {
+        } catch {
             globalThis.clearTimeout(pending.timer);
             pendingDeletes.delete(entry.cid);
             renderList();
@@ -622,7 +725,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         }
     };
 
-    const undoDelete = async cid => {
+    const undoDelete = async (cid: number): Promise<void> => {
         const pending = pendingDeletes.get(cid);
         if (!pending) return;
         try {
@@ -632,13 +735,23 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             renderList();
             flash('Favorite restored');
         } catch (error) {
-            flash(error.code === 'list-conflict' ? error.message : "Couldn't restore the favorite", { error: true });
+            const err = error as { code?: unknown; message?: unknown } | null | undefined;
+            flash(err?.code === 'list-conflict' && typeof err.message === 'string' ? err.message : "Couldn't restore the favorite", { error: true });
         }
     };
 
-    const beginReplacement = async (next, message, expectedSignature = favoritesSignature()) => {
+    const beginReplacement = async (
+        next: FavoriteClimbersList,
+        message: string,
+        expectedSignature = favoritesSignature(),
+    ): Promise<boolean> => {
         const supersededPending = pendingBulk;
-        const pending = { snapshot: favorites, message, timer: null, appliedSignature: null };
+        const pending: PendingBulkReplacement = {
+            snapshot: favorites,
+            message,
+            timer: undefined,
+            appliedSignature: undefined,
+        };
         try {
             const response = await mutateFavorites({
                 kind: 'replace',
@@ -647,7 +760,10 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             });
             pending.appliedSignature = response.signature;
         } catch (error) {
-            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't update favorites", { error: true });
+            const err = error as { code?: unknown; message?: unknown } | null | undefined;
+            flash((err?.code === 'stale' || err?.code === 'list-conflict') && typeof err.message === 'string'
+                ? err.message
+                : "Couldn't update favorites", { error: true });
             return false;
         }
         if (supersededPending) globalThis.clearTimeout(supersededPending.timer);
@@ -661,7 +777,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         return true;
     };
 
-    const undoReplacement = async () => {
+    const undoReplacement = async (): Promise<void> => {
         if (!pendingBulk) return;
         const pending = pendingBulk;
         try {
@@ -675,11 +791,14 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             renderList();
             flash('Custom favorites restored');
         } catch (error) {
-            flash(['stale', 'list-conflict'].includes(error.code) ? error.message : "Couldn't restore favorites", { error: true });
+            const err = error as { code?: unknown; message?: unknown } | null | undefined;
+            flash((err?.code === 'stale' || err?.code === 'list-conflict') && typeof err.message === 'string'
+                ? err.message
+                : "Couldn't restore favorites", { error: true });
         }
     };
 
-    const addClimber = async () => {
+    const addClimber = async (): Promise<void> => {
         const cid = F.parseClimberInput(addInputEl.value);
         if (cid == null) {
             flash('Enter a climber id or Peakbagger climber-page link', { error: true });
@@ -688,10 +807,10 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
         addButtonEl.disabled = true;
         let name = '';
         try {
-            const result = await fetchPeakbaggerDocument(F.climberPageUrl(cid), { kind: 'climber' });
+            const result = await fetchPeakbaggerDocument(F.climberPageUrl(cid) ?? '', { kind: 'climber' });
             if (result.kind !== 'ok') throw result.error;
             const doc = result.document;
-            const identityLink = doc.querySelector('a[href*="ClimbListC.aspx?cid="], a[href*="climblistc.aspx?cid="]');
+            const identityLink = doc.querySelector<HTMLAnchorElement>('a[href*="ClimbListC.aspx?cid="], a[href*="climblistc.aspx?cid="]');
             const pageCid = identityLink ? numericParam(identityLink.href, 'cid', doc.baseURI) : null;
             name = F.climberNameFromDocument(doc);
             if (pageCid !== cid || !name) throw PeakbaggerError.failure('not-found', { resource: 'climber' });
@@ -708,7 +827,8 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
             addInputEl.value = '';
             flash(response.details?.added ? `${name} added to favorites` : `${name} is already in your favorites`);
         } catch (error) {
-            flash(error.message || "The climber page loaded, but the favorite couldn't be saved on this device.", { error: true });
+            const errMessage = error instanceof Error ? error.message : '';
+            flash(errMessage || "The climber page loaded, but the favorite couldn't be saved on this device.", { error: true });
         } finally {
             addButtonEl.disabled = false;
         }
@@ -725,7 +845,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
     searchEl.addEventListener('input', renderList);
     for (const button of sourceFilterEls) {
         button.addEventListener('click', () => {
-            sourceFilter = button.dataset.favoritesSourceFilter;
+            sourceFilter = button.dataset.favoritesSourceFilter as FavoritesSourceFilter;
             renderList();
         });
     }
@@ -752,14 +872,14 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
                 const summary = completionCopy('Merge', {
                     added,
                     removed: 0,
-                    total: response.favorites.entries.length,
+                    total: response.favorites?.entries.length ?? favorites.entries.length,
                     skipped,
                 });
                 renderImportStatus(summary);
                 flash(added
                     ? `Merge complete: ${added} added, 0 removed`
                     : skipped > 0 ? 'Custom favorites are full' : 'No changes to custom favorites');
-            } catch (error) {
+            } catch {
                 renderImportStatus("The Buddy List loaded, but the custom favorites couldn't be saved.");
                 flash("Couldn't merge buddies", { error: true });
             }
@@ -768,7 +888,7 @@ export const initFavorites = ({ extensionApi, flash, dismissStatus, save } = {})
     mirrorEl.addEventListener('click', () => {
         dismissReplacementConfirmation();
         renderImportStatus('Loading your Buddy List…');
-        void refreshBuddies().then(async cache => {
+        void refreshBuddies().then(cache => {
             if (!cache) {
                 const message = PeakbaggerError.message(buddyError);
                 renderImportStatus(message, buddyError);

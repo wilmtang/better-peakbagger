@@ -1,10 +1,20 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { optionsUtils as UI } from './options-utils.js';
+import { optionsUtils as UI } from './options-utils.ts';
+
+export interface BackupReviewOptions<T = unknown> {
+    anchor: HTMLElement;
+    submit: (review: T) => unknown;
+}
+
+export interface BackupReviewController<T = unknown> {
+    show(value: T): void;
+    clear(): void;
+}
 
 // A deliberate disclosure below the triggering row, with stable action labels
 // through pending/error/retry. The worker rechecks both snapshots on acceptance.
-export function createBackupReview({ anchor, submit }) {
+export function createBackupReview<T = unknown>({ anchor, submit }: BackupReviewOptions<T>): BackupReviewController<T> {
     const panel = document.createElement('div');
     panel.className = 'backup-confirmation backup-replacement';
     panel.hidden = true;
@@ -16,7 +26,8 @@ export function createBackupReview({ anchor, submit }) {
     const accept = UI.actionButton('danger', 'Replace GitHub backup', 'Replace GitHub backup with this device’s copy');
     actions.append(cancel, accept); panel.append(copy, actions);
     anchor.closest('.subsection, .card')?.append(panel);
-    let review = null, busy = false;
+    let review: T | null = null;
+    let busy = false;
     const clear = () => {
         const focused = panel.contains(document.activeElement);
         panel.hidden = true; review = null;
@@ -37,11 +48,14 @@ export function createBackupReview({ anchor, submit }) {
             UI.setButtonBusy(accept, false); UI.setButtonBusy(cancel, false);
         }
     });
-    return { show(value) {
-        const opening = panel.hidden;
-        review = value; panel.hidden = false;
-        if (opening && (document.activeElement === anchor || document.activeElement === document.body)) {
-            cancel.focus({ preventScroll: true });
-        }
-    }, clear };
+    return {
+        show(value) {
+            const opening = panel.hidden;
+            review = value; panel.hidden = false;
+            if (opening && (document.activeElement === anchor || document.activeElement === document.body)) {
+                cancel.focus({ preventScroll: true });
+            }
+        },
+        clear,
+    };
 }

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as Files from '../../src/favorites/climber-files.ts';
 import { JSDOM } from 'jsdom';
-import { mountClimberFileTransfer } from '../../options/climber-files.js';
+import { mountClimberFileTransfer } from '../../options/climber-files.ts';
 import { createFavoritesStore } from '../../src/background/favorites-store.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
 

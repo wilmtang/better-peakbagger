@@ -10,19 +10,77 @@
 // a confirm() the browser can suppress.
 
 import { githubError as GithubError } from '../src/github/github-error-copy.ts';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
-import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.ts';
-import { hasGithubPermission, observeGithubAccess } from './github.js';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { runtimeMessage as RuntimeMessage, type RuntimeMessageExtension } from '../src/ui/runtime-message.ts';
+import {
+    createPhotoBackupStatus,
+    formatPhotoBackupStatus,
+    type PhotoBackupStatusState,
+} from '../src/photos/photo-backup-status.ts';
+import {
+    hasGithubPermission,
+    observeGithubAccess,
+    type GithubAccessExtensionApi,
+    type GithubStatusRepo,
+} from './github.ts';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
 
-const plural = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+export type PhotoBackupExtensionApi = (GithubAccessExtensionApi & RuntimeMessageExtension) | typeof chrome;
 
-export function initPhotoBackup({ extensionApi, flash, save }) {
+export type PhotoBackupSettings = {
+    autoPhotoLibraryBackup?: boolean;
+};
+
+export interface InitPhotoBackupOptions {
+    extensionApi: PhotoBackupExtensionApi;
+    flash: (message?: string, options?: { error?: boolean }) => unknown;
+    save: (patch: PhotoBackupSettings) => Promise<unknown>;
+}
+
+export interface PhotoBackupOwner {
+    populate(settings?: PhotoBackupSettings | null): void;
+}
+
+interface PhotoBackupError {
+    code?: string;
+    message?: string;
+    conflictCount?: number;
+}
+
+interface GithubAuthStatusResponse extends GithubStatusRepo {
+    connected?: boolean;
+}
+
+interface PhotoBackupStatusResponse {
+    ok?: boolean;
+    state?: PhotoBackupStatusState | null;
+}
+
+interface PhotoBackupMutationResponse {
+    ok?: boolean;
+    reconciliationPending?: boolean;
+    warning?: { message?: string };
+    error?: PhotoBackupError;
+    keptLocalConflicts?: number;
+}
+
+interface PhotoRestorePreviewResponse {
+    ok?: boolean;
+    error?: PhotoBackupError;
+    signature?: string;
+    counts?: { update?: number };
+    conflicts?: unknown[];
+    remotePhotos?: number;
+    remoteTombstones?: number;
+}
+
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+export function initPhotoBackup({ extensionApi, flash, save }: InitPhotoBackupOptions): PhotoBackupOwner {
     const statusEl = document.getElementById('photos-github-status');
     const actionsEl = document.getElementById('photos-github-actions');
     const backupEl = document.getElementById('photos-backup');
     const restoreEl = document.getElementById('photos-restore');
-    const autoEl = document.getElementById('photos-auto-backup');
+    const autoEl = document.getElementById('photos-auto-backup') as HTMLInputElement | null;
     const confirmationEl = document.getElementById('photos-restore-confirmation');
     const confirmationTitleEl = document.getElementById('photos-restore-title');
     const confirmationDetailEl = document.getElementById('photos-restore-detail');
@@ -39,29 +97,32 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         'photos-restore-detail': confirmationDetailEl,
         'photos-restore-confirm': confirmEl,
         'photos-restore-cancel': cancelEl,
-    })) {
+    }) || !statusEl || !actionsEl || !backupEl || !restoreEl || !autoEl
+        || !confirmationEl || !confirmationTitleEl || !confirmationDetailEl
+        || !confirmEl || !cancelEl) {
         return { populate() {} };
     }
 
-    const send = RuntimeMessage.bind(extensionApi);
+    const send = RuntimeMessage.bind(extensionApi as RuntimeMessageExtension);
     const setStatus = createPhotoBackupStatus(statusEl);
-    const photoBackupError = error => error?.code === 'photo-backup-too-large'
-        && typeof error.message === 'string'
-        ? error.message
-        : GithubError.message(error);
-    let githubStatus = null;
+    const photoBackupError = (error: PhotoBackupError | null | undefined): string =>
+        error?.code === 'photo-backup-too-large' && typeof error.message === 'string'
+            ? error.message
+            : GithubError.message(error);
+    let githubStatus: (GithubAuthStatusResponse & { permissionGranted: boolean }) | null = null;
     let githubRevision = 0;
-    let backupState = null;
+    let backupState: PhotoBackupStatusState | null = null;
     let busy = false;
-    let operation = null;
-    let pendingRestore = null;
+    let operation: 'backup' | 'preview' | 'restore' | null = null;
+    let pendingRestore: { signature: string; conflicts: number } | null = null;
 
-    const repoName = () => OptionsUtils.githubRepoName(githubStatus);
+    const repoName = (): string => OptionsUtils.githubRepoName(githubStatus);
 
-    const render = () => {
-        const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
+    const render = (): void => {
+        const connected = Boolean(githubStatus?.permissionGranted && githubStatus?.connected === true);
         actionsEl.hidden = !connected;
-        autoEl.closest('.backup-automatic').hidden = !connected;
+        const autoRow = autoEl.closest<HTMLElement>('.backup-automatic');
+        if (autoRow) autoRow.hidden = !connected;
         OptionsUtils.setButtonBusy(backupEl, busy);
         OptionsUtils.setButtonBusy(restoreEl, busy);
         autoEl.disabled = busy;
@@ -83,20 +144,20 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         setStatus(formatPhotoBackupStatus(context), context);
     };
 
-    const refresh = async () => {
+    const refresh = async (): Promise<void> => {
         const revision = ++githubRevision;
         const [auth, permissionGranted, photos] = await Promise.all([
-            send({ type: 'GITHUB_AUTH_STATUS' }),
+            send<GithubAuthStatusResponse>({ type: 'GITHUB_AUTH_STATUS' }),
             hasGithubPermission(extensionApi),
-            send({ type: 'GITHUB_PHOTOS_STATUS' }),
+            send<PhotoBackupStatusResponse>({ type: 'GITHUB_PHOTOS_STATUS' }),
         ]);
         if (revision !== githubRevision) return;
         githubStatus = { ...(auth || {}), permissionGranted };
-        backupState = photos?.ok ? photos.state : null;
+        backupState = photos?.ok ? (photos.state ?? null) : null;
         render();
     };
 
-    const withBusy = (name, run) => {
+    const withBusy = (name: 'backup' | 'preview' | 'restore', run: () => Promise<void>): Promise<void> => {
         if (busy) return Promise.resolve();
         operation = name;
         return OptionsUtils.withBusy({
@@ -108,7 +169,9 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         });
     };
 
-    const hideConfirmation = ({ restoreFocus = confirmationEl.contains(document.activeElement) } = {}) => {
+    const hideConfirmation = ({
+        restoreFocus = confirmationEl.contains(document.activeElement),
+    }: { restoreFocus?: boolean } = {}): void => {
         pendingRestore = null;
         confirmationEl.hidden = true;
         OptionsUtils.setButtonBusy(confirmEl, false);
@@ -118,7 +181,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     };
 
     backupEl.addEventListener('click', () => void withBusy('backup', async () => {
-        const response = await send({ type: 'GITHUB_PHOTOS_BACKUP' });
+        const response = await send<PhotoBackupMutationResponse>({ type: 'GITHUB_PHOTOS_BACKUP' });
         if (response?.ok) {
             await refresh();
             flash(response.reconciliationPending
@@ -135,7 +198,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
     }));
 
     restoreEl.addEventListener('click', () => void withBusy('preview', async () => {
-        const preview = await send({ type: 'GITHUB_PHOTOS_RESTORE_PREVIEW' });
+        const preview = await send<PhotoRestorePreviewResponse>({ type: 'GITHUB_PHOTOS_RESTORE_PREVIEW' });
         if (!preview?.ok) {
             flash(preview?.error?.code === 'not-found'
                 ? `No photo-library.json found in ${repoName()}.`
@@ -143,12 +206,12 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
             return;
         }
         const conflicts = preview.conflicts?.length || 0;
-        pendingRestore = { signature: preview.signature, conflicts };
-        confirmationTitleEl.textContent = `Restore ${plural(preview.remotePhotos, 'photo record')} `
+        pendingRestore = { signature: preview.signature || '', conflicts };
+        confirmationTitleEl.textContent = `Restore ${plural(preview.remotePhotos ?? 0, 'photo record')} `
             + `from ${repoName()}?`;
         confirmationDetailEl.textContent = [
             `${plural(preview.counts?.update || 0, 'local record')} will be replaced, and `
-                + `${plural(preview.remoteTombstones, 'deletion')} applied.`,
+                + `${plural(preview.remoteTombstones ?? 0, 'deletion')} applied.`,
             conflicts
                 ? `${plural(conflicts, 'photo')} changed in both places; your local version is kept.`
                 : '',
@@ -175,7 +238,7 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
         OptionsUtils.setButtonBusy(cancelEl, true);
         confirmationEl.setAttribute('aria-busy', 'true');
         void withBusy('restore', async () => {
-            const response = await send({
+            const response = await send<PhotoBackupMutationResponse>({
                 type: 'GITHUB_PHOTOS_RESTORE',
                 // The worker rereads the file and requires this exact
                 // signature, so a repository that moved under the preview
@@ -205,13 +268,16 @@ export function initPhotoBackup({ extensionApi, flash, save }) {
 
     window.addEventListener('focus', () => { void refresh(); });
     observeGithubAccess(extensionApi, () => { void refresh(); });
-    extensionApi.storage.onChanged?.addListener((changes, area) => {
+    const storageOnChanged = extensionApi.storage?.onChanged as {
+        addListener?: (listener: (changes: Record<string, unknown>, areaName: string) => void) => void;
+    } | undefined;
+    storageOnChanged?.addListener?.((changes, area) => {
         if (area === 'local' && changes.bpbPhotoLibraryBackupState && !busy) void refresh();
     });
 
     let painted = false;
     return {
-        populate(settings) {
+        populate(settings?: PhotoBackupSettings | null) {
             autoEl.checked = settings?.autoPhotoLibraryBackup === true;
             render();
             if (!painted) {

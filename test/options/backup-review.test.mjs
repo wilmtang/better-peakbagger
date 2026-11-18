@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createBackupReview } from '../../options/backup-review.js';
+import { createBackupReview } from '../../options/backup-review.ts';
 
 test('backup replacement focuses its Cancel action and Escape restores the trigger', () => {
     const dom = new JSDOM('<div class="card"><button>Back up</button></div>');

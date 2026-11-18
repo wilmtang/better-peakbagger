@@ -666,7 +666,7 @@ device and is not sent to Peakbagger, GitHub, or the extension developer.
 
 `src/reports/report-editor.ts` owns persistence and recovery. The pure
 `src/reports/report-drafts.ts` module is the shared identity, expiry, and limit contract
-used by the editor and the manager in `options/drafts.js`.
+used by the editor and the manager in `options/drafts.ts`.
 
 ### Identity: one key per climber and form target
 

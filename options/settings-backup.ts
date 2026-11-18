@@ -3,21 +3,98 @@
 //
 // Better Peakbagger — settings file transfer and GitHub backup controls.
 
-import { createBackupReview } from './backup-review.js';
+import { createBackupReview } from './backup-review.ts';
 import { settings as S } from '../src/settings/settings.ts';
-import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.ts';
+import { settingsTransfer as Transfer, type CustomLayerBackup, type SettingsParseFailureReason } from '../src/settings/settings-transfer.ts';
 import { githubError as GithubError } from '../src/github/github-error-copy.ts';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
+import { runtimeMessage as RuntimeMessage, type RuntimeMessageResponse } from '../src/ui/runtime-message.ts';
 import { boundedText as BoundedText } from '../src/net/bounded-text.ts';
-import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
+import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.ts';
+import { optionsUtils as OptionsUtils, type FlashOptions, type RepoStatus } from './options-utils.ts';
 import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.ts';
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry } from '../src/maps/custom-overlay-schema.js';
 import { customLayerBackup } from '../src/maps/custom-overlay-transfer.js';
+import type { Settings, SettingsPatch } from './settings-patch-route.ts';
+
+interface PendingImport {
+    settings: Record<string, unknown>;
+    successMessage: string;
+    returnFocus: HTMLElement;
+    fileContent: string | null;
+    includesGithubConnection: boolean;
+    requestsGarminAccess: boolean;
+}
+
+interface ShowConfirmationOptions {
+    fileContent?: string | null;
+    includesApiKeys?: boolean;
+    includesGithubConnection?: boolean;
+    includesGarminKey?: boolean;
+    requestsGarminAccess?: boolean;
+    customLayerCount?: number | null;
+    includesPrivateMaps?: boolean;
+}
+
+interface SettingsGithubStatus extends RepoStatus {
+    connected?: boolean;
+    permissionGranted: boolean;
+    settingsBackupNeedsReview?: boolean;
+}
+
+interface GithubBackupResult {
+    repo: string;
+    signature: string;
+    superseded?: boolean;
+    commitUrl?: string;
+}
+
+interface BackupReviewPayload {
+    path?: string;
+    [key: string]: unknown;
+}
+
+interface SettingsFileExportResponse extends RuntimeMessageResponse {
+    content?: unknown;
+    exportedAt?: unknown;
+}
+
+interface SettingsFileImportResponse extends RuntimeMessageResponse {
+    apiKeysImported?: boolean;
+    error?: {
+        code?: string;
+        source?: string;
+        message?: string;
+    };
+}
+
+interface SettingsGithubAuthStatusResponse extends RuntimeMessageResponse, RepoStatus {
+    connected?: boolean;
+    settingsBackupNeedsReview?: boolean;
+}
+
+interface SettingsGithubBackupResponse extends RuntimeMessageResponse {
+    review?: BackupReviewPayload;
+    result?: GithubBackupResult;
+}
+
+interface SettingsGithubRestoreResponse extends RuntimeMessageResponse {
+    content?: string | null;
+}
+
+export interface SettingsBackupOptions {
+    extensionApi: typeof chrome;
+    flash: (msg?: string, options?: FlashOptions) => unknown;
+    save: (patch: SettingsPatch) => Promise<Settings>;
+    refreshCredentials?: () => unknown;
+}
+
+export interface SettingsBackupOwner {
+    populate(settings?: Settings | null): void;
+}
 
 const SETTINGS_STORAGE_KEY = S.STORAGE_KEY;
 
-const invalidFileMessage = reason => {
+const invalidFileMessage = (reason: SettingsParseFailureReason | string): string => {
     if (reason === 'newer-version') {
         return 'This settings file was made by a newer version of the extension.';
     }
@@ -30,22 +107,27 @@ const invalidFileMessage = reason => {
     return 'That is not a Better Peakbagger settings file.';
 };
 
-export function initSettingsBackup({ extensionApi, flash, save, refreshCredentials = async () => {} }) {
-    const exportEl = document.getElementById('settings-backup-export');
-    const importEl = document.getElementById('settings-backup-import');
-    const fileEl = document.getElementById('settings-backup-file');
-    const exportCredentialsEl = document.getElementById('settings-backup-export-credentials');
-    const confirmationEl = document.getElementById('settings-backup-confirmation');
-    const confirmationActionEl = document.getElementById('settings-backup-confirmation-action');
-    const confirmationNameEl = document.getElementById('settings-backup-confirmation-name');
-    const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail');
-    const confirmEl = document.getElementById('settings-backup-confirm');
-    const cancelEl = document.getElementById('settings-backup-cancel');
-    const githubStatusEl = document.getElementById('settings-backup-github-status');
-    const githubActionsEl = document.getElementById('settings-backup-github-actions');
-    const githubBackupEl = document.getElementById('settings-backup-github-backup');
-    const githubRestoreEl = document.getElementById('settings-backup-github-restore');
-    const autoBackupEl = document.getElementById('settings-backup-auto');
+export function initSettingsBackup({
+    extensionApi,
+    flash,
+    save,
+    refreshCredentials = async () => {},
+}: SettingsBackupOptions): SettingsBackupOwner {
+    const exportEl = document.getElementById('settings-backup-export') as HTMLButtonElement;
+    const importEl = document.getElementById('settings-backup-import') as HTMLButtonElement;
+    const fileEl = document.getElementById('settings-backup-file') as HTMLInputElement;
+    const exportCredentialsEl = document.getElementById('settings-backup-export-credentials') as HTMLInputElement;
+    const confirmationEl = document.getElementById('settings-backup-confirmation') as HTMLElement;
+    const confirmationActionEl = document.getElementById('settings-backup-confirmation-action') as HTMLElement;
+    const confirmationNameEl = document.getElementById('settings-backup-confirmation-name') as HTMLElement;
+    const confirmationDetailEl = document.getElementById('settings-backup-confirmation-detail') as HTMLElement;
+    const confirmEl = document.getElementById('settings-backup-confirm') as HTMLButtonElement;
+    const cancelEl = document.getElementById('settings-backup-cancel') as HTMLButtonElement;
+    const githubStatusEl = document.getElementById('settings-backup-github-status') as HTMLElement;
+    const githubActionsEl = document.getElementById('settings-backup-github-actions') as HTMLElement;
+    const githubBackupEl = document.getElementById('settings-backup-github-backup') as HTMLButtonElement;
+    const githubRestoreEl = document.getElementById('settings-backup-github-restore') as HTMLButtonElement;
+    const autoBackupEl = document.getElementById('settings-backup-auto') as HTMLInputElement;
     if (OptionsUtils.logMissingElements('settings backup', {
         'settings-backup-export': exportEl,
         'settings-backup-import': importEl,
@@ -66,20 +148,22 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         return { populate() {} };
     }
 
-    let pendingImport = null;
-    let githubStatus = null;
+    let pendingImport: PendingImport | null = null;
+    let githubStatus: SettingsGithubStatus | null = null;
     let githubRevision = 0;
     let githubBusy = false;
-    let githubOperation = null;
-    let githubBackupResult = null;
-    let settingsSignature = Transfer.signature({});
-    let currentSettings = {}, layerBackup, layerRead = 0;
+    let githubOperation: string | null = null;
+    let githubBackupResult: GithubBackupResult | null = null;
+    let settingsSignature: string | null = Transfer.signature({});
+    let currentSettings: Partial<Settings> | Record<string, unknown> = {};
+    let layerBackup: CustomLayerBackup | null | undefined;
+    let layerRead = 0;
 
     const send = RuntimeMessage.bind(extensionApi);
 
-    const repoName = () => OptionsUtils.githubRepoName(githubStatus);
+    const repoName = (): string => OptionsUtils.githubRepoName(githubStatus);
 
-    const hideConfirmation = ({ restoreFocus = confirmationEl.contains(document.activeElement) } = {}) => {
+    const hideConfirmation = ({ restoreFocus = confirmationEl.contains(document.activeElement) } = {}): void => {
         const returnFocus = pendingImport?.returnFocus;
         pendingImport = null;
         confirmationEl.hidden = true;
@@ -92,14 +176,27 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     };
 
     const showConfirmation = (
-        name,
-        settings,
+        name: string,
+        settings: Record<string, unknown>,
         successMessage = 'Settings imported',
-        returnFocus = importEl,
-        { fileContent = null, includesApiKeys = false, includesGithubConnection = false, includesGarminKey = false, requestsGarminAccess = false, customLayerCount = null, includesPrivateMaps = false } = {}
-    ) => {
+        returnFocus: HTMLElement = importEl,
+        {
+            fileContent = null,
+            includesApiKeys = false,
+            includesGithubConnection = false,
+            includesGarminKey = false,
+            requestsGarminAccess = false,
+            customLayerCount = null,
+            includesPrivateMaps = false,
+        }: ShowConfirmationOptions = {},
+    ): void => {
         pendingImport = {
-            settings, successMessage, returnFocus, fileContent, includesGithubConnection, requestsGarminAccess,
+            settings,
+            successMessage,
+            returnFocus,
+            fileContent,
+            includesGithubConnection,
+            requestsGarminAccess,
         };
         const restoring = returnFocus === githubRestoreEl;
         confirmationActionEl.textContent = restoring ? 'Restore' : 'Import';
@@ -112,17 +209,23 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 : includesApiKeys
                     ? 'Replaces your current settings and saved API keys.'
                     : 'Replaces your current settings.';
-        if (includesGarminKey) confirmationDetailEl.textContent += requestsGarminAccess
-            ? ' Includes a Garmin key, which will be checked before replacing your connection and enabling Garmin drafts on this device.'
-            : ' Removes your Garmin key while keeping your drafts.';
-        if (customLayerCount !== null) confirmationDetailEl.textContent += ` Replaces custom layers with ${customLayerCount} saved ${customLayerCount === 1 ? 'layer' : 'layers'}. Existing map selections turn off.`;
-        if (includesPrivateMaps) confirmationDetailEl.textContent += ' Includes private map URLs and request parameters. Loading still requires provider access and a fresh map approval.';
+        if (includesGarminKey) {
+            confirmationDetailEl.textContent += requestsGarminAccess
+                ? ' Includes a Garmin key, which will be checked before replacing your connection and enabling Garmin drafts on this device.'
+                : ' Removes your Garmin key while keeping your drafts.';
+        }
+        if (customLayerCount !== null) {
+            confirmationDetailEl.textContent += ` Replaces custom layers with ${customLayerCount} saved ${customLayerCount === 1 ? 'layer' : 'layers'}. Existing map selections turn off.`;
+        }
+        if (includesPrivateMaps) {
+            confirmationDetailEl.textContent += ' Includes private map URLs and request parameters. Loading still requires provider access and a fresh map approval.';
+        }
         confirmationEl.hidden = false;
         if (document.activeElement === returnFocus) confirmEl.focus();
     };
 
     exportEl.addEventListener('click', async () => {
-        const response = await send({
+        const response = await send<SettingsFileExportResponse>({
             type: 'SETTINGS_FILE_EXPORT',
             includeCredentials: exportCredentialsEl.checked,
         });
@@ -137,7 +240,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         const url = URL.createObjectURL(blob);
         const link = Object.assign(document.createElement('a'), {
             href: url,
-            download: `better-peakbagger-settings-${exportedAt.slice(0, 10)}.json`
+            download: `better-peakbagger-settings-${exportedAt.slice(0, 10)}.json`,
         });
         link.click();
         URL.revokeObjectURL(url);
@@ -151,7 +254,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         fileEl.value = '';
         if (!file) return;
         hideConfirmation({ restoreFocus: false });
-        let text;
+        let text: string;
         try {
             text = await BoundedText.readBoundedBlobText(file, {
                 maxBytes: Transfer.IMPORT_MAX_BYTES,
@@ -183,7 +286,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 requestsGarminAccess: typeof parsed.apiKeys?.garmin === 'string',
                 customLayerCount: parsed.customLayers?.sources.length ?? null,
                 includesPrivateMaps: !!parsed.privateCustomLayers?.length,
-            }
+            },
         );
     });
 
@@ -204,7 +307,10 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         confirmationEl.setAttribute('aria-busy', 'true');
         try {
             if (pending.fileContent != null) {
-                const origins = [...(pending.includesGithubConnection ? GITHUB_ORIGINS : []), ...(pending.requestsGarminAccess ? [GARMIN_PERMISSION] : [])];
+                const origins = [
+                    ...(pending.includesGithubConnection ? GITHUB_ORIGINS : []),
+                    ...(pending.requestsGarminAccess ? [GARMIN_PERMISSION] : []),
+                ];
                 if (origins.length) {
                     let granted = false;
                     try {
@@ -217,7 +323,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                         throw new Error('github-permission-denied');
                     }
                 }
-                const response = await send({
+                const response = await send<SettingsFileImportResponse>({
                     type: 'SETTINGS_FILE_IMPORT',
                     content: pending.fileContent,
                 });
@@ -230,7 +336,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 await Promise.all([refreshCredentials(), refreshGithub()]);
                 if (response.apiKeysImported) document.dispatchEvent(new Event('bpb:credentials-imported'));
             } else {
-                await save(pending.settings);
+                await save(pending.settings as SettingsPatch);
             }
             hideConfirmation();
             flash(pending.successMessage);
@@ -243,7 +349,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         }
     });
 
-    const renderGithub = () => {
+    const renderGithub = (): void => {
         const connected = githubStatus?.permissionGranted && githubStatus?.connected === true;
         // The checkbox now covers the ImgBB key as well, which needs no GitHub
         // connection, so it stays available whether or not GitHub is connected.
@@ -253,7 +359,8 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             && githubBackupResult?.repo === repoName()
             && githubBackupResult?.signature === settingsSignature;
         githubActionsEl.hidden = !connected;
-        autoBackupEl.closest('.backup-automatic').hidden = !connected;
+        const autoBackupRowEl = autoBackupEl.closest<HTMLElement>('.backup-automatic');
+        if (autoBackupRowEl) autoBackupRowEl.hidden = !connected;
         OptionsUtils.setButtonBusy(githubBackupEl, githubBusy);
         OptionsUtils.setButtonBusy(githubRestoreEl, githubBusy);
         autoBackupEl.disabled = githubBusy;
@@ -266,7 +373,7 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         } else if (showBackupResult) {
             githubStatusEl.classList.add('is-success');
             githubStatusEl.textContent = 'Settings backed up ✓';
-            if (githubBackupResult.commitUrl) {
+            if (githubBackupResult?.commitUrl) {
                 githubStatusEl.append(' ', Object.assign(document.createElement('a'), {
                     href: githubBackupResult.commitUrl,
                     target: '_blank',
@@ -275,17 +382,20 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 }));
             }
         } else if (connected) {
-            githubStatusEl.textContent = githubStatus.settingsBackupNeedsReview ? 'GitHub has a different backup. Review before replacing it.' : githubBackupResult?.repo === repoName()
-                ? 'Newer changes need backup.' : `Stored as settings.json in ${repoName()}.`;
+            githubStatusEl.textContent = githubStatus?.settingsBackupNeedsReview
+                ? 'GitHub has a different backup. Review before replacing it.'
+                : githubBackupResult?.repo === repoName()
+                    ? 'Newer changes need backup.'
+                    : `Stored as settings.json in ${repoName()}.`;
         } else {
             githubStatusEl.textContent = 'Connect GitHub above to back up settings.';
         }
     };
 
-    const refreshGithub = async () => {
+    const refreshGithub = async (): Promise<void> => {
         const revision = ++githubRevision;
         const [status, permissionGranted] = await Promise.all([
-            send({ type: 'GITHUB_AUTH_STATUS' }),
+            send<SettingsGithubAuthStatusResponse>({ type: 'GITHUB_AUTH_STATUS' }),
             hasGithubPermission(extensionApi),
         ]);
         if (revision !== githubRevision) return;
@@ -293,43 +403,50 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
         renderGithub();
     };
 
-    const withGithubBusy = operation => OptionsUtils.withBusy({
+    const withGithubBusy = (operation: () => unknown): Promise<void> => OptionsUtils.withBusy({
         isBusy: () => githubBusy,
         setBusy: value => { githubBusy = value; renderGithub(); },
     }, operation);
 
-    const backupReview = createBackupReview({ anchor: githubBackupEl, submit: review => backupSettings(review) });
-    const backupSettings = (review = null) => {
+    const backupReview = createBackupReview({
+        anchor: githubBackupEl,
+        submit: review => backupSettings(review),
+    });
+    const backupSettings = async (review: unknown = null): Promise<void> => {
         if (githubBusy) return;
         githubOperation = 'backup';
-        return withGithubBusy(async () => {
-            const response = await send({ type: 'GITHUB_SETTINGS_BACKUP', ...(review ? { review } : {}) });
-            if (!response?.ok) {
-                githubBackupResult = null;
-                if (response.review?.path === Transfer.BACKUP_PATH) backupReview.show(response.review);
-                flash(GithubError.message(response?.error), { error: true });
-                return;
-            }
-            const result = response.result;
-            if (typeof result?.repo !== 'string' || typeof result?.signature !== 'string') {
-                githubBackupResult = null;
-                flash('The backup could not be confirmed. Try again.', { error: true });
-                return;
-            }
-            githubBackupResult = result;
-            flash(result.superseded || result.signature !== settingsSignature
-                ? 'Newer changes need backup.' : `Settings backed up to ${result.repo}`);
-            backupReview.clear();
-            return true;
-        }).finally(() => {
+        try {
+            await withGithubBusy(async () => {
+                const response = await send<SettingsGithubBackupResponse>({
+                    type: 'GITHUB_SETTINGS_BACKUP',
+                    ...(review ? { review } : {}),
+                });
+                if (!response?.ok) {
+                    githubBackupResult = null;
+                    if (response?.review?.path === Transfer.BACKUP_PATH) backupReview.show(response.review);
+                    flash(GithubError.message(response?.error), { error: true });
+                    return;
+                }
+                const result = response.result;
+                if (typeof result?.repo !== 'string' || typeof result?.signature !== 'string') {
+                    githubBackupResult = null;
+                    flash('The backup could not be confirmed. Try again.', { error: true });
+                    return;
+                }
+                githubBackupResult = result;
+                flash(result.superseded || result.signature !== settingsSignature
+                    ? 'Newer changes need backup.' : `Settings backed up to ${result.repo}`);
+                backupReview.clear();
+            });
+        } finally {
             githubOperation = null;
             renderGithub();
-        });
+        }
     };
     githubBackupEl.addEventListener('click', () => { void backupSettings(); });
 
     githubRestoreEl.addEventListener('click', () => withGithubBusy(async () => {
-        const response = await send({ type: 'GITHUB_SETTINGS_RESTORE' });
+        const response = await send<SettingsGithubRestoreResponse>({ type: 'GITHUB_SETTINGS_RESTORE' });
         if (!response?.ok) {
             flash(GithubError.message(response?.error), { error: true });
             return;
@@ -343,11 +460,16 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
             flash(invalidFileMessage(parsed.reason), { error: true });
             return;
         }
-        showConfirmation(`settings.json from ${repoName()}`, parsed.settings,
-            `Settings restored from ${repoName()}`, githubRestoreEl, parsed.customLayers ? {
+        showConfirmation(
+            `settings.json from ${repoName()}`,
+            parsed.settings,
+            `Settings restored from ${repoName()}`,
+            githubRestoreEl,
+            parsed.customLayers ? {
                 fileContent: Transfer.serialize(Transfer.buildPayload(parsed.settings, { customLayers: parsed.customLayers })),
                 customLayerCount: parsed.customLayers.sources.length,
-            } : {});
+            } : {},
+        );
     }));
 
     autoBackupEl.addEventListener('change', () => {
@@ -355,15 +477,24 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     });
 
     window.addEventListener('focus', () => { void refreshGithub(); });
-    const refreshLayers = async () => {
+    const refreshLayers = async (): Promise<void> => {
         const revision = ++layerRead;
         try {
-            const stored = await extensionApi.storage.local.get([CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY]);
-            const registry = readCustomRegistry(stored[CUSTOM_REGISTRY_KEY]); if (!registry) throw new Error('Custom layers unavailable.');
-            const value = customLayerBackup({ registry, preferences: stored[CUSTOM_PREFERENCES_KEY] || {} });
-            if (revision !== layerRead) return; layerBackup = value;
-        } catch { if (revision !== layerRead) return; layerBackup = null; }
-        settingsSignature = layerBackup ? Transfer.signature(currentSettings, layerBackup) : null; renderGithub();
+            const stored = await extensionApi.storage.local.get([CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY]) as Record<string, unknown>;
+            const registry = readCustomRegistry(stored[CUSTOM_REGISTRY_KEY]);
+            if (!registry) throw new Error('Custom layers unavailable.');
+            const value = customLayerBackup({
+                registry,
+                preferences: (stored[CUSTOM_PREFERENCES_KEY] as Record<string, unknown> | undefined) || {},
+            });
+            if (revision !== layerRead) return;
+            layerBackup = value;
+        } catch {
+            if (revision !== layerRead) return;
+            layerBackup = null;
+        }
+        settingsSignature = layerBackup ? Transfer.signature(currentSettings, layerBackup) : null;
+        renderGithub();
     };
     if (extensionApi.storage.onChanged) {
         extensionApi.storage.onChanged.addListener((changes, area) => {
@@ -378,7 +509,11 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
     return {
         populate(settings) {
             currentSettings = settings || {};
-            settingsSignature = layerBackup ? Transfer.signature(currentSettings, layerBackup) : layerBackup === null ? null : Transfer.signature(currentSettings);
+            settingsSignature = layerBackup
+                ? Transfer.signature(currentSettings, layerBackup)
+                : layerBackup === null
+                    ? null
+                    : Transfer.signature(currentSettings);
             autoBackupEl.checked = settings?.autoSettingsBackup === true;
             renderGithub();
             if (!painted) {
@@ -386,6 +521,6 @@ export function initSettingsBackup({ extensionApi, flash, save, refreshCredentia
                 void refreshGithub();
                 void refreshLayers();
             }
-        }
+        },
     };
 }

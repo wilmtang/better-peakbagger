@@ -601,7 +601,7 @@ test('the settings feedback dock stays on screen from any scroll position', asyn
 });
 
 test('the options controller exclusively owns shared status timing', async () => {
-    const draftsSource = await readFile(path.join(root, 'options', 'drafts.js'), 'utf8');
+    const draftsSource = await readFile(path.join(root, 'options', 'drafts.ts'), 'utf8');
     assert.match(draftsSource, /export const initDrafts/);
     assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
 });

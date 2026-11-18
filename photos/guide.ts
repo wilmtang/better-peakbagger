@@ -10,9 +10,9 @@
 import { photoRenderer as Renderer } from '../src/photos/photo-renderer.ts';
 import { initSectionNav } from '../src/ui/section-nav.ts';
 
-for (const slot of document.querySelectorAll('[data-symbol]')) {
+for (const slot of document.querySelectorAll<HTMLElement>('[data-symbol]')) {
     const parsed = new DOMParser().parseFromString(
-        Renderer.markerSymbolSvg(slot.dataset.symbol, { size: 34 }),
+        Renderer.markerSymbolSvg(slot.dataset.symbol ?? '', { size: 34 }),
         'image/svg+xml',
     );
     slot.replaceChildren(document.importNode(parsed.documentElement, true));

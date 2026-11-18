@@ -31,7 +31,7 @@ Files read, in full or in the part relevant to a finding:
 - Network helpers: `src/weather/open-meteo-client.ts`, `src/net/*`,
   `src/background/peakbagger-request-scheduler.js`
 - Weather day/week windows: `src/weather/weather-day.ts`, `weather-week.js`
-- Export helpers: `options/settings-backup.js`, `options/climber-files.js`
+- Export helpers: `options/settings-backup.ts`, `options/climber-files.ts`
 
 Not audited: capture core and provider adapters, the rest of the background
 worker, GitHub backup, GPX analyzer, ascent filter internals, terrain/maps,
@@ -323,8 +323,8 @@ reproduction. Three other exports are more aggressive:
 
 | Site | Link attached | Revocation | Existing download proof |
 | --- | --- | --- | --- |
-| `options/climber-files.js` lines 81–86 (list export) | No | Synchronously, in `finally` | Completed download with parsed bytes in hidden Chrome and Playwright Firefox (`scripts/verify-climber-files.mjs` lines 54–58) |
-| `options/settings-backup.js` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mts`) |
+| `options/climber-files.ts` lines 81–86 (list export) | No | Synchronously, in `finally` | Completed download with parsed bytes in hidden Chrome and Playwright Firefox (`scripts/verify-climber-files.mjs` lines 54–58) |
+| `options/settings-backup.ts` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mts`) |
 | `photos/photos.ts` lines 3338–3343 (project bundle including the original image) | No | After 1 second | None; `scripts/verify-firefox-extension.mts` skips it |
 
 **What is and is not established.** Small synchronous-revoke exports demonstrably
@@ -397,9 +397,9 @@ is actually collected.
 
 ### F5 — Native dialogs remain where the product decided against them
 
-**Evidence.** `options/drafts.js` (lines 383–385) records that native
+**Evidence.** `options/drafts.ts` (lines 383–385) records that native
 `confirm()` cannot follow the dark theme, cannot be styled, and blocks the
-page; `options/photos.js` (lines 5–10) adds that the browser can suppress it.
+page; `options/photos.ts` (lines 5–10) adds that the browser can suppress it.
 The in-page pattern originates in the July 24 polish audit (F6). These sites
 still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 

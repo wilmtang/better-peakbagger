@@ -14,66 +14,225 @@
 import { githubError as GithubError } from '../src/github/github-error-copy.ts';
 import { githubErrors as GithubErrors } from '../src/github/github-errors.ts';
 import { dom as Dom } from '../src/ui/dom.ts';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
-import { optionsUtils as OptionsUtils } from './options-utils.js';
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.ts';
+import { runtimeMessage as RuntimeMessage, type RuntimeMessageExtension } from '../src/ui/runtime-message.ts';
+import { optionsUtils as OptionsUtils } from './options-utils.ts';
+import { githubAuth as GithubAuth, STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.ts';
 
 const { ERROR_CODES } = GithubErrors;
 
 export const GITHUB_ORIGINS = ['https://github.com/*', 'https://api.github.com/*'];
-export const hasGithubPermission = async extensionApi => {
-    if (!extensionApi?.permissions?.contains) return false;
-    try { return !!(await extensionApi.permissions.contains({ origins: GITHUB_ORIGINS })); }
+
+export interface GithubAccessChange {
+    credentialsRemoved?: boolean;
+}
+
+export interface GithubAccessExtensionApi {
+    permissions?: {
+        contains?: (permissions: { origins: string[] }) => Promise<boolean>;
+        request?: (permissions: { origins: string[] }) => Promise<boolean>;
+        onAdded?: {
+            addListener(listener: (permissions: { origins?: string[] }) => void): void;
+        };
+        onRemoved?: {
+            addListener(listener: (permissions: { origins?: string[] }) => void): void;
+        };
+    };
+    storage?: {
+        onChanged?: {
+            addListener(listener: (changes: Record<string, { newValue?: unknown }>, areaName: string) => void): void;
+        };
+    };
+}
+
+export type GithubExtensionApi = (GithubAccessExtensionApi & RuntimeMessageExtension & {
+    tabs?: {
+        create?: (createProperties: { url: string }) => Promise<unknown>;
+    };
+}) | typeof chrome;
+
+export type GithubBackupSettings = {
+    enableGithubBackup?: boolean;
+    autoGithubBackup?: boolean;
+    removeGithubBackupOnDelete?: boolean;
+};
+
+export interface InitGithubBackupOptions {
+    extensionApi: GithubExtensionApi;
+    flash: (message?: string, options?: { error?: boolean }) => unknown;
+    save: (patch: GithubBackupSettings) => Promise<unknown>;
+}
+
+export interface GithubBackupOwner {
+    populate(settings: GithubBackupSettings): void;
+}
+
+export interface GithubStatusRepo {
+    repo?: {
+        owner?: string;
+        name?: string;
+        fullName?: string;
+    } | null;
+}
+
+interface GithubErrorDetails {
+    code?: string;
+    message?: string;
+    status?: number;
+    retryAfterSeconds?: number;
+}
+
+interface GithubAccountInfo {
+    login?: string;
+    id?: number | null;
+}
+
+interface GithubRepoInfo {
+    owner?: string;
+    name?: string;
+    fullName?: string;
+    branch?: string;
+    defaultBranch?: string;
+    id?: number | null;
+    installationId?: number | null;
+}
+
+interface GithubStatusResponse {
+    enabled?: boolean;
+    auto?: boolean;
+    connected?: boolean;
+    hasToken?: boolean;
+    permissionGranted?: boolean;
+    account?: GithubAccountInfo | null;
+    repo?: GithubRepoInfo | null;
+    installUrl?: string;
+    appUrl?: string;
+    verificationUri?: string;
+    needsConfirmation?: boolean;
+    authorizationEpoch?: number | null;
+    phase?: string;
+    code?: string;
+    message?: string;
+    error?: GithubErrorDetails;
+}
+
+interface GithubAuthBeginResponse {
+    phase?: string;
+    userCode?: string;
+    verificationUri?: string;
+    verificationUriComplete?: string | null;
+    expiresIn?: number;
+    startedAt?: number;
+    code?: string;
+    message?: string;
+    error?: GithubErrorDetails;
+}
+
+interface GithubDiscoveryResponse {
+    phase?: string;
+    code?: string;
+    message?: string;
+    installationCount?: number;
+    repos?: GithubRepoInfo[];
+    repo?: GithubRepoInfo | null;
+    error?: GithubErrorDetails;
+}
+
+interface AscentSummaryResponse {
+    ok?: boolean;
+    count?: number;
+    error?: unknown;
+}
+
+interface AscentSummaryRequest {
+    revision: number;
+    repoIdentity: string;
+    promise: Promise<void> | null;
+}
+
+interface MyAscentsResponse {
+    ok?: boolean;
+    url?: string;
+    error?: { code?: string; message?: string };
+}
+
+export const hasGithubPermission = async (
+    extensionApi: GithubAccessExtensionApi | typeof chrome | null | undefined,
+): Promise<boolean> => {
+    const permissions = extensionApi?.permissions as {
+        contains?: (details: { origins: string[] }) => Promise<boolean>;
+    } | undefined;
+    if (!permissions?.contains) return false;
+    try { return !!(await permissions.contains({ origins: GITHUB_ORIGINS })); }
     catch { return false; }
 };
+
 // Connection and optional host access can change while Settings stays open.
 // Observe origins too: storage alone cannot report a revoked host permission.
-export const observeGithubAccess = (extensionApi, refresh) => {
-    extensionApi.storage?.onChanged?.addListener((changes, area) => {
+export const observeGithubAccess = (
+    extensionApi: GithubAccessExtensionApi | typeof chrome,
+    refresh: (change?: GithubAccessChange) => void,
+): void => {
+    const storageOnChanged = extensionApi.storage?.onChanged as {
+        addListener?: (listener: (changes: Record<string, { newValue?: unknown }>, areaName: string) => void) => void;
+    } | undefined;
+    storageOnChanged?.addListener?.((changes, area) => {
         if (area === 'local' && changes[GITHUB_AUTH_STORAGE_KEY]) {
             refresh({ credentialsRemoved: changes[GITHUB_AUTH_STORAGE_KEY].newValue == null });
         }
     });
-    const originsChanged = change => {
+    const originsChanged = (change: { origins?: string[] }): void => {
         if (change.origins?.some(origin => origin === '<all_urls>' || GITHUB_ORIGINS.includes(origin))) refresh();
     };
-    extensionApi.permissions?.onAdded?.addListener(originsChanged);
-    extensionApi.permissions?.onRemoved?.addListener(originsChanged);
+    const permissions = extensionApi.permissions as {
+        onAdded?: { addListener?: (listener: (permissions: { origins?: string[] }) => void) => void };
+        onRemoved?: { addListener?: (listener: (permissions: { origins?: string[] }) => void) => void };
+    } | undefined;
+    permissions?.onAdded?.addListener?.(originsChanged);
+    permissions?.onRemoved?.addListener?.(originsChanged);
 };
-const errorText = error => GithubError.message(error, {
+
+const errorText = (error: unknown): string => GithubError.message(error, {
     fallback: 'GitHub did not return a usable response. Reload Settings and try again.',
 });
 
-export function initGithubBackup({ extensionApi, flash, save }) {
-    const enableEl = document.getElementById('enable-github-backup');
-    const detailEl = document.getElementById('github-detail');
-    const panelEl = document.getElementById('github-panel');
-    const disconnectEl = document.getElementById('github-disconnect');
-    const disconnectStatusEl = document.getElementById('github-disconnect-status');
-    const ascentDetailEl = document.getElementById('github-ascent-detail');
-    const ascentPanelEl = document.getElementById('github-ascent-panel');
+export function initGithubBackup({ extensionApi, flash, save }: InitGithubBackupOptions): GithubBackupOwner {
+    const rawEnableEl = document.getElementById('enable-github-backup') as HTMLInputElement | null;
+    const rawDetailEl = document.getElementById('github-detail');
+    const rawPanelEl = document.getElementById('github-panel');
+    const rawDisconnectEl = document.getElementById('github-disconnect') as HTMLButtonElement | null;
+    const rawDisconnectStatusEl = document.getElementById('github-disconnect-status');
+    const rawAscentDetailEl = document.getElementById('github-ascent-detail');
+    const rawAscentPanelEl = document.getElementById('github-ascent-panel');
     if (OptionsUtils.logMissingElements('GitHub settings', {
-        'enable-github-backup': enableEl,
-        'github-detail': detailEl,
-        'github-panel': panelEl,
-        'github-disconnect': disconnectEl,
-        'github-disconnect-status': disconnectStatusEl,
-        'github-ascent-detail': ascentDetailEl,
-        'github-ascent-panel': ascentPanelEl,
-    })) {
+        'enable-github-backup': rawEnableEl,
+        'github-detail': rawDetailEl,
+        'github-panel': rawPanelEl,
+        'github-disconnect': rawDisconnectEl,
+        'github-disconnect-status': rawDisconnectStatusEl,
+        'github-ascent-detail': rawAscentDetailEl,
+        'github-ascent-panel': rawAscentPanelEl,
+    }) || !rawEnableEl || !rawDetailEl || !rawPanelEl || !rawDisconnectEl
+        || !rawDisconnectStatusEl || !rawAscentDetailEl || !rawAscentPanelEl) {
         return { populate() {} };
     }
+    const enableEl: HTMLInputElement = rawEnableEl;
+    const detailEl: HTMLElement = rawDetailEl;
+    const panelEl: HTMLElement = rawPanelEl;
+    const disconnectEl: HTMLButtonElement = rawDisconnectEl;
+    const disconnectStatusEl: HTMLElement = rawDisconnectStatusEl;
+    const ascentDetailEl: HTMLElement = rawAscentDetailEl;
+    const ascentPanelEl: HTMLElement = rawAscentPanelEl;
 
-    let pollTimer = null;
-    let countdownTimer = null;
+    let pollTimer: ReturnType<typeof setTimeout> | undefined;
+    let countdownTimer: ReturnType<typeof setTimeout> | undefined;
     let choosingRepo = false;
     let currentSettings = {
         enableGithubBackup: false,
         autoGithubBackup: false,
         removeGithubBackupOnDelete: false,
     };
-    let currentStatus = null;
-    let currentAscentSummary = null;
+    let currentStatus: GithubStatusResponse | null = null;
+    let currentAscentSummary: AscentSummaryResponse | null = null;
     // The summary costs a real GitHub API call (client.getAscentFolders), so it
     // is cached with a short TTL rather than being invalidated whenever the
     // window regains focus. A repository change and the explicit Try again
@@ -88,26 +247,26 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // A confirmation the user is reading must never be replaced underneath them.
     let confirmingExistingRepo = false;
     let ascentSummaryRevision = 0;
-    let ascentSummaryRequest = null;
+    let ascentSummaryRequest: AscentSummaryRequest | null = null;
     let githubRevision = 0;
     let connectionOperations = 0;
     let accessRefreshPending = false;
     let disconnectBusy = false;
     let cleanupRequests = 0;
     const disconnectHelp = disconnectStatusEl.textContent;
-    const resetDisconnectFeedback = () => { disconnectStatusEl.textContent = disconnectHelp; disconnectStatusEl.classList.remove('is-error'); };
+    const resetDisconnectFeedback = (): void => { disconnectStatusEl.textContent = disconnectHelp; disconnectStatusEl.classList.remove('is-error'); };
     let setupGeneration = 0;
-    const setupIsCurrent = generation => generation === setupGeneration && !disconnectBusy;
-    const stopPollTimer = () => { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } };
-    const stopTimers = () => {
+    const setupIsCurrent = (generation: number): boolean => generation === setupGeneration && !disconnectBusy;
+    const stopPollTimer = (): void => { if (pollTimer !== undefined) { clearTimeout(pollTimer); pollTimer = undefined; } };
+    const stopTimers = (): void => {
         stopPollTimer();
-        if (countdownTimer) { clearTimeout(countdownTimer); countdownTimer = null; }
+        if (countdownTimer !== undefined) { clearTimeout(countdownTimer); countdownTimer = undefined; }
     };
-    const invalidateSetup = () => { setupGeneration++; githubRevision++; stopTimers(); return setupGeneration; };
+    const invalidateSetup = (): number => { setupGeneration++; githubRevision++; stopTimers(); return setupGeneration; };
 
-    const send = RuntimeMessage.bind(extensionApi);
+    const send = RuntimeMessage.bind(extensionApi as RuntimeMessageExtension);
     // Auth writes during our own setup must settle before repainting it.
-    const withConnectionOperation = async operation => {
+    const withConnectionOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
         connectionOperations++;
         try { return await operation(); }
         finally {
@@ -122,23 +281,35 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // ---- small DOM builders ------------------------------------------------
 
     const el = Dom.element;
-    const button = (label, { primary = false, onClick } = {}) =>
-        el('button', { type: 'button', class: primary ? 'panel-button primary github-primary' : 'panel-button secondary', 'data-sizing-label': label,
-            onclick: event => withConnectionOperation(() => onClick(event)) }, [el('span', { text: label })]);
+    const button = (
+        label: string,
+        { primary = false, onClick }: { primary?: boolean; onClick?: (event: MouseEvent) => unknown } = {},
+    ): HTMLButtonElement =>
+        el('button', {
+            type: 'button',
+            class: primary ? 'panel-button primary github-primary' : 'panel-button secondary',
+            'data-sizing-label': label,
+            onclick: (event: MouseEvent) => withConnectionOperation(async () => onClick?.(event)),
+        }, [el('span', { text: label })]);
     // One way out to an external page. tabs.create is preferred and cannot be
     // popup-blocked; window.open is the last resort for a context without the
     // tabs API, and no longer swallows its failure — "Open
     // github.com/login/device" is the single action the whole device flow
     // depends on, so it must never do nothing without saying so.
-    const openTab = url => { window.open(url, '_blank', 'noopener'); };
-    const createTab = async url => {
-        if (extensionApi.tabs && typeof extensionApi.tabs.create === 'function') {
-            await extensionApi.tabs.create({ url });
+    const openTab = (url: string): void => { window.open(url, '_blank', 'noopener'); };
+    const createTab = async (url: string): Promise<void> => {
+        const tabs = extensionApi.tabs as { create?: (createProperties: { url: string }) => Promise<unknown> } | undefined;
+        if (tabs && typeof tabs.create === 'function') {
+            await tabs.create({ url });
             return;
         }
         openTab(url);
     };
-    const openExternal = async (url, description, { expectReturn = false } = {}) => {
+    const openExternal = async (
+        url: string,
+        description: string,
+        { expectReturn = false }: { expectReturn?: boolean } = {},
+    ): Promise<void> => {
         try {
             await createTab(url);
             // Only a trip to GitHub arms the return check.
@@ -148,10 +319,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 { error: true });
         }
     };
-    const renderInto = (target, ...nodes) => { target.replaceChildren(...nodes.filter(Boolean)); };
-    const render = (...nodes) => { githubRevision++; delete panelEl.dataset.disconnected; renderInto(panelEl, ...nodes); };
-    const renderAscent = (...nodes) => { renderInto(ascentPanelEl, ...nodes); };
-    const newRepositoryUrl = status => {
+    const renderInto = (target: HTMLElement, ...nodes: (Node | null | undefined | false)[]): void => {
+        target.replaceChildren(...nodes.filter((node): node is Node => Boolean(node)));
+    };
+    const render = (...nodes: (Node | null | undefined | false)[]): void => {
+        githubRevision++;
+        delete panelEl.dataset.disconnected;
+        renderInto(panelEl, ...nodes);
+    };
+    const renderAscent = (...nodes: (Node | null | undefined | false)[]): void => {
+        renderInto(ascentPanelEl, ...nodes);
+    };
+    const newRepositoryUrl = (status: GithubStatusResponse): string => {
         const url = new URL('https://github.com/new');
         url.searchParams.set('name', 'better-peakbagger-backup');
         url.searchParams.set('description', 'Backups and transfers created by Better Peakbagger');
@@ -162,7 +341,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // ---- phase renderers ---------------------------------------------------
 
-    const renderDisconnected = () => {
+    const renderDisconnected = (): void => {
         choosingRepo = confirmingExistingRepo = false;
         // Storage notifications from our own disconnect can arrive after its
         // reply. Keep the new Connect button and its restored keyboard focus.
@@ -173,10 +352,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('div', { class: 'github-actions' }, button('Connect GitHub', { primary: true, onClick: ensureConnection })),
         );
         panelEl.dataset.disconnected = 'true';
-        if (restoreFocus) panelEl.querySelector('button')?.focus({ preventScroll: true });
+        if (restoreFocus) panelEl.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
     };
 
-    const renderPermissionDenied = () => {
+    const renderPermissionDenied = (): void => {
         const restoreFocus = panelEl.contains(document.activeElement);
         stopTimers();
         detailEl.hidden = false;
@@ -184,10 +363,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             el('p', { class: 'github-line github-error', text: 'GitHub access wasn’t granted. Allow access to GitHub to connect.' }),
             el('div', { class: 'github-actions' }, button('Try again', { primary: true, onClick: ensureConnection })),
         );
-        if (restoreFocus) (disconnectEl.hidden ? panelEl.querySelector('button') : disconnectEl)?.focus({ preventScroll: true });
+        if (restoreFocus) {
+            (disconnectEl.hidden ? panelEl.querySelector<HTMLElement>('button') : disconnectEl)?.focus({ preventScroll: true });
+        }
     };
 
-    const renderConnecting = code => {
+    const renderConnecting = (code: GithubAuthBeginResponse): void => {
         const codeValue = el('span', { class: 'github-code-value', text: code.userCode || '········' });
         const copyLabel = el('span', { class: 'github-code-copy', text: 'Copy' });
         const codeBox = el('button', {
@@ -220,7 +401,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             hint,
         );
         const deadline = (Number(code.startedAt) || Date.now()) + (Number(code.expiresIn) || 900) * 1000;
-        const updateCountdown = () => {
+        const updateCountdown = (): void => {
             const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
             if (remaining <= 0) { renderError('expired'); return; }
             const minutes = Math.floor(remaining / 60);
@@ -231,11 +412,11 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         updateCountdown();
     };
 
-    const renderChooseRepo = (status, discovery) => {
+    const renderChooseRepo = (status: GithubStatusResponse, discovery: GithubDiscoveryResponse | null): void => {
         choosingRepo = true;
         confirmingExistingRepo = false;
         const repos = (discovery && discovery.repos) || [];
-        const installUrl = status.installUrl;
+        const installUrl = status.installUrl || GithubAuth.INSTALL_URL;
         const createButton = button('Create repository on GitHub', {
             primary: repos.length === 0,
             onClick: () => openExternal(newRepositoryUrl(status), 'The new-repository page', { expectReturn: true }),
@@ -273,7 +454,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const renderExistingRepoConfirmation = (repo, authorizationEpoch) => {
+    const renderExistingRepoConfirmation = (repo: GithubRepoInfo, authorizationEpoch?: number | null): void => {
         choosingRepo = true;
         confirmingExistingRepo = true;
         const fullName = repo.fullName || `${repo.owner}/${repo.name}`;
@@ -290,7 +471,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         );
     };
 
-    const repositoryUrl = status => {
+    const repositoryUrl = (status: GithubStatusResponse | null): string | null => {
         const owner = status?.repo?.owner;
         const name = status?.repo?.name;
         if (!owner || !name) return null;
@@ -299,7 +480,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // The repository belongs to the connection, not to any one backup, so its
     // link sits here beside the account rather than inside ascent and TR backup.
-    const renderConnected = status => {
+    const renderConnected = (status: GithubStatusResponse): void => {
         const restoreFocus = panelEl.contains(document.activeElement);
         choosingRepo = false;
         confirmingExistingRepo = false;
@@ -317,14 +498,22 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                     target: '_blank', rel: 'noopener noreferrer', text: 'View repository',
                 }) : null,
                 button('Change repository', { onClick: () => refreshRepos({ choose: true }) }),
-            ].filter(Boolean)),
+            ].filter((node): node is HTMLAnchorElement | HTMLButtonElement => Boolean(node))),
         );
         if (restoreFocus) disconnectEl.focus({ preventScroll: true });
     };
 
-    const paintAscentSummary = (summaryEl, status, summary, { updating = false } = {}) => {
+    const paintAscentSummary = (
+        summaryEl: HTMLElement,
+        status: GithubStatusResponse | null,
+        summary: AscentSummaryResponse | null,
+        { updating = false }: { updating?: boolean } = {},
+    ): void => {
         summaryEl.classList.toggle('github-error', !!summary && !summary.ok);
-        summaryEl.classList.toggle('github-backup-confirmed', !!summary && summary.ok && summary.count > 0);
+        summaryEl.classList.toggle(
+            'github-backup-confirmed',
+            Boolean(summary && summary.ok && typeof summary.count === 'number' && summary.count > 0),
+        );
         summaryEl.setAttribute('aria-busy', String(updating || !summary));
         if (!summary) {
             summaryEl.textContent = 'Checking existing backups…';
@@ -341,7 +530,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             );
             return;
         }
-        const count = Number.isInteger(summary.count) && summary.count >= 0 ? summary.count : 0;
+        const count = Number.isInteger(summary.count) && (summary.count as number) >= 0 ? (summary.count as number) : 0;
         const repo = status?.repo?.fullName || `${status?.repo?.owner}/${status?.repo?.name}`;
         summaryEl.textContent = count === 0
             ? 'No ascent and TR backups yet.'
@@ -352,18 +541,22 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }));
     };
 
-    const ascentRepoIdentity = status => status?.permissionGranted && status.connected
-        ? `${status.repo?.owner || ''}/${status.repo?.name || ''}`
-        : '';
-    const ascentSummaryFresh = () =>
+    const ascentRepoIdentity = (status: GithubStatusResponse | null): string =>
+        status?.permissionGranted && status.connected
+            ? `${status.repo?.owner || ''}/${status.repo?.name || ''}`
+            : '';
+    const ascentSummaryFresh = (): boolean =>
         !!currentAscentSummary && (Date.now() - ascentSummaryAt) < ASCENT_SUMMARY_TTL_MS;
-    const forgetAscentSummary = () => {
+    const forgetAscentSummary = (): void => {
         ascentSummaryRevision++;
         currentAscentSummary = null;
         ascentSummaryAt = 0;
     };
 
-    const refreshAscentSummary = async (summaryEl, status) => {
+    const refreshAscentSummary = async (
+        summaryEl: HTMLElement,
+        status: GithubStatusResponse | null,
+    ): Promise<void> => {
         const revision = ascentSummaryRevision;
         const repoIdentity = ascentRepoIdentity(status);
         if (!repoIdentity) return;
@@ -373,12 +566,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (!ascentSummaryRequest
                 || ascentSummaryRequest.revision !== revision
                 || ascentSummaryRequest.repoIdentity !== repoIdentity) {
-            const request = {
+            const request: AscentSummaryRequest = {
                 revision,
                 repoIdentity,
                 promise: null,
             };
-            request.promise = send({ type: 'GITHUB_ASCENT_BACKUP_SUMMARY' })
+            request.promise = send<AscentSummaryResponse>({ type: 'GITHUB_ASCENT_BACKUP_SUMMARY' })
                 .then(response => {
                     if (revision !== ascentSummaryRevision
                             || repoIdentity !== ascentRepoIdentity(currentStatus)) return;
@@ -399,22 +592,25 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         paintAscentSummary(summaryEl, status, currentAscentSummary);
     };
 
-    const refreshVisibleAscentSummary = ({ force = false } = {}) => {
+    const refreshVisibleAscentSummary = ({ force = false }: { force?: boolean } = {}): void => {
         if (document.visibilityState === 'hidden' || ascentDetailEl.hidden) return;
         if (!force && ascentSummaryFresh()) return;
-        const summaryEl = ascentPanelEl.querySelector('.github-backup-summary');
+        const summaryEl = ascentPanelEl.querySelector<HTMLElement>('.github-backup-summary');
         if (!summaryEl || !ascentRepoIdentity(currentStatus)) return;
         void refreshAscentSummary(summaryEl, currentStatus);
     };
 
-    const renderAscentConnected = status => {
+    const renderAscentConnected = (status: GithubStatusResponse): void => {
         const summaryEl = el('p', {
             class: 'github-line github-backup-summary', role: 'status', 'aria-live': 'polite',
         });
         const historyStatus = el('p', { class: 'github-hint github-error github-history-status', role: 'status' });
         historyStatus.hidden = true;
-        const showHistoryError = (message, { offerSignIn = false, offerPeakbagger = false } = {}) => {
-            const children = [document.createTextNode(message)];
+        const showHistoryError = (
+            message: string,
+            { offerSignIn = false, offerPeakbagger = false }: { offerSignIn?: boolean; offerPeakbagger?: boolean } = {},
+        ): void => {
+            const children: Node[] = [document.createTextNode(message)];
             if (offerSignIn || offerPeakbagger) {
                 children.push(
                     document.createTextNode(' '),
@@ -433,13 +629,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             historyStatus.replaceChildren(...children);
             historyStatus.hidden = false;
         };
-        const openMyAscents = async event => {
-            const control = event.currentTarget;
-            if (control.getAttribute('aria-busy') === 'true') return;
+        const openMyAscents = async (event: Event): Promise<void> => {
+            const control = event.currentTarget as HTMLElement | null;
+            if (!control || control.getAttribute('aria-busy') === 'true') return;
             OptionsUtils.setButtonBusy(control, true);
-            control.querySelector('span').textContent = 'Opening…';
+            const labelSpan = control.querySelector('span');
+            if (labelSpan) labelSpan.textContent = 'Opening…';
             historyStatus.hidden = true;
-            const response = await send({ type: 'PEAKBAGGER_MY_ASCENTS' });
+            const response = await send<MyAscentsResponse>({ type: 'PEAKBAGGER_MY_ASCENTS' });
             if (response && response.ok && response.url) {
                 try {
                     await createTab(response.url);
@@ -451,16 +648,18 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 const message = response && response.error && response.error.message
                     ? response.error.message
                     : 'Peakbagger could not find your My Ascents page. Confirm you’re signed in, then try again.';
-                showHistoryError(message, { offerSignIn: response && response.error && response.error.code === 'peakbagger-signed-out', offerPeakbagger: true });
+                showHistoryError(message, { offerSignIn: response?.error?.code === 'peakbagger-signed-out', offerPeakbagger: true });
             }
             OptionsUtils.setButtonBusy(control, false);
-            control.querySelector('span').textContent = 'Open My Ascents';
+            if (labelSpan) labelSpan.textContent = 'Open My Ascents';
         };
         const deleteToggle = el('label', { class: 'github-auto', for: 'github-delete-backup' }, [
             el('input', {
                 type: 'checkbox', id: 'github-delete-backup',
                 checked: !!currentSettings.removeGithubBackupOnDelete,
-                onchange: event => { void save({ removeGithubBackupOnDelete: event.target.checked }); },
+                onchange: (event: Event) => {
+                    void save({ removeGithubBackupOnDelete: (event.target as HTMLInputElement).checked });
+                },
             }),
             el('span', { text: 'Remove ascent and TR backup files after I delete an ascent' }),
         ]);
@@ -485,7 +684,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         else void refreshAscentSummary(summaryEl, status);
     };
 
-    const renderAscentStatus = (status = currentStatus) => {
+    const renderAscentStatus = (status: GithubStatusResponse | null = currentStatus): void => {
         const enabled = !!currentSettings.enableGithubBackup;
         ascentDetailEl.hidden = !enabled;
         if (!enabled) {
@@ -502,21 +701,27 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }));
     };
 
-    const rememberStatus = status => {
+    function rememberStatus(status: GithubStatusResponse): GithubStatusResponse;
+    function rememberStatus(status: GithubStatusResponse | null | undefined): GithubStatusResponse | null;
+    function rememberStatus(status: GithubStatusResponse | null | undefined): GithubStatusResponse | null {
         if ((status?.hasToken || status?.connected) && !(currentStatus?.hasToken || currentStatus?.connected)) resetDisconnectFeedback();
-        if (ascentRepoIdentity(currentStatus) !== ascentRepoIdentity(status)) forgetAscentSummary();
+        if (ascentRepoIdentity(currentStatus) !== ascentRepoIdentity(status ?? null)) forgetAscentSummary();
         currentStatus = status || null;
         disconnectEl.hidden = !(status?.hasToken || status?.connected);
         renderAscentStatus();
         return currentStatus;
-    };
+    }
 
-    const renderError = (error, retry, actionLabel = 'Try again') => {
+    const renderError = (error: unknown, retry?: () => unknown, actionLabel = 'Try again'): void => {
         stopTimers();
         // A failed status/discovery check says nothing about local credential
         // removal. Offer cleanup even when the connection cannot be inspected.
         disconnectEl.hidden = false;
-        const code = typeof error === 'string' ? error : error && error.code;
+        const code = typeof error === 'string'
+            ? error
+            : error && typeof error === 'object' && 'code' in error
+                ? (error as { code?: unknown }).code
+                : undefined;
         if (code === 'auth' || code === 'no-token') {
             retry = reconnect;
             actionLabel = 'Reconnect GitHub';
@@ -529,22 +734,22 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // ---- flow --------------------------------------------------------------
 
-    const connect = async () => {
+    const connect = async (): Promise<void> => {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
         stopTimers();
         render(el('p', { class: 'github-line', text: 'Contacting GitHub…' }));
-        const res = await send({ type: 'GITHUB_AUTH_BEGIN' });
+        const res = await send<GithubAuthBeginResponse>({ type: 'GITHUB_AUTH_BEGIN' });
         if (!setupIsCurrent(generation)) return;
         if (!res || res.phase === 'error') return renderError(res);
         renderConnecting(res);
         pollAuth(generation);
     };
 
-    const requestDisconnect = async (retry, generation) => {
+    const requestDisconnect = async (retry: () => unknown, generation: number): Promise<boolean> => {
         cleanupRequests++;
         try {
-            const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+            const response = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_DISCONNECT' });
             if (!setupIsCurrent(generation)) return false;
             if (response && response.phase !== 'error' && response.connected === false) { rememberStatus(response); return true; }
             const detail = response?.error?.message
@@ -554,16 +759,16 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         } finally { cleanupRequests--; }
     };
 
-    const cancelConnect = async () => {
+    const cancelConnect = async (): Promise<void> => {
         const generation = invalidateSetup();
         if (await requestDisconnect(cancelConnect, generation) && setupIsCurrent(generation)) await renderFromStatus();
     };
 
-    const pollAuth = generation => {
+    const pollAuth = (generation: number): void => {
         if (!setupIsCurrent(generation)) return;
         stopPollTimer();
         pollTimer = setTimeout(async () => {
-            const state = await send({ type: 'GITHUB_AUTH_STATE' });
+            const state = await send<GithubAuthBeginResponse>({ type: 'GITHUB_AUTH_STATE' });
             if (!setupIsCurrent(generation)) return;
             if (!state) return pollAuth(generation);
             if (state.phase === 'polling') return pollAuth(generation);
@@ -574,11 +779,11 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         }, 2000);
     };
 
-    const afterAuthorized = async () => {
+    const afterAuthorized = async (): Promise<void> => {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
         stopTimers();
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const status = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' });
         if (!setupIsCurrent(generation)) return;
         if (!status || status.phase === 'error') {
             return renderError(status?.error || status, afterAuthorized);
@@ -588,10 +793,10 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             flash('GitHub connected');
             return renderConnected(connected);
         }
-        const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
+        const discovery = await send<GithubDiscoveryResponse>({ type: 'GITHUB_AUTH_DISCOVER' });
         if (!setupIsCurrent(generation)) return;
         if (discovery && discovery.phase === 'error') return renderError(discovery, afterAuthorized);
-        const refreshed = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const refreshed = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' });
         if (!setupIsCurrent(generation)) return;
         if (!refreshed || refreshed.phase === 'error') {
             return renderError(refreshed?.error || refreshed, afterAuthorized);
@@ -604,14 +809,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         return renderChooseRepo(rememberStatus({ ...(refreshed || status || {}), permissionGranted: true }), discovery);
     };
 
-    const refreshRepos = async ({ choose = false } = {}) => {
+    const refreshRepos = async ({ choose = false }: { choose?: boolean } = {}): Promise<void> => {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
         render(el('p', { class: 'github-line', text: 'Checking repository access…' }));
-        const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
+        const discovery = await send<GithubDiscoveryResponse>({ type: 'GITHUB_AUTH_DISCOVER' });
         if (!setupIsCurrent(generation)) return;
         if (discovery && discovery.phase === 'error') return renderError(discovery, refreshRepos);
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const status = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' });
         if (!setupIsCurrent(generation)) return;
         if (!status || status.phase === 'error') {
             return renderError(status?.error || status, refreshRepos);
@@ -621,11 +826,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         return renderChooseRepo(next, discovery);
     };
 
-    const selectRepo = async (repo, { confirmExisting = false, authorizationEpoch = null } = {}) => {
+    const selectRepo = async (
+        repo: GithubRepoInfo,
+        { confirmExisting = false, authorizationEpoch = null }: { confirmExisting?: boolean; authorizationEpoch?: number | null } = {},
+    ): Promise<void> => {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
         render(el('p', { class: 'github-line', text: 'Checking repository safety…' }));
-        const status = await send({
+        const status = await send<GithubStatusResponse>({
             type: 'GITHUB_AUTH_SELECT_REPO', repo, confirmExisting, authorizationEpoch,
         });
         if (!setupIsCurrent(generation)) return;
@@ -646,13 +854,14 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             );
         }
         if (status && status.error) {
-            if ([
+            const retryable: readonly string[] = [
                 ERROR_CODES.NETWORK,
                 ERROR_CODES.RATE_LIMIT,
                 ERROR_CODES.CONFLICT,
                 ERROR_CODES.INVALID,
                 ERROR_CODES.UNKNOWN,
-            ].includes(status.error.code)) {
+            ];
+            if (status.error.code && retryable.includes(status.error.code)) {
                 return renderError(status.error, () => selectRepo(repo, { confirmExisting }), 'Try again');
             }
             return renderError(status.error, () => refreshRepos({ choose: true }), 'Choose another');
@@ -660,19 +869,19 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         return refreshRepos({ choose: true });
     };
 
-    const reconnect = async () => {
+    const reconnect = async (): Promise<void> => {
         const generation = invalidateSetup();
         if (await requestDisconnect(reconnect, generation) && setupIsCurrent(generation)) await ensureConnection();
     };
 
-    const disconnect = async () => {
+    const disconnect = async (): Promise<void> => {
         if (disconnectBusy) return;
         disconnectBusy = true; invalidateSetup();
         OptionsUtils.setButtonBusy(disconnectEl, true);
         disconnectStatusEl.classList.remove('is-error');
         disconnectStatusEl.textContent = 'Disconnecting…';
         try {
-            const response = await send({ type: 'GITHUB_AUTH_DISCONNECT' });
+            const response = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_DISCONNECT' });
             if (!response || response.phase === 'error' || response.connected !== false) {
                 disconnectStatusEl.classList.add('is-error');
                 disconnectStatusEl.textContent = 'The saved connection could not be removed. Try Disconnect again.';
@@ -685,7 +894,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             rememberStatus(response);
             disconnectStatusEl.textContent = 'Disconnected. Your remote backups are unchanged.';
             renderDisconnected();
-            if (restoreFocus) panelEl.querySelector('button')?.focus({ preventScroll: true });
+            if (restoreFocus) panelEl.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
             flash('GitHub disconnected');
         } finally {
             disconnectBusy = false;
@@ -695,12 +904,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     disconnectEl.addEventListener('click', () => { void withConnectionOperation(disconnect); });
 
     // Show the connection state for the current stored status.
-    const renderFromStatus = async ({ preserveSetup = false } = {}) => {
+    const renderFromStatus = async ({ preserveSetup = false }: { preserveSetup?: boolean } = {}): Promise<void> => {
         const revision = ++githubRevision;
         if (disconnectBusy) return;
         detailEl.hidden = false;
         const [permissionGranted, status] = await Promise.all([
-            hasGithubPermission(extensionApi), send({ type: 'GITHUB_AUTH_STATUS' }),
+            hasGithubPermission(extensionApi), send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' }),
         ]);
         if (revision !== githubRevision) return;
         if (!status || status.phase === 'error') {
@@ -712,13 +921,13 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             if (next.hasToken || next.connected) return renderPermissionDenied();
             return renderDisconnected();
         }
-        if (preserveSetup && (pollTimer || ((choosingRepo || confirmingExistingRepo) && next.hasToken))) return;
+        if (preserveSetup && (pollTimer !== undefined || ((choosingRepo || confirmingExistingRepo) && next.hasToken))) return;
         if (next.connected) return renderConnected(next);
         if (next.hasToken) {
-            const discovery = await send({ type: 'GITHUB_AUTH_DISCOVER' });
+            const discovery = await send<GithubDiscoveryResponse>({ type: 'GITHUB_AUTH_DISCOVER' });
             if (revision !== githubRevision) return;
             if (discovery && discovery.phase === 'error') return renderError(discovery, renderFromStatus);
-            const after = await send({ type: 'GITHUB_AUTH_STATUS' });
+            const after = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' });
             if (revision !== githubRevision) return;
             if (!after || after.phase === 'error') {
                 return renderError(after?.error || after, renderFromStatus);
@@ -732,7 +941,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
 
     // ---- toggle ------------------------------------------------------------
 
-    async function ensureConnection() {
+    async function ensureConnection(): Promise<void> {
         const generation = setupGeneration;
         if (!setupIsCurrent(generation)) return;
         resetDisconnectFeedback();
@@ -742,7 +951,12 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         if (!permitted) {
             let granted = false;
             try {
-                granted = await extensionApi.permissions.request({ origins: GITHUB_ORIGINS });
+                const permissions = extensionApi.permissions as {
+                    request?: (details: { origins: string[] }) => Promise<boolean>;
+                } | undefined;
+                if (permissions?.request) {
+                    granted = await permissions.request({ origins: GITHUB_ORIGINS });
+                }
             } catch { granted = false; }
             if (!setupIsCurrent(generation)) return;
             if (!granted) {
@@ -750,7 +964,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
                 return;
             }
         }
-        const status = await send({ type: 'GITHUB_AUTH_STATUS' });
+        const status = await send<GithubStatusResponse>({ type: 'GITHUB_AUTH_STATUS' });
         if (!setupIsCurrent(generation)) return;
         if (!status || status.phase === 'error') {
             renderError(status?.error || status, ensureConnection);
@@ -788,7 +1002,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
         } else {
             refreshVisibleAscentSummary();
         }
-        if (pollTimer || !awaitingGithubReturn) return;
+        if (pollTimer !== undefined || !awaitingGithubReturn) return;
         if (confirmingExistingRepo) return;
         awaitingGithubReturn = false;
         if (choosingRepo) void withConnectionOperation(() => refreshRepos({ choose: true }));
@@ -821,7 +1035,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
     // settings control only whether ascent-specific actions are exposed.
     let painted = false;
     return {
-        populate(settings) {
+        populate(settings: GithubBackupSettings = {}) {
             currentSettings = {
                 enableGithubBackup: !!settings.enableGithubBackup,
                 autoGithubBackup: !!settings.autoGithubBackup,
@@ -831,7 +1045,7 @@ export function initGithubBackup({ extensionApi, flash, save }) {
             renderAscentStatus();
             if (!painted) {
                 painted = true;
-                if (!pollTimer) void renderFromStatus();
+                if (pollTimer === undefined) void renderFromStatus();
             }
         },
     };
