@@ -22,7 +22,7 @@ Feature backlog is not tracked here. It stays in its own
 | `verify -- chrome` and `-- firefox` stopped at the Garmin section check | `69c7a321`: the verifier expected the section to hide, but `132303e1` keeps it available for Disconnect | Failed 4 of 4 runs before; both browsers pass after |
 | Terrain visual 2D gap (41px against 40px) and Firefox Sentinel trigger | No longer occur | `verify -- terrain chrome` and `firefox` pass on Metal |
 | `deepmerge` / `addons-linter` / `web-ext` dev advisories | Superseded upstream: the `web-ext` and `addons-linter` chain no longer pulls vulnerable `deepmerge` | `npm run audit:ci` passes with zero production advisories (`npm audit --omit=dev` is 0); remaining dev entries stem from `picomatch` |
-| Actionable CodeQL alerts on `main` (`#62`, `#63`, `#64`, `#65`, `#67`, `#119`, `#129`) | `cc4d2787`, `83cef8b0`: single-pass entity decoding and linear `indexOf` HTML scanning in `src/peakbagger/peakbagger-account.ts`, CSPRNG tokens in `src/ascent/ascent-upload.ts`, explicit `switch` dispatch in `src/maps/custom-overlay-data.ts`, and escaped pipe character class in `scripts/probe-chrome-extension-load.mts` | Focused unit suites (`10/10` + `107/107`), full `npm test` (`4,208/4,208`), and PR #77 `CodeQL` run `44258778768` (`0` new alerts) |
+| Actionable CodeQL alerts on `main` (`#62`, `#63`, `#64`, `#65`, `#67`, `#119`, `#129`) | `cc4d2787`, `83cef8b0`, `c7347111`: single-pass entity decoding and ASCII-offset-safe linear `indexOf` HTML scanning in `src/peakbagger/peakbagger-account.ts`, CSPRNG tokens in `src/ascent/ascent-upload.ts`, explicit `switch` dispatch in `src/maps/custom-overlay-data.ts`, and pre-escape newline/length-bounded pipe escaping in `scripts/probe-chrome-extension-load.mts` | Focused unit suites (`15/15` post-fix; `10/10` + `107/107` initial), full `npm test` (`4,208/4,208`), and PR #77 `CodeQL` (`44258778768` at `f599ca20`; re-gated before merge) |
 | CI verifier flakiness Phases 1–3 (`F1`–`F4`) | `2effc2b7`, `bfb83e1b`, `f95a4c63`: serialized `buddyRefreshQueue` plus Firefox buddy-mutation waits (`F3`), non-clamped post-frame `hashchange` alignment in `src/ui/section-nav.ts` (`F4`), and BiDi `navigationEpoch`/`network.fetchError` scoping with structured card-readiness output (`F1`/`F2`) | Hidden Chrome/Firefox verifiers and hosted PR #77 `Test` run `44258780970` (`35/35` jobs); see [CI verifier flakiness remediation](https://github.com/wilmtang/better-peakbagger/blob/893853927c3a02c58600de32add1aa7e50196e6f/docs/plans/ci-verifier-flakiness.md) |
 | Firefox verifier `-no-remote` isolation | `70738f63`: added `-no-remote` alongside `-headless` across all 13 Selenium Firefox verifiers, pinned in `test/project/verification-launch.test.mts` | `5/5` launch tests, hidden Firefox `settings-fragments`, and PR #77 `Test` run `44258780970` |
 | Real-browser disappearing-row replacement focus | `f7a172e8`: `verifyDisappearingRowReplacementFocus` in `scripts/verify-climber-transitions.mts` removes a row beneath a keyboard-opened card and confirms focus stays on the next row without scrolling or opening its card past the 350ms dwell delay | Chrome `158.0.8127.18` and Firefox `159.0` (`1280` scale 1 and `390` scale 2) passed |
@@ -31,21 +31,21 @@ Feature backlog is not tracked here. It stays in its own
 
 ### Acceptance & verification run — November 17, 2026
 
-Run on Node `v26.13.1` on macOS (`Apple M3 Pro`) against PR `#77` (`fix/advisories-and-followups`) plus hosted GitHub Actions CI (`ubuntu-24.04` / `macos-15`). Browser checks ran hidden.
+Local gates ran on Node `v26.13.1` on macOS (`Apple M3 Pro`); full browser/scale runs executed against `f599ca20` with subsequent archival/review commits re-checked locally (`npm test`, `typecheck`, `lint`, policy) and re-gated by final PR `#77` checks before merge. Hosted PR `#77` CI runs `44258780970` and `44258778768` ran on `ubuntu-24.04` / `macos-15` at `f599ca20`. Browser checks ran hidden.
 
 | Check | Result |
 | --- | --- |
 | `npm run typecheck` | Passed (`tsc`, `svelte-check` 593 files 0 errors/warnings, `typecheck-node`) |
 | `npm run lint` | Passed with the 10 owned `web-ext` warnings |
-| `npm run check:typescript-policy -- --base main` | Passed (`55` changed paths examined) |
+| `npm run check:typescript-policy -- --base main` | Passed (`56` changed paths examined) |
 | `npm test` | 4,208 of 4,208 passed |
-| `npm run test:scale` | 14 of 14 passed |
-| `npm run verify -- chrome` | Passed in Chrome `158.0.8127.18` at 1000×760 |
-| `npm run verify -- layout-stability --suite=backups` | 16 of 16 cases passed in Chrome `158.0.8127.18` and Firefox `159.0` |
-| `npm run verify -- terrain lod` | Passed on hardware Metal rendering (`4/4` tilt criteria, worst `45ms` per tile vs 120ms; `20/20` zoom cases) |
+| `npm run test:scale` | 14 of 14 passed (at `f599ca20`) |
+| `npm run verify -- chrome` | Passed in Chrome `158.0.8127.18` at 1000×760 (at `f599ca20`) |
+| `npm run verify -- layout-stability --suite=backups` | 16 of 16 cases passed in Chrome `158.0.8127.18` and Firefox `159.0` (at `f599ca20`) |
+| `npm run verify -- terrain lod` | Passed on hardware Metal rendering at `f599ca20` (`4/4` tilt criteria, worst `45ms` per tile vs 120ms; `20/20` zoom cases) |
 | `npm run audit:ci` | Passed: zero production advisories; 10 dev-only `picomatch` chain entries |
-| Hosted PR `#77` `Test` (`44258780970`) | 35 of 35 jobs passed (including Linux `Backup layout (chrome)` & `Backup layout (firefox)`) |
-| Hosted PR `#77` `CodeQL` (`44258778768`) | Passed (`Analyze (actions)` and `Analyze (javascript-typescript)`, `0` new alerts) |
+| Hosted PR `#77` `Test` (`44258780970` at `f599ca20`) | 35 of 35 jobs passed (including Linux `Backup layout (chrome)` & `Backup layout (firefox)`); final head re-gated before merge |
+| Hosted PR `#77` `CodeQL` (`44258778768` at `f599ca20`) | Passed (`Analyze (actions)` and `Analyze (javascript-typescript)`, `0` new alerts); final head re-gated before merge |
 
 ### Historical baseline — November 6, 2026
 
@@ -94,8 +94,10 @@ Run on Node `24.22.2` against `69c7a321` (`npm test` `3,874/3,874`; `npm run aud
 - **Hosted CI.** Moving `chrome`, all eight `peak-surfaces` cells, both
   `backup-layout` cells, and `.github/workflows/release.yml` current-browser
   compatibility to `ubuntu-24.04` (leaving only hardware Metal WebGL suites on
-  `macos-15`) passed hosted PR `#77` `Test` run `44258780970` (`35/35` jobs).
-  Exercising the Dependabot auto-merge workflow against this matrix awaits the
+  `macos-15`) passed hosted PR `#77` `Test` run `44258780970` (`35/35` jobs at
+  `f599ca20`; subsequent archival and review-fix commits are re-gated on PR `#77`
+  before merge). Exercising the Dependabot auto-merge workflow against this
+  matrix awaits the next dependency pull request.
   next dependency pull request.
 
 ### Release-only checks
