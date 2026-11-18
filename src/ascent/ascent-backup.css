@@ -18,9 +18,12 @@
 .bpb-gh-body::after { content: "View commit"; grid-area: 1 / 2; visibility: hidden; font-weight: 600; pointer-events: none; }
 /* The footprint belongs to the slot; completion can be plain status text. */
 .bpb-gh-action { display: grid; grid-area: 1 / 1; min-width: 0; }
-.bpb-gh-action > *, .bpb-gh-action::after { grid-area: 1 / 1; }
-.bpb-gh-action::after { content: attr(data-label); visibility: hidden; border: 1px solid transparent; padding: 2px 7px; }
+.bpb-gh-action > *, .bpb-gh-action::before, .bpb-gh-action::after { grid-area: 1 / 1; min-width: 0; overflow-wrap: anywhere; }
+.bpb-gh-action::before, .bpb-gh-action::after { visibility: hidden; pointer-events: none; border: 1px solid transparent; padding: 2px 7px; }
+.bpb-gh-action::before { content: "Backing up to GitHub…"; }
+.bpb-gh-action::after { content: attr(data-label); }
 .bpb-gh-action > [hidden] { display: none; }
+.bpb-gh-btn > span { min-width: 0; }
 .bpb-gh-status { align-self: center; padding: 3px 8px; cursor: default; }
 .bpb-gh-feedback { grid-column: 1 / -1; grid-row: 2; contain: inline-size; overflow-wrap: anywhere; }
 .bpb-gh-feedback:has(> .bpb-gh-link) { grid-area: 1 / 2; contain: none; }

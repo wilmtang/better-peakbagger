@@ -75,7 +75,7 @@ test('ordinary CI gates on interaction geometry and retains layout evidence', as
     assert.ok(geometry.run.includes('--shard=${{ matrix.shard }}/4'));
     assert.ok(geometry.run.includes('--suite=portable'));
     const backups = ordinary.jobs['backup-layout'];
-    assert.equal(backups['runs-on'], 'macos-15-intel');
+    assert.equal(backups['runs-on'], 'ubuntu-24.04');
     assert.deepEqual(backups.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(backups.needs, undefined);
     assert.ok(backups.steps.some((step: WorkflowStep) => step.run?.includes('--suite=backups')));
