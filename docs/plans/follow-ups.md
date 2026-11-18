@@ -73,8 +73,10 @@ ran hidden.
   gate, not an observed visual defect. It is a local-only measurement.
 - **Linux backup actions.** Fallback fonts caused a 1.2–1.6px ascent action-width
   shift and equal-width profile actions on hosted Linux. There is no local Linux
-  or container runtime, so this was not rerun; the suite stays on macOS runners,
-  where it passes. See the [CI latency record](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-latency-2026-10-25.md).
+  or container runtime, so this was not rerun; `chrome` and all eight
+  `peak-surfaces` cells now run on `ubuntu-24.04`, leaving `backup-layout` as
+  the only non-WebGL suite retained on macOS runners, where it passes. See the
+  [CI latency record](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-latency-2026-10-25.md).
 - **Firefox verifier isolation.** `verify-custom-overlays` exited before its first
   page in one run while a personal Firefox was open, and passed with `-no-remote`.
   Other Selenium verifiers have not adopted it. `verify -- firefox` passes without
@@ -90,9 +92,14 @@ ran hidden.
   evidence. See the [report protection closure ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/report-protection-remediation-2026-11-07.md).
 - **Replacement focus.** The fix is proven in jsdom. Real-browser transition runs
   pass but do not drive a row disappearing under an open card.
-- **Hosted CI.** The commits behind this ledger are local and unpushed. No hosted
-  run, including the Linux surfaces or the Dependabot workflow on a real update,
-  is claimed.
+- **Hosted CI.** The Linux CI offload (moving `chrome`, all eight `peak-surfaces`
+  cells, and `.github/workflows/release.yml` current-browser compatibility to
+  `ubuntu-24.04`, leaving `backup-layout` and Metal GPU checks on macOS) was
+  verified on hosted GitHub Actions via fast-forward test branch
+  `ci/verify-linux-offload` (probe run `44237662003` and 35/35 `Test` run
+  `44241028916`). Local `main` commits remain unpushed, so `release.yml`
+  `workflow_dispatch` compatibility rehearsal, the Dependabot workflow on a real
+  update, and `main` push runs remain to be exercised once landed on `main`.
 
 ### Release-only checks
 

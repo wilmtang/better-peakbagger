@@ -1,6 +1,6 @@
 # CI: Linux by default, macOS only for hardware WebGL
 
-Status: proposed; manual Linux Chrome probe committed locally (unpushed), required CI workflows unchanged.
+Status: implemented and verified on hosted GitHub Actions (2026-11-17..18); backup layout (2 cells) and hardware WebGL jobs remain on macOS by design.
 
 ## Goal
 
@@ -249,6 +249,52 @@ Choose one:
 | Today | 13 (+2 conditional) | 2 |
 | Phases 1–4, phase 2 passes, backups fixed | 2 (+2 conditional) | 0 |
 | Phase 2 fails (option A), backups stay on macOS | 9 (+2 conditional) | 1 |
+| Shipped (phases 1, 2 & 4; phase 3 option B: backups stay on macOS) | 4 (+2 conditional) | 0 |
+
+## Execution outcome (2026-11-17..18)
+
+Hosted verification ran on fast-forward test branch `ci/verify-linux-offload`
+without altering `origin/main` or dropping any assertion:
+
+- **Hosted probe run `44236927706` (uncovered root cause of August 2026 Linux
+  failure):** GitHub's `ubuntu-24.04` runner image pre-sets
+  `CHROME_BIN=/usr/bin/google-chrome` (branded Google Chrome Stable
+  `157.0.8103.50`, which ignores `--load-extension`). That caused Chrome 151+
+  extension tests on hosted Linux to silently launch branded Chrome instead of
+  Playwright's Chrome for Testing build.
+- **Hosted probe run `44237662003` (after `8c01e57e`):** Clearing `CHROME_BIN`
+  and `FIREFOX_BIN` in `.github/actions/setup-verification/action.yml` whenever
+  Playwright supplies the browser made `ubuntu-24.04` launch Chrome for Testing
+  `156.0.8078.4`. All three loading modes (`cli-default`,
+  `cli-ignore-disable-extensions`, and `cdp-load-unpacked`) passed in ~1.5–1.7s
+  each with `document_start`, `document_idle`, and MV3 worker replies verified,
+  so `scripts/verification-launch.mts` retained CLI `--load-extension` without
+  needing `Extensions.loadUnpacked`.
+- **Full `Test` run `44238155967`:** Proved packaged Chrome (`156.0.8078.4`)
+  and Firefox (`160.0.1`) via `npm run release:verify-packages` (5m30s) and peak
+  surfaces on `ubuntu-24.04`, while exposing two Linux-specific issues:
+  `globalThis.chrome.action.openPopup()` in
+  `scripts/verify-capture-popup.mts` (line 144) threw
+  `Error: Could not find an active browser window.` under Ozone `--headless=new`
+  (fixed in `72656840` by activating the control tab via
+  `activateToolbarTarget` and triggering the toolbar popup via CDP
+  `Extensions.triggerAction`, keeping `viewport: null` native sizing), and 6
+  concurrent Linux jobs stalled (`exit code 124` at `305s`) against
+  `us-east-2.ec2.archive.ubuntu.com` via Ubuntu 24.04 DEB822
+  `/etc/apt/sources.list.d/ubuntu.sources` and `/etc/apt/apt-mirrors.txt`
+  (fixed in `4b708f01` by rewriting `azure`, `*.ec2`, and `*.clouds` mirrors
+  to `archive.ubuntu.com` across `apt-mirrors.txt`, `sources.list`, and
+  `sources.list.d/ubuntu.sources`, plus explicit `Acquire` retry/timeout settings
+  in `apt.conf.d/99-bpb-retry`).
+- **Full `Test` run `44241028916` (green):** Passed **35 of 35 jobs** in ~9m22s
+  (`Chrome current extension smoke` on `ubuntu-24.04` passed all five
+  `verify-package` steps: `release:verify-packages`, `verify-capture-popup.mts`,
+  `verify-capture-readiness.mts`, `verify-capture-flow.mts`, and
+  `verify-multi-summit.mts`; all eight `Peak surface` cells, `Fixture
+  preflight`, `Browser DOM tier`, `Scale tests`, and all eight `Interaction
+  layout stability` shards passed on Linux; ten concurrent Linux jobs hit
+  the throttled EC2 mirror with `exit 124`, failed over via `install-playwright-browser.sh`
+  to `archive.ubuntu.com`, and succeeded).
 
 ## Risks
 
@@ -263,15 +309,52 @@ Choose one:
 
 ## Closure ledger
 
-- Fixed and verified: `scripts/probe-chrome-extension-load.mts`,
-  `test/project/chrome-extension-load-probe.test.mts` and
-  `.github/workflows/probe-linux-chrome-extension.yml` verified locally across
-  `cli-default`, `cli-ignore-disable-extensions` and `cdp-load-unpacked` in
-  hidden Chrome for Testing `156.0.8078.4` (`1000x760`, macOS arm64) and by the
-  project test suite.
-- Intentionally not changed: GPU jobs stay on macOS. The Chrome 128 floor stays
-  on Linux. `.github/workflows/test.yml` and `release.yml` remain unchanged
-  until hosted Linux probe results are recorded.
-- Changed but not fully proven: `.github/workflows/probe-linux-chrome-extension.yml`
-  is committed locally and has not yet been pushed to `main` or dispatched on
-  hosted `ubuntu-24.04`.
+- **Fixed and verified:**
+  - `15492d88`, `c6ba2a6d`: Moved `peak-surfaces` (`chrome` and `firefox`, 8
+    cells total), `chrome` (`Chrome current extension smoke`), and both rows of
+    the `.github/workflows/release.yml` `compatibility` matrix from
+    `macos-15-intel` to `ubuntu-24.04`, updated `docs/development.md` and
+    workflow comments labeling retained Metal WebGL jobs (`snow-map`,
+    `chrome-terrain`, `firefox-terrain` on `macos-15`), and updated
+    `test/project/verification-setup.test.mts`, `test/project/release.test.mts`,
+    and `test/project/release-rehearsal.test.mts`.
+  - `5eff7922`, `6a6cac80`: Added manual `workflow_dispatch` diagnostic probe
+    `.github/workflows/probe-linux-chrome-extension.yml`,
+    `scripts/probe-chrome-extension-load.mts`, and
+    `test/project/chrome-extension-load-probe.test.mts`.
+  - `8c01e57e`: Cleared pre-set runner-image `CHROME_BIN` and `FIREFOX_BIN`
+    in `.github/actions/setup-verification/action.yml` when Playwright browsers
+    are active; verified by hosted probe run `44237662003` (vs `44236927706`)
+    and `test/project/verification-setup.test.mts`.
+  - `72656840`: Switched `verifyNativeSizing` in
+    `scripts/verify-capture-popup.mts` to CDP `Extensions.triggerAction` +
+    `activateToolbarTarget`; verified locally (hidden Chrome `156.0.8078.4` 4
+    native sizing cases, 105 Chrome + 105 Firefox `157.0` layout cases, clean
+    teardown) and in hosted `Test` run `44241028916`.
+  - `4b708f01`: Updated `.github/actions/setup-verification/install-playwright-browser.sh`
+    for `ec2`/`clouds`/DEB822 `ubuntu.sources` mirror failover + APT retry
+    timeouts with regression coverage in `test/project/browser-install-retry.test.mts`
+    (`6/6` passed); verified live under 21-job concurrency across 10 failing
+    mirrors in hosted `Test` run `44241028916` (35/35 jobs passing vs
+    `44238155967`).
+- **Intentionally not changed:**
+  - `backup-layout` (`chrome` and `firefox`, 2 cells) stays on `macos-15-intel`
+    (Phase 3 Option B) because Linux fallback fonts trigger real width shifts
+    tracked under `Linux backup actions` in [follow-ups.md](follow-ups.md).
+  - `snow-map` (2 cells) and conditional `chrome-terrain` / `firefox-terrain`
+    (2 cells) stay on `macos-15` for hardware WebGL via Metal; no free Linux GPU
+    runner is available for a personal-account public repository.
+  - Required check names (`Chrome extension smoke`, `Firefox extension smoke`),
+    the Linux `chrome_128` floor job, and `scripts/verification-launch.mts`
+    (`--load-extension`) stay unchanged.
+  - `.github/workflows/probe-linux-chrome-extension.yml` (`workflow_dispatch`
+    only) is retained for diagnosing future Chrome/Playwright upgrades.
+- **Changed but not fully proven:**
+  - `.github/workflows/release.yml` `compatibility` matrix moves current Chrome
+    and Firefox to `ubuntu-24.04` and shares the verified `ubuntu-24.04`
+    setup/package actions (pinned by `test/project/release-rehearsal.test.mts`),
+    but its manual `workflow_dispatch` rehearsal cannot run on GitHub Actions
+    until the commits land on `main`.
+  - All commits are currently local on `main` (unpushed because `origin/main`
+    diverged prior to this work); hosted CI proof ran via fast-forward commits
+    on `ci/verify-linux-offload`.

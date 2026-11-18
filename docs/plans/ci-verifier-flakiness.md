@@ -252,12 +252,12 @@ consecutive local runs each of
   paired store zips. Zero workflow churn.
 - **Option B (split packaged browser execution after archive creation):** Build
   and hash-verify both store zips once, upload the candidate artifact, and run
-  packaged Chrome and packaged Firefox in parallel jobs (moving packaged Firefox
-  to `ubuntu-24.04` immediately since Firefox does not hit the Linux Chrome
-  extension-loading blocker). Cuts critical-path wall time by ~3–4 minutes and
-  attributes Firefox package failures to Firefox, at the cost of updating
-  `test/project/verification-setup.test.mts`, `test/project/release.test.mts`
-  and `scripts/release-evidence.mts` if job/step contracts change.
+  packaged Chrome and packaged Firefox in parallel jobs (`jobs.chrome` now
+  already runs on `ubuntu-24.04`, so both jobs run on Linux). Cuts critical-path
+  wall time by ~3–4 minutes and attributes Firefox package failures to Firefox,
+  at the cost of updating `test/project/verification-setup.test.mts`,
+  `test/project/release.test.mts` and `scripts/release-evidence.mts` if
+  job/step contracts change.
 
 ### Phase 5 — Instrumented watch items and standalone verifier debt
 
