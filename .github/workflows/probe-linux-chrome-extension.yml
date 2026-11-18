@@ -1,0 +1,84 @@
+name: Probe Linux Chrome extension loading
+
+# Manual one-off probe for phase 2 of docs/plans/ci-macos-gpu-only.md.
+# Never runs on push or pull_request, and does not alter required checks.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Extension loading strategy to probe
+        required: false
+        default: all
+        type: choice
+        options:
+          - all
+          - cli-default
+          - cli-ignore-disable-extensions
+          - cdp-load-unpacked
+      use_xvfb:
+        description: Run headed Chrome inside Xvfb instead of new headless
+        required: false
+        default: false
+        type: boolean
+      require_all:
+        description: Fail unless every selected mode loads the extension
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  probe:
+    name: Linux Chrome extension probe (${{ inputs.mode || 'all' }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up shared verification
+        uses: ./.github/actions/setup-verification
+        with:
+          chrome-version: current
+
+      - name: Build unpacked extension
+        run: npm run build
+
+      - name: Probe Chrome unpacked-extension loading
+        env:
+          PROBE_MODE: ${{ inputs.mode || 'all' }}
+          PROBE_XVFB: ${{ inputs.use_xvfb && 'true' || 'false' }}
+          PROBE_REQUIRE_ALL: ${{ inputs.require_all && 'true' || 'false' }}
+        run: |
+          mkdir -p browser-evidence
+          args=(
+            "--mode=$PROBE_MODE"
+            "--output=browser-evidence/chrome-extension-probe.json"
+          )
+          if [ "$PROBE_REQUIRE_ALL" = "true" ]; then
+            args+=("--require-all")
+          fi
+          if [ "$PROBE_XVFB" = "true" ]; then
+            args+=("--headed")
+            xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" \
+              node scripts/probe-chrome-extension-load.mts "${args[@]}" \
+              2>&1 | tee browser-evidence/chrome-extension-probe.log
+          else
+            node scripts/probe-chrome-extension-load.mts "${args[@]}" \
+              2>&1 | tee browser-evidence/chrome-extension-probe.log
+          fi
+
+      - name: Upload probe report and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-chrome-extension-probe-${{ github.run_attempt }}
+          path: browser-evidence/
+          if-no-files-found: error
+          retention-days: 7

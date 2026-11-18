@@ -77,6 +77,7 @@ independent of the existing targets.
 - [image-download-completion.mts](image-download-completion.mts)
 - [layout-verification-plan.mjs](layout-verification-plan.mjs) — Exact-once browser/theme/viewport partitions and focused preflight selection.
 - [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
+- [probe-chrome-extension-load.mts](probe-chrome-extension-load.mts) — Manual diagnostic probe comparing command-line and pipe-CDP (`Extensions.loadUnpacked`) unpacked-extension loading in Chrome for Testing against a disposable HTTPS Peakbagger fixture.
 - [resource-stack.mjs](resource-stack.mjs)
 - [verification-launch.mts](verification-launch.mts) — The one launch definition for hidden Playwright verifiers: disposable root, Seatbelt preflight, Chrome for Testing or an exact binary, exclusive extension and host-resolver flags, Firefox local DNS and deferred teardown.
 - [verification-browser-identity.mjs](verification-browser-identity.mjs)
