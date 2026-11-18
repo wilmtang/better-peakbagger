@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createVectorMapRequest, vectorRequestUrl } from '../../src/maps/vector-map-request.ts';
-import { readRetryAt } from '../../src/net/rate-limit.js';
+import { readRetryAt } from '../../src/net/rate-limit.ts';
 
 const url = 'https://tiles.maptoolkit.org/fixture/1/0/0.pbf';
 type RateLimited = Error & { status?: number; code?: string; retryAt?: number | null };

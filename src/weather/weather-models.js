@@ -5,7 +5,7 @@
 // Reanalysis fields/delay: https://open-meteo.com/en/docs/historical-weather-api
 // Regional candidates outside the two projected grids use conservative interior
 // footprints. Eligibility is a candidate, not a promise of an archive slice.
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 
 const rad = degrees => degrees * Math.PI / 180;
 function lambert(lat, lon) {

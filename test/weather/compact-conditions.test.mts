@@ -4,8 +4,8 @@ import { JSDOM } from 'jsdom';
 import { compactWeatherHours, createWeatherHourlyTable, weatherWindColor } from '../../src/weather/weather-hourly-table.ts';
 import type { WeatherMetric, WeatherSample, WeatherWindow } from '../../src/weather/weather-hourly-table.ts';
 import { weatherDayWindow } from '../../src/weather/weather-day.js';
-import { mountainTime } from '../../src/time/mountain-time.js';
-import { units } from '../../src/ui/units.js';
+import { mountainTime } from '../../src/time/mountain-time.ts';
+import { units } from '../../src/ui/units.ts';
 
 const HOUR = 3600000;
 function fixture(latitude = 46.85, longitude = -121.75, date = '2024-11-04') {

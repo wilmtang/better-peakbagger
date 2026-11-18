@@ -16,7 +16,7 @@ import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { githubClient as GithubClient } from '../github/github-client.js';
 import { githubErrors as GithubErrors } from '../github/github-errors.js';
 import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createPackagedPageMatcher } from './sender-policy.js';

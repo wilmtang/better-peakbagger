@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { units as Units } from '../../src/ui/units.js';
+import { units as Units } from '../../src/ui/units.ts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { unitConstantFindings } from '../helpers/source-policies.mts';

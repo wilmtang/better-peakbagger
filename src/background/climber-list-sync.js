@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import * as I from '../favorites/ignored-climbers.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { githubErrors as Errors } from '../github/github-errors.js';
 
 export const ignoredSyncScope = access => JSON.stringify([access?.authorizationEpoch ?? null,

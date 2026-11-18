@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { canonicalInstagramUrl, instagramParagraphUrl } from './instagram-url.js';
 import { instagramEmbedHeight } from './instagram-sizing.js';
-import { createStableText } from '../ui/stable-text.js';
+import { createStableText } from '../ui/stable-text.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
-import { trustedAction } from '../ui/trusted-action.js';
+import { trustedAction } from '../ui/trusted-action.ts';
 import { settings } from '../settings/settings.js';
 
 const IDLE='Connects to Instagram';

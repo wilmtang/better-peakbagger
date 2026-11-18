@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
     import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
-    import { units as Units } from '../src/ui/units.js';
+    import { units as Units } from '../src/ui/units.ts';
     import {
         resetUnitOverridesPatch, unitSettingsPatch,
         type UnitMeasurement, type UnitSettings, type UnitSettingsPatch,

@@ -8,9 +8,9 @@
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { isPeakbaggerUrl } from './peakbagger-origin.js';
 import { classifyResponse } from './peakbagger-response.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { retryAfterAt, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { retryAfterAt, cancelResponseBody } from '../net/rate-limit.ts';
 import {
     MAX_GPX_TEXT_CHARS,
     peakbaggerResponseLimit,

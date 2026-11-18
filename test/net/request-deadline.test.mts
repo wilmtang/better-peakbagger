@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { requestDeadline as Deadline } from '../../src/net/request-deadline.js';
+import { requestDeadline as Deadline } from '../../src/net/request-deadline.ts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { deadlineFindings, directFetch, DEADLINE_EXCEPTION_FILES } from '../helpers/source-policies.mts';
@@ -114,7 +114,7 @@ test('every third-party transport bounds its requests through this one module', 
     ];
     for (const file of injectedTransports) {
         const source = await readFile(new URL(`../../src/${file}`, import.meta.url), 'utf8');
-        assert.ok(/request-deadline\.js/.test(source), `${file} must bound its requests`);
+        assert.ok(/request-deadline\.ts/.test(source), `${file} must bound its requests`);
     }
 
     // Discover every module that calls the global fetch directly. Peak markers

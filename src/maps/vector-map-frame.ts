@@ -10,7 +10,7 @@ import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from '
 import type { VectorView } from './vector-basemap.ts';
 import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from './vector-map-request.ts';
-import { readRetryAt } from '../net/rate-limit.js';
+import { readRetryAt } from '../net/rate-limit.ts';
 import { createVisibleDeadline } from '../ui/visible-deadline.ts';
 import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 

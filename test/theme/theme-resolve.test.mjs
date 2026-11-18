@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { themeResolve as ThemeResolve } from '../../src/theme/theme-resolve.js';
+import { themeResolve as ThemeResolve } from '../../src/theme/theme-resolve.ts';
 
 test('theme resolution preserves explicit preferences and resolves system once', () => {
     const darkSystem = query => ({ matches: query === '(prefers-color-scheme: dark)' });

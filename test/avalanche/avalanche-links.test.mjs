@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { resolveAvalancheLinks } from '../../src/avalanche/avalanche-links.js';
+import { resolveAvalancheLinks } from '../../src/avalanche/avalanche-links.ts';
 import { parsePeakNations, readPeakNations } from '../../src/avalanche/avalanche-location.ts';
 
 const bundle = await readFile(new URL('../../dist/content/peak-links.js', import.meta.url), 'utf8');

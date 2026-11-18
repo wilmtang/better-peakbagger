@@ -12,9 +12,9 @@
 // it (`ambiguous: true`). When in doubt the client says so; a duplicate the
 // user never learns about is the worse outcome.
 
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { rateLimitError } from '../net/rate-limit.ts';
 import { cleanPhotoUrl as cleanHttpsUrl, PHOTO_URL_LIMIT as URL_LIMIT } from './photo-url.js';
 
 const API_ROOT = 'https://api.imgbb.com/1/upload';

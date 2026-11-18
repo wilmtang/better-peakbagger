@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import * as I from './ignored-climbers.js';
-import { boundedText as Text } from '../net/bounded-text.js';
+import { boundedText as Text } from '../net/bounded-text.ts';
 
 export const MAX_BYTES = 2 * 1024 * 1024;
 const FAVORITES_KIND = 'better-peakbagger-favorite-climbers';

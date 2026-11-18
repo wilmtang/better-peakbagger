@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { weatherChartRange, weatherChartTicks } from '../../src/weather/weather-chart-scale.js';
-import { units } from '../../src/ui/units.js';
+import { units } from '../../src/ui/units.ts';
 
 for (const system of ['metric', 'imperial']) for (const metric of ['wind', 'gust', 'precipitation', 'temperature']) {
     test(`${system} ${metric} scales retain distinct ticks for zero and constant samples`, () => {

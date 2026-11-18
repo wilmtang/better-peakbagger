@@ -4,7 +4,7 @@
 import { VECTOR_MESSAGE, VECTOR_KEEPALIVE_MS, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import type { VectorBasemap, VectorView } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
-import { readRetryAt } from '../net/rate-limit.js';
+import { readRetryAt } from '../net/rate-limit.ts';
 import { createVisibleDeadline } from '../ui/visible-deadline.ts';
 import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 

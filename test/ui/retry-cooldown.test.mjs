@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createRetryCooldown } from '../../src/ui/retry-cooldown.js';
+import { createRetryCooldown } from '../../src/ui/retry-cooldown.ts';
 
 test('known cooldown expires without a request and parks its timer on page suspension', () => {
     let now = 1000, queued = null, blocked = false;

@@ -69,7 +69,7 @@ evidence.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
+| M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.ts`, is still JavaScript. |
 | M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
 | M8 | Not started | Depends on M6. |
 
@@ -238,7 +238,7 @@ Status: complete on November 13, 2026.
   Node's `structuredClone` is not proof of Chrome's JSON messaging. No
   real-browser run; `test/options` and `test/settings` pass.
 
-The Units panel never touches `src/ui/runtime-message.js`. Its `save` goes from
+The Units panel never touches `src/ui/runtime-message.ts`. Its `save` goes from
 the options controller to `set` in [settings.js](../../src/settings/settings.js),
 which sends a `SETTINGS_PATCH` runtime message; the worker case in
 [background.ts](../../src/background/background.ts) applies the patch. The
@@ -583,10 +583,10 @@ The per-owner checklist does not exist yet; start it with the first planned
 batch and backfill the conversions already listed there.
 
 1. **Small pure modules:** begin with
-   [storage-value.js](../../src/storage/storage-value.js), then bounded helpers
-   such as [theme-resolve.js](../../src/theme/theme-resolve.js),
-   [provider-url.js](../../src/capture/provider-url.js) and
-   [runtime-message.js](../../src/ui/runtime-message.js) (preserve `send` and
+   [storage-value.ts](../../src/storage/storage-value.ts), then bounded helpers
+   such as [theme-resolve.ts](../../src/theme/theme-resolve.ts),
+   [provider-url.ts](../../src/capture/provider-url.ts) and
+   [runtime-message.ts](../../src/ui/runtime-message.ts) (preserve `send` and
    the `sendResult` response/unavailable distinction). Keep exports, algorithms
    and source-policy exceptions unchanged; run the owning behavior tests.
 2. **Shared domain contracts/services:** convert the settings store (its schema

@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
-import { sunPosition as SunPosition } from '../../src/sun/sun-position.js';
+import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
+import { sunPosition as SunPosition } from '../../src/sun/sun-position.ts';
 
 test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-valued', () => {
     const zone = MountainTime.resolve(50.5, 30.5);

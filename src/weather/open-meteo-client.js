@@ -1,11 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
 import { WEATHER_MODELS } from './weather-models.js';
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const fields = {

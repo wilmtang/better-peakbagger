@@ -20,8 +20,8 @@
 //   - c="1" is climbed (green), c="2" is unknown/anonymous (orange), anything
 //     else is unclimbed (pink); peak ids can be negative (provisional peaks).
 
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 // Defensive cap on rendered markers; when the feed returns more, the most
 // prominent peaks win. The native map draws everything, but a pitched 3D

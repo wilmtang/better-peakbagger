@@ -6,7 +6,7 @@ import { createFavoriteSource } from './favorite-source.js';
 import { selectedReportTable } from './report-adapters.js';
 import { reportStyle, utilityButton, paintReveal, accountRecovery } from './report-controls.js';
 import { settings } from '../settings/settings.js';
-import { createStableText } from '../ui/stable-text.js';
+import { createStableText } from '../ui/stable-text.ts';
 
 let ignored = null, ignoredError = '', preference = null, preferenceError = '', sourceState = null;
 let render = () => {}, preferenceGeneration = 0;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { snotelReportUrl } from './snotel-data.js';
-import { units } from '../ui/units.js';
+import { units } from '../ui/units.ts';
 
 // Inline SVG keeps the same unique symbol inside the native Leaflet document
 // and the isolated MapLibre frame, without fetching icons or changing native CSS.

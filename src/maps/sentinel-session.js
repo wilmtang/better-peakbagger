@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { searchSentinel, sentinelView, sentinelTarget } from './sentinel-core.js';
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 import { sentinelCaptureChoice } from './sentinel-capture-choice.js';
 
 export function createSentinelSession({ readView, replaceScenes, clearScenes, retryTiles = () => {}, onStatus, onCapture = () => {},

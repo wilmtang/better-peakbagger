@@ -22,7 +22,7 @@ Opening 3D from a dated Leaflet capture preserves that choice using a validated
 pass identity; it never forwards page-owned tile URLs or catalog responses.
 The latest choice prioritizes a pass covering the viewport center, then time.
 Capture dates and clocks use the map center's mountain-local timezone, resolved
-offline through `src/time/mountain-time.js`, with DST at the capture instant and
+offline through `src/time/mountain-time.ts`, with DST at the capture instant and
 a labelled longitude estimate if timezone lookup fails. Pass identities retain
 their original UTC timestamps.
 Capture choices include a compact cloud percentage from the same catalog data;

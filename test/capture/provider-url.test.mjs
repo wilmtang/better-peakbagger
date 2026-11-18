@@ -8,7 +8,7 @@ import {
     providerFromUrl,
     providerActivityUrl,
     providerProfileId,
-} from '../../src/capture/provider-url.js';
+} from '../../src/capture/provider-url.ts';
 
 test('providerActivityUrl rebuilds canonical Garmin and Strava links', () => {
     assert.equal(providerActivityUrl({ provider: 'garmin', activityId: '123' }),

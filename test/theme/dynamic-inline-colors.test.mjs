@@ -17,7 +17,7 @@ import {
     parseColor,
     transformBackground,
     transformForeground,
-} from '../../src/theme/dynamic-inline-colors.js';
+} from '../../src/theme/dynamic-inline-colors.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DARK_SURFACE = { r: 32, g: 34, b: 36, a: 1 };

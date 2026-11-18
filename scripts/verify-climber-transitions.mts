@@ -15,7 +15,7 @@ import { chromium, firefox, type BrowserContext, type Page } from 'playwright';
 import { createBrowserFixtureServer as untypedCreateBrowserFixtureServer, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { darkCss } from '../src/theme/site-dark-css.js';
+import { darkCss } from '../src/theme/site-dark-css.ts';
 import { auditedClimberAssets } from './climber-regression-baseline.mjs';
 
 export interface ClimberVariant {

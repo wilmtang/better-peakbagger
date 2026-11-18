@@ -4,9 +4,9 @@
 import { SUMMIT_CLOUD_MODELS } from './summit-cloud-models.ts';
 import { cloudSamplePoints, cloudDistanceKm } from './summit-cloud-core.ts';
 import { createPeakModelUpdateClient } from './peak-weather-updates.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 const HOUR = 3600_000;
 const fields = {

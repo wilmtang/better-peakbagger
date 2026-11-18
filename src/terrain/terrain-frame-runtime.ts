@@ -20,7 +20,7 @@ import { terrainCamera } from './terrain-camera.js';
 import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.ts';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
-import { rateLimitMessage, readRetryAt } from '../net/rate-limit.js';
+import { rateLimitMessage, readRetryAt } from '../net/rate-limit.ts';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';

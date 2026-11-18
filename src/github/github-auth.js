@@ -30,10 +30,10 @@
 
 import { githubApi as GithubApi } from './github-api.js';
 import { githubErrors as GithubErrors } from './github-errors.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { storageValue as StorageValue } from '../storage/storage-value.js';
-import { cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { storageValue as StorageValue } from '../storage/storage-value.ts';
+import { cancelResponseBody } from '../net/rate-limit.ts';
 
 const { ERROR_CODES, GithubError } = GithubErrors;
 // Device-flow polls run on a fixed interval, so one stalled request must

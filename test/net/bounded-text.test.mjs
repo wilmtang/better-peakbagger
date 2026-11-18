@@ -8,7 +8,7 @@ import {
     assertBoundedStructure,
     readBoundedBlobText,
     readBoundedResponseText,
-} from '../../src/net/bounded-text.js';
+} from '../../src/net/bounded-text.ts';
 
 const response = (chunks, headers = {}) => ({
     headers: new Headers(headers),

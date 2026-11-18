@@ -11,7 +11,7 @@ import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { darkCss } from '../src/theme/site-dark-css.js';
+import { darkCss } from '../src/theme/site-dark-css.ts';
 
 const args = process.argv.slice(2);
 assert.ok(args.length <= 1 && args.every(value => /^--browser=(chrome|firefox)$/.test(value)),

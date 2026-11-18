@@ -7,8 +7,8 @@
 // the provider request. Only allowlisted codes and a bounded retry timestamp
 // leave here.
 
-import { isProviderHost } from './provider-url.js';
-import { retryAfterAt } from '../net/rate-limit.js';
+import { isProviderHost } from './provider-url.ts';
+import { retryAfterAt } from '../net/rate-limit.ts';
 
 export const PROVIDER_RESPONSE_PROBE_BYTES = 8192;
 export const PROVIDER_RESPONSE_PROBE_CHARS = 4096;

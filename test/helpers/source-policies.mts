@@ -5,8 +5,8 @@ import type { RuntimeSource } from './runtime-sources.mts';
 const matches = (source: RuntimeSource, pattern: RegExp) => source.variants.some(text => pattern.test(text));
 const finding = (source: RuntimeSource, message: string) => `${source.file} ${message}`;
 export function unitConstantFindings(source: RuntimeSource): string[] {
-    return source.file !== 'src/ui/units.js' && matches(source, /3\.28084|1609\.344/)
-        ? [finding(source, 'hardcodes a conversion constant instead of importing src/ui/units.js')] : [];
+    return source.file !== 'src/ui/units.ts' && matches(source, /3\.28084|1609\.344/)
+        ? [finding(source, 'hardcodes a conversion constant instead of importing src/ui/units.ts')] : [];
 }
 const settingsPatterns = [
     {pattern: /#d9483b/i, what: 'the default route color'},
@@ -57,7 +57,7 @@ export function deadlineFindings(source: RuntimeSource): string[] {
             && matches(source, /readBoundedResponseText\(response/) && matches(source, /clearTimeout\(timeout\)/);
         if (!exception) findings.push(finding(source, 'directly calls fetch without the shared deadline'));
     }
-    if (source.file !== 'src/net/request-deadline.js' && matches(source, /Promise\.race\s*\(\s*\[[^\]]*\btimeout\b/i)) {
+    if (source.file !== 'src/net/request-deadline.ts' && matches(source, /Promise\.race\s*\(\s*\[[^\]]*\btimeout\b/i)) {
         findings.push(finding(source, 'hardcodes its own race-with-timeout'));
     }
     return findings;

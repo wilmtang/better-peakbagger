@@ -1092,7 +1092,7 @@ Two of those exist because a status code cannot report them:
   either way.
 - `timeout` covers the failure no status reports at all. Every outbound request
   and its body read race one shared deadline from
-  `src/net/request-deadline.js`; without it a black-holing proxy or stalled TLS
+  `src/net/request-deadline.ts`; without it a black-holing proxy or stalled TLS
   handshake leaves a spinner running with no error and no way out. The deadline
   both aborts the request and rejects the race, because an injected or
   non-conforming fetch may ignore `signal`.

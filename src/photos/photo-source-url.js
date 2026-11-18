@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { rateLimitError } from '../net/rate-limit.ts';
 
 // A clicked report image may be public but not present in the local library.
 // Respect CORS, omit credentials, and bound both time and encoded bytes.

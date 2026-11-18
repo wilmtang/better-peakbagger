@@ -4,7 +4,7 @@
 import { MAPTOOLKIT_BASEMAP, VECTOR_BASEMAPS, VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import type { VectorPaint } from './vector-basemap.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
-import { readRetryAt } from '../net/rate-limit.js';
+import { readRetryAt } from '../net/rate-limit.ts';
 
 // The minimal Leaflet contract used here; Peakbagger's page owns the library.
 interface LeafletPoint {

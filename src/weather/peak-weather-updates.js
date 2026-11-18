@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 // Provider metadata domains differ from Forecast API selection IDs.
 // https://open-meteo.com/en/docs/model-updates and its published page source.

@@ -7,15 +7,15 @@
 
 import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
-import { mountainTime as MountainTime } from '../time/mountain-time.js';
-import { sunState as SunState } from '../sun/sun-state.js';
-import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
+import { mountainTime as MountainTime } from '../time/mountain-time.ts';
+import { sunState as SunState } from '../sun/sun-state.ts';
+import { sunCalculator as SunCalculator } from '../sun/sun-calculator.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { mapViewport as MapViewport } from '../gpx/map-viewport.ts';
 

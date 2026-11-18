@@ -3,7 +3,7 @@
 
 import { reportPhoto as Pending } from '../photos/report-photo.js';
 import { photoProject as Project } from '../photos/photo-project.js';
-import { trustedAction as Trusted } from '../ui/trusted-action.js';
+import { trustedAction as Trusted } from '../ui/trusted-action.ts';
 import { richCommands } from './report-rich-editor.ts';
 import type { Editor } from '@tiptap/core';
 

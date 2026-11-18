@@ -7,7 +7,7 @@ import { settings as Settings } from '../settings/settings.js';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
-import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { storageValue as StorageValue } from '../storage/storage-value.ts';
 import { customLayerBackup } from '../maps/custom-overlay-transfer.js';
 
 const EXPORT_TYPE = 'SETTINGS_FILE_EXPORT';

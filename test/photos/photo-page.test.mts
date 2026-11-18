@@ -79,7 +79,7 @@ test('the packaged photo page exposes the editor, library, and credential bounda
     assert.equal(head.compareDocumentPosition(doc.querySelector('link[rel="stylesheet"]'))
         & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, dom.window.Node.DOCUMENT_POSITION_FOLLOWING);
     assert.deepEqual(ENTRIES.find(candidate => candidate.out === 'photos/photos-head.js')?.sources,
-        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js'],
+        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.ts'],
         'the photo page must reuse the shared panel theme bootstrap');
     const manualCopy = doc.getElementById('toast-copy-value');
     assert.equal(manualCopy?.readOnly, true);

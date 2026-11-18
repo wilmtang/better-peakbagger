@@ -1,16 +1,16 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
-import { units } from '../ui/units.js';
+import { dom } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
-import { createRetryCooldown } from '../ui/retry-cooldown.js';
-import { mountainTime } from '../time/mountain-time.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { mountainTime } from '../time/mountain-time.ts';
 import { createPeakHourlyChart, resolvePeakHourlyMetric } from './peak-weather-hourly.ts';
 import { PEAK_FORECAST_DAYS, weatherPeakWindow, summarizeWeatherWeek } from './weather-week.js';
 import { createPeakWeatherClient } from './open-meteo-client.js';

@@ -23,11 +23,11 @@ import {
 import { removeGpxTimestamps } from '../gpx/gpx-timestamps.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { settings as Settings } from '../settings/settings.js';
-import { units as Units } from '../ui/units.js';
-import { createStableText } from '../ui/stable-text.js';
+import { units as Units } from '../ui/units.ts';
+import { createStableText } from '../ui/stable-text.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 // @ts-expect-error tz-lookup ships no type declarations.
 import tzlookup from 'tz-lookup';
@@ -497,7 +497,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
         const encounterMeta = (match: GpxMatch, units: DisplayUnits) => {
             const parts: string[] = [];
             if (match.time) parts.push(`at ${match.time}`);
-            if (Number.isFinite(match.upDistanceM)) parts.push(formatTrackDistance(match.upDistanceM, units));
+            if (typeof match.upDistanceM === 'number' && Number.isFinite(match.upDistanceM)) parts.push(formatTrackDistance(match.upDistanceM, units));
             return parts.join(' · ');
         };
 
@@ -803,7 +803,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
                 deadline.clear();
                 if (owner === preparation) {
                     preparingFile = false;
-                    preparationText?.set(providerHintText);
+                    preparationText?.set(providerHintText ?? '');
                     upload.disabled = false;
                     includeTimestamps.setAttribute('aria-disabled', 'false');
                     syncPreparingControls();
@@ -927,7 +927,7 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
             timestampChoice.hidden = true;
             includeTimestamps.checked = false;
             preparingFile = false;
-            preparationText?.set(providerHintText);
+            preparationText?.set(providerHintText ?? '');
             upload.disabled = false;
             includeTimestamps.setAttribute('aria-disabled', 'false');
             restoreNative();

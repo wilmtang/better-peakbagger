@@ -5,7 +5,7 @@ import { MAX_ONX_GPX_BYTES, ONX_IMPORT_URL, ONX_PERMISSION, ONX_EXPORT_BUDGET_MS
     ONX_ATTEMPTS_KEY, probeOnxImporter, prepareOnxImport } from '../onx/onx-import.js';
 import { ascentIdentity } from '../gpx/saved-gpx-source.js';
 import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 
 const terminal = new Set(['prepared', 'attention', 'not-supplied', 'uncertain']);
 const importer = tab => {

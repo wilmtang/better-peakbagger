@@ -170,14 +170,14 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Custom map overlays | `src/maps/custom-overlay-schema.js`, `src/maps/custom-overlay-control.js`, `src/maps/custom-overlay-bridge.js`, `src/maps/custom-overlay-editor.js`, `src/maps/custom-overlay-client.js`, `src/maps/custom-overlay-render.js`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
 | Wildfire data and rendering | `src/maps/wildfire-core.js`, `src/maps/wildfire-client.js`, `src/maps/wildfire-session.ts`, `src/maps/wildfire-leaflet.ts`, `src/terrain/terrain-wildfires.ts` | Fixed WF-only NIFC queries, validated public identities/geometry and independent component freshness; bounded page-memory viewport transactions owned by the visible renderer. Typed metadata alone crosses the frame bridge, with retry-only actions and no privileged API exposure. Native vectors retain priority. |
 | Map location menu | `src/maps/map-location-menu.ts`, `src/maps/map-elevation.js`, `src/maps/peak-weather-map.js` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
-| Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.js` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
-| Mountain time and Sun/Moon planning | `src/time/mountain-time.js`, `src/sun/sun-position.js`, `src/sun/sun-state.js`, `src/sun/sun-calculator.js` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
+| Peak card layout | `src/maps/peak-cards.js`, `src/ui/peak-card-layout.ts` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
+| Mountain time and Sun/Moon planning | `src/time/mountain-time.ts`, `src/sun/sun-position.ts`, `src/sun/sun-state.ts`, `src/sun/sun-calculator.ts` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.ts`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
-| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
+| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js`, `src/caltopo/caltopo-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
@@ -232,7 +232,7 @@ error mapper.
 Read-only weather, snow, satellite, public-land, marker, style and DEM request
 owners relinquish unread responses on every exit, including HTTP and metadata
 rejection before a bounded reader is acquired. Use the best-effort
-`cancelResponseBody` helper in `src/net/rate-limit.js`; do not wait on a remote
+`cancelResponseBody` helper in `src/net/rate-limit.ts`; do not wait on a remote
 stream's cancellation to report the original result. Explicit stream readers
 also release their locks. Consuming a body successfully preserves its parsed
 data and existing cache policy.
@@ -381,7 +381,7 @@ The default `units` preference retains its existing auto/metric/imperial values.
 Five validated measurement overrides inherit it unless explicitly configured:
 distance, elevation, temperature, precipitation, and wind. Settings exposes these
 under General → Units. Display resolution and weather conversions share
-`src/ui/units.js`; weather requests, caches, calculations, and native draft form
+`src/ui/units.ts`; weather requests, caches, calculations, and native draft form
 values keep their canonical/source units. Settings files include the overrides;
 older settings and files inherit their existing default without a migration write.
 Peak weather and snow share `src/peakbagger/peak-units.ts` to resolve automatic
@@ -978,7 +978,7 @@ contract are maintained in [sun-position.md](sun-position.md).
 
 ### Shared page layout controls
 
-`src/ui/column-resize.js` and its stylesheet own bounded pointer/keyboard column
+`src/ui/column-resize.ts` and its stylesheet own bounded pointer/keyboard column
 resizing and the click alternative. The ascent and peak table owners recognize
 only their native adjacent table pairs; peak pages retain their map and details
 nodes. Peak divider width is page-local `pbPeakTableSplit.v1`, independently of
@@ -990,9 +990,9 @@ commits order and column together through the existing settings patch queue.
 The native map/legend stay together. Left-column cards can precede (`details`)
 or follow (`details-bottom`) the native peak details; existing saved `details`
 placements stay above. Missing cards retain their settings slots. Arrow keys and the
-shared `src/ui/layout-menu.js` provide alternatives to dragging.
+shared `src/ui/layout-menu.ts` provide alternatives to dragging.
 
-Peak layout and ascent card docking share `src/ui/card-pointer-drag.js` for
+Peak layout and ascent card docking share `src/ui/card-pointer-drag.ts` for
 pointer ownership, threshold, capture/cancellation and edge autoscroll. Their
 ghost/transform previews, native destinations, keyboard placement and settings
 policies remain with their adapters. Peak weather, Summit Cloud Cover and ascent

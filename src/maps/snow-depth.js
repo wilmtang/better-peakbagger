@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 export const SNOW_DEPTH_SERVICE = 'https://mapservices.weather.noaa.gov/raster/rest/services/snow/NOHRSC_Snow_Analysis/MapServer';
 // The service envelope includes neighboring parts of Canada and Mexico. It is

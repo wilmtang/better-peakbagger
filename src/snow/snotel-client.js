@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.ts';
 import { validateSnotelStations, validateSnotelData } from './snotel-data.js';
 

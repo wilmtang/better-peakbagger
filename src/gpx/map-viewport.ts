@@ -11,7 +11,7 @@
 // APIs; the caller supplies the bounds (which belong to the settings schema,
 // never a local copy) and the persist callback.
 
-import { dom as Dom } from '../ui/dom.js';
+import { dom as Dom } from '../ui/dom.ts';
 
 interface ViewportSize { width: number; height: number; }
 interface ViewportBounds { minWidth: number; maxWidth: number; minHeight: number; maxHeight: number; }

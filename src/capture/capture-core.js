@@ -6,7 +6,7 @@
 // gain primitives shared with the GPX Analyzer live in src/gpx/gpx-metrics.js.
 
 import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
-import { units as Units } from '../ui/units.js';
+import { units as Units } from '../ui/units.ts';
 import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from './upload-limits.js';
 
 const { FEET_PER_METER } = Units;

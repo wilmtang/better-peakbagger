@@ -18,23 +18,23 @@ import { diagnoseGpxSegments, diagnosticMetricInputs } from './gpx-segment-diagn
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
 import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.js';
 import { peakMarkers } from '../maps/peak-markers.js';
-import { mountainTime as MountainTime } from '../time/mountain-time.js';
+import { mountainTime as MountainTime } from '../time/mountain-time.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
-import { units as Units } from '../ui/units.js';
+import { units as Units } from '../ui/units.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { mapViewport as MapViewport } from './map-viewport.ts';
 import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.js';
 import { mapOverlay as MapOverlay } from './map-overlay.js';
 import { gpxPanelCss } from './gpx-panel-css.js';
 import { ascentPage as AscentPage } from '../ascent/ascent-page.js';
-import { sunState as SunState } from '../sun/sun-state.js';
-import { sunCalculator as SunCalculator } from '../sun/sun-calculator.js';
+import { sunState as SunState } from '../sun/sun-state.ts';
+import { sunCalculator as SunCalculator } from '../sun/sun-calculator.ts';
 import { createGpxTimeCursorPublisher } from './gpx-time-cursor.js';
 
 // Chart remains a separately-loaded vendor global (see manifest). The mountain

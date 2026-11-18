@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { units } from '../ui/units.js';
+import { units } from '../ui/units.ts';
 
 export const SNOTEL_RADIUS_METERS = 50_000;
 const invalid = () => { throw Object.assign(new Error('NRCS returned invalid snow observations.'), { code: 'invalid-response' }); };

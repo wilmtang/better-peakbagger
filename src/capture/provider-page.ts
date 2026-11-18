@@ -6,7 +6,7 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
-import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.js';
+import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.ts';
 import {
     PROVIDER_RESPONSE_PROBE_BYTES,
     PROVIDER_RESPONSE_PROBE_CHARS,
@@ -19,8 +19,8 @@ import {
     PROVIDER_OWNERSHIP_TIMEOUT_MS,
 } from './provider-timing.js';
 import { gpxParse } from '../gpx/gpx-parse.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import {
     MAX_GPX_BYTES,
     MAX_GPX_TEXT_CHARS,

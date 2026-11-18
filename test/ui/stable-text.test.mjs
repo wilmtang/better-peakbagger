@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createStableText } from '../../src/ui/stable-text.js';
+import { createStableText } from '../../src/ui/stable-text.ts';
 
 test('reserved readings do not duplicate live-region text and updates retain the reading node', t => {
     const dom = new JSDOM('<p role="status">Overview</p>'); t.after(() => dom.window.close());

@@ -621,7 +621,7 @@ documented alarm semantics.
 ## Addendum — full read of the capture path
 
 A second pass read the highest-risk code in full: `src/capture/*`,
-`src/net/bounded-text.js`, all 4,169 lines of `src/background/background.ts`,
+`src/net/bounded-text.ts`, all 4,169 lines of `src/background/background.ts`,
 `src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
 `src/gpx/gpx-parse.js`, and the ascent-editor scripts `ascent-draft.js`,
@@ -646,7 +646,7 @@ No browser was launched for this pass either.
 `readBoundedResponseText` capped at 8,192 bytes / 4,096 characters
 (`src/capture/provider-page.ts`, then JavaScript, lines 348–354; limits in
 `provider-response.js`). That reader throws `ResourceLimitError` when either
-cap is exceeded (`src/net/bounded-text.js`), and the catch maps any limit error
+cap is exceeded (`src/net/bounded-text.ts`), and the catch maps any limit error
 to `gpx-too-large` (`provider-page.js` line 401). The popup renders that code as
 a locked card with no action. So an HTML body larger than the probe yields
 "This GPX is too large to process safely…" instead of forbidden, human-check or

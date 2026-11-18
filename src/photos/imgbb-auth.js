@@ -4,7 +4,7 @@
 // Better Peakbagger — device-local ImgBB API-key storage.
 
 import { imgbbClient as ImgbbClient } from './imgbb-client.js';
-import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { storageValue as StorageValue } from '../storage/storage-value.ts';
 
 const STORAGE_KEY = 'bpbImgbbAuth';
 

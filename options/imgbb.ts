@@ -10,7 +10,7 @@
 // saved in Settings is actually usable when the photo editor uploads.
 
 import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 export const IMGBB_ORIGINS = ['https://api.imgbb.com/*'];

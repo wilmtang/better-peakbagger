@@ -3,9 +3,9 @@
 import { readCustomSource, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.js';
 import { resolveCustomSourceDocument } from '../maps/custom-overlay-source.js';
 import { PRIVATE_LIMITS, privateRequestUrl, publicPrivateSource, readPrivateParameters } from '../maps/custom-overlay-private.ts';
-import { storageValue as StorageValue } from '../storage/storage-value.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { storageValue as StorageValue } from '../storage/storage-value.ts';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { rateLimitError } from '../net/rate-limit.ts';
 const requestId = value => typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value);
 const token = () => crypto.randomUUID();
 const failure = (code = 'private-source') => ({ ok: false, code, error: code === 'approval' ? 'Approve private map access in BPB to load this layer.'

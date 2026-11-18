@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runtimeMessage as RuntimeMessage } from '../../src/ui/runtime-message.js';
+import { runtimeMessage as RuntimeMessage } from '../../src/ui/runtime-message.ts';
 
 test('runtime messaging shares one promise contract across extension surfaces', async () => {
     const extensionApi = {

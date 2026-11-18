@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
+import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
 
 test('mountain time resolves ordinary and unusual political offsets offline', () => {
     const denver = MountainTime.resolve(39.7392, -104.9903);

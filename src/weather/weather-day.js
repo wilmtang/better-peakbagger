@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 
 const HOUR = 3600_000, DAY = 24 * HOUR;
 const iso = ms => new Date(ms).toISOString().slice(0, 10);

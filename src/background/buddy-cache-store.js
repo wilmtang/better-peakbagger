@@ -3,7 +3,7 @@
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.js';
 import { climberListLane } from './climber-list-policy.js';
-import { storageValue } from '../storage/storage-value.js';
+import { storageValue } from '../storage/storage-value.ts';
 
 export const createBuddyCacheStore = ({ storage, now = Date.now }) => {
     const run = climberListLane(storage);

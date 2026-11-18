@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { readBoundedWebp } from '../terrain/terrain-cache.ts';
-import { requestDeadline } from '../net/request-deadline.js';
-import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { cancelResponseBody, rateLimitError } from '../net/rate-limit.ts';
 
 const TILE_SIZE = 512;
 // A fixed detail level keeps a reading independent of the camera and of 3D.

@@ -6,9 +6,9 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
-import { sunCalculator as SunCalculator } from '../../src/sun/sun-calculator.js';
-import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
-import { sunPosition as SunPosition } from '../../src/sun/sun-position.js';
+import { sunCalculator as SunCalculator } from '../../src/sun/sun-calculator.ts';
+import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
+import { sunPosition as SunPosition } from '../../src/sun/sun-position.ts';
 
 const css = await readFile(new URL('../../src/sun/sun-calculator.css', import.meta.url), 'utf8');
 

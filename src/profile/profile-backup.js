@@ -10,10 +10,10 @@ import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.js'
 import { githubError as GithubError } from '../github/github-error-copy.js';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { dom as Dom } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
-import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
-import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import { dom as Dom } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
 
 (() => {
     'use strict';

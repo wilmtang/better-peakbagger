@@ -34,7 +34,7 @@ test('the actual compiler accepts mixed imports and rejects type errors and unde
             compilerOptions: { typeRoots: [path.join(root, 'node_modules/@types')] },
             include: [file],
         }));
-        await writeFile(file, `import { units } from ${JSON.stringify(path.join(root, 'src/ui/units.js'))};
+        await writeFile(file, `import { units } from ${JSON.stringify(path.join(root, 'src/ui/units.ts'))};
 export const distance: string = units.formatDistance(1000, 'metric');
 export const page: Document = document;
 export const api: typeof chrome = browser;

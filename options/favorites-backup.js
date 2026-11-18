@@ -17,7 +17,7 @@ import { createBackupReview } from './backup-review.js';
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.js';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 

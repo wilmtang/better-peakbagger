@@ -4,8 +4,8 @@
 import { sentinelTileUrl } from './sentinel-core.js';
 import { overlayTileUrl, tileBounds, publicLandTileSources, mapOverlayCoverage } from './map-overlay-providers.ts';
 import { drawAlbertaLand } from './canadian-land.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { retryTransient, temporaryHttpStatus } from '../net/retry-transient.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 

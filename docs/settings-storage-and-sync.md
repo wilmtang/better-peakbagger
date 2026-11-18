@@ -135,9 +135,9 @@ Other local state has separate owners and does not belong in a settings file:
 | Photo canvas dimensions | `bpbPhotoViewport` in `storage.local`; [photo editor](../photos/photos.ts) | Device layout |
 | Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.js) | Current viewing preference, separate from list membership |
 | Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.ts) | Current page-view state; chip order and “Has beta” definition are portable |
-| Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.js) | Device layout |
+| Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.ts) | Device layout |
 | Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
-| Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.js), [panel theme](../src/theme/panel-theme.js) | Mirror of portable `theme`, not a separate theme choice |
+| Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.ts), [panel theme](../src/theme/panel-theme.ts) | Mirror of portable `theme`, not a separate theme choice |
 | Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.js) | Per-device authorization; key transfer does not copy it |
 | Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.js) | Pending source IDs for deferred private record cleanup on deletion |
 | Provider request budgets | `budget:<host>` in IndexedDB `bpb-private-map-sources-v1`; [custom private store](../src/background/custom-private-store.js) | Device-local hourly/daily request counters |

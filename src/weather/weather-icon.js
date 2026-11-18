@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
+import { dom } from '../ui/dom.ts';
 
 // Packaged SVGs share one palette across daily summaries and hourly readings.
 // The adjacent condition text (or the hourly accessible name) carries meaning.

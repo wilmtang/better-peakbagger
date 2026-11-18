@@ -8,9 +8,9 @@
 // stay in github-auth.js while sharing the same error type and codes.
 
 import { githubErrors as GithubErrors } from './github-errors.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { retryAfterAt, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { retryAfterAt, cancelResponseBody } from '../net/rate-limit.ts';
 
 const API_ROOT = 'https://api.github.com';
 const { ERROR_CODES, GithubError } = GithubErrors;

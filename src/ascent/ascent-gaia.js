@@ -12,12 +12,12 @@ import { MAX_CALTOPO_GPX_BYTES } from '../caltopo/caltopo-import.js';
 import { MAX_ALLTRAILS_GPX_BYTES } from '../alltrails/alltrails-import.js';
 import { MAX_GAIA_GPX_BYTES } from '../gaia/gaia-import.js';
 import { MAX_ONX_GPX_BYTES, ONX_EXPORT_BUDGET_MS } from '../onx/onx-import.js';
-import { dom as Dom } from '../ui/dom.js';
+import { dom as Dom } from '../ui/dom.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
-import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
-import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
-import { createStableText } from '../ui/stable-text.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 
 (() => {
     'use strict';

@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { storageValue as StorageValue } from '../../src/storage/storage-value.js';
+import { storageValue as StorageValue } from '../../src/storage/storage-value.ts';
 
 test('storage value equality is semantic for JSON-shaped records', () => {
     assert.equal(StorageValue.same(

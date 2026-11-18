@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { listFocusRestorer } from '../src/ui/list-focus.js';
+import { listFocusRestorer } from '../src/ui/list-focus.ts';
 
 const githubRepoName = status => status?.repo?.fullName
     || (status?.repo?.owner && status?.repo?.name

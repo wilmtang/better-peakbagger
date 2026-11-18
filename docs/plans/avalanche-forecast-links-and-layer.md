@@ -152,7 +152,7 @@ The first implementation is confined to the existing peak-links entry and a
 pure, locally maintained source registry. Implemented files:
 
 ```text
-src/avalanche/avalanche-links.js       provider registry and safe URL builders
+src/avalanche/avalanche-links.ts       provider registry and safe URL builders
 src/avalanche/avalanche-location.ts    strict Nation parsing, if needed
 test/avalanche/avalanche-links.test.mjs
 ```

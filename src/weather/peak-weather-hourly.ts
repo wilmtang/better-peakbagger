@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
-import { mountainTime } from '../time/mountain-time.js';
+import { dom } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { mountainTime } from '../time/mountain-time.ts';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.ts';
 import { weatherChartRange, weatherChartTicks } from './weather-chart-scale.js';
 

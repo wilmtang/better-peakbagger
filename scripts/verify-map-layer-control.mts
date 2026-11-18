@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { darkCss } from '../src/theme/site-dark-css.js';
+import { darkCss } from '../src/theme/site-dark-css.ts';
 import { SLOPE_BANDS } from '../src/maps/map-overlay-providers.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));

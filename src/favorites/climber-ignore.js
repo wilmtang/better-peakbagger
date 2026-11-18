@@ -6,7 +6,7 @@ import { observeIgnored, mutateIgnored } from './ignored-client.js';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { climberProfileFeedback } from './climber-profile-feedback.js';
-import { createStableText } from '../ui/stable-text.js';
+import { createStableText } from '../ui/stable-text.ts';
 import { climberCardState } from './climber-card-state.js';
 
 const mount = () => {

@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { temporaryHttpStatus } from '../net/retry-transient.ts';
 import regionData from './canadian-land-regions.json' with { type: 'json' };
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';

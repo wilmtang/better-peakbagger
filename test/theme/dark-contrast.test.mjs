@@ -20,7 +20,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { loadPageWithBar } from '../helpers/load-page.mts';
-import { darkCss } from '../../src/theme/site-dark-css.js';
+import { darkCss } from '../../src/theme/site-dark-css.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 

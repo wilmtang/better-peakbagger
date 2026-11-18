@@ -490,8 +490,8 @@ test('watchDirectories covers all authored source roots and copied asset roots w
     assert.deepEqual(overlapping, [], 'recursive directory watches must not overlap');
 
     assert.deepEqual(
-        entrySources({ sources: ['ui/units.js', 'popup-main.js'], page: true }, '/fixture-root'),
-        ['/fixture-root/src/ui/units.js', '/fixture-root/popup/popup.ts'],
+        entrySources({ sources: ['ui/units.ts', 'popup-main.js'], page: true }, '/fixture-root'),
+        ['/fixture-root/src/ui/units.ts', '/fixture-root/popup/popup.ts'],
         'entrySources resolves both shared src/ and page-local roots relative to projectRoot',
     );
 });

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { nativeMapDarkCss } from '../../src/theme/native-map-theme.js';
+import { nativeMapDarkCss } from '../../src/theme/native-map-theme.ts';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';

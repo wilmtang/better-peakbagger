@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hourlyWeatherSeries as peakHourlySeries, hourlyWeatherColumns as peakHourlyConditions, hourlyWeatherColumns } from '../../src/weather/weather-hourly-table.ts';
 import { weatherDayWindow } from '../../src/weather/weather-day.js';
-import { mountainTime } from '../../src/time/mountain-time.js';
+import { mountainTime } from '../../src/time/mountain-time.ts';
 
 const HOUR = 3600_000;
 const series = window => Array.from({ length: 28 }, (_, i) => ({ time: Math.floor(window.start / HOUR) * HOUR + i * HOUR, temperature: i, wind: i, gust: i, precipitation: 1, code: 3 }));

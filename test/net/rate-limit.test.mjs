@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { retryAfterAt, rateLimitError, rateLimitMessage } from '../../src/net/rate-limit.js';
+import { retryAfterAt, rateLimitError, rateLimitMessage } from '../../src/net/rate-limit.ts';
 
 const now = Date.parse('2026-10-11T12:00:00Z');
 test('retry timing accepts bounded seconds and HTTP dates, never invents a reset from malformed headers', () => {

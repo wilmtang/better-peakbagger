@@ -19,16 +19,16 @@ These shared modules already exist:
 
 | Concern | Reuse now | Policy retained by the caller |
 | --- | --- | --- |
-| Safe DOM and feedback | [`dom.js`](../src/ui/dom.js), [`stable-text.js`](../src/ui/stable-text.js) | Labels, status alternatives, deliberate expansion and retained content |
-| Page lifetime and cooldown UI | [`page-lifecycle.ts`](../src/ui/page-lifecycle.ts), [`retry-cooldown.js`](../src/ui/retry-cooldown.js) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
+| Safe DOM and feedback | [`dom.ts`](../src/ui/dom.ts), [`stable-text.ts`](../src/ui/stable-text.ts) | Labels, status alternatives, deliberate expansion and retained content |
+| Page lifetime and cooldown UI | [`page-lifecycle.ts`](../src/ui/page-lifecycle.ts), [`retry-cooldown.ts`](../src/ui/retry-cooldown.ts) | Eligible reads, cancellation, TTL, resume and remote-write reconciliation |
 | Read eligibility and lazy start | [`card-read-gate.ts`](../src/ui/card-read-gate.ts) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
 | Latest read ownership | [`latest-read.ts`](../src/ui/latest-read.ts) | Request identity, validation, cache/TTL, retained labels and pending UI |
-| Movement | [`card-drag.js`](../src/ui/card-drag.js), [`layout-menu.js`](../src/ui/layout-menu.js) | Native anchors, valid destinations, order, persistence and preview strategy |
-| Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.js`](../src/time/mountain-time.js) | Forecast versus historical endpoint, date range, model capabilities and freshness |
-| Weather display | [`weather-hourly-table.ts`](../src/weather/weather-hourly-table.ts), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.js`](../src/ui/units.js) | Supported fields, native-unit inference, selected source and GPX cursor integration |
+| Movement | [`card-drag.ts`](../src/ui/card-drag.ts), [`layout-menu.ts`](../src/ui/layout-menu.ts) | Native anchors, valid destinations, order, persistence and preview strategy |
+| Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.ts`](../src/time/mountain-time.ts) | Forecast versus historical endpoint, date range, model capabilities and freshness |
+| Weather display | [`weather-hourly-table.ts`](../src/weather/weather-hourly-table.ts), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.ts`](../src/ui/units.ts) | Supported fields, native-unit inference, selected source and GPX cursor integration |
 
 `card-drag.js` is used by ascent weather. It and the peak layout share
-[`card-pointer-drag.js`](../src/ui/card-pointer-drag.js) for pointer ownership,
+[`card-pointer-drag.ts`](../src/ui/card-pointer-drag.ts) for pointer ownership,
 threshold, capture, cancellation and autoscroll. Keep each adapter's previews,
 keyboard destinations, native movement and persistence local.
 
@@ -140,7 +140,7 @@ Mount a labelled `<section>` inside its own `<tr><td colspan="2">` in the
 recognized peak table. Its direct header contains an `h2`; its remaining children
 are body content. Initially hide both row and section until settings resolve.
 
-[`src/ui/peak-card-layout.js`](../src/ui/peak-card-layout.js) owns card discovery,
+[`src/ui/peak-card-layout.ts`](../src/ui/peak-card-layout.ts) owns card discovery,
 the header disclosure, drag grip, keyboard move menu, column placement, ordering
 and persistence. Register a new standalone card in its definitions and extend
 `PEAK_CARD_ORDER`, column defaults and the collapse key in the shared settings
@@ -185,7 +185,7 @@ existing fallback uses validated map/metadata anchors when the split is absent;
 do not make that fallback a universal document-body mount for new cards.
 
 For a movable ascent card, explicitly opt into
-[`createCardDrag`](../src/ui/card-drag.js) and
+[`createCardDrag`](../src/ui/card-drag.ts) and
 [`card-drag.css`](../src/ui/card-drag.css). Supply the card, grip, drag surface,
 status region, enabled predicate, current position, valid targets and move
 callback. The helper owns pointer/keyboard gestures, move-menu behavior, preview
@@ -303,7 +303,7 @@ table. Follow its existing reconciliation flow for uncertain remote writes.
 
 ## Stable feedback and accessibility
 
-Use [`createStableText`](../src/ui/stable-text.js) to reserve the actual wrapping
+Use [`createStableText`](../src/ui/stable-text.ts) to reserve the actual wrapping
 of short alternate labels/status messages. Sizing content must be noninteractive
 and hidden from accessibility output. Avoid fixed heights that clip errors,
 oversized empty reservations or invisible focusable controls.

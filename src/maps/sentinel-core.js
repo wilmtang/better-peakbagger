@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 export const SENTINEL_NAME = 'Sentinel-2 (experimental)';
 export const SENTINEL_CODE = 'BPB_SENTINEL';

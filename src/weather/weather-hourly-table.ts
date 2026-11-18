@@ -1,11 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { mountainTime } from '../time/mountain-time.js';
+import { dom } from '../ui/dom.ts';
+import { mountainTime } from '../time/mountain-time.ts';
 import { hourlyWeatherCondition } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
-import { units } from '../ui/units.js';
+import { units } from '../ui/units.ts';
 
 export type WeatherMetric = 'code' | 'cloud' | 'temperature' | 'apparent' | 'precipitation' | 'freezing' | 'wind' | 'gust' | 'direction';
 export type WeatherZone = NonNullable<ReturnType<typeof mountainTime.resolve>>;
@@ -108,13 +108,13 @@ export function createWeatherHourlyTable({ window, samples, zone, format, gustTi
 }) {
     const hours = hourlyWeatherColumns(window, samples, gustTiming), columns = new Map<number, HTMLTableCellElement[]>();
     const labels = compact ? compactWeatherHours(zone, hours.map(row => row.time)) : [];
-    const localTime = (time: number) => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
+    const localTime = (time: number) => `${mountainTime.formatClock(zone, time) ?? ''} ${mountainTime.zoneLabel(zone, time)}`;
     const table = element('table', { class: `bpb-weather-hourly-table${compact ? ' bpb-weather-strip bpb-weather-strip--conditions' : ''}`, 'aria-label': 'Hourly weather' }) as HTMLTableElement;
     if (compact) sizeWeatherStrip(table, hours.length);
     const head = element('tr', {}, [element('th', { scope: 'col', text: compact ? zone.estimated || labels.some(row => row.showZone) ? 'Local time' : `Time · ${labels[0]?.zone || ''}` : 'Hours' })]);
     for (const [index, row] of hours.entries()) {
         const cell = element('th', { scope: 'col', class: 'bpb-weather-conditions-hour', 'data-weather-time': row.time }, [
-            element('time', { datetime: new Date(row.time).toISOString(), title: compact ? labels[index].title : localTime(row.time), text: compact ? labels[index].clock : mountainTime.formatClock(zone, row.time).replace(/^0/, '').replace(':00', '') }),
+            element('time', { datetime: new Date(row.time).toISOString(), title: compact ? labels[index].title : localTime(row.time), text: compact ? labels[index].clock : (mountainTime.formatClock(zone, row.time) ?? '').replace(/^0/, '').replace(':00', '') }),
             ...(!compact || labels[index].showZone ? [element('span', { class: 'bpb-weather-hour-zone', text: compact ? labels[index].displayZone : mountainTime.zoneLabel(zone, row.time) })] : []),
         ]);
         if (compact && row.sample?.isDay === 0) cell.dataset.night = 'true';

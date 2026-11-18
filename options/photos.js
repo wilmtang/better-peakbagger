@@ -10,7 +10,7 @@
 // a confirm() the browser can suppress.
 
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.js';
 import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';

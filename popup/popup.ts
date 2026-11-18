@@ -4,13 +4,13 @@
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
 import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
 import { matchReading } from '../src/capture/match-reading.ts';
-import { providerFromUrl } from '../src/capture/provider-url.js';
+import { providerFromUrl } from '../src/capture/provider-url.ts';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { waitingCountLabel } from '../src/garmin/garmin-badge.ts';
 import { settings as Settings } from '../src/settings/settings.js';
-import { units as Units } from '../src/ui/units.js';
-import { createStableText } from '../src/ui/stable-text.js';
-import { rateLimitMessage } from '../src/net/rate-limit.js';
+import { units as Units } from '../src/ui/units.ts';
+import { createStableText } from '../src/ui/stable-text.ts';
+import { rateLimitMessage } from '../src/net/rate-limit.ts';
 
 // The worker owns these records; the popup reads only the fields it renders.
 interface CaptureError { code?: string; message?: string; recovery?: string; recoveryTabId?: number; fromWorker?: boolean; retryAt?: number }
@@ -49,7 +49,7 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
     // Garmin or Strava activity — so it takes the shared module's documented
     // imperial fallback rather than inventing a second source of truth or
     // persisting a "last units seen" value for a cosmetic tie-break.
-    let displayUnits = { distance: Units.IMPERIAL, elevation: Units.IMPERIAL };
+    let displayUnits: { distance: ReturnType<typeof Units.resolveUnits>; elevation: ReturnType<typeof Units.resolveUnits> } = { distance: Units.IMPERIAL, elevation: Units.IMPERIAL };
     let displayUnitsReady = false;
     let pendingUnitsJob: CaptureJob | null = null;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;

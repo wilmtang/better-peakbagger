@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createCardDrag } from '../../src/ui/card-drag.js';
+import { createCardDrag } from '../../src/ui/card-drag.ts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 import { registerCardDragContract } from '../helpers/card-drag-contract.mjs';
 

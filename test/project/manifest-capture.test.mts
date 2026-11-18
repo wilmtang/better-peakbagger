@@ -69,14 +69,14 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.ts', 'settings/settings-schema.ts', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.ts', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.ts', 'background/settings-file-routes.js', 'background/terrain-activation.ts', 'background/trusted-actions.js', 'background/gpx-handoff-routes.js', 'background/caltopo-routes.js', 'background/alltrails-routes.js', 'background/gaia-routes.js', 'background/onx-routes.js', 'background/terrain-prefetch.js', 'garmin/fit-message-reader.ts', 'garmin/fit-activity.js', 'garmin/garmin-api.ts', 'garmin/garmin-store.js', 'garmin/garmin-imports.ts', 'background/options-tab-routes.ts', 'background/background.ts']);
+        ['ui/units.ts', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.ts', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.ts', 'settings/settings-schema.ts', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.ts', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.ts', 'background/settings-file-routes.js', 'background/terrain-activation.ts', 'background/trusted-actions.js', 'background/gpx-handoff-routes.js', 'background/caltopo-routes.js', 'background/alltrails-routes.js', 'background/gaia-routes.js', 'background/onx-routes.js', 'background/terrain-prefetch.js', 'garmin/fit-message-reader.ts', 'garmin/fit-activity.js', 'garmin/garmin-api.ts', 'garmin/garmin-store.js', 'garmin/garmin-imports.ts', 'background/options-tab-routes.ts', 'background/background.ts']);
     assert.deepEqual(bundleSources('provider-page.js'), [
-        'capture/provider-url.js',
+        'capture/provider-url.ts',
         'capture/provider-response.js',
         'capture/capture-error-policy.js',
         'capture/provider-timing.js',
         'gpx/gpx-parse.js',
-        'net/request-deadline.js',
+        'net/request-deadline.ts',
         'capture/provider-page.ts',
     ]);
     assert.deepEqual(bundleSources('peakbagger-page.js'), [
@@ -159,10 +159,10 @@ test('the canonical unpacked extension opens Chrome settings in a full tab', () 
 
 test('extension panels share one pre-paint theme bootstrap', () => {
     assert.deepEqual(bundleSources('options/options-head.js'),
-        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js']);
+        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.ts']);
     assert.deepEqual(bundleSources('popup/popup-head.js'),
-        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.js']);
-    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/provider-url.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.ts', 'settings/settings.js', 'ui/units.js', 'ui/stable-text.js', 'popup-main.js']);
+        ['settings/settings-schema.ts', 'settings/settings.js', 'theme/panel-theme.ts']);
+    assert.deepEqual(bundleSources('popup/popup.js'), ['capture/provider-url.ts', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/match-confidence.js', 'peakbagger/peakbagger-origin.js', 'settings/settings-schema.ts', 'settings/settings.js', 'ui/units.ts', 'ui/stable-text.ts', 'popup-main.js']);
 });
 
 test('the site theme runs its tiny fallback before the full dynamic bundle', () => {
@@ -171,14 +171,14 @@ test('the site theme runs its tiny fallback before the full dynamic bundle', () 
     assert.equal(themeEntry.run_at, 'document_start');
     assert.deepEqual(themeEntry.js, ['content/theme-early.js', 'content/theme.js']);
     assert.deepEqual(bundleSources('content/theme-early.js'),
-        ['theme/theme-resolve.js', 'theme/theme-bootstrap.js', 'theme/theme-early.js']);
+        ['theme/theme-resolve.ts', 'theme/theme-bootstrap.ts', 'theme/theme-early.ts']);
     assert.deepEqual(bundleSources('content/theme.js'), [
         'settings/settings-schema.ts',
         'settings/settings.js',
-        'theme/theme-bootstrap.js',
-        'theme/dynamic-inline-colors.js',
-        'theme/site-dark-css.js',
-        'theme/theme.js',
+        'theme/theme-bootstrap.ts',
+        'theme/dynamic-inline-colors.ts',
+        'theme/site-dark-css.ts',
+        'theme/theme.ts',
     ]);
 });
 
@@ -236,7 +236,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.deepEqual(analyzerEntry.js, ['vendor/chart.umd.min.js', 'content/gpx-analyzer.js']);
     assert.deepEqual(analyzerEntry.css, ['css/sun-calculator.css']);
     assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
-        ['ui/units.js', 'ui/dom.js', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.ts', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.js', 'ascent/ascent-page.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'gpx/gpx-analyzer.js']);
+        ['ui/units.ts', 'ui/dom.ts', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.js', 'gpx/gpx-time-cursor.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/gpx-segment-diagnostics.js', 'gpx/map-frame-lifecycle.js', 'gpx/map-viewport.ts', 'gpx/map-overlay.js', 'gpx/gpx-panel-css.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'settings/settings-schema.ts', 'settings/page-settings-client.js', 'theme/theme-resolve.ts', 'ascent/ascent-page.js', 'time/mountain-time.ts', 'sun/sun-position.ts', 'sun/sun-state.ts', 'sun/sun-calculator.ts', 'gpx/gpx-analyzer.js']);
 
     const terrainEntry = manifest.content_scripts.find(entry =>
         entry.js.includes('content/terrain-map.js') && entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
@@ -317,7 +317,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     assert.deepEqual(pageEntry.js, ['content/big-map.js']);
     assert.equal(pageEntry.world, 'MAIN');
     assert.deepEqual(bundleSources('content/big-map.js'),
-        ['ui/page-lifecycle.ts', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'maps/big-map.ts']);
+        ['ui/page-lifecycle.ts', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'gpx/map-frame-lifecycle.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.ts', 'maps/big-map.ts']);
     assert.ok(pageEntry.matches.every(pattern => /bigmap/i.test(pattern)));
 
     // The shared 3D terrain bridge is injected on BigMap too (isolated world,
@@ -359,10 +359,10 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ui/units.js', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.ts', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
+        ['ui/units.ts', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.ts', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.ts', 'ui/runtime-message.ts', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
     const timezoneConsumers = await Promise.all([
         'src/ascent/ascent-upload.ts',
-        'src/time/mountain-time.js'
+        'src/time/mountain-time.ts'
     ].map(path => fs.readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
     for (const source of timezoneConsumers) {
         assert.match(source, /import tzlookup from ['"]tz-lookup['"]/);
@@ -399,7 +399,7 @@ test('the ascent sorter also reaches the Buddy List and Peak List endpoints', ()
     assert.equal(sorter.run_at, 'document_start');
     assert.equal(sorter.world, undefined);
     assert.deepEqual(bundleSources('content/ascent-filter.js'),
-        ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.js', 'ascent/ascent-filter.ts']);
+        ['settings/settings-schema.ts', 'settings/settings.js', 'favorites/favorite-climbers.js', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ui/trusted-action.ts', 'ascent/ascent-filter.ts']);
     for (const host of ['https://www.peakbagger.com', 'https://peakbagger.com']) {
         assert.ok(sorter.matches.includes(`${host}/report/report.aspx*`));
         assert.ok(sorter.matches.includes(`${host}/List.aspx*`));
@@ -443,7 +443,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
     assert.deepEqual(pageCoordinator.js, ['content/peak-map.js']);
     assert.deepEqual(pageCoordinator.css, ['css/sun-calculator.css']);
     assert.deepEqual(bundleSources('content/peak-map.js'),
-        ['ui/page-lifecycle.ts', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.js', 'time/mountain-time.js', 'sun/sun-position.js', 'sun/sun-state.js', 'sun/sun-calculator.js', 'maps/peak-map.js']);
+        ['ui/page-lifecycle.ts', 'peakbagger/peakbagger-origin.js', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'settings/settings-schema.ts', 'theme/theme-resolve.ts', 'time/mountain-time.ts', 'sun/sun-position.ts', 'sun/sun-state.ts', 'sun/sun-calculator.ts', 'maps/peak-map.js']);
     assert.equal(pageCoordinator.run_at, 'document_end');
     assert.equal(pageCoordinator.world, 'MAIN');
 
@@ -477,7 +477,7 @@ test('full-profile backup is isolated to ClimbListC with its own bundled surface
     assert.deepEqual(script.css, ['css/profile-backup.css']);
     assert.ok(script.matches.every(match => /climblistc\.aspx/i.test(match)));
     const entry = ENTRIES.find(candidate => candidate.out === 'content/profile-backup.js');
-    assert.deepEqual(entry!.sources, ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.ts', 'reports/report-markup.ts', 'ascent/ascent-backup-source.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'profile/profile-backup.js']);
+    assert.deepEqual(entry!.sources, ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'ascent/ascent-snapshot.ts', 'reports/report-markup.ts', 'ascent/ascent-backup-source.js', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'profile/profile-backup.js']);
 });
 
 test('individual and profile backups bundle the same Peakbagger source reader', () => {
@@ -485,7 +485,7 @@ test('individual and profile backups bundle the same Peakbagger source reader', 
     assert.ok(individual);
     assert.deepEqual(individual.css, ['css/ascent-backup.css']);
     assert.deepEqual(bundleSources('content/ascent-backup.js'),
-        ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.ts', 'ascent/ascent-snapshot.ts', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.js', 'ui/runtime-message.js', 'ui/trusted-action.js', 'ascent/ascent-backup.js']);
+        ['peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'profile/profile-backup-core.js', 'reports/report-markup.ts', 'ascent/ascent-snapshot.ts', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'ascent/ascent-backup.js']);
     assert.ok(bundleSources('content/profile-backup.js')!.includes('ascent/ascent-backup-source.js'));
 });
 
@@ -510,11 +510,11 @@ test('saved map handoffs share one independent isolated-world surface', () => {
         'gaia/gaia-import.js',
         'gpx/saved-gpx-source.js',
         'onx/onx-import.js',
-        'ui/dom.js',
+        'ui/dom.ts',
         'ui/page-lifecycle.ts',
-        'ui/runtime-message.js',
-        'ui/trusted-action.js',
-        'ui/stable-text.js',
+        'ui/runtime-message.ts',
+        'ui/trusted-action.ts',
+        'ui/stable-text.ts',
         'ascent/ascent-gaia.js',
     ]);
 });
@@ -528,7 +528,7 @@ test('saved ascent table resizing has an independent isolated-world surface', ()
     assert.deepEqual(layout.css, ['css/column-resize.css', 'css/ascent-layout.css']);
     assert.ok(layout.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/ascent-layout.js'), [
-        'ui/dom.js',
+        'ui/dom.ts',
         'ascent/ascent-table-split.js',
         'ascent/ascent-layout.js',
     ]);

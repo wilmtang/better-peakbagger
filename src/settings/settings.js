@@ -13,8 +13,8 @@
 // file adds only chrome.storage access on top of it.
 
 import { settingsSchema as Schema } from './settings-schema.ts';
-import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
-import { storageValue as StorageValue } from '../storage/storage-value.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
+import { storageValue as StorageValue } from '../storage/storage-value.ts';
 
 export const STORAGE_KEY = 'bpbSettings';
 export const DEVICE_STORAGE_KEY = 'bpbDeviceSettings';

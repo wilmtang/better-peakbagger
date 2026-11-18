@@ -26,7 +26,7 @@ package ships CommonJS, so esbuild bundles it directly into the consumers that
 need mountain time: `dist/content/gpx-analyzer.js`,
 `dist/content/ascent-editor.js`, `dist/content/peak-map.js`,
 `dist/content/map-layers.js`, and `dist/terrain/terrain-frame.js`. The shared
-`src/time/mountain-time.js` module is the only authored owner of resolution,
+`src/time/mountain-time.ts` module is the only authored owner of resolution,
 formatting, local-day comparison, and editable civil-time conversion. There is
 no page-owned global for Peakbagger or another extension to replace.
 

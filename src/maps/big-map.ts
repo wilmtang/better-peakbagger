@@ -9,7 +9,7 @@
 // Peakbagger's page owns Leaflet and its layers; they have no declarations here.
 type PageOwned = ReturnType<typeof JSON.parse>;
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { themeResolve as ThemeResolve } from '../theme/theme-resolve.js';
+import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
 import { gpxMetrics } from '../gpx/gpx-metrics.js';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';

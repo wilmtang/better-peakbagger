@@ -9,7 +9,7 @@ import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger
 import { isPeakbaggerPageOrigin, PEAKBAGGER_HOSTS, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
 import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
-import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.js';
+import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const UNDO_MS = 6000;

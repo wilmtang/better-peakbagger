@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { mountainTime as MountainTime } from '../../src/time/mountain-time.js';
-import { sunState as SunState } from '../../src/sun/sun-state.js';
+import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
+import { sunState as SunState } from '../../src/sun/sun-state.ts';
 
 const resultFor = ({ mapBearing = 0 } = {}) => Object.freeze({
     azimuthDeg: 1,

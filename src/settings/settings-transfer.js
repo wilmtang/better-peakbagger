@@ -5,7 +5,7 @@
 
 import { settingsSchema as Schema } from './settings-schema.ts';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import { cleanGarminKey } from '../garmin/garmin-api.ts';
 import { readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
 

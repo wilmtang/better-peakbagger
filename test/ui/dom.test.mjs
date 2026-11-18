@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { dom as Dom } from '../../src/ui/dom.js';
+import { dom as Dom } from '../../src/ui/dom.ts';
 
 test('shared DOM builder applies properties, events, attributes, and children', () => {
     const window = new JSDOM('<!doctype html>').window;
@@ -64,7 +64,7 @@ test('the shared builder can express the inline styles injected surfaces need', 
 
 test('the shared builder records its adoption policy rather than leaving it implicit', async () => {
     const { readFile } = await import('node:fs/promises');
-    const source = await readFile(new URL('../../src/ui/dom.js', import.meta.url), 'utf8');
+    const source = await readFile(new URL('../../src/ui/dom.ts', import.meta.url), 'utf8');
     assert.match(source, /not options-page-only/i,
         'the split must be documented, not left for a reader to infer per file');
     assert.match(source, /style inline/i, 'and it must say why the holdouts held out');

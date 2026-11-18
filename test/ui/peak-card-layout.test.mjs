@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { readFileSync } from 'node:fs';
-import { createPeakCardLayout } from '../../src/ui/peak-card-layout.js';
+import { createPeakCardLayout } from '../../src/ui/peak-card-layout.ts';
 import { settingsSchema as schema } from '../../src/settings/settings-schema.ts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 import { registerCardDragContract } from '../helpers/card-drag-contract.mjs';

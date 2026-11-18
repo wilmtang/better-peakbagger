@@ -1,19 +1,19 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
+import { dom } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
 import { createWeatherIcon } from '../weather/weather-icon.js';
-import { units } from '../ui/units.js';
+import { units } from '../ui/units.ts';
 import { settings } from '../settings/settings.js';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
-import { createCardDrag } from '../ui/card-drag.js';
-import { createRetryCooldown } from '../ui/retry-cooldown.js';
-import { requestDeadline } from '../net/request-deadline.js';
+import { createCardDrag } from '../ui/card-drag.ts';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { requestDeadline } from '../net/request-deadline.ts';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { peakbaggerCloudflare } from '../peakbagger/peakbagger-cloudflare.js';
 import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.ts';

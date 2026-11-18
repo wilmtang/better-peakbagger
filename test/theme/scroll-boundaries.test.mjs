@@ -3,8 +3,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { darkCss } from '../../src/theme/site-dark-css.js';
-import { applyEarlyTheme } from '../../src/theme/theme-bootstrap.js';
+import { darkCss } from '../../src/theme/site-dark-css.ts';
+import { applyEarlyTheme } from '../../src/theme/theme-bootstrap.ts';
 import { JSDOM } from 'jsdom';
 
 test('the early and full dark site theme disable vertical bounce at the root', () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mountainTime } from '../../src/time/mountain-time.js';
+import { mountainTime } from '../../src/time/mountain-time.ts';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode } from '../../src/weather/weather-day.js';
 
 const now = Date.parse('2026-10-10T12:00:00Z');

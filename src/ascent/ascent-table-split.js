@@ -11,8 +11,8 @@
 // The preference is harmless per-page UI state and follows the ascent-filter
 // precedent by living in the Peakbagger origin's localStorage.
 
-import { dom as Dom } from '../ui/dom.js';
-import { createColumnResize } from '../ui/column-resize.js';
+import { dom as Dom } from '../ui/dom.ts';
+import { createColumnResize } from '../ui/column-resize.ts';
 
 const STORAGE_KEY = 'pbAscentTableSplit.v1';
 const DEFAULT_LEFT_PERCENT = 50;

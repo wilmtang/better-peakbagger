@@ -116,7 +116,7 @@ session continue to own authentication.
 
 ## Trusted action and GPX acquisition
 
-After permission succeeds, `src/ui/trusted-action.js` proves that the action
+After permission succeeds, `src/ui/trusted-action.ts` proves that the action
 came from a trusted DOM event. The worker binds the resulting `gaia-import`
 grant to the source tab, frame, document when available, action name, and UI
 generation. The initial capability expires after five seconds. Its workflow

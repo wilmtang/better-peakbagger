@@ -15,7 +15,7 @@ import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
 import { captureErrorMessage } from '../capture/capture-error-policy.js';
 import { sameCapturePreferences, timestampsTurnedOnSince, TIMESTAMPS_TURNED_ON_MESSAGE } from '../capture/capture-reuse.ts';
 import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
-import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
+import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.ts';
 import {
     PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
     PROVIDER_EXPORT_TIMEOUT_MS,
@@ -59,7 +59,7 @@ import {
 } from '../peakbagger/peakbagger-origin.js';
 import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
 import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.ts';
 import { GarminError } from '../garmin/garmin-api.ts';
 

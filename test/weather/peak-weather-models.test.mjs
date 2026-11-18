@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mountainTime } from '../../src/time/mountain-time.js';
+import { mountainTime } from '../../src/time/mountain-time.ts';
 import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
 import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
 import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.js';

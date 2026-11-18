@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 import { weatherDayWindow, summarizeWeatherDay } from './weather-day.js';
 
 const DAY = 86400_000, HOUR = 3600_000;

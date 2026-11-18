@@ -17,7 +17,7 @@ import { createFavoriteSource } from '../favorites/favorite-source.js';
 import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.js';
 import { authorInCell } from '../favorites/report-adapters.js';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
-import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
 import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.js';
 
 type BetaFilterKey = 'beta' | 'tr' | 'gps' | 'link' | 'fav';
@@ -589,7 +589,7 @@ const setupInstantTableSort = ({
 
 // The bar's complete theme — light values and their dark counterparts —
 // lives here and nowhere else. It used to be split between this string and
-// a block of per-property !important overrides in src/theme/site-dark-css.js,
+// a block of per-property !important overrides in src/theme/site-dark-css.ts,
 // so every new control needed a developer to remember a second file and
 // nothing failed when they didn't. Now dark mode is variable reassignment:
 // a control with no dark value is impossible, because there is only one

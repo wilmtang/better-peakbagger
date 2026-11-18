@@ -1,16 +1,16 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
+import { dom } from '../ui/dom.ts';
 import { settings } from '../settings/settings.js';
-import { units } from '../ui/units.js';
+import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
-import { createRetryCooldown } from '../ui/retry-cooldown.js';
-import { createStableText } from '../ui/stable-text.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { createStableText } from '../ui/stable-text.ts';
 import { readPeakWeatherSubject } from './peak-weather-subject.ts';
 import { weatherDayWindow } from './weather-day.js';
 import { createWeatherIcon } from './weather-icon.js';
@@ -175,7 +175,7 @@ export function mountSummitCloud() {
         hours.setAttribute('aria-label', `${relativeDate(data.day.date, now)} · ${times.length} hours of summit cloud predictions. Use left and right arrows to select an hour.`);
         for (const option of dateSelect.options) option.textContent = relativeDate(option.value, now);
         populateHours(times.length);
-        const compactClocks = times.map(time => mountainTime.formatClock(zone, time).replace(/^0(?=\d)/, '').replace(':00', '').replace(/\s+/g, ' '));
+        const compactClocks = times.map(time => (mountainTime.formatClock(zone, time) ?? '').replace(/^0(?=\d)/, '').replace(':00', '').replace(/\s+/g, ' '));
         const selectionLabel = (time: number, temporal = temporalLabel(time, now)) => `${relativeDate(localDate(time), now)} · ${clock(time).replace(/^0(?=\d)/, '')} · ${temporal}`;
         hourNodes.forEach(({ button, marker, clock: clockNode, clockText, timezone, text }, index) => {
             const time = times[index], prediction = predictions[index], temporal = temporalLabel(time, now);
@@ -259,7 +259,7 @@ export function mountSummitCloud() {
         revealSelection = true; paint(); hourNodes[selectedIndex]!.button.focus({ preventScroll: true });
     });
     hours.addEventListener('scroll', updateNavigation, { passive: true });
-    for (const [button, direction] of [[earlier, -1], [later, 1]]) button.addEventListener('click', () => {
+    for (const [button, direction] of [[earlier, -1], [later, 1]] as const) button.addEventListener('click', () => {
         if (button.getAttribute('aria-disabled') === 'true') return;
         hours.scrollLeft += direction * Math.max(1, hours.clientWidth - (hourNodes[0]?.button.offsetWidth || 0));
         updateNavigation();

@@ -6,7 +6,7 @@
 // page-shape failures independently on every surface.
 
 import { peakbaggerCloudflare as Cloudflare } from './peakbagger-cloudflare.js';
-import { rateLimitMessage } from '../net/rate-limit.js';
+import { rateLimitMessage } from '../net/rate-limit.ts';
 
 const RESOURCE_NAMES = Object.freeze({
     buddies: 'Buddy List',

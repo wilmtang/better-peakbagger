@@ -5,7 +5,7 @@
 // Pending writes remain ordered by request id, and every write has a bounded
 // acknowledgement lifetime so a lost bridge reply cannot pin stale UI state.
 
-import { storageValue } from '../storage/storage-value.js';
+import { storageValue } from '../storage/storage-value.ts';
 import { settingsSchema as Schema } from './settings-schema.ts';
 
 const DEFAULT_READY_TIMEOUT_MS = 800;

@@ -6,7 +6,7 @@
 
 import { matchLabel, matchTone } from '../capture/match-confidence.js';
 import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.js';
-import { units as Units } from '../ui/units.js';
+import { units as Units } from '../ui/units.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 
 (() => {

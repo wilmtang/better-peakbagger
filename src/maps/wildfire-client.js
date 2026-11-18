@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { requestDeadline } from '../net/request-deadline.js';
-import { readBoundedResponseText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { readBoundedResponseText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { WILDFIRE_LIMITS as limits, wildfireBoxes, readWildfireFeature, wildfireError } from './wildfire-core.js';
 const sources = {
     incidents: { service: 'Incident_Locations', where: "IncidentTypeCategory='WF'", fields: 'OBJECTID,IncidentTypeCategory,IrwinID,IncidentName,IncidentSize,PercentContained,ModifiedOnDateTime_dt' },

@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createBrowserFixtureServer, readSunCalculatorGeometry } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { moonPhaseLabel } from '../src/sun/sun-position.js';
+import { moonPhaseLabel } from '../src/sun/sun-position.ts';
 
 // Page functions run in the fixture document; these type-only globals are erased.
 type PageValue = ReturnType<typeof JSON.parse>;

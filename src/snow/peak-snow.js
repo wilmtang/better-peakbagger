@@ -1,13 +1,13 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { units } from '../ui/units.js';
+import { dom } from '../ui/dom.ts';
+import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
-import { createStableText } from '../ui/stable-text.js';
+import { createStableText } from '../ui/stable-text.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
-import { createRetryCooldown } from '../ui/retry-cooldown.js';
-import { requestDeadline } from '../net/request-deadline.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { requestDeadline } from '../net/request-deadline.ts';
 import { settings } from '../settings/settings.js';
 import { readPeakWeatherSubject } from '../weather/peak-weather-subject.ts';
 import { readPeakNations } from '../avalanche/avalanche-location.ts';

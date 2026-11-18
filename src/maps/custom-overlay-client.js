@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { CUSTOM_LIMITS, customUrl } from './custom-overlay-schema.js';
-import { requestDeadline } from '../net/request-deadline.js';
-import { rateLimitError } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { rateLimitError } from '../net/rate-limit.ts';
 import { validateCustomRaster } from './custom-overlay-raster.js';
 import { resolveCustomSourceDocument } from './custom-overlay-source.js';
 
