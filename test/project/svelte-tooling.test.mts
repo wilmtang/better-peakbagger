@@ -1,8 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// M5: Svelte compiles, checks and lints through the existing tooling. These
-// tests use test-only fixtures; no shipped bundle imports Svelte yet.
+// Svelte compiles, checks and lints through the existing tooling. These tests
+// use test-only fixtures; production M6 component checks live in
+// test/dom/options-units.dom.mts and test/options/options-units.test.mjs.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';

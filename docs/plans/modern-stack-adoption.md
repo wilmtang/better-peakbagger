@@ -67,8 +67,8 @@ evidence.
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
-| M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical production output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; no shipped bundle imports a component. |
-| M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, plus `test/dom/options-units.dom.mts` and real-extension Chrome/Firefox Units IPC verification). `options/UnitSettingsPanel.svelte` ships inside `options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
+| M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
+| M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
 | M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
 | M8 | Not started | Depends on M6. |
@@ -82,8 +82,10 @@ Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 | `test/` | 110 | 258 |
 | Other (root config, `docs/plans/`, `store-assets/`) | 3 | 15 |
 
-These are a dated snapshot, not a target to maintain by hand. There are no
-production Svelte components. The build produces 67 outputs: 65 IIFEs and two ESM frames.
+These are a dated snapshot, not a target to maintain by hand. At `0444ff28` there
+were no production Svelte components; `options/UnitSettingsPanel.svelte` is now
+the single shipped Svelte component. The build produces 67 outputs: 65 IIFEs
+and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
@@ -94,17 +96,19 @@ Limits of what is proven:
   and `4,177/4,177` at `166e55fc` (without a recorded Node version), `3,874/3,874`
   on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), `4,208/4,208`
   on Node `v26.13.1` at `f599ca20` (November 17, 2026), and `4,209/4,209` on
-  Node `v26.13.1` after M6 (`c81c7cee`).
+  Node `v26.13.1` at `0aa1c6ef` (November 18, 2026).
 - **Resolved guard gap:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
   now inspects actual esbuild `metafile.inputs` across all 67 `ENTRIES`,
   covering compiled Svelte runtime imports (`svelte`, `esm-env`, `clsx`) and
   excluding erased type-only imports (`83541e1f`, `c81c7cee`).
 - **Changed but not fully proven:** four conversions made outside the planned
-  batches still owe the M7 gate for their kind of owner:
+  batches still owe part of the M7 gate for their kind of owner:
   `src/capture/provider-page.ts` (`79fe003c`), `src/terrain/terrain-coordinator.ts`
-  (`20e54c38`), `src/maps/big-map.ts` (`c3b47b04`), and `src/background/background.ts`
-  (`c45d32ef`, which now has Chrome `158.0.8127.18` and Firefox `160.0`
-  real-extension checks from M6, still awaiting M7 WebGL terrain runs on `terrain chrome` and `firefox`).
+  (`20e54c38`, which passed hidden hardware-GPU `npm run verify -- terrain chrome`
+  (`ANGLE Metal Renderer: Apple M3 Pro`) and `npm run verify -- terrain firefox`
+  (`Firefox 159.0`, `Apple M3 Pro`) at `0aa1c6ef`), `src/maps/big-map.ts` (`c3b47b04`),
+  and `src/background/background.ts` (`c45d32ef`, which has Chrome `158.0.8127.18`
+  and Firefox `160.0` real-extension checks from M6).
 - **Published peer ranges only (npm registry, November 13):** `@types/jsdom`
   30.0.0 exists for the locked jsdom 30.1.3; `esbuild-svelte` 0.9.5 admits
   esbuild ≥0.17 and Svelte ≥4.2.1 <6; `svelte-check` 4.7.8 admits TypeScript 5
@@ -508,17 +512,17 @@ proves tooling and a fixture contract, not production CSP or host integration.
 
 ### M6 — Ship one bounded Svelte island
 
-Status: complete on November 18, 2026 (`83541e1f`, `c81c7cee`, plus DOM-tier and real-extension verification).
+Status: complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`).
 
 - **Fixed and verified:**
   - Pre-edit baseline verified (`npm run verify -- layout-stability --surface=settings` 8/8 in Chrome `158.0.8127.18` and Firefox `159.0`; `npm run verify -- chrome` passed).
   - [test/project/dependabot-auto-merge.test.mts](../../test/project/dependabot-auto-merge.test.mts) (`83541e1f`) derives bundled npm packages from actual esbuild `metafile.inputs` across all 67 `ENTRIES`, catches transitive bundled packages, includes compiled Svelte runtime packages (`svelte`, `esm-env`, `clsx`), ignores erased `import type` statements, and fails if `svelte`, `clsx`, or `esm-env` is removed from `.github/dependabot.yml`.
-  - [scripts/svelte-build.mts](../../scripts/svelte-build.mts) sets `fragments: 'tree'` and `discloseVersion: false`, emitting DOM tree operations with zero `.innerHTML` assignments (`0` new `web-ext lint` warnings; `WEB_EXT_WARNING_BASELINE` remains `10`).
+  - [scripts/svelte-build.mts](../../scripts/svelte-build.mts) sets `fragments: 'tree'` and `discloseVersion: false`, emitting DOM tree operations with zero `.innerHTML` assignments (`0` new `web-ext lint` warnings; `10` owned warnings observed within `WEB_EXT_WARNING_BASELINE` cap `11`).
   - `options/options.html` preserves `#general-units` and `#general-units-heading` while replacing the card interior with `<div data-unit-settings></div>`; `options/UnitSettingsPanel.svelte` and `options/unit-settings.ts` mount via [svelte-island.ts](../../src/ui/svelte-island.ts) (`initUnitSettings({ save })` / `{ populate }` unchanged so `options/options.js` needed no code edit).
   - Converted [scripts/dependency-metadata.mts](../../scripts/dependency-metadata.mts) and [scripts/third-party-notices.mts](../../scripts/third-party-notices.mts) from `.mjs`, registered `svelte` (`shipped: true`), updated [ACKNOWLEDGEMENTS.md](../../ACKNOWLEDGEMENTS.md) (version-neutral), [scripts/create-amo-metadata.mts](../../scripts/create-amo-metadata.mts) (`<= 3,000` chars), `.github/dependabot.yml`, and [docs/development.md](../development.md).
   - Measured `options/options.js` bundle size: baseline dev `302,024` raw / `72,106` gzip, min `154,283` raw / `52,075` gzip; post-M6 dev `493,928` raw / `113,672` gzip (`+191,904` raw / `+41,566` gzip), min `216,442` raw / `74,975` gzip (`+62,159` raw / `+22,900` gzip); `options/options.js` is the only production bundle importing `svelte`.
   - Verified full suite (`npm test` `4,209/4,209` including unchanged [options-units.test.mjs](../../test/options/options-units.test.mjs)), `npm run typecheck` (`594` files, 0 errors/warnings), `npm run lint` (`10` owned warnings), `npm run audit:ci` (0 shipped advisories), [test/dom/options-units.dom.mts](../../test/dom/options-units.dom.mts) (mutated-`dist` failure proved in both Chromium `158.0.8127.18` and Firefox `159.0`; `verify -- dom` `16/16` cases passed hidden across Chromium & Firefox including failed-save rollback, queued saves, external storage updates, BFCache suspend/resume/dispose, keyboard use, `390x900` 200% zoom, dark mode), `verify -- layout-stability --surface=settings` (`8/8` across `390`/`1280` light/dark), `verify -- settings-navigation` (Chrome `158.0.8127.18` `97`+`45`, Firefox `160.0` `96`+`45`), real unpacked `verify -- chrome` (`158.0.8127.18`) & `verify -- firefox` (`160.0`) with live `SETTINGS_PATCH` persistence (`options/unit-settings.ts` -> worker -> `storage.sync`), and `npm run release:verify-packages` (minified Chrome & Firefox store archives passed).
-- **Intentionally not changed:** `options/options.js` remains JavaScript until M7 Batch 2.3; styles remain in `options/options.css` (`{}` `<style>` omitted to preserve single-stylesheet tokens and avoid inline style rules); existing `WEB_EXT_WARNING_BASELINE` (`10`) stayed unchanged.
+- **Intentionally not changed:** `options/options.js` remains JavaScript until M7 Batch 2.3; styles remain in `options/options.css` (component `<style>` omitted to preserve single-stylesheet tokens and avoid inline style rules); existing `WEB_EXT_WARNING_BASELINE` (cap `11`, `10` observed) stayed unchanged.
 - **Changed but not fully proven:** Chrome `128` (`chrome-floor`) and Firefox `152.0` (`firefox-floor`) are tested by hosted Linux CI rather than local macOS installs; native focus/window placement, live extension store submission, and Firefox for Android `142.0` device checks remain outside automated desktop evidence.
 
 1. Confirm the hidden verifier can load the real options page before editing UI.
