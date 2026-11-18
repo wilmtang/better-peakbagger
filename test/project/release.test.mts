@@ -549,8 +549,8 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /chrome:\s*\n[\s\S]*?uses: \.\/\.github\/actions\/verify-package/);
     assert.match(
         workflow,
-        /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
-        'current Chrome must use the standard Intel macOS runner',
+        /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: ubuntu-24\.04/,
+        'current Chrome runs on standard Ubuntu once branded CHROME_BIN is cleared',
     );
     assert.match(workflow,
         /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);

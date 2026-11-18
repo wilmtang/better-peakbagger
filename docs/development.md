@@ -496,18 +496,17 @@ retain their existing additional zoom cases. Unknown, duplicate, conflicting or
 empty selections fail before launch. Every result includes its duration and each
 shard checks the executed count against its complete plan.
 
-Snow, card disclosure, card placement and weather interactions run independently
-rather than waiting behind the layout suite: Firefox's four surface jobs run on
-Linux (`ubuntu-24.04`), while Chrome's four surface jobs stay on `macos-15-intel`
-within the 5-slot macOS cap pending hosted Linux Chrome extension-loading
-qualification. Hardware WebGL checks (`snow-map`, `chrome-terrain`,
-`firefox-terrain`) stay on `macos-15` for Metal GPU rendering because standard
-free Linux runners lack a GPU. Fixture-only shards install only their chosen
-Playwright engine. Real extensions and hardware GPU checks retain their existing
-browser/runner contracts. The required aggregate rejects failed or skipped
-preflight, shards, backup layout and surface jobs. Linux qualification exposed
-existing backup font-metric defects; retaining macOS coverage does not establish
-Linux backup geometry.
+Snow, card disclosure, card placement and weather interactions for both Chrome
+and Firefox, as well as the current-Chrome package/capture smoke, run on Linux
+(`ubuntu-24.04`), rather than waiting behind the layout suite. Only native-font
+backup layout (`macos-15-intel`, 2 cells) and hardware WebGL checks (`snow-map`,
+`chrome-terrain`, `firefox-terrain` on `macos-15`) remain on macOS, because
+standard free Linux runners lack a GPU. Fixture-only shards install only their
+chosen Playwright engine. Real extensions and hardware GPU checks retain their
+existing browser/runner contracts. The required aggregate rejects failed or
+skipped preflight, shards, backup layout and surface jobs. Linux qualification
+exposed existing backup font-metric defects; retaining macOS coverage does not
+establish Linux backup geometry.
 
 CI uses `BPB_VERIFY_SCREENSHOTS=references` for layout and peak surfaces, preserving
 selected reference states and all geometry assertions. Failures retain the failed

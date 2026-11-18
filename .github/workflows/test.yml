@@ -91,11 +91,10 @@ jobs:
 
   chrome:
     name: Chrome current extension smoke
-    # Chrome 151 on hosted Linux omits command-line extensions in both new
-    # headless and Xvfb. Use the standard 4-core Intel macOS runner because the
-    # full verifier is load-sensitive on the smaller 3-core arm64 runner.
-    # Chrome 128 remains the Linux floor.
-    runs-on: macos-15-intel
+    # setup-verification clears Ubuntu's preinstalled CHROME_BIN so Playwright
+    # launches Chrome for Testing rather than branded Chrome. Chrome 128 stays
+    # the separate declared floor.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       BPB_VERIFY_ARTIFACTS: browser-evidence
@@ -287,11 +286,11 @@ jobs:
 
   peak-surfaces:
     name: Peak surface (${{ matrix.browser }}, ${{ matrix.surface }})
-    runs-on: ${{ matrix.browser == 'chrome' && 'macos-15-intel' || 'ubuntu-24.04' }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
-      # Chrome's 4 cells stay within the 5-slot macOS cap; Firefox runs on Linux.
+      # Fixture/extension surfaces run on Linux; macOS is kept for native fonts and GPU.
       matrix:
         browser: [chrome, firefox]
         surface: [snow, cards, cards-placement, interactions]
