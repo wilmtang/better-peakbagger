@@ -16,8 +16,8 @@
 - [Repository follow-up ledger](follow-ups.md)
   — the single list of what completed audits left open: the development-only
   `picomatch` advisory, Garmin distribution review, instrumented F5 and single-pass
-  CI watch items, hosted Dependabot validation, and manual release checks.
-  Includes the latest acceptance run.
+  CI watch items, hosted `release.yml` and Dependabot auto-merge validation, and
+  manual release checks.
 
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
@@ -64,7 +64,17 @@ Historical weather records are consolidated in the
 [weather closure ledger](../weather.md#audit-closure-ledger).
 
 - [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md)
+  — follow-ups closed: `83cef8b0` / `c7347111` fixed CodeQL `#119` pipe escaping
+  in `scripts/probe-chrome-extension-load.mts`, and `f599ca20` fixed Linux
+  backup action widths (`src/ascent/ascent-backup.css`,
+  `src/profile/profile-backup.css`) and offloaded `backup-layout` to
+  `ubuntu-24.04` (`16/16` local backup cases; `main` `Test` run `44266845670`
+  `35/35` at `65783d5e`).
 - [CI verifier flakiness remediation](https://github.com/wilmtang/better-peakbagger/blob/893853927c3a02c58600de32add1aa7e50196e6f/docs/plans/ci-verifier-flakiness.md)
+  — follow-up closed: `f682bf54` fixed synthetic/unlaid-out `hashchange`
+  handling in `src/ui/section-nav.ts`, finishing Phases 1–3 alongside
+  `2effc2b7`, `bfb83e1b`, and `f95a4c63` (`main` `Test` run `44266845670`
+  `35/35` at `65783d5e`).
 
 ### Archived records
 
@@ -75,10 +85,10 @@ Each record is a point-in-time note: its code paths, line references and file
 names may be stale.
 
 - [External API rate-limit feedback audit](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/2026-10-11-external-api-rate-limit-audit.md)
-- [OSM terrain policy and recovery](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/2026-10-24-osm-terrain-policy.md)
+- [OSM terrain policy and recovery](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/2026-10-24-osm-terrain-policy.md) — follow-up closed: the 2D gap (`41px` against `40px`) and Firefox Sentinel trigger no longer reproduce; `verify -- terrain chrome` and `firefox` pass on Metal.
 - [Drape resolution on tilt, and verifying on the real GPU](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-drape-resolution-and-gpu-verification.md)
 - [3D map audit — findings and fix plan (2026-07-21)](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-map-audit-2026-07-21.md)
-- [3D map audit and zoom-flicker remediation — October 22, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-map-audit-2026-10-22.md)
+- [3D map audit and zoom-flicker remediation — October 22, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-map-audit-2026-10-22.md) — follow-up closed: `verify -- terrain lod` passes with `maplibre-gl` `6.17.0` within the unchanged `120ms` budget (`4/4` tilt criteria, worst `45ms` per tile on headless Metal; `20/20` fixed-angle zoom cases).
 - [3D map: the layer drape usually fails to load](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-map-basemap-drape-cors.md)
 - [Plan: stop the 3D map blinking when you tilt it](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-tilt-detail-blink.md)
 - [Vector basemaps for the 3D terrain view](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-vector-basemap-investigation.md)
@@ -88,7 +98,7 @@ names may be stale.
 - [Capture trip recovery audit remediation](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/capture-trip-recovery-2026-10-17.md)
 - [Capture trust and recovery audit remediation](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/capture-trust-recovery-audit-2026-10-17.md)
 - [Peak and ascent card reuse audit](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/card-reuse-audit-2026-10-24.md)
-- [Dependency verification latency — 2026-10-25](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-latency-2026-10-25.md)
+- [Dependency verification latency — 2026-10-25](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-latency-2026-10-25.md) — follow-up closed: `f599ca20` fixed Linux backup action widths and offloaded `backup-layout` (`Backup layout (chrome)` and `Backup layout (firefox)`) to `ubuntu-24.04` (`main` `Test` run `44266845670` `35/35` at `65783d5e`).
 - [CI, UX, and maintainability audit — 2026-10-03](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-ux-maintainability-audit-2026-10-03.md)
 - [CI, UI, and maintainability follow-up — 2026-10-10](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-ux-maintainability-audit-2026-10-10.md)
 - [Climber hover card](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/climber-hover-card.md)
@@ -114,13 +124,13 @@ names may be stale.
 - [Repository bugs, performance, engineering, and UX audit — October 22 follow-up](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-22-followup.md)
 - [Codebase Audit & Remediation Plan — 2026-10-22](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-22.md)
 - [Repository audit and remediation — October 24, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-24.md)
-- [Code, performance, engineering and UX audit — October 27, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-27.md)
+- [Code, performance, engineering and UX audit — October 27, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-27.md) — follow-ups closed: `7719f08d` (custom-overlay reorder waits for deep-link scroll), `70738f63` (`-no-remote` across all 13 Selenium Firefox verifiers, pinned in `test/project/verification-launch.test.mts`), recorded editor zoom-fit and hover-help failures no longer reproduce in hidden Chrome `156` and Firefox `159`, and upstream removed vulnerable `deepmerge` from the `addons-linter` / `web-ext` chain (`npm audit --omit=dev` is zero).
 - [Code, performance, engineering and UX re-audit — October 28, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-2026-10-28.md)
 - [Codebase audit remediation — 2026-07-31](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-remediation-2026-07-31.md)
 - [Codebase audit remediation — 2026-08-01](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-remediation-2026-08-01.md)
 - [Codebase audit remediation — 2026-08-03](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/codebase-audit-remediation-2026-08-03.md)
 - [Cross-browser extension verification: execution plan](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/cross-browser-verification.md)
-- [Private custom-layer relay — October 26, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-layer-private-relay-2026-10-26.md)
+- [Private custom-layer relay — October 26, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-layer-private-relay-2026-10-26.md) — follow-up closed: Firefox custom-overlay GeoJSON stuck on `"Loading"` no longer reproduces in hidden Firefox `159`.
 - [Custom layer Options and backup audit](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-layer-settings-audit-2026-10-25.md)
 - [Custom map overlays: direct raster and vector sources](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-map-overlays-2026-10-25.md)
 - [Dependabot auto-merge investigation — 2026-10-25](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/dependabot-auto-merge-2026-10-25.md)
@@ -155,8 +165,8 @@ names may be stale.
 - [Maptoolkit performance and picker audit — October 31](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/maptoolkit-performance-audit-2026-10-31.md)
 - [Modern stack adoption evidence — through November 6, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/modern-stack-adoption-evidence-2026-11-06.md)
 - [Native Peakbagger table widths — 2026-10-25](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/native-table-width-audit-2026-10-25.md)
-- [New features and UI audit — 2026-10-10](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/new-features-ui-audit-2026-10-10.md)
-- [onX export reliability](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/onx-export-reliability-2026-10-27.md)
+- [New features and UI audit — 2026-10-10](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/new-features-ui-audit-2026-10-10.md) — follow-ups closed: `e9a0b694` (climber-hover late-content replacement focus; `8/8` passes after fix) and `f7a172e8` (`verifyDisappearingRowReplacementFocus` in `scripts/verify-climber-transitions.mts` passes in Chrome `158.0.8127.18` and Firefox `159.0`).
+- [onX export reliability](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/onx-export-reliability-2026-10-27.md) — follow-up closed: the intermittent climber-hover late-content timeout reproduced here was fixed in `e9a0b694` (`8/8` passes after fix).
 - [Options page sidebar navigation — investigation and execution plan](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/options-sidebar.md)
 - [Comparing the pan-end zoom jolt](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/pan-jolt-comparison.md)
 - [Panel button audit — October 23, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/panel-button-audit.md)
@@ -171,7 +181,7 @@ names may be stale.
 - [Report image display size](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/report-image-display-size.md)
 - [Report protection remediation](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/report-protection-remediation-2026-11-07.md)
 - [Repository layout-stability audit — 2026-10-12](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/repository-layout-stability-2026-10-12.md)
-- [Connected-service disconnect audit — October 31](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/service-disconnect-audit-2026-10-31.md)
+- [Connected-service disconnect audit — October 31](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/service-disconnect-audit-2026-10-31.md) — follow-up closed: `69c7a321` aligned `verify -- chrome` and `-- firefox` with `132303e1` keeping the Garmin section available for Disconnect; both browsers pass.
 - [Settings and favorites transfer: completed implementation record](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/settings-export-import-github-backup.md)
 - [Settings hierarchy audit — October 25, 2026](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/settings-hierarchy-audit-2026-10-25.md)
 - [Settings portability remediation](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/settings-portability-remediation.md)

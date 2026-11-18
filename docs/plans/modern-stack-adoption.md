@@ -64,7 +64,7 @@ and compiles, but nothing ships through it.
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
 | M0 | Done | Strict browser and Node checking, TS lint scopes, adoption policy in hooks/CI/release, and shared discovery for all seven source guards. |
-| M1 | Done | `c1ba9599`, `6e4a3041`, `01616f47`, `a9de7d7b`. `npm run audit:ci` passes with zero advisories in shipped code; Results are in the [follow-up ledger](follow-ups.md). |
+| M1 | Done | `c1ba9599` (JSON privacy scan), `6e4a3041` (`.mts` script inventory), `01616f47` (`minimatch` removal), `a9de7d7b` (`npm run audit:ci` dev classification). Upstream removed `deepmerge`, leaving zero production advisories; only the unpatched dev-only `picomatch` chain remains in the [follow-up ledger](follow-ups.md). |
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
@@ -92,11 +92,11 @@ with `git ls-files` filtered by extension, when starting a batch.
 
 Limits of what is proven:
 
-- **Verified:** the last recorded full-suite runs are 4,165/4,165 at `c45d32ef`
-  and 4,177/4,177 at `166e55fc`, both recorded in those commits without a Node
-  version. The last run recorded on Node 24 is 3,874/3,874 at `69c7a321`
-  ([ledger](follow-ups.md)). None was re-run for this update, which changes
-  documents only.
+- **Verified:** the last recorded full-suite runs are `4,165/4,165` at `c45d32ef`
+  and `4,177/4,177` at `166e55fc` (without a recorded Node version), `3,874/3,874`
+  on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), and `4,208/4,208`
+  on Node `v26.13.1` at `f599ca20` (November 17, 2026). None was re-run for this
+  document-only update.
 - **Known gap in a guard:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
   scans source imports and cannot classify compiled Svelte or type-only imports.
   M6 replaces it before the first component ships.
@@ -139,12 +139,15 @@ another. Update **Current progress** in the same change that finishes a mileston
 
 ### M1 — Repair baseline bookkeeping
 
-Status: complete on November 6, 2026 (`c1ba9599`, `6e4a3041`, `01616f47`). The
-full-suite and audit outcomes are in the
-[follow-up ledger](follow-ups.md). The low-severity deepmerge advisory still has
-no upstream patch, but since `a9de7d7b` `npm run audit:ci` classifies its chain
-(addons-linter and web-ext) as development tooling and reports it without
-failing, so it no longer blocks M6.
+Status: complete on November 6, 2026 (`c1ba9599` JSON privacy scan rejecting
+malformed JSON and invalid UTF-8, `6e4a3041` `.mts` script inventory, `01616f47`
+nine moderate `minimatch` advisories removed, `a9de7d7b` dev-only audit
+classification). After the November 6 Node `24.22.2` baseline at `69c7a321`
+(`npm test` `3,874/3,874`), upstream removed vulnerable `deepmerge` from the
+`addons-linter` / `web-ext` chain, and full `npm test` reached `4,208/4,208` on
+Node `v26.13.1` (`f599ca20`); `npm audit --omit=dev` reports zero production
+advisories, leaving only the unpatched development-only `picomatch` advisory
+chain open in the [follow-up ledger](follow-ups.md).
 
 1. Register the existing snow-depth legend JSON fixture in the
    [privacy manifest](../../test/helpers/fixture-privacy-manifest.mts), with
