@@ -257,17 +257,17 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
         let selectionGeneration = 0;
         let selectedFile: PreparedSelection | null = null;
         let dropDepth = 0;
-        const pageSessionId = (() => {
+        const randomToken = (prefix: string) => {
             try { return globalThis.crypto.randomUUID(); }
-            catch (error) { return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
-        })();
-        let selectionNonceSequence = 0;
-        const newSelectionNonce = () => {
-            try { return globalThis.crypto.randomUUID(); }
-            catch (error) {
-                return `selection-${++selectionNonceSequence}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            catch {
+                const words = new Uint32Array(4);
+                globalThis.crypto.getRandomValues(words);
+                return `${prefix}-${Array.from(words, word => word.toString(16).padStart(8, '0')).join('')}`;
             }
         };
+        const pageSessionId = randomToken('page');
+        let selectionNonceSequence = 0;
+        const newSelectionNonce = () => randomToken(`selection-${++selectionNonceSequence}`);
 
         const fileIdentity = (file: File | null | undefined): FileIdentity => ({
             name: String(file?.name || '(no file)').slice(0, 255),

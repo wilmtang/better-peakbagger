@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { parseCustomData, readCustomGeoJSON } from '../../src/maps/custom-overlay-data.js';
+import { parseCustomData, readCustomGeoJSON } from '../../src/maps/custom-overlay-data.ts';
 import { createCustomClient, customTileAt, customFailure } from '../../src/maps/custom-overlay-client.js';
 import { probeCustomSource } from '../../src/maps/custom-overlay-probe.js';
 import { validateCustomRaster } from '../../src/maps/custom-overlay-raster.js';

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createCustomRenderer } from '../../src/maps/custom-overlay-render.js';
-import { parseCustomData } from '../../src/maps/custom-overlay-data.js';
+import { parseCustomData } from '../../src/maps/custom-overlay-data.ts';
 import { installMapDiscovery } from '../../src/maps/map-discovery.js';
 import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
 

@@ -245,7 +245,7 @@ export function formatProbeMarkdown(report: ProbeReport): string {
                 : 'no';
         const workerLabel = item.worker.ok && item.worker.workerStarted && item.worker.extensionIdMatch ? 'yes' : 'no';
         const note = (item.teardownError ?? item.error ?? item.cdpError ?? item.worker.error ?? '')
-            .replace(/\|/g, '\\|')
+            .replace(/[\\|]/g, '\\$&')
             .replace(/\r?\n/g, ' ')
             .slice(0, 160);
         lines.push(

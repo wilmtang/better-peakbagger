@@ -35,7 +35,7 @@ assert.ok(process.argv.length <= 4 && ['chrome', 'firefox'].includes(browserName
 const resources = createResourceStack();
 try {
     const temporaryRoot = await createVerificationRoot(resources, 'bpb-custom-lifecycle-', 'lifecycle fixture directory');
-    const bundle = await build({ stdin: { contents: "import {createCustomRenderer} from './src/maps/custom-overlay-render.js'; import {parseCustomData} from './src/maps/custom-overlay-data.js'; window.lifecycleRenderer=createCustomRenderer; window.lifecycleParse=parseCustomData;", resolveDir: process.cwd() }, bundle: true, format: 'iife', write: false });
+    const bundle = await build({ stdin: { contents: "import {createCustomRenderer} from './src/maps/custom-overlay-render.js'; import {parseCustomData} from './src/maps/custom-overlay-data.ts'; window.lifecycleRenderer=createCustomRenderer; window.lifecycleParse=parseCustomData;", resolveDir: process.cwd() }, bundle: true, format: 'iife', write: false });
     const certificate = await createFixtureCertificate({ directory: temporaryRoot as never });
     assert.ok(certificate);
     resources.defer('lifecycle certificate', () => certificate.remove());
