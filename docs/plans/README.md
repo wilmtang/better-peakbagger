@@ -15,10 +15,11 @@
   first; backup layout is an owner decision.
 
 - [CI verifier flakiness remediation](ci-verifier-flakiness.md)
-  — proposed companion plan auditing the last 40 `Test` runs, separating seven
-  already-fixed flakes from the five open root causes (Buddy removal race,
-  `#ignored-github` hash alignment, Firefox BiDi cancelled-request handling,
-  card-readiness diagnostics and instrumented watch items).
+  — proposed companion plan auditing the last 40 `Test` runs, separating eight
+  already-fixed intermittent job failures from the five open failure groups
+  (FIFO Buddy cache-epoch race, `#ignored-github` hash alignment, Firefox BiDi
+  cancelled-request handling, card-readiness diagnostics and two instrumented
+  watch items).
 
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,

@@ -15,7 +15,7 @@ on Linux. If it cannot pass, the owner decides whether it stays on macOS.
 ## Why each job is on macOS today
 
 `.github/workflows/test.yml` runs 13 macOS cells on every pull request, plus 2
-more when the copied runtime changes. `release.yml` adds 2.
+more when the copied runtime changes. `release.yml` adds 2 on `workflow_dispatch`.
 
 | Job | Cells | Runner | Why it is on macOS | Blocker for Linux |
 |---|---|---|---|---|
@@ -25,7 +25,8 @@ more when the copied runtime changes. `release.yml` adds 2.
 | `backup-layout` | 2 | `macos-15-intel` | Uses native font metrics. Linux fallback fonts shift widths by 1.2–1.6px ([follow-ups](follow-ups.md)) | Product width defects |
 | `snow-map` | 2 | `macos-15` | Needs hardware WebGL | No free Linux GPU |
 | `chrome-terrain`, `firefox-terrain` | 2, conditional | `macos-15` | Needs hardware WebGL | No free Linux GPU |
-| `release.yml` current Chrome and Firefox | 2 | `macos-15-intel` | Same as `chrome` | Chrome extension loading |
+| `release.yml` current Chrome | 1 | `macos-15-intel` | Same as `chrome` | Chrome extension loading |
+| `release.yml` current Firefox | 1 | `macos-15-intel` | Grouped in the `compatibility` matrix (`chrome: none`, runs `--browser firefox`) | None known |
 
 ### Baseline: where failures actually happen
 
@@ -36,35 +37,37 @@ Of the last 40 `Test` runs, 11 failed:
   shards), fixed 38 minutes later in `db7cf566`.
 - Across the remaining 10 intermittent runs (excluding the two aggregate jobs):
   - macOS: current Chrome smoke ×4, Firefox cards surface ×2, Chrome
-    interactions surface ×1, Chrome GPU ×1.
-  - Linux: Firefox smoke ×5, scale ×1.
+    interactions surface ×1, Chrome GPU ×1 (`8` job failures).
+  - Linux: Firefox smoke ×5, scale ×1 (`6` job failures).
 
-Six of those ten intermittent runs were already fixed on `main` between
-November 6 and November 9; the five failure modes still open at `HEAD` are
-traced with line-level root causes in the companion
+Four of those ten intermittent runs are completely fixed on `main`, two runs
+were mixed (one fixed failure and one open failure each — `8` fixed job failures
+total), and six runs contain the five failure groups (`6` job failures) still
+open or under observation at `HEAD`. See the companion
 [CI verifier flakiness remediation](ci-verifier-flakiness.md) plan.
 
-## Research findings (2026-11-16)
+## Research findings (2026-11-16..17)
 
 ### None of the macOS failures were caused by macOS
 
 I read the failed-step logs of all 8 macOS failures. Every one was a timing
-race or a test-logic problem that would follow the job to any runner:
+race or a test/product interaction bug that would follow the job to any runner:
 
 | Job | Failure |
 |---|---|
-| Current Chrome smoke | `deep-link did not land`: scroll timing, 5s `waitForFunction` |
+| Current Chrome smoke | `deep-link did not land`: `#ignored-github` settled at `top: -2.28px` |
 | Current Chrome smoke | `draft did not Preview exactly once`: state stuck at 1 |
 | Current Chrome smoke | Full Screen peak map did not create the terrain frame |
-| Current Chrome smoke | Failed in its **Firefox** popup step (Buddy removal policy timeout). This job also runs Firefox |
-| Firefox cards ×2 | `Timed out waiting for three ready cards`; a WebDriver BiDi race (`network.provideResponse: no such request`) |
-| Chrome interactions | `repeated keyboard and pointer activation does not duplicate work`: count mismatch |
-| Chrome GPU | `Map mode toggle moved or resized` by 12px: a layout check, not a GPU problem |
+| Current Chrome smoke | Failed in its **Firefox** package step (Buddy removal policy timeout). This job also runs packaged Firefox |
+| Firefox cards ×2 | `Timed out waiting for three ready cards`; a WebDriver BiDi cancellation race (`network.provideResponse: no such request`) |
+| Chrome interactions | `repeated keyboard and pointer activation does not duplicate work`: count mismatch (fixed in `26d0dffb`) |
+| Chrome GPU | `Map mode toggle moved or resized` by 12px: a layout check, not a GPU problem (fixed in `a18f672b`) |
 
 The Linux failures are the same kind: Firefox `ElementNotInteractableError`,
 bold serialization, a 0-byte topo download, and disclosure anchoring. **The
 maintenance cost is flaky verifiers, not macOS.** Moving jobs off macOS reduces
-runner queueing, not flakiness. Reducing flakiness would be a separate plan.
+runner queueing, not flakiness; flakiness is addressed in
+[ci-verifier-flakiness.md](ci-verifier-flakiness.md).
 
 ### macOS is also a throughput limit
 
@@ -92,7 +95,9 @@ On 2026-08-22, about 20 consecutive runs failed over two hours before
 
 So the evidence supports "current Chrome for Testing did not register the
 command-line extension on hosted Linux". But it covers one version (151) and one
-detection method. macOS now runs 156.0.8078.4, so it may no longer reproduce.
+detection method (and note `chrome://extensions-internals/` is static
+`text/plain`, so `waitForFunction` without reloading only sampled startup state
+once). macOS now runs `156.0.8078.4`, so it may no longer reproduce.
 
 ### A sanctioned alternative to `--load-extension`
 
@@ -106,11 +111,30 @@ Inspecting `playwright-core` 1.64.1 revealed two relevant implementation facts:
    `--enable-unsafe-extension-debugging` loads `dist/` directly in Playwright
    without switching to Puppeteer. Verified locally on macOS arm64 in hidden
    Chrome for Testing `156.0.8078.4` (`1000x760`): `chrome://extensions-internals/`
-   records `"location": "UNPACKED"` (rather than `"COMMAND_LINE"`), content
-   scripts inject on the HTTPS Peakbagger fixture, and the MV3 worker answers
-   `CAPTURE_STATUS`. If Linux adopts `cdp-load-unpacked`,
-   `scripts/verify-extension.mts` (`line 272`) must accept `'UNPACKED'` or read
-   the extension ID returned by `Extensions.loadUnpacked`.
+   records `"location": "UNPACKED"` (rather than `"COMMAND_LINE"`), both
+   `document_start` and `document_idle` content scripts inject on the HTTPS
+   Peakbagger fixture, and the MV3 worker answers `CAPTURE_STATUS`.
+
+If Linux adopts `cdp-load-unpacked` inside `scripts/verification-launch.mts`,
+three caller contracts must be updated together:
+- **Six `location === 'COMMAND_LINE'` readers** plus one test pin must accept
+  `'UNPACKED'` (or consume an exported extension-ID helper from the launcher):
+  `scripts/verify-extension.mts` (line 272, pinned by
+  `test/project/resource-stack.test.mts` line 254),
+  `scripts/verify-capture-popup.mts` (line 112),
+  `scripts/verify-photo-editor.mts` (line 39),
+  `scripts/verify-photo-library-status.mts` (line 75),
+  `scripts/verify-photo-output.mts` (line 88) and
+  `scripts/verify-popup-photo-entry.mts` (line 48).
+- **`ignoreDefaultArgs` merging in `chromeLaunchOptions`**
+  (`scripts/verification-launch.mts` lines 42–54): callers passing their own
+  `ignoreDefaultArgs` (such as `scripts/verify-extension.mts` line 231 and
+  `scripts/verify-ascent-weather.mts` line 379) currently overwrite defaults via
+  `...options`; `chromeLaunchOptions` must merge `'--disable-extensions'` with
+  caller `ignoreDefaultArgs`.
+- **Keep CLI `--load-extension` for `chromeBinary` (Chrome 128 floor):** Chrome
+  128 already loads CLI extensions on Linux and may predate
+  `Extensions.loadUnpacked`.
 
 Branded Chrome 137+ ignores `--load-extension`, but Chrome for Testing still
 honours it, so branded-Chrome restrictions do not explain the August Linux
@@ -121,50 +145,67 @@ result.
 covered by `test/project/chrome-extension-load-probe.test.mts`) are committed
 locally so one hosted `ubuntu-24.04` dispatch tests `cli-default`,
 `cli-ignore-disable-extensions` and `cdp-load-unpacked` (plus optional `Xvfb`)
-in about a minute once pushed.
+in about a minute once pushed to `main` (GitHub requires a `workflow_dispatch`
+file to exist on the default branch before it can be triggered).
 
 ## Plan
 
-### Phase 1: Firefox peak surfaces to Linux (low risk)
+### Phase 1: Firefox peak surfaces and `release.yml` current Firefox to Linux (low risk)
 
-- Split `peak-surfaces` into two jobs: Chrome stays on `macos-15-intel`, Firefox
-  runs on `ubuntu-24.04`. Keep the matrix, environment, evidence upload and
-  failure semantics. Add both jobs to `chrome-required`.
-- Revisit the `max-parallel: 4` capacity comment for the Linux job.
-- Update the runner pins in `test/project/verification-setup.test.mts`, and the
-  surface wording in `docs/development.md`.
-- Done when one hosted run passes all 4 Firefox cells on Linux, with no
+- Split `peak-surfaces` in `.github/workflows/test.yml` into two jobs: Chrome
+  stays on `macos-15-intel`, Firefox runs on `ubuntu-24.04`. Keep the matrix,
+  environment, evidence upload and failure semantics. Add both jobs to
+  `chrome-required`.
+- Move the `firefox` `current` row in `.github/workflows/release.yml`
+  (`lines 109–113`, `chrome: none`, runs `--browser firefox`) from
+  `macos-15-intel` to `ubuntu-24.04`.
+- Revisit the `max-parallel: 4` capacity comment for the Linux surface job.
+- Update the workflow pins in `test/project/verification-setup.test.mts`,
+  `test/project/release.test.mts` (line 562 pins the exact `setup-verification`
+  count in `test.yml`), `test/project/browser-verification-evidence.test.mts`
+  (lines 145–146 pin exact `Retain browser failure evidence` and
+  `BPB_VERIFY_ARTIFACTS` counts in `test.yml`),
+  `test/project/release-rehearsal.test.mts` (line 38 pins the `release.yml`
+  `compatibility` matrix runners), and the surface wording in
+  `docs/development.md`.
+- Done when one hosted run passes all 4 Firefox surface cells on Linux (and a
+  rehearsal or workflow check confirms the `release.yml` Firefox row), with no
   assertion changed.
 
 ### Phase 2: current Chrome extension loading on Linux (spike, may fail)
 
 All Chrome cells except GPU depend on this, so time-box it.
 
-- Dispatch `.github/workflows/probe-linux-chrome-extension.yml` (`mode=all`) on
-  `ubuntu-24.04` after pushing a branch: it installs current Chrome for Testing
-  through `setup-verification`, runs `scripts/probe-chrome-extension-load.mts`
-  across `cli-default`, `cli-ignore-disable-extensions` and `cdp-load-unpacked`,
-  and uploads the JSON report (`chrome://extensions-internals/`, content-script
-  probe, MV3 worker reply and browser logs). That separates "not registered"
-  from "registered under CDP only" in a single short run instead of running the
-  full 10-minute verifier.
+- Once `.github/workflows/probe-linux-chrome-extension.yml` is on `main`,
+  dispatch it (`mode=all`) on `ubuntu-24.04`: it installs current Chrome for
+  Testing through `setup-verification`, runs
+  `scripts/probe-chrome-extension-load.mts` across `cli-default`,
+  `cli-ignore-disable-extensions` and `cdp-load-unpacked`, reloads
+  `chrome://extensions-internals/` while polling, checks both `document_start`
+  and `document_idle` content scripts plus the MV3 worker reply, and uploads
+  the JSON report.
 - If `cli-default` fails on Linux but `cli-ignore-disable-extensions` or
   `cdp-load-unpacked` passes, adopt the passing strategy in
-  `scripts/verification-launch.mts` (and allow `location === 'UNPACKED'` in
-  `scripts/verify-extension.mts` when using `Extensions.loadUnpacked`) so every
-  verifier picks it up.
+  `scripts/verification-launch.mts` — including `ignoreDefaultArgs` merging,
+  preserving CLI `--load-extension` when `chromeBinary` is set, and updating all
+  six `location === 'COMMAND_LINE'` readers plus
+  `test/project/resource-stack.test.mts` when using `Extensions.loadUnpacked`.
 - Try `use_xvfb=true` in the same workflow only if all three headless modes
   fail. The August notes say Xvfb also failed on 151, so expect little from it.
-- Exit criteria: `verify -- chrome` and the Chrome peak surfaces pass on Linux
-  across repeated runs (`BPB_VERIFY_REPETITIONS`), with the injection probe
-  proving the extension loaded rather than an empty target list.
+- Exit criteria: `BPB_VERIFY_REPETITIONS=3 node scripts/verification-repetitions.mjs chrome`
+  and three consecutive runs of each Chrome `verify-ascent-weather.mts` surface
+  pass on Linux (`npm run verify -- chrome` and `verify-ascent-weather.mts` do
+  not read `BPB_VERIFY_REPETITIONS` directly), with content-script injection and
+  worker round-trip proven.
 - If it passes: move `chrome`, the Chrome `peak-surfaces` cells and the
-  `release.yml` current rows to Linux. Update the pins in
-  `verification-setup.test.mts`, `release.test.mts` and
-  `release-rehearsal.test.mts`. Keep the Chrome 128 floor job unchanged.
+  `release.yml` current Chrome row to Linux. Update the pins in
+  `test/project/verification-setup.test.mts`, `test/project/release.test.mts`
+  and `test/project/release-rehearsal.test.mts`. Keep the Chrome 128 floor job
+  unchanged. Remove `.github/workflows/probe-linux-chrome-extension.yml` (or
+  retain only if still wanted for Chrome upgrades).
 - If it fails, owner decision:
   - **A.** Keep the current-Chrome smoke and the Chrome surfaces on macOS
-    (5 cells).
+    (5 cells, plus 1 in `release.yml`).
   - **B.** Keep only the current-Chrome smoke on macOS, and move the Chrome
     surfaces to the Linux Chrome 128 floor if they pass there.
   - **C.** Run current-Chrome extension checks only in `release.yml`.
@@ -185,9 +226,11 @@ Choose one:
   unchanged. They already fail closed on software rendering.
 - Change the workflow comments so they say macOS is kept only for hardware
   WebGL.
-- Optional, owner choice: merge them into one GPU job per browser. This saves
-  setup time but mixes evidence. Do not do it unless runner queueing is an
-  actual problem.
+- Optional, owner choice: merge them into one GPU job per browser (updating
+  `test/project/browser-verification-evidence.test.mts` counts and converting
+  `test/project/dependabot-auto-merge.test.mjs` to `.mts`). This saves setup
+  time but mixes evidence. Do not do it unless runner queueing is an actual
+  problem.
 
 ### Phase 5: closeout
 
@@ -201,11 +244,11 @@ Choose one:
 
 ## Expected result
 
-| Outcome | macOS cells per PR |
-|---|---|
-| Today | 13 (+2 conditional) |
-| Phases 1–4, phase 2 passes, backups fixed | 2 (+2 conditional) |
-| Phase 2 fails (option A), backups stay on macOS | 9 (+2 conditional) |
+| Outcome | macOS cells per PR (`test.yml`) | macOS cells in `release.yml` |
+|---|---|---|
+| Today | 13 (+2 conditional) | 2 |
+| Phases 1–4, phase 2 passes, backups fixed | 2 (+2 conditional) | 0 |
+| Phase 2 fails (option A), backups stay on macOS | 9 (+2 conditional) | 1 |
 
 ## Risks
 
@@ -213,8 +256,8 @@ Choose one:
   for moved surfaces must be regenerated or confirmed to be geometry-only, never
   loosened.
 - Moving a flaky job to Linux keeps it flaky. The research above shows the
-  current flakiness is not runner-specific. This plan reduces macOS queueing,
-  not test maintenance.
+  current flakiness is not runner-specific; address it through
+  [ci-verifier-flakiness.md](ci-verifier-flakiness.md).
 - Hidden Linux runs do not prove anything about the macOS native toolbar or focus
   behaviour. No current Linux candidate job claims to.
 
@@ -230,5 +273,5 @@ Choose one:
   on Linux. `.github/workflows/test.yml` and `release.yml` remain unchanged
   until hosted Linux probe results are recorded.
 - Changed but not fully proven: `.github/workflows/probe-linux-chrome-extension.yml`
-  is committed locally and has not yet been pushed or dispatched on hosted
-  `ubuntu-24.04`.
+  is committed locally and has not yet been pushed to `main` or dispatched on
+  hosted `ubuntu-24.04`.
