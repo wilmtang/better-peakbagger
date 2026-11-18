@@ -95,7 +95,7 @@ map. Clear pixels are never used to infer that a whole region lacks coverage.
 ## Implementation and verification
 
 The regional policy is in `src/maps/map-overlay-providers.ts`, with ownership
-routing in `src/maps/canadian-land.js`. The packaged Natural Earth outlines are
+routing in `src/maps/canadian-land.ts`. The packaged Natural Earth outlines are
 public domain and pinned to a source hash. Regenerate them with
 `scripts/generate-map-overlay-regions.mjs` and the verified source file it names.
 The shared menu and page owner apply the resulting availability in both renderers.

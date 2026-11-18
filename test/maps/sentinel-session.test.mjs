@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSentinelSession } from '../../src/maps/sentinel-session.js';
+import { createSentinelSession } from '../../src/maps/sentinel-session.ts';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const now = Date.now() - 86400000;
 const capture = (key, time = now) => ({ key, time, platform: 'Sentinel-2B', orbit: '13', coverage: 1, cloud: 0,

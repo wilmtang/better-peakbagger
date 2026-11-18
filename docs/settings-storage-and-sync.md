@@ -136,7 +136,7 @@ Other local state has separate owners and does not belong in a settings file:
 | Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.js) | Current viewing preference, separate from list membership |
 | Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.ts) | Current page-view state; chip order and “Has beta” definition are portable |
 | Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.ts) | Device layout |
-| Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
+| Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.ts) | Device layout |
 | Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.ts), [panel theme](../src/theme/panel-theme.ts) | Mirror of portable `theme`, not a separate theme choice |
 | Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.ts) | Per-device authorization; key transfer does not copy it |
 | Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.js) | Pending source IDs for deferred private record cleanup on deletion |
@@ -188,7 +188,7 @@ in Options. Actual tile availability and CORS status appear when the user
 enables the source on a map.
 
 Schema 7 writes `customLayers: {schemaVersion: 1, sources, preferences}` beside
-`settings`, using the [shared source schema](../src/maps/custom-overlay-schema.js).
+`settings`, using the [shared source schema](../src/maps/custom-overlay-schema.ts).
 It includes configured URLs/public keys, bounds, native zoom/provenance,
 coordinate scheme, raster size, attribution, simple style rules and saved
 opacity. It excludes selections, previews, tile/feature bytes and probe locations.

@@ -15,7 +15,7 @@
 // src/settings/settings.js owns storage access and layers it on top of this module.
 
 import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.ts';
-import { customOverlaySchema } from '../maps/custom-overlay-schema.js';
+import { customOverlaySchema } from '../maps/custom-overlay-schema.ts';
 
 // Stored and bridged values are untrusted until they pass through this schema.
 const fields = (value: unknown) => (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;

@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { overlayBounds, mapOverlayCoverage } from './map-overlay-providers.ts';
-import { fetchWildfireComponent } from './wildfire-client.js';
-import { WILDFIRE_MIN_ZOOM, wildfireRecords } from './wildfire-core.js';
+import { fetchWildfireComponent } from './wildfire-client.ts';
+import { WILDFIRE_MIN_ZOOM, wildfireRecords } from './wildfire-core.ts';
 
 interface FirePart { features: { id?: unknown; [field: string]: unknown }[]; at: number; }
 export type WildfireData = Record<'incidents' | 'perimeters', FirePart['features']>;

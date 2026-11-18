@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.ts';
 import { AUTHORED_SOURCE_ROOTS } from './build-config.mts';
 import { dependencyVersionsFromLock } from './dependency-metadata.mts';
 

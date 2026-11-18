@@ -4,8 +4,8 @@ import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { requestDeadline } from '../net/request-deadline.ts';
 import { readBoundedResponseText } from '../net/bounded-text.ts';
 import { cancelResponseBody, rateLimitError } from '../net/rate-limit.ts';
-import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.js';
-import { landCoverage, AB_LAND_SERVICE } from './canadian-land.js';
+import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.ts';
+import { landCoverage, AB_LAND_SERVICE } from './canadian-land.ts';
 import { US_LAND_SERVICE } from './map-overlay-providers.ts';
 
 export interface InspectionPoint { latitude: number; longitude: number; x: number; y: number; }

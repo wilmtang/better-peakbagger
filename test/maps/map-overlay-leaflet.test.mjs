@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createLeafletOverlays } from '../../src/maps/map-overlay-leaflet.js';
+import { createLeafletOverlays } from '../../src/maps/map-overlay-leaflet.ts';
 import { JSDOM } from 'jsdom';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 

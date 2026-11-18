@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { customId, customUrl, readCustomSource } from './custom-overlay-schema.js';
+import { customId, customUrl, readCustomSource } from './custom-overlay-schema.ts';
 export const RELAY_HOST = 'relay.bpb.example';
 // Allow extended multi-layer planning, while retaining finite spending budgets.
 // One 4K viewport can need about 160 256px tiles per layer before cache reuse.

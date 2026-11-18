@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { loadPage, PAGE_FIXTURES, makeChromeStub } from '../helpers/load-page.mts';
-import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
+import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.ts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
 import { readPeakNations } from '../../src/avalanche/avalanche-location.ts';

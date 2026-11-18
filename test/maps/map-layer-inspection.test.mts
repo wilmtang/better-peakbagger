@@ -6,7 +6,7 @@ import { browserWindow } from '../helpers/page-dom.mts';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
-import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
+import { readSnowDepthLegend } from '../../src/maps/snow-depth.ts';
 import { readFile } from 'node:fs/promises';
 import { SnowDepthLayer, PublicLandLayer, SlopeLayer, snowDepthPointReading,
     POINT_INSPECTION_DECISIONS, inspectionContext, createInspectionLayers } from '../../src/maps/map-layer-inspection.ts';

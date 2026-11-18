@@ -61,8 +61,8 @@ test('reviewed owners and deadline exceptions retain their narrow boundaries', (
     assert.deepEqual(cloudflareFindings(source('src/capture/provider-response.ts','"cf-mitigated"')),[]);
     assert.equal(cloudflareFindings(source('src/capture/provider-response.ts','"Complete check on Peakbagger"')).length,1);
     const exception = 'fetch(url); setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS); readBoundedResponseText(response); clearTimeout(timeout);';
-    assert.deepEqual(deadlineFindings(source('src/maps/peak-markers.js',exception)),[]);
-    assert.equal(deadlineFindings(source('src/maps/peak-markers.js','fetch(url)')).length,1);
+    assert.deepEqual(deadlineFindings(source('src/maps/peak-markers.ts',exception)),[]);
+    assert.equal(deadlineFindings(source('src/maps/peak-markers.ts','fetch(url)')).length,1);
     assert.equal(deadlineFindings(source('src/maps/other.ts',exception)).length,1);
     assert.deepEqual(deadlineFindings(source('src/maps/new.ts',"import {requestDeadline} from '../net/request-deadline.ts'; fetch(url);")),[]);
     assert.equal(deadlineFindings(source('src/maps/new.ts','Promise.race([request, timeout])')).length,1);

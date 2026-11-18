@@ -6,7 +6,7 @@ import { JSDOM } from 'jsdom';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.ts';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
-import { readSnowDepthLegend } from '../../src/maps/snow-depth.js';
+import { readSnowDepthLegend } from '../../src/maps/snow-depth.ts';
 import { snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
 
 test('snow controls identify analysis time, preserve refresh focus and hide unavailable work', () => {

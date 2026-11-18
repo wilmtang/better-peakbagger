@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createElevationClient, elevationTile, sampleElevation } from '../../src/maps/map-elevation.js';
+import { createElevationClient, elevationTile, sampleElevation } from '../../src/maps/map-elevation.ts';
 
 const pixelsAt = meters => {
     const pixels = new Uint8ClampedArray(512 * 512 * 4), value = meters + 32768;

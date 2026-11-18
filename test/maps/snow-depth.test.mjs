@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSnowDepthMetadata, readSnowDepthLegend, readSnowDepthTime } from '../../src/maps/snow-depth.js';
+import { createSnowDepthMetadata, readSnowDepthLegend, readSnowDepthTime } from '../../src/maps/snow-depth.ts';
 import { mapOverlayCoverage, overlayTileUrl } from '../../src/maps/map-overlay-providers.ts';
 import { snowDepthCatalogue, snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
 const tick = () => new Promise(resolve => setImmediate(resolve));

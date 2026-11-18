@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.js';
+import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.ts';
 const document = { createElement: () => ({ width: 256, height: 256, getContext: () => ({ clearRect() {}, drawImage() {} }) }) };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const mockBitmap = t => {

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { initBCLandAccess } from '../../src/maps/bc-land-access.js';
+import { initBCLandAccess } from '../../src/maps/bc-land-access.ts';
 
 test('packaged BC setup retains focus, guards duplicate work and notifies only its source tab', async () => {
     const dom = new JSDOM('<button id="allow-bc-land">Allow access</button><p id="bc-land-access-status"></p>', { url: 'https://extension.test/bc-land/access.html?tab=7' });

@@ -7,7 +7,7 @@ import { createCustomPrivateStore } from '../../src/background/custom-private-st
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
 import { createCustomLayerRelay } from '../../src/background/custom-layer-relay.js';
 import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS } from '../../src/maps/custom-overlay-private.ts';
-import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
+import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
 const id = 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1';
 const source = { id, revision: 1, name: 'Private topo', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/tiles/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
@@ -218,7 +218,7 @@ test('a cancelled duplicate leaves its sibling alive, all cancellations abort; o
 
 test('untrusted readers cannot label arbitrary URLs as private; removing parameters never silently declassifies signed URLs', async () => {
     const h = harness();await h.save();
-    const schema = await import('../../src/maps/custom-overlay-schema.js');
+    const schema = await import('../../src/maps/custom-overlay-schema.ts');
     assert.equal(schema.readCustomSource({ ...source, privateRequests: true }), null);
     const projected = publicPrivateSource(source);projected.source.tiles[0] += '?api_key=LEAK';assert.equal(schema.readCustomSource(projected), null);
     assert((await h.save([], source, 1)).ok);const retained = await h.privateStore.get(id);assert.deepEqual(retained.versions[2].parameters, []);assert.equal(retained.versions[1], undefined, 'committed removal erases the previous key');assert((await h.catalog.snapshot()).registry.sources[0].privateRequests);

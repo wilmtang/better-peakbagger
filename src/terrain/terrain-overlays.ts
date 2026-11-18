@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import type { Map as MapLibreMap, RasterTileSource } from 'maplibre-gl';
 import { createTerrainWildfires } from './terrain-wildfires.ts';
-import { createOverlayTiles } from '../maps/map-overlay-tiles.js';
-import { createSentinelSession } from '../maps/sentinel-session.js';
-import { SNOW_DEPTH_MAX_ZOOM } from '../maps/snow-depth.js';
-import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.js';
+import { createOverlayTiles, type OverlayScene } from '../maps/map-overlay-tiles.ts';
+import { createSentinelSession } from '../maps/sentinel-session.ts';
+import { SNOW_DEPTH_MAX_ZOOM } from '../maps/snow-depth.ts';
+import { SENTINEL_ATTRIBUTION } from '../maps/sentinel-core.ts';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM, rasterTileStatus } from '../maps/map-overlay-providers.ts';
 import { readLayerSnapshot, mergeLandCooldowns } from '../maps/map-layer-protocol.ts';
-import { createBCTileFetch } from '../maps/bc-land-client.js';
-import { createCustomRenderer } from '../maps/custom-overlay-render.js';
-import { createCustomParser } from '../maps/custom-overlay-parser.js';
-import { readCustomRegistry } from '../maps/custom-overlay-schema.js';
-import { createCustomClient, createCustomPool, customFailure } from '../maps/custom-overlay-client.js';
-import { probeCustomSource } from '../maps/custom-overlay-probe.js';
+import { createBCTileFetch } from '../maps/bc-land-client.ts';
+import { createCustomRenderer } from '../maps/custom-overlay-render.ts';
+import { createCustomParser } from '../maps/custom-overlay-parser.ts';
+import { readCustomRegistry } from '../maps/custom-overlay-schema.ts';
+import { createCustomClient, createCustomPool, customFailure } from '../maps/custom-overlay-client.ts';
+import { probeCustomSource } from '../maps/custom-overlay-probe.ts';
 
 // The authorized renderer searches its own catalog. No scene geometry, remote
 // tile URLs or executable styles cross the page/frame boundary.
@@ -25,7 +25,7 @@ interface OverlayOptions {
     post(type: string, detail?: Record<string, unknown>): void;
 }
 export function createTerrainOverlays({ map, maplibre, document: doc, post }: OverlayOptions) {
-    let snapshot: Snapshot | null = null, scenes: unknown[] = [], sceneRevision = 0, landRevision = 0, sourceRevision = 0, disposed = false, registered = false;
+    let snapshot: Snapshot | null = null, scenes: OverlayScene[] = [], sceneRevision = 0, landRevision = 0, sourceRevision = 0, disposed = false, registered = false;
     let sentinelStatus: Record<string, unknown> = {}, wildfireStatus: Record<string, unknown> = {}, wildfire: ReturnType<typeof createTerrainWildfires> | null = null;
     const rasterStatus: Record<string, Record<string, unknown>> = {};
     let custom: ReturnType<typeof createCustomRenderer> | null = null, customParser: ReturnType<typeof createCustomParser> | null = null, customGeneration = 0, customSignature = '', customOpacitySignature = '', customApplied: { selected: never[]; preferences: Record<string, unknown> } | null = null;
@@ -141,7 +141,7 @@ export function createTerrainOverlays({ map, maplibre, document: doc, post }: Ov
         }
     };
     const sentinel = (createSentinelSession as (options: unknown) => ReturnType<typeof createSentinelSession>)({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() + 1 }),
-        replaceScenes(next: unknown[]) {
+        replaceScenes(next: OverlayScene[]) {
             scenes = next; sceneRevision++; tiles.setScenes(next);
             const source = layers.get('sentinel');
             // setTiles reloads the source while retaining renderable textures;

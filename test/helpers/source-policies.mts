@@ -47,7 +47,7 @@ export function originFindings(source: RuntimeSource): string[] {
     }
     return [...findings];
 }
-export const DEADLINE_EXCEPTION_FILES = ['src/maps/peak-markers.js'] as const;
+export const DEADLINE_EXCEPTION_FILES = ['src/maps/peak-markers.ts'] as const;
 export function directFetch(source: RuntimeSource): boolean {return matches(source, /\bfetch\s*(?:\?\.)?\s*\(/);}
 export function deadlineFindings(source: RuntimeSource): string[] {
     const findings = [];

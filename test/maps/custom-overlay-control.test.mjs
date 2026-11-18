@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createCustomOverlayControl } from '../../src/maps/custom-overlay-control.js';
+import { createCustomOverlayControl } from '../../src/maps/custom-overlay-control.ts';
 
 test('custom menu links to Settings and reuses ordered source rows without changing selection', () => {
     const dom = new JSDOM('<main></main>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', pretendToBeVisual: true });

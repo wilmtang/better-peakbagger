@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { wildfireBoxes, wildfireWorldCopy, readWildfireFeature, wildfireRecords, readWildfireRecords, WILDFIRE_LIMITS } from '../../src/maps/wildfire-core.js';
-import { wildfireQuery, fetchWildfireComponent } from '../../src/maps/wildfire-client.js';
+import { wildfireBoxes, wildfireWorldCopy, readWildfireFeature, wildfireRecords, readWildfireRecords, WILDFIRE_LIMITS } from '../../src/maps/wildfire-core.ts';
+import { wildfireQuery, fetchWildfireComponent } from '../../src/maps/wildfire-client.ts';
 import { createTerrainWildfires } from '../../src/terrain/terrain-wildfires.ts';
 import { createWildfireSession } from '../../src/maps/wildfire-session.ts';
 import { readLayerSnapshot, readLayerStatus } from '../../src/maps/map-layer-protocol.ts';
@@ -38,7 +38,7 @@ test('fire identity, perimeter holes and source dates remain distinct; names nev
     const point = normalize('incidents'), perimeter = normalize('perimeters');
     assert.equal(ringsOf(perimeter).length, 2);
     let records = wildfireRecords([point], [perimeter]); assert.equal(records.length, 1); assert.equal(records[0].hasPerimeter, true);
-    assert.ok(records[0].perimeterObserved < records[0].perimeterEdited && records[0].perimeterEdited < records[0].incidentUpdated);
+    assert.ok(records[0].perimeterObserved! < records[0].perimeterEdited! && records[0].perimeterEdited! < records[0].incidentUpdated!);
     const raw = wildfireFeature('perimeters'); raw.properties.poly_IRWINID = '11111111-1111-1111-1111-111111111111';
     records = wildfireRecords([point], [normalize('perimeters', raw)]); assert.equal(records.length, 2, 'conflicting IDs remain unassociated despite identical names');
     const noDate = wildfireFeature(); (noDate.properties as Record<string, unknown>).ModifiedOnDateTime_dt = null; assert.equal(normalize('incidents', noDate).properties.incidentUpdated, null);
@@ -194,11 +194,11 @@ test('short pages marked incomplete cannot hide later reported fires', async () 
 test('wrapped Leaflet worlds preserve provider geometry and unsplit dateline rings fail closed', () => {
     const original = normalize('incidents');
     const copy = wildfireWorldCopy(original, 238);
-    assert.equal(copy.geometry.coordinates[0], positionOf(original)[0] + 360);
+    assert.equal(positionOf(copy)[0], positionOf(original)[0] + 360);
     assert.equal(positionOf(original)[0], -121.76);
     const perimeter = normalize('perimeters'), polygon = wildfireWorldCopy(perimeter, 238);
-    assert.equal(polygon.geometry.coordinates[0][0][0], ringsOf(perimeter)[0][0][0] + 360);
-    assert.equal(polygon.geometry.coordinates.length, 2, 'holes move with their outer ring');
+    assert.equal(ringsOf(polygon)[0][0][0], ringsOf(perimeter)[0][0][0] + 360);
+    assert.equal(ringsOf(polygon).length, 2, 'holes move with their outer ring');
     const raw = wildfireFeature('perimeters'); (raw as WireFeature).geometry.coordinates = [[[179, 45], [-179, 45], [-179, 46], [179, 45]]];
     assert.throws(() => normalize('perimeters', raw), /invalid/);
 });

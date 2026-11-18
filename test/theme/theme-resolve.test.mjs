@@ -21,7 +21,7 @@ test('theme consumers delegate instead of keeping local system-resolution copies
         '../../src/settings/settings.ts',
         '../../src/gpx/gpx-analyzer.js',
         '../../src/maps/big-map.ts',
-        '../../src/maps/peak-map.js',
+        '../../src/maps/peak-map.ts',
     ];
     for (const file of files) {
         const source = await readFile(new URL(file, import.meta.url), 'utf8');

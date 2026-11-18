@@ -19,7 +19,7 @@ deliberately not used as an observer-height or terrain-horizon correction.
 
 The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
 
-- On a Peak page, `src/maps/peak-map.js` creates it directly below the Dynamic
+- On a Peak page, `src/maps/peak-map.ts` creates it directly below the Dynamic
   Map only after the page id, Full Screen Peak-map id, bounded focus coordinate,
   and subject name agree. The validated summit coordinate is its subject. An
   ambiguous or unsupported page gets no calculator.

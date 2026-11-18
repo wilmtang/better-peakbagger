@@ -4,9 +4,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
 import { parseCustomData, readCustomGeoJSON } from '../../src/maps/custom-overlay-data.ts';
-import { createCustomClient, customTileAt, customFailure } from '../../src/maps/custom-overlay-client.js';
-import { probeCustomSource } from '../../src/maps/custom-overlay-probe.js';
-import { validateCustomRaster } from '../../src/maps/custom-overlay-raster.js';
+import { createCustomClient, customTileAt, customFailure } from '../../src/maps/custom-overlay-client.ts';
+import { probeCustomSource } from '../../src/maps/custom-overlay-probe.ts';
+import { validateCustomRaster } from '../../src/maps/custom-overlay-raster.ts';
 const definition = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Trails', kind: 'mvt',
     source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.pbf'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz' },
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [{ sourceLayer: 'trails', geometry: 'line', color: '#26734d' }] } });

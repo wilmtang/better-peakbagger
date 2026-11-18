@@ -1,14 +1,14 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createCustomOverlayControl } from './custom-overlay-control.js';
+import { createCustomOverlayControl } from './custom-overlay-control.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { createMapLayerControl } from './map-layer-control.ts';
-import { createLeafletOverlays } from './map-overlay-leaflet.js';
-import { createSentinelSession } from './sentinel-session.js';
-import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.js';
-import { WILDFIRE_LEGEND } from './wildfire-core.js';
-import { sentinelTarget } from './sentinel-core.js';
+import { createLeafletOverlays } from './map-overlay-leaflet.ts';
+import { createSentinelSession } from './sentinel-session.ts';
+import { createSnowDepthMetadata, SNOW_DEPTH_LEGEND } from './snow-depth.ts';
+import { WILDFIRE_LEGEND } from './wildfire-core.ts';
+import { sentinelTarget } from './sentinel-core.ts';
 import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTileStatus, viewportStations, mapOverlayCoverage } from './map-overlay-providers.ts';
 import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.ts';
 import { readSnotelMapStations, type SnotelMapStation } from '../snow/snotel-map-data.ts';
@@ -16,7 +16,7 @@ import { createSnotelMapReveal } from '../snow/snotel-map-view.ts';
 import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createMapLocationMenu } from './map-location-menu.ts';
-import { bindMapLocationMenu } from './peak-weather-map.js';
+import { bindMapLocationMenu } from './peak-weather-map.ts';
 
 interface OverlayState { enabled: boolean; opacity: number; }
 interface OverlayStatus {
@@ -314,7 +314,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
                         paint();
                         if (id === 'land' && previous !== JSON.stringify(statuses.land.providerCooldowns)) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
                     }
-                } } as Parameters<typeof createLeafletOverlays>[0]);
+                } } as unknown as Parameters<typeof createLeafletOverlays>[0]);
                 const sentinel = createSentinelSession({ readView: () => ({ bounds: map.getBounds(), zoom: map.getZoom() }), fetchImpl: owner.fetch.bind(owner),
                     replaceScenes: (scenes: unknown) => engine.scenes(scenes, state.sentinel.opacity), clearScenes: () => engine.clearSentinel(),
                     retryTiles: () => engine.retry('sentinel'),
@@ -324,7 +324,7 @@ export function installMapLayers(win = window as MapOwnerWindow, { fixedMap = nu
                         if (status.retryAt! > Date.now() && status.retryAt !== previous) { relay(); post({ type: 'handoffState', snapshot: snapshot() }); }
                     },
                     onCapture: (target: unknown) => { capture = target; revision++; relay(); post({ type: 'handoffState', snapshot: snapshot() }); },
-                } as Parameters<typeof createSentinelSession>[0]);
+                } as unknown as Parameters<typeof createSentinelSession>[0]);
                 const unbindLocation = bindMapLocationMenu({ ownerWindow: owner, map, frame: candidate.frame, menu: locationMenu });
                 const moveStarted = () => { if (binding?.map === map) binding.moving = true; custom?.cancelTasks(); navigationStarted(); };
                 const unloaded = () => { map.__bpbOverlayRemoved = true; if (secondary) lifecycle.dispose(); else { unbind(); control.element.hidden = true; start(); } };

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBCLandRoutes } from '../../src/background/bc-land-routes.js';
-import { createBCTileFetch, readBCTileCoordinates } from '../../src/maps/bc-land-client.js';
+import { createBCTileFetch, readBCTileCoordinates } from '../../src/maps/bc-land-client.ts';
 
 const sender = { tab: { id: 1 }, frameId: 0, url: 'https://www.peakbagger.com/Peak.aspx?pid=1' };
 const coordinates = { z: 12, x: 637, y: 1315 }; // Coastal BC.

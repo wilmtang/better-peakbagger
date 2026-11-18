@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { BC_LAND_PERMISSION, bcLandTileUrl, landCoverage } from '../maps/canadian-land.js';
+import { BC_LAND_PERMISSION, bcLandTileUrl, landCoverage } from '../maps/canadian-land.ts';
 import { tileBounds } from '../maps/map-overlay-providers.ts';
-import { readBCTileCoordinates } from '../maps/bc-land-client.js';
+import { readBCTileCoordinates } from '../maps/bc-land-client.ts';
 import { requestDeadline } from '../net/request-deadline.ts';
 import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { temporaryHttpStatus } from '../net/retry-transient.ts';

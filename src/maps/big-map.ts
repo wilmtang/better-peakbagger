@@ -12,10 +12,10 @@ import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
 import { gpxMetrics } from '../gpx/gpx-metrics.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
-import { peakMarkers } from './peak-markers.js';
-import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
+import { peakMarkers } from './peak-markers.ts';
+import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.ts';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
-import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
+import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.ts';
 import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 

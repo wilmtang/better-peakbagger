@@ -558,12 +558,12 @@ always shown. An enabled peak weather card adds its existing forecast/archive
 action. Weather opt-out and weather cooldown do not disable the elevation readout.
 
 The shared MAIN-world menu is owned by the map-layer lifecycle. Native point
-projection lives in `src/maps/peak-weather-map.js`; the terrain frame sends a
+projection lives in `src/maps/peak-weather-map.ts`; the terrain frame sends a
 validated, generation-bound point through its existing bridge. Only the isolated
 weather card performs forecast requests. Map replacement, navigation, dismissal
 and a newer selection invalidate and abort the prior elevation lookup.
 
-`src/maps/map-elevation.js` reads credential-free Mapterhorn Terrarium tiles at
+`src/maps/map-elevation.ts` reads credential-free Mapterhorn Terrarium tiles at
 fixed zoom 14, falling back through zoom 10 only on 404. This detail policy is
 independent of the viewport, 3D tile availability and terrain exaggeration.
 It samples the clicked raster cell; it does not snap to a nearby peak or read

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.js';
-import { customLayerBackup, readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
+import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry, readCustomSource, customId } from '../maps/custom-overlay-schema.ts';
+import { customLayerBackup, readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.ts';
 import { storageValue as StorageValue } from '../storage/storage-value.ts';
 import { readPrivateParameters, publicPrivateSource } from '../maps/custom-overlay-private.ts';
 

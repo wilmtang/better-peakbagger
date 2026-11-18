@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
 import { createCustomPrivateStore } from '../../src/background/custom-private-store.js';
-import { CUSTOM_REGISTRY_KEY } from '../../src/maps/custom-overlay-schema.js';
+import { CUSTOM_REGISTRY_KEY } from '../../src/maps/custom-overlay-schema.ts';
 
 const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },

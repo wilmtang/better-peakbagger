@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createElevationClient } from './map-elevation.js';
+import { createElevationClient } from './map-elevation.ts';
 import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';

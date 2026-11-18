@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { createMapLocationMenu, readMapPoint } from '../../src/maps/map-location-menu.ts';
-import { bindMapLocationMenu } from '../../src/maps/peak-weather-map.js';
+import { bindMapLocationMenu } from '../../src/maps/peak-weather-map.ts';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function setup() {

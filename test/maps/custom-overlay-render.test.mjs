@@ -3,10 +3,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createCustomRenderer } from '../../src/maps/custom-overlay-render.js';
+import { createCustomRenderer } from '../../src/maps/custom-overlay-render.ts';
 import { parseCustomData } from '../../src/maps/custom-overlay-data.ts';
-import { installMapDiscovery } from '../../src/maps/map-discovery.js';
-import { createCustomParser } from '../../src/maps/custom-overlay-parser.js';
+import { installMapDiscovery } from '../../src/maps/map-discovery.ts';
+import { createCustomParser } from '../../src/maps/custom-overlay-parser.ts';
 
 test('terrain refresh revalidates resolved viewport tiles without changing future pan policy', async () => {
     const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });

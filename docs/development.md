@@ -773,7 +773,7 @@ as test seams.
 ### Peak planning link order
 
 The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
-`src/maps/peak-links.ts`; `src/maps/peak-link-order.js` owns grip dragging,
+`src/maps/peak-links.ts`; `src/maps/peak-link-order.ts` owns grip dragging,
 keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
 contains link IDs only, with its allowed IDs and default order defined by
 `PEAK_LINK_ORDER` in `src/settings/settings-schema.ts`.

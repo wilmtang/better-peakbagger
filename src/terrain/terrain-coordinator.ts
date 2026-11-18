@@ -6,7 +6,7 @@
 // and init payloads. This module owns the state machine and camera handoff so
 // BigMap, Peak pages, and the GPX Analyzer cannot drift independently.
 
-import { terrainCamera as TerrainCamera } from './terrain-camera.js';
+import { terrainCamera as TerrainCamera } from './terrain-camera.ts';
 import { createVisibleDeadline } from '../ui/visible-deadline.ts';
 import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 

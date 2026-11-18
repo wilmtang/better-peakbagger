@@ -12,8 +12,8 @@ import { boundedText as BoundedText } from '../src/net/bounded-text.ts';
 import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.ts';
 import { optionsUtils as OptionsUtils, type FlashOptions, type RepoStatus } from './options-utils.ts';
 import { GARMIN_PERMISSION } from '../src/garmin/garmin-api.ts';
-import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry } from '../src/maps/custom-overlay-schema.js';
-import { customLayerBackup } from '../src/maps/custom-overlay-transfer.js';
+import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY, readCustomRegistry } from '../src/maps/custom-overlay-schema.ts';
+import { customLayerBackup } from '../src/maps/custom-overlay-transfer.ts';
 import type { Settings, SettingsPatch } from './settings-patch-route.ts';
 
 interface PendingImport {

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { readCustomSource, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.js';
-import { resolveCustomSourceDocument } from '../maps/custom-overlay-source.js';
+import { readCustomSource, CUSTOM_LIMITS } from '../maps/custom-overlay-schema.ts';
+import { resolveCustomSourceDocument } from '../maps/custom-overlay-source.ts';
 import { PRIVATE_LIMITS, privateRequestUrl, publicPrivateSource, readPrivateParameters } from '../maps/custom-overlay-private.ts';
 import { storageValue as StorageValue } from '../storage/storage-value.ts';
 import { requestDeadline } from '../net/request-deadline.ts';

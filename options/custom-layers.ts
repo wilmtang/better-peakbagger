@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { readCustomRegistry, CUSTOM_REGISTRY_KEY } from '../src/maps/custom-overlay-schema.js';
+import { readCustomRegistry, CUSTOM_REGISTRY_KEY } from '../src/maps/custom-overlay-schema.ts';
 import type { FlashOptions } from './options-utils.ts';
 
 type CustomSourceKind = 'raster' | 'mvt' | 'geojson';

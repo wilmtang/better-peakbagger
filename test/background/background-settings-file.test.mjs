@@ -9,7 +9,7 @@ import { settingsTransfer as Transfer } from '../../src/settings/settings-transf
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.ts';
 import { githubAuth as GithubAuth } from '../../src/github/github-auth.ts';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
-import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
+import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
 
 const makeArea = (initial = {}) => {
     const values = structuredClone(initial);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createPrivateLayerFetch } from '../../src/maps/custom-private-client.js';
+import { createPrivateLayerFetch } from '../../src/maps/custom-private-client.ts';
 const url = 'https://relay.bpb.example/custom:0537a032-271c-4d11-9b8c-0edc566b47c1/1/tile/2/1/1';
 test('private resources never reach native fetch and cross only as typed resource coordinates', async () => {
     let native = 0;const messages = [];

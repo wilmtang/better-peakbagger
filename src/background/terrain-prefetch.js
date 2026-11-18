@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
+import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.ts';
 import { terrainCache as TerrainCache } from '../terrain/terrain-cache.ts';
 import { settings as Settings } from '../settings/settings.ts';
 

@@ -11,8 +11,8 @@ import { build } from 'esbuild';
 import { JSDOM as TestJSDOM } from '../helpers/test-dom.mts';
 import type { TestDom, TestDomOptions, TestWindow } from '../helpers/test-dom.mts';
 import { fireTrustedEvent, makeChromeStub } from '../helpers/load-page.mts';
-import { terrainFailure } from '../../src/terrain/terrain-failure.js';
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
+import { terrainFailure } from '../../src/terrain/terrain-failure.ts';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.ts';
 
 
 // Loose fixtures for a harness that drives the bundled bridge and frame through

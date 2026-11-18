@@ -7,7 +7,7 @@ import { settingsSchema as Schema } from './settings-schema.ts';
 import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.ts';
 import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import { cleanGarminKey } from '../garmin/garmin-api.ts';
-import { readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';
+import { readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.ts';
 
 const KIND = 'better-peakbagger-settings';
 const SCHEMA_VERSION = 7;

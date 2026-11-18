@@ -50,7 +50,7 @@ import {
     ownedFirefoxPids,
 } from '../../scripts/firefox-verifier-processes.mjs';
 import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.ts';
 import {
     AUTHORED_SOURCE_ROOTS,
     ENTRIES,

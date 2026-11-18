@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readCustomSource, customUrl, readCustomRegistry, readCustomSelection, CUSTOM_REGISTRY_KEY } from '../../src/maps/custom-overlay-schema.js';
+import { readCustomSource, customUrl, readCustomRegistry, readCustomSelection, CUSTOM_REGISTRY_KEY } from '../../src/maps/custom-overlay-schema.ts';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
-import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.js';
+import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
 export const source = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Trails', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png?key=a%2Fb'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: 'Data' }, appearance: { opacity: 60, rules: [] } });

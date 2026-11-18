@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { inferCustomSourceUrl, resolveCustomSourceDocument } from '../../src/maps/custom-overlay-source.js';
-import { createCustomClient } from '../../src/maps/custom-overlay-client.js';
+import { inferCustomSourceUrl, resolveCustomSourceDocument } from '../../src/maps/custom-overlay-source.ts';
+import { createCustomClient } from '../../src/maps/custom-overlay-client.ts';
 
 const source = () => ({ id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'My chosen name', kind: 'raster',
     source: { metadataUrl: 'https://tiles.example.com/source.json', tiles: [], scheme: 'xyz', minNativeZoom: 0, maxNativeZoom: 18,
