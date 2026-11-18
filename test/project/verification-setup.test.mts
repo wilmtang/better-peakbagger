@@ -180,6 +180,49 @@ test('shared setup exports the installed paths and versions and keeps exact tool
     }
     assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
     assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses!)));
+
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-setup-contract-'));
+    try {
+        const emptyEnv = path.join(directory, 'empty.env');
+        await writeFile(emptyEnv, '');
+        const emptyRun = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', contract.run], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_ENV: emptyEnv,
+                CHROME_PATH: '',
+                CHROME_VERSION: '',
+                FIREFOX_PATH: '',
+                FIREFOX_VERSION: '',
+                CHROME_BIN: '/usr/bin/google-chrome',
+                FIREFOX_BIN: '/usr/bin/firefox',
+            },
+        });
+        assert.equal(emptyRun.status, 0, emptyRun.stderr);
+        assert.equal(await readFile(emptyEnv, 'utf8'), 'CHROME_BIN=\nFIREFOX_BIN=\n');
+
+        const floorEnv = path.join(directory, 'floor.env');
+        await writeFile(floorEnv, '');
+        const floorRun = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', contract.run], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_ENV: floorEnv,
+                CHROME_PATH: '/opt/chrome-128',
+                CHROME_VERSION: '128.0.6613.18',
+                FIREFOX_PATH: '/opt/firefox',
+                FIREFOX_VERSION: '152.0',
+            },
+        });
+        assert.equal(floorRun.status, 0, floorRun.stderr);
+        assert.equal(
+            await readFile(floorEnv, 'utf8'),
+            'CHROME_BIN=/opt/chrome-128\nBPB_EXPECT_CHROME_VERSION=128.0.6613.18\n'
+                + 'FIREFOX_BIN=/opt/firefox\nBPB_EXPECT_FIREFOX_VERSION=152.0\n',
+        );
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
 });
 
 test('fast fixture preflight is independently required and installs only its selected engine', async () => {

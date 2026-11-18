@@ -346,13 +346,13 @@ async function runSingleMode(
             },
         });
         const browser = context.browser()!;
+        result.browserVersion = browser.version();
         assertVerificationBrowser({
             name: browser.browserType().name(),
-            version: browser.version(),
+            version: result.browserVersion,
             expectedName: 'chromium',
             expectedVersion: process.env.BPB_EXPECT_CHROME_VERSION,
         });
-        result.browserVersion = browser.version();
 
         if (spec.cdpLoadPath) {
             const cdpSession = await browser.newBrowserCDPSession();
