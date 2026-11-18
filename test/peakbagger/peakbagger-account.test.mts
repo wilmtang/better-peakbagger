@@ -4,16 +4,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { ownerClimberId } from '../../src/profile/profile-backup-core.js';
-import { peakbaggerAccount } from '../../src/peakbagger/peakbagger-account.js';
+import { decodeHtmlEntities, peakbaggerAccount } from '../../src/peakbagger/peakbagger-account.ts';
 
 test('account readers do not depend on iterating Firefox Xray URLSearchParams', () => {
     const NativeURL = globalThis.URL;
     globalThis.URL = class extends NativeURL {
-        get searchParams() {
+        get searchParams(): URLSearchParams {
             const params = super.searchParams;
             // Firefox content-script Xrays expose the native methods but can
             // deny Symbol.iterator on the object returned by keys().
-            params.keys = () => ({ next: () => ({ done: true }) });
+            (params as unknown as { keys: () => { next: () => { done: boolean } } }).keys = () => ({
+                next: () => ({ done: true }),
+            });
             return params;
         }
     };
@@ -28,8 +30,8 @@ test('account readers do not depend on iterating Firefox Xray URLSearchParams', 
 });
 
 const url = 'https://www.peakbagger.com/Peak.aspx?pid=2296';
-const nav = body => `<div>Logged in: Test Climber | ${body}</div>`;
-const home = href => `<a href="${href}">My Home Page</a>`;
+const nav = (body: string) => `<div>Logged in: Test Climber | ${body}</div>`;
+const home = (href: string) => `<a href="${href}">My Home Page</a>`;
 test('account readers reject off-site, invalid and conflicting identities', () => {
     for (const html of [
         nav(home('https://example.invalid/climber/climber.aspx?cid=17')),
@@ -45,8 +47,8 @@ test('account readers reject off-site, invalid and conflicting identities', () =
 });
 
 test('DOM and worker HTML account adapters agree on native navigation and malformed evidence', async () => {
-    const { peakbaggerAccount: account } = await import('../../src/peakbagger/peakbagger-account.js');
-    const fixtures = [
+    const { peakbaggerAccount: account } = await import('../../src/peakbagger/peakbagger-account.ts');
+    const fixtures: [string, 'signed-in' | 'signed-out' | 'unverified', string | null][] = [
         [nav(home('/climber/climber.aspx?cid=17')), 'signed-in', '17'],
         [nav(home('https://peakbagger.com/climber/climber.aspx?cid=17')), 'signed-in', '17'],
         [nav('<a href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=17">Edit Account</a>'), 'signed-in', '17'],
@@ -73,9 +75,30 @@ test('DOM and worker HTML account adapters agree on native navigation and malfor
     }
 });
 
+test('decodeHtmlEntities decodes entities in one pass without double-unescaping', () => {
+    assert.equal(
+        decodeHtmlEntities('A &amp;quot;B&amp;quot; &amp;#39;C&amp;#x27; &amp;nbsp; &nbsp;&quot;&#39;&#x27;'),
+        'A &quot;B&quot; &#39;C&#x27; &nbsp;  "\'\'',
+    );
+});
+
+test('HTML adapter strips nested or unclosed inert blocks and tags without leaking spoofed navigation', () => {
+    const nestedScript = `<scr<script>ignored</script>ipt><div>Logged in: Fake | <a href="/climber/climber.aspx?cid=99">My Home Page</a></div></script>${nav(home('/climber/climber.aspx?cid=17'))}`;
+    assert.deepEqual(peakbaggerAccount.fromHtml(nestedScript, url), { status: 'signed-in', cid: '17' });
+
+    const commentSplit = `<scr<!-- comment -->ipt><div>Logged in: Fake | <a href="/climber/climber.aspx?cid=99">My Home Page</a></div></script>${nav(home('/climber/climber.aspx?cid=17'))}`;
+    assert.deepEqual(peakbaggerAccount.fromHtml(commentSplit, url), { status: 'signed-in', cid: '17' });
+
+    const unclosedComment = `${nav(home('/climber/climber.aspx?cid=17'))}<!-- unclosed tail <div>Logged in: Fake | <a href="/climber/climber.aspx?cid=99">My Home Page</a></div>`;
+    assert.deepEqual(peakbaggerAccount.fromHtml(unclosedComment, url), { status: 'signed-in', cid: '17' });
+
+    const unclosedTagInNav = '<div>Logged in: Test | <a href="/climber/climber.aspx?cid=17">My Home Page<b title="unclosed</a></div>';
+    assert.deepEqual(peakbaggerAccount.fromHtml(unclosedTagInNav, url), { status: 'signed-in', cid: '17' });
+});
+
 test('real masked native navigation remains readable in DOM and worker adapters', async () => {
     const { readFile } = await import('node:fs/promises');
-    const { peakbaggerAccount: account } = await import('../../src/peakbagger/peakbagger-account.js');
+    const { peakbaggerAccount: account } = await import('../../src/peakbagger/peakbagger-account.ts');
     for (const name of ['home-default', 'peak-rainier', 'climber-ascents', 'climber-ascentedit', 'report-buddy-list', 'climber-buddy-form']) {
         const html = await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8');
         const dom = new JSDOM(html, { url });
