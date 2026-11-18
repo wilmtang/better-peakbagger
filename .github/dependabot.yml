@@ -60,18 +60,37 @@ updates:
       - dependency-name: "@types/jsdom"
         update-types: [version-update:semver-major]
     groups:
-      # Bundled into the shipped extension by esbuild.
+      # Bundled into the shipped extension by esbuild (direct and transitive).
       bundled-runtime:
         patterns:
           - "@tiptap/*"
           - "@codemirror/*"
           - "@lezer/*"
-          - tz-lookup
-          - suncalc
-          - jszip
           - "@mapbox/vector-tile"
+          - "@mapbox/point-geometry"
           - "@maplibre/vt-pbf"
+          - "@marijn/find-cluster-break"
+          - crelt
+          - jszip
+          - linkifyjs
+          - orderedmap
           - pbf
+          - prosemirror-commands
+          - prosemirror-dropcursor
+          - prosemirror-gapcursor
+          - prosemirror-history
+          - prosemirror-keymap
+          - prosemirror-model
+          - prosemirror-schema-list
+          - prosemirror-state
+          - prosemirror-tables
+          - prosemirror-transform
+          - prosemirror-view
+          - rope-sequence
+          - style-mod
+          - suncalc
+          - tz-lookup
+          - w3c-keyname
       # Copied into dist/vendor as browser builds.
       copied-runtime:
         patterns:

@@ -97,7 +97,7 @@ Limits of what is proven:
   on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), and `4,208/4,208`
   on Node `v26.13.1` at `f599ca20` (November 17, 2026). None was re-run for this
   document-only update.
-- **Known gap in a guard:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
+- **Known gap in a guard:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
   scans source imports and cannot classify compiled Svelte or type-only imports.
   M6 replaces it before the first component ships.
 - **Changed but not fully proven:** four conversions made outside the planned
@@ -520,7 +520,7 @@ proves tooling and a fixture contract, not production CSP or host integration.
    Preserve the existing settings choices, IDs, examples, disclosure behavior
    and reset semantics. Do not redesign the rest of Settings.
 2. Convert the
-   [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
+   [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
    to `.mts` and derive bundled packages from actual esbuild metafile inputs,
    as notices already do. Test compiled implicit imports and erased type-only
    imports using fixtures. Keep compiler-only dependencies classified separately
@@ -770,7 +770,7 @@ if a syntax form evades a policy, use language-aware extraction for that rule.
 Loose-file and page-local lint coverage are also migrated in
 [development.test.mts](../../test/project/development.test.mts).
 
-The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mjs)
+The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mts)
 is a package-graph guard, not a policy scan: broadening its file matcher does not
 fix it. Replace its source-text import walk with metafile inputs in M6, before
 the first production component ships.

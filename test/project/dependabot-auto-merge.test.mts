@@ -2,16 +2,49 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { build, type Metafile } from 'esbuild';
+// @ts-expect-error js-yaml ships no declarations; parsed workflows are typed below.
 import yaml from 'js-yaml';
 
+import { esbuildOptions } from '../../scripts/build.mts';
 import {
     ENTRIES,
-    entrySources,
     VENDOR_COPY,
+    root,
+    type BundleEntry,
 } from '../../scripts/build-config.mts';
+
+interface LockPackage {
+    readonly version?: string;
+}
+
+interface PackageManifest {
+    readonly devDependencies?: Readonly<Record<string, string>>;
+}
+
+interface PackageLock {
+    readonly packages: Readonly<Record<string, LockPackage>>;
+}
+
+interface DependabotGroup {
+    readonly patterns?: readonly string[];
+}
+
+interface DependabotUpdate {
+    readonly 'package-ecosystem'?: string;
+    readonly schedule?: Record<string, unknown>;
+    readonly groups?: Readonly<Record<string, DependabotGroup>>;
+    readonly 'open-pull-requests-limit'?: number;
+    readonly cooldown?: Record<string, unknown>;
+}
+
+interface DependabotConfig {
+    readonly updates: readonly DependabotUpdate[];
+}
 
 const workflow = await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url),
@@ -32,15 +65,15 @@ const developmentGuide = await readFile(
 const packageJson = JSON.parse(await readFile(
     new URL('../../package.json', import.meta.url),
     'utf8',
-));
+)) as PackageManifest;
 const packageLock = JSON.parse(await readFile(
     new URL('../../package-lock.json', import.meta.url),
     'utf8',
-));
+)) as PackageLock;
 
-const stepIndex = name => workflow.indexOf(`- name: ${name}`);
+const stepIndex = (name: string): number => workflow.indexOf(`- name: ${name}`);
 
-const groupPatterns = name => {
+const groupPatterns = (name: string): string[] => {
     const match = dependabotConfig.match(new RegExp(
         `^      ${name}:\\n        patterns:\\n((?:          - .+\\n)+)`,
         'm',
@@ -50,36 +83,34 @@ const groupPatterns = name => {
         line.replace(/^\s*-\s*/, '').replace(/^"|"$/g, ''));
 };
 
-const matchesPattern = (packageName, pattern) => pattern.endsWith('/*')
+const matchesPattern = (packageName: string, pattern: string): boolean => pattern.endsWith('/*')
     ? packageName.startsWith(pattern.slice(0, -1))
     : packageName === pattern;
 
-const npmPackageName = specifier => specifier.startsWith('@')
+const npmPackageName = (specifier: string): string => specifier.startsWith('@')
     ? specifier.split('/').slice(0, 2).join('/')
     : specifier.split('/')[0];
 
-const browserPackageImports = async () => {
-    const pending = [...new Set(ENTRIES.flatMap(entrySources))];
-    const visited = new Set();
-    const packages = new Set();
-    while (pending.length) {
-        const sourcePath = pending.pop();
-        if (visited.has(sourcePath)) continue;
-        visited.add(sourcePath);
-        const source = await readFile(sourcePath, 'utf8');
-        for (const match of source.matchAll(
-            /^\s*(?:import|export)\s+(?:[^;]*?\s+from\s+)?["']([^"']+)["'];?/gm,
-        )) {
-            const specifier = match[1];
-            if (!specifier.startsWith('.')) {
-                packages.add(npmPackageName(specifier));
-                continue;
-            }
-            const resolved = path.resolve(path.dirname(sourcePath), specifier);
-            pending.push(path.extname(resolved) ? resolved : `${resolved}.js`);
+const metafilePackages = (metafiles: readonly Metafile[]): Set<string> => {
+    const packages = new Set<string>();
+    for (const metafile of metafiles) {
+        for (const input of Object.keys(metafile.inputs)) {
+            const normalized = input.replaceAll(path.sep, '/');
+            if (!/(?:^|\/)node_modules\//.test(normalized)) continue;
+            const inner = normalized.split(/(?:^|\/)node_modules\//).pop();
+            if (inner) packages.add(npmPackageName(inner));
         }
     }
     return packages;
+};
+
+const bundledPackagesForEntries = async (
+    entries: readonly BundleEntry[],
+    projectRoot?: string,
+): Promise<Set<string>> => {
+    const results = await Promise.all(entries.map(entry =>
+        build({ ...esbuildOptions(entry, { projectRoot }), write: false })));
+    return metafilePackages(results.map(result => result.metafile));
 };
 
 test('the privileged merge decision runs only from trusted base-branch code', () => {
@@ -148,10 +179,11 @@ test('npm groups preserve release paths and catch otherwise separate updates', (
 });
 
 test('manual-only Actions updates are monthly while npm keeps its fortnightly cadence', () => {
-    const updates = yaml.load(dependabotConfig).updates;
+    const updates = (yaml.load(dependabotConfig) as DependabotConfig).updates;
     assert.equal(updates.length, 2);
     const npm = updates.find(update => update['package-ecosystem'] === 'npm');
     const actions = updates.find(update => update['package-ecosystem'] === 'github-actions');
+    assert.ok(npm && actions);
     assert.deepEqual(npm.schedule, {
         interval: 'cron', cronjob: '0 9 * * mon%2', timezone: 'Etc/UTC',
     });
@@ -166,10 +198,10 @@ test('manual-only Actions updates are monthly while npm keeps its fortnightly ca
 });
 
 test('the declared and locked TipTap family moves as one version', () => {
-    const declared = Object.entries(packageJson.devDependencies)
+    const declared = Object.entries(packageJson.devDependencies ?? {})
         .filter(([name]) => name.startsWith('@tiptap/'));
     assert.ok(declared.length > 1, 'the project must exercise a real TipTap family');
-    assert.equal(new Set(declared.map(([_name, range]) => range)).size, 1,
+    assert.equal(new Set(declared.map(([, range]) => range)).size, 1,
         'all direct TipTap requirements must have the same range');
     const version = declared[0][1];
     assert.match(version, /^\d+\.\d+\.\d+$/,
@@ -177,7 +209,7 @@ test('the declared and locked TipTap family moves as one version', () => {
 
     const locked = Object.entries(packageLock.packages)
         .filter(([packagePath]) => /(?:^|\/)node_modules\/@tiptap\//.test(packagePath))
-        .map(([_packagePath, metadata]) => metadata.version);
+        .map(([, metadata]) => metadata.version);
     assert.ok(locked.length >= declared.length);
     assert.equal(new Set(locked).size, 1,
         'all direct and transitive TipTap packages must resolve to one lockstep version');
@@ -207,7 +239,7 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
         /^  firefox-required:\n[\s\S]*?name: Firefox extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$FIREFOX_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
 });
 
-test('runtime dependency groups match how the build graph ships each package', async () => {
+test('runtime dependency groups match actual esbuild metafiles', async () => {
     const bundledPatterns = groupPatterns('bundled-runtime');
     const copiedPatterns = groupPatterns('copied-runtime');
     const copiedPackages = new Set(VENDOR_COPY
@@ -221,7 +253,7 @@ test('runtime dependency groups match how the build graph ships each package', a
         }
     }
 
-    const importedPackages = await browserPackageImports();
+    const importedPackages = await bundledPackagesForEntries(ENTRIES);
     const bundledPackages = [...importedPackages]
         .filter(packageName => !copiedPackages.has(packageName));
     for (const packageName of bundledPackages) {
@@ -238,4 +270,41 @@ test('runtime dependency groups match how the build graph ships each package', a
     }
     assert.ok(bundledPackages.includes('tz-lookup'));
     assert.ok(bundledPackages.includes('suncalc'));
+});
+
+test('metafile extraction captures compiled Svelte runtime packages and ignores erased type-only imports', async () => {
+    const compiledPackages = await bundledPackagesForEntries([
+        { out: 'svelte-fixture/island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] },
+    ]);
+    for (const expected of ['svelte', 'esm-env', 'clsx']) {
+        assert.ok(compiledPackages.has(expected), `compiled fixture metafile must report ${expected}`);
+    }
+    for (const compilerTool of ['esbuild-svelte', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser']) {
+        assert.equal(compiledPackages.has(compilerTool), false,
+            `compiler tooling ${compilerTool} must not appear in bundled inputs`);
+    }
+
+    const tempRoot = await mkdtemp(path.join(tmpdir(), 'bpb-metafile-types-'));
+    try {
+        await mkdir(path.join(tempRoot, 'src'), { recursive: true });
+        await symlink(path.join(root, 'node_modules'), path.join(tempRoot, 'node_modules'), 'dir');
+        await writeFile(path.join(tempRoot, 'src', 'type-only.ts'),
+            "import type { ClassValue } from 'clsx';\nexport const keep: ClassValue = 'ok';\n");
+        const typeOnlyPackages = await bundledPackagesForEntries(
+            [{ out: 'type-only.js', sources: ['type-only.ts'] }],
+            tempRoot,
+        );
+        assert.deepEqual([...typeOnlyPackages], [],
+            'erased type-only imports must not be treated as bundled dependencies');
+        await writeFile(path.join(tempRoot, 'src', 'runtime-import.ts'),
+            "import { clsx } from 'clsx';\nexport const className: string = clsx('a', 'b');\n");
+        const runtimePackages = await bundledPackagesForEntries(
+            [{ out: 'runtime-import.js', sources: ['runtime-import.ts'] }],
+            tempRoot,
+        );
+        assert.ok(runtimePackages.has('clsx'),
+            'fixture resolves node_modules when an import is retained at runtime');
+    } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+    }
 });
