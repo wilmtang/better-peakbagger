@@ -117,7 +117,7 @@ events locally in the browser without a network service.
 
 Better Peakbagger precompiles UI components with Svelte and bundles only its
 client runtime helpers (`esm-env` and `clsx`) into `dist/options/options.js` for the
-Units settings panel.
+Units settings panel and `dist/content/summit-cloud.js` for the Summit Cloud Cover controls.
 
 - Project: [Svelte](https://svelte.dev/)
 - Source: [Svelte](https://github.com/sveltejs/svelte)

@@ -155,7 +155,7 @@ export default defineConfig([
         // explicit island owners may pass .svelte components into mountIsland.
         // Legacy runtime JavaScript is covered too until M7 converts it.
         files: runtimeRoots.map(directory => `${directory}/**/*.{js,mjs,ts}`),
-        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts', 'options/unit-settings.ts'],
+        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts', 'options/unit-settings.ts', 'src/weather/summit-cloud.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: [{
                 group: ['*.svelte', '*.svelte.ts', '*.svelte.js'],
@@ -164,7 +164,7 @@ export default defineConfig([
         },
     },
     {
-        files: ['options/unit-settings.ts'],
+        files: ['options/unit-settings.ts', 'src/weather/summit-cloud.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: [{
                 group: ['*.svelte.ts', '*.svelte.js'],

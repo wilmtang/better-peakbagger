@@ -61,7 +61,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         '',
         `The report editor bundles TipTap core ${versions.tiptap}, ProseMirror view ${versions.prosemirrorView}, and their dependency graph into content/ascent-editor.js. THIRD_PARTY_NOTICES.txt records their package metadata and licenses.`,
         '',
-        `options/options.js precompiles and bundles Svelte ${versions.svelte} (MIT; DOM tree fragments, no innerHTML) for the Units settings panel; Svelte runtime helpers (esm-env, clsx) are recorded in THIRD_PARTY_NOTICES.txt.`,
+        `options/options.js and content/summit-cloud.js precompile and bundle Svelte ${versions.svelte} (MIT; DOM tree fragments, no innerHTML) for the Units settings panel and Summit Cloud Cover controls; Svelte runtime helpers (esm-env, clsx) are recorded in THIRD_PARTY_NOTICES.txt.`,
         '',
         `The optional 3D view is off by default. Its setting discloses external tile requests. An explicit 3D action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer; providers receive the viewed area and request metadata. Returning to 2D stops tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes. After that—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
         '',
