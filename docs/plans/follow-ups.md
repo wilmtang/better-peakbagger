@@ -98,7 +98,6 @@ Run on Node `24.22.2` against `69c7a321` (`npm test` `3,874/3,874`; `npm run aud
   `f599ca20`; subsequent archival and review-fix commits are re-gated on PR `#77`
   before merge). Exercising the Dependabot auto-merge workflow against this
   matrix awaits the next dependency pull request.
-  next dependency pull request.
 
 ### Release-only checks
 
