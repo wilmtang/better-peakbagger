@@ -464,6 +464,18 @@ try {
             ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'metric',
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
+        await optionsPage.locator('#unit-customize summary').click();
+        await optionsPage.locator('#distance-units').selectOption('imperial');
+        await waitForPageCondition(optionsPage, async () =>
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.distanceUnits === 'imperial'
+            && document.getElementById('unit-example-gpx')?.textContent === '12.4 mi · 800 m ascent',
+        null, { timeout: 5000 });
+        await optionsPage.locator('#unit-reset').click();
+        await waitForPageCondition(optionsPage, async () => {
+            const stored = (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined;
+            return stored?.distanceUnits === 'default' && (document.getElementById('unit-reset') as HTMLButtonElement | null)?.disabled === true;
+        }, null, { timeout: 5000 });
+        await optionsPage.locator('#unit-customize summary').click();
         await optionsPage.locator('#units').selectOption('auto');
         await waitForPageCondition(optionsPage, async () =>
             ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'auto',

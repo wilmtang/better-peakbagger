@@ -994,6 +994,64 @@ async function main() {
               && document.documentElement.dataset.bpbTheme === ${JSON.stringify(firefoxSunTheme)};`,
             'the persisted Firefox option',
         );
+        // Exercise the compiled Units Svelte island across real Firefox
+        // structured-clone messaging (SETTINGS_PATCH -> worker -> storage.sync).
+        const readFirefoxSyncUnits = () => driver.executeAsyncScript((done: (result: unknown) => void) => {
+            const api = globalThis.browser || globalThis.chrome;
+            api.storage.sync.get('bpbSettings').then(
+                (data: { bpbSettings?: Record<string, unknown> }) => done(data.bpbSettings ?? null),
+                (error: unknown) => done({ error: String(error) }),
+            );
+        }) as Promise<Record<string, unknown> | null>;
+        await driver.executeScript(() => {
+            const select = document.getElementById('units') as HTMLSelectElement;
+            select.value = 'metric';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await waitForCondition(async () => (await readFirefoxSyncUnits())?.units === 'metric', {
+            description: 'Firefox Units default change persisted through real worker IPC',
+            timeoutMs: 10_000,
+        });
+        await waitForScript(
+            driver,
+            "return document.getElementById('unit-example-gpx')?.textContent === '20.0 km · 800 m ascent';",
+            'Firefox Units metric example text',
+        );
+        await driver.findElement(By.css('#unit-customize summary')).click();
+        await driver.executeScript(() => {
+            const select = document.getElementById('distance-units') as HTMLSelectElement;
+            select.value = 'imperial';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await waitForCondition(async () => (await readFirefoxSyncUnits())?.distanceUnits === 'imperial', {
+            description: 'Firefox Units override persisted through real worker IPC',
+            timeoutMs: 10_000,
+        });
+        await waitForScript(
+            driver,
+            "return document.getElementById('unit-example-gpx')?.textContent === '12.4 mi · 800 m ascent';",
+            'Firefox Units mixed example text',
+        );
+        await driver.findElement(By.id('unit-reset')).click();
+        await waitForCondition(async () => (await readFirefoxSyncUnits())?.distanceUnits === 'default', {
+            description: 'Firefox Units reset persisted through real worker IPC',
+            timeoutMs: 10_000,
+        });
+        await waitForScript(
+            driver,
+            "return document.getElementById('unit-reset')?.disabled === true;",
+            'Firefox Units reset button disabled after reset',
+        );
+        await driver.findElement(By.css('#unit-customize summary')).click();
+        await driver.executeScript(() => {
+            const select = document.getElementById('units') as HTMLSelectElement;
+            select.value = 'auto';
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        await waitForCondition(async () => (await readFirefoxSyncUnits())?.units === 'auto', {
+            description: 'Firefox Units restored to auto',
+            timeoutMs: 10_000,
+        });
         // The custom-list workspace is its own page; drive it there for the list
         // checks, then return to Settings for the sidebar and backup checks.
         await driver.get(favoritesUrl);
