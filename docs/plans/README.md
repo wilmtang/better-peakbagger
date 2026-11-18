@@ -10,8 +10,15 @@
   browser measurements.
 
 - [CI: Linux by default, macOS only for hardware WebGL](ci-macos-gpu-only.md)
-  — proposed. Firefox surfaces move first. Current-Chrome extension loading on
-  Linux is a time-boxed spike, and backup layout is an owner decision.
+  — proposed, with the manual Linux Chrome extension-loading probe committed
+  locally (`probe-linux-chrome-extension.yml`, unpushed). Firefox surfaces move
+  first; backup layout is an owner decision.
+
+- [CI verifier flakiness remediation](ci-verifier-flakiness.md)
+  — proposed companion plan auditing the last 40 `Test` runs, separating seven
+  already-fixed flakes from the five open root causes (Buddy removal race,
+  `#ignored-github` hash alignment, Firefox BiDi cancelled-request handling,
+  card-readiness diagnostics and instrumented watch items).
 
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,

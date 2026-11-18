@@ -1,6 +1,6 @@
 # CI: Linux by default, macOS only for hardware WebGL
 
-Status: proposed, no changes made yet.
+Status: proposed; manual Linux Chrome probe committed locally (unpushed), required CI workflows unchanged.
 
 ## Goal
 
@@ -29,15 +29,20 @@ more when the copied runtime changes. `release.yml` adds 2.
 
 ### Baseline: where failures actually happen
 
-Of the last 40 `Test` runs, 11 failed. Counting failed jobs, excluding the two
-aggregate jobs:
+Of the last 40 `Test` runs, 11 failed:
 
-- macOS: current Chrome smoke ×4, Firefox cards surface ×2, Chrome
-  interactions surface ×1, Chrome GPU ×1.
-- Linux: Firefox smoke ×5, layout shards ×8 (all in a single run), preflight
-  ×2, scale ×1, node ×1.
+- One run (`955463d4`) was a deterministic regression across 11 Linux jobs
+  (`Node tests and lint`, both `Fixture preflight` cells and all 8 `layout`
+  shards), fixed 38 minutes later in `db7cf566`.
+- Across the remaining 10 intermittent runs (excluding the two aggregate jobs):
+  - macOS: current Chrome smoke ×4, Firefox cards surface ×2, Chrome
+    interactions surface ×1, Chrome GPU ×1.
+  - Linux: Firefox smoke ×5, scale ×1.
 
-Linux jobs fail too, so moving to Linux will not remove maintenance on its own.
+Six of those ten intermittent runs were already fixed on `main` between
+November 6 and November 9; the five failure modes still open at `HEAD` are
+traced with line-level root causes in the companion
+[CI verifier flakiness remediation](ci-verifier-flakiness.md) plan.
 
 ## Research findings (2026-11-16)
 
@@ -91,15 +96,32 @@ detection method. macOS now runs 156.0.8078.4, so it may no longer reproduce.
 
 ### A sanctioned alternative to `--load-extension`
 
-Puppeteer's documented `enableExtensions` option loads extensions over a pipe
-connection with the CDP `Extensions.loadUnpacked` command, which needs
-`--enable-unsafe-extension-debugging`. Playwright has no equivalent option. The
-same command could be sent through `browser.newBrowserCDPSession()` from the
-persistent context that `scripts/verification-launch.mts` already creates. I
-have not checked that this works with Playwright persistent contexts.
+Inspecting `playwright-core` 1.64.1 revealed two relevant implementation facts:
+
+1. Playwright's default `chromiumSwitches()` always passes `--disable-extensions`
+   unless `ignoreDefaultArgs` includes `'--disable-extensions'`, and Playwright
+   already launches persistent Chromium contexts over `--remote-debugging-pipe`.
+2. Sending CDP `Extensions.loadUnpacked` over `browser.newBrowserCDPSession()`
+   with `ignoreDefaultArgs: ['--disable-extensions']` and
+   `--enable-unsafe-extension-debugging` loads `dist/` directly in Playwright
+   without switching to Puppeteer. Verified locally on macOS arm64 in hidden
+   Chrome for Testing `156.0.8078.4` (`1000x760`): `chrome://extensions-internals/`
+   records `"location": "UNPACKED"` (rather than `"COMMAND_LINE"`), content
+   scripts inject on the HTTPS Peakbagger fixture, and the MV3 worker answers
+   `CAPTURE_STATUS`. If Linux adopts `cdp-load-unpacked`,
+   `scripts/verify-extension.mts` (`line 272`) must accept `'UNPACKED'` or read
+   the extension ID returned by `Extensions.loadUnpacked`.
 
 Branded Chrome 137+ ignores `--load-extension`, but Chrome for Testing still
-honours it, so this does not explain the Linux result.
+honours it, so branded-Chrome restrictions do not explain the August Linux
+result.
+
+`scripts/probe-chrome-extension-load.mts` and the manual workflow
+`.github/workflows/probe-linux-chrome-extension.yml` (`workflow_dispatch` only,
+covered by `test/project/chrome-extension-load-probe.test.mts`) are committed
+locally so one hosted `ubuntu-24.04` dispatch tests `cli-default`,
+`cli-ignore-disable-extensions` and `cdp-load-unpacked` (plus optional `Xvfb`)
+in about a minute once pushed.
 
 ## Plan
 
@@ -118,16 +140,21 @@ honours it, so this does not explain the Linux result.
 
 All Chrome cells except GPU depend on this, so time-box it.
 
-- Reproduce first with one throwaway workflow-dispatch job on `ubuntu-24.04`:
-  install current Chrome for Testing the same way `setup-verification` does,
-  launch through `verification-launch.mts`, then dump
-  `chrome://extensions-internals/` and the browser's stderr. That separates "not
-  registered" from "registered but slow" in a single short run, instead of
-  running the full 10-minute verifier.
-- If it is still not registered, try `Extensions.loadUnpacked` (see research
-  above) in `scripts/verification-launch.mts`, so every verifier picks it up.
-- Also try `xvfb-run` with `headless: false` only if both of the above fail. The
-  August notes say Xvfb also failed on 151, so expect little from it.
+- Dispatch `.github/workflows/probe-linux-chrome-extension.yml` (`mode=all`) on
+  `ubuntu-24.04` after pushing a branch: it installs current Chrome for Testing
+  through `setup-verification`, runs `scripts/probe-chrome-extension-load.mts`
+  across `cli-default`, `cli-ignore-disable-extensions` and `cdp-load-unpacked`,
+  and uploads the JSON report (`chrome://extensions-internals/`, content-script
+  probe, MV3 worker reply and browser logs). That separates "not registered"
+  from "registered under CDP only" in a single short run instead of running the
+  full 10-minute verifier.
+- If `cli-default` fails on Linux but `cli-ignore-disable-extensions` or
+  `cdp-load-unpacked` passes, adopt the passing strategy in
+  `scripts/verification-launch.mts` (and allow `location === 'UNPACKED'` in
+  `scripts/verify-extension.mts` when using `Extensions.loadUnpacked`) so every
+  verifier picks it up.
+- Try `use_xvfb=true` in the same workflow only if all three headless modes
+  fail. The August notes say Xvfb also failed on 151, so expect little from it.
 - Exit criteria: `verify -- chrome` and the Chrome peak surfaces pass on Linux
   across repeated runs (`BPB_VERIFY_REPETITIONS`), with the injection probe
   proving the extension loaded rather than an empty target list.
@@ -193,7 +220,15 @@ Choose one:
 
 ## Closure ledger
 
-- Fixed and verified: none yet.
-- Intentionally not changed: GPU jobs stay on macOS. The Chrome 128 floor stays on
-  Linux.
-- Changed but not fully proven: none yet.
+- Fixed and verified: `scripts/probe-chrome-extension-load.mts`,
+  `test/project/chrome-extension-load-probe.test.mts` and
+  `.github/workflows/probe-linux-chrome-extension.yml` verified locally across
+  `cli-default`, `cli-ignore-disable-extensions` and `cdp-load-unpacked` in
+  hidden Chrome for Testing `156.0.8078.4` (`1000x760`, macOS arm64) and by the
+  project test suite.
+- Intentionally not changed: GPU jobs stay on macOS. The Chrome 128 floor stays
+  on Linux. `.github/workflows/test.yml` and `release.yml` remain unchanged
+  until hosted Linux probe results are recorded.
+- Changed but not fully proven: `.github/workflows/probe-linux-chrome-extension.yml`
+  is committed locally and has not yet been pushed or dispatched on hosted
+  `ubuntu-24.04`.
