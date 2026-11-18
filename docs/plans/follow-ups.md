@@ -94,12 +94,10 @@ ran hidden.
   pass but do not drive a row disappearing under an open card.
 - **Hosted CI.** The Linux CI offload (moving `chrome`, all eight `peak-surfaces`
   cells, and `.github/workflows/release.yml` current-browser compatibility to
-  `ubuntu-24.04`, leaving `backup-layout` and Metal GPU checks on macOS) was
-  verified on hosted GitHub Actions via fast-forward test branch
-  `ci/verify-linux-offload` (probe run `44237662003` and 35/35 `Test` run
-  `44241028916`). Local `main` commits remain unpushed, so `release.yml`
-  `workflow_dispatch` compatibility rehearsal, the Dependabot workflow on a real
-  update, and `main` push runs remain to be exercised once landed on `main`.
+  `ubuntu-24.04`, leaving `backup-layout` and Metal GPU checks on macOS) passed
+  hosted GitHub Actions probe run `44237662003` and full `Test` run `44241028916`
+  (`35/35` jobs). Exercising the Dependabot auto-merge workflow against this
+  updated matrix awaits the next dependency pull request.
 
 ### Release-only checks
 
