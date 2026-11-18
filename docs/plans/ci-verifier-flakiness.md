@@ -1,6 +1,6 @@
 # CI verifier flakiness remediation
 
-Status: proposed; root causes traced against `HEAD`, no verifier or runtime behavior changed yet.
+Status: completed (Phases 1–3 landed and verified alongside hosted PR #77 `Test` run `44258780970`, 35/35 jobs passed; Phase 4 kept Option A; F5 and standalone verifier watch items carried to the follow-up ledger).
 
 Companion to [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md).
 Moving jobs off macOS reduces 5-slot runner queueing, not intermittent test
@@ -288,8 +288,14 @@ consecutive local runs each of
 
 ## Closure ledger
 
-- Fixed and verified: none yet (plan only).
-- Intentionally not changed: the 8 already-fixed intermittent job failures from
-  2026-11-06..09 and the `955463d4` deterministic regression; F5 awaits
-  post-instrumentation evidence rather than speculative edits.
-- Changed but not fully proven: none yet.
+- **Fixed and verified:**
+  - `F3` (`2effc2b7`): serialized `refreshAfterBuddyMutation` on `buddyRefreshQueue` in `src/favorites/climber-favorite.ts`, added FIFO overlapping Add+Remove regression coverage in `test/favorites/climber-favorite.test.mts`, and awaited `waitForBuddyRequests` + `waitForBuddyStorage` in `scripts/verify-firefox-extension.mts`. Verified via `npm run verify -- firefox` (Firefox 160.0) and hosted PR #77 `Test` run `44258780970`.
+  - `F4` (`bfb83e1b`): converted `src/ui/section-nav.ts`, cleared `pendingLinkClick` on `hashchange` with a 1000ms TTL, forced synchronous `scrollBehavior = 'auto'` + post-frame `alignPaneToSection` alignment on non-click `hashchange`, added `scrollHeight`/`targetMarginTop` failure diagnostics in `scripts/verify-settings-navigation.mts`, and added `1000x420` `#ignored-github` regression coverage in `test/dom/options-scroll-spy.dom.mts`. Verified via `npm run verify -- dom` (10/10), `npm run verify -- settings-navigation`, `npm run verify -- chrome`, and hosted PR #77 `Test` run `44258780970`.
+  - `F1` & `F2` (`f95a4c63`): added `createBidiRequestLifecycle` in `scripts/verify-ascent-weather.mts` with `navigationEpoch` and `network.fetchError` scoping, converted `scripts/verify-peak-cards.mts` with structured per-card readiness diagnostics, and added `test/project/weather-bidi-lifecycle.test.mts`. Verified via `node scripts/verify-ascent-weather.mts --cards --firefox`, `node scripts/verify-ascent-weather.mts --cards`, and hosted PR #77 `Test` run `44258780970`.
+- **Intentionally not changed:**
+  - The 8 already-fixed intermittent job failures from 2026-11-06..09 and the deterministic regression `955463d4`.
+  - Phase 4 kept Option A (single paired package gate in `.github/actions/verify-package` via `scripts/verify-store-packages.mjs`).
+  - No speculative runtime edits were made to `F5` (`verify-capture-flow.mts` Preview timeout and Full Screen peak terrain frame) while `01babfb3`/`acc32703` instrumentation had no recurrences.
+  - Standalone non-CI verifiers listed in [codebase-reduction-2026-11-13.md](codebase-reduction-2026-11-13.md) stay out of scope for this CI flakiness plan and remain tracked separately.
+- **Changed but not fully proven:**
+  - `F5` watch items (`verify-capture-flow.mts` Preview and Full Screen terrain) and existing single-pass cells such as `Peak surface (firefox, snow)` and macOS Metal GPU runs passed hosted PR #77 `Test` run `44258780970` (`35/35`), and remain passively watched on `main` via [the follow-up ledger](follow-ups.md).
