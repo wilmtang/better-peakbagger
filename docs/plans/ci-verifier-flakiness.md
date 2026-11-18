@@ -188,11 +188,11 @@ plus `npm run typecheck` and `npm run lint`.
    `held` (in loading modes) and then sends `network.provideResponse`, pushing
    any thrown message into `networkErrors`. Two legitimate browser actions
    invalidate a blocked BiDi request ID before `network.provideResponse` lands:
-   - **Cross-navigation invalidation:** `scripts/verify-peak-cards.mjs` calls
+   - **Cross-navigation invalidation:** `scripts/verify-peak-cards.mts` calls
      `open()` repeatedly across modes while an earlier blocked request is still
      settling.
    - **In-page `AbortController` cancellation:** In `weather-read-gate`
-     (`scripts/verify-peak-cards.mjs` lines 256–261), the verifier holds
+     (`scripts/verify-peak-cards.mts`), the verifier holds
      `.bpb-week-refresh` in `loading` mode, clicks `#bpb-peak-weather .bpb-peak-card-toggle`
      to collapse the card **within the same page without navigating** (which
      calls `reads.cancel()` → `AbortController.abort()` in
@@ -201,7 +201,7 @@ plus `npm run typecheck` and `npm run lint`.
      `network.provideResponse`, Firefox rejects `network.provideResponse` with
      `no such request: Blocked request with id … not found` **in the active
      navigation epoch**.
-2. **F2 (`scripts/verify-peak-cards.mjs`, lines 44–49):** `ready()` polls a
+2. **F2 (`scripts/verify-peak-cards.mts`):** `ready()` polls a
    five-clause boolean (`3 cards`, sun toggle enabled, weather collapsed or 16
    `.bpb-week-day` nodes, `#bpb-peak-weather[aria-busy="false"]`,
    `.bpb-snow-status` containing `'Hourly readings'`). Because the callback
@@ -219,7 +219,7 @@ plus `npm run typecheck` and `npm run lint`.
   Any `no such request` for an active-epoch, non-aborted request ID (or any
   other BiDi error) must still push to `networkErrors` so broken intercept IDs
   are never masked.
-- Convert `scripts/verify-peak-cards.mjs` to TypeScript (`.mts`, updating
+- Convert `scripts/verify-peak-cards.mts` from `.mjs` (updating
   `scripts/README.md` and imports in `scripts/verify-ascent-weather.mts`) and
   change `ready()` to return a structured per-card state object checked via
   `isReady`, matching `waitForBuddyAdditionReady` in
