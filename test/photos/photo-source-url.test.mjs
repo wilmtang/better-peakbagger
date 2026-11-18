@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readPhotoSourceUrl } from '../../src/photos/photo-source-url.js';
+import { readPhotoSourceUrl } from '../../src/photos/photo-source-url.ts';
 
 test('clicked remote images are bounded and fetched without credentials or referrer', async () => {
     let options;

@@ -10,15 +10,15 @@
 
 import { settings as S } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import * as I from '../favorites/ignored-climbers.js';
-import { observeIgnored } from '../favorites/ignored-client.js';
-import { createFavoriteSource } from '../favorites/favorite-source.js';
-import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.js';
-import { authorInCell } from '../favorites/report-adapters.js';
-import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
+import * as I from '../favorites/ignored-climbers.ts';
+import { observeIgnored } from '../favorites/ignored-client.ts';
+import { createFavoriteSource } from '../favorites/favorite-source.ts';
+import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.ts';
+import { authorInCell } from '../favorites/report-adapters.ts';
+import { numericParam, ownerClimberId } from '../profile/profile-backup-core.ts';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
-import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.js';
+import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.ts';
 
 type BetaFilterKey = 'beta' | 'tr' | 'gps' | 'link' | 'fav';
 type SortDirection = 'asc' | 'desc';
@@ -814,8 +814,7 @@ if (isBuddyListPage) chrome.runtime.onMessage.addListener((message: { type?: str
 const cacheRenderedBuddyList = async () => {
     const cache = readRenderedBuddyList();
     if (!cache) return;
-    const beginRead = beginBuddyCacheRead as (api: typeof chrome, observedAt?: number | null) => Promise<unknown>;
-    const snapshot = await beginRead(chrome, performance.timeOrigin);
+    const snapshot = await beginBuddyCacheRead(chrome, performance.timeOrigin);
     await publishBuddyCache(chrome, snapshot, cache);
 };
 

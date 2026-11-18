@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as I from '../../src/favorites/ignored-climbers.js';
+import * as I from '../../src/favorites/ignored-climbers.ts';
 const entry = (cid, name = `Climber ${cid}`) => ({ cid, name, addedAt: cid });
 
 test('ignored storage distinguishes missing, valid empty, and malformed data', () => {

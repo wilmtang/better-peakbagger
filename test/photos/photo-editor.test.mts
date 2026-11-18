@@ -15,11 +15,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mts';
-import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
-import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.js';
-import { photoStore as Store } from '../../src/photos/photo-store.js';
+import { photoArchive as Archive } from '../../src/photos/photo-archive.ts';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
+import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.ts';
+import { photoStore as Store } from '../../src/photos/photo-store.ts';
 
 import { JSDOM } from '../helpers/test-dom.mts';
 import type { TestWindow } from '../helpers/test-dom.mts';
@@ -2159,9 +2159,9 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
                         mediumUrl: null,
                         uploadedAt: '2026-07-02T12:00:00.000Z',
                         expiresAt: null,
-                    }, '2026-07-02T12:00:00.000Z');
+                    }, '2026-07-02T12:00:00.000Z')!;
                     if (remoteState === 'unreachable') {
-                        photo = Library.markUnreachable(photo, true, '2026-07-03T12:00:00.000Z');
+                        photo = Library.markUnreachable(photo, true, '2026-07-03T12:00:00.000Z')!;
                     }
                     photo = await seedStore.putPhoto(photo);
                 }

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { climberProfileFeedback } from '../../src/favorites/climber-profile-feedback.js';
+import { climberProfileFeedback } from '../../src/favorites/climber-profile-feedback.ts';
 
 test('profile feedback has one owner outside the heading and does not auto-expand errors', t => {
     const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1></span>');

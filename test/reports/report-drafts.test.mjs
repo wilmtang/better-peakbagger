@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reportDrafts as Drafts } from '../../src/reports/report-drafts.js';
+import { reportDrafts as Drafts } from '../../src/reports/report-drafts.ts';
 
 test('draft keys round-trip for existing, peak-targeted, and new ascents', () => {
     const cases = [

@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { reserveBuddyPresentation } from '../../src/favorites/buddy-presentation.js';
-import { applyBuddyProfileState, readBuddyProfile } from '../../src/favorites/buddy-client.js';
+import { reserveBuddyPresentation } from '../../src/favorites/buddy-presentation.ts';
+import { applyBuddyProfileState, readBuddyProfile } from '../../src/favorites/buddy-client.ts';
 
 test('Buddy sizing preserves the exact native control, form contract and accessible value', async t => {
     const url = 'https://www.peakbagger.com/climber/climber.aspx?cid=900002';

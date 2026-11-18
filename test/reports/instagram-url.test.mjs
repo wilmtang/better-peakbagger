@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { canonicalInstagramUrl, instagramPasteUrl, instagramBlocks, instagramParagraphUrl } from '../../src/reports/instagram-url.js';
+import { canonicalInstagramUrl, instagramPasteUrl, instagramBlocks, instagramParagraphUrl } from '../../src/reports/instagram-url.ts';
 const URL='https://www.instagram.com/p/fA9uwTtkSN/';
 test('Instagram identity accepts only canonical HTTPS post/reel paths and strips tracking',()=>{
     assert.equal(canonicalInstagramUrl(' https://instagram.com/p/fA9uwTtkSN/?utm_source=ig_web_copy_link#tracking '),URL);

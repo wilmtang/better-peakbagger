@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { selectedReportTable, ascentReport } from '../../src/favorites/report-adapters.js';
+import { selectedReportTable, ascentReport } from '../../src/favorites/report-adapters.ts';
 const fixture = async name => new JSDOM(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8'),
     { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1' });
 test('peak adapter selects the nested reports, preserving native totals and other tables', async () => {

@@ -9,8 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createResourceStack } from './resource-stack.mjs';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
-import { photoLibrary as Library } from '../src/photos/photo-library.js';
-import { photoProject as Project } from '../src/photos/photo-project.js';
+import { photoLibrary as Library } from '../src/photos/photo-library.ts';
+import { photoProject as Project } from '../src/photos/photo-project.ts';
 import { verifyPhotoBackupStatus } from './verify-photo-backup-status.mjs';
 
 assert.equal(process.argv.length, 2, 'photo status verification accepts no arguments');

@@ -8,13 +8,13 @@ import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.ts';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
-import { ownerClimberId } from '../profile/profile-backup-core.js';
-import { favoriteClimbers as F } from './favorite-climbers.js';
-import { observeClimberMembership } from './climber-membership.js';
-import { mutateIgnored } from './ignored-client.js';
-import { climberCardTarget, climberCardState, climberProfileLists, SAVED_BUDDY_ACCOUNT_MESSAGE } from './climber-card-state.js';
-import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
-import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
+import { ownerClimberId } from '../profile/profile-backup-core.ts';
+import { favoriteClimbers as F } from './favorite-climbers.ts';
+import { observeClimberMembership, type ClimberMembershipState } from './climber-membership.ts';
+import { mutateIgnored } from './ignored-client.ts';
+import { climberCardTarget, climberCardState, climberProfileLists, SAVED_BUDDY_ACCOUNT_MESSAGE, type ClimberCardStateOptions } from './climber-card-state.ts';
+import { changeBuddy, applyBuddyProfileState } from './buddy-client.ts';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.ts';
 
 const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
@@ -31,7 +31,7 @@ const mount = () => {
     if (window !== window.top || document.getElementById('bpb-climber-card')) return;
     const records = new Map<Element, ClimberRecord>();
     const profileLists = new Map();
-    let current: ClimberRecord | null = null, membership: { error?: string; ignored?: unknown } | null = null, settings: unknown = null, settingsError = '';
+    let current: ClimberRecord | null = null, membership: ClimberMembershipState | null = null, settings: ClimberCardStateOptions['settings'] = null, settingsError = '';
     let observer: ReturnType<typeof observeClimberMembership> | null = null, unsubscribe: (() => void) | null = null, settingsGeneration = 0;
     let openTimer: ReturnType<typeof setTimeout> | undefined, closeTimer: ReturnType<typeof setTimeout> | undefined, positionFrame: number | null = null, mutationFrame: number | null = null;
     let hovered: ClimberRecord | null = null, suppressed: ClimberRecord | null = null, operation: CardOperation | null = null, readController: AbortController | null = null;
@@ -418,7 +418,7 @@ const mount = () => {
     };
     const subscribe = () => {
         observer = observeClimberMembership(chrome, (value: typeof membership) => { if (active) { membership = value; paint(); } });
-        unsubscribe = S.subscribe((value: unknown) => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
+        unsubscribe = S.subscribe((value: typeof S.DEFAULTS) => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
         void refreshSettings();
     };
     const stopReads = () => {

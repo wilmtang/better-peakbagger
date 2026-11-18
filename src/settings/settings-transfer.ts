@@ -4,7 +4,7 @@
 // Better Peakbagger — pure settings backup payload helpers.
 
 import { settingsSchema as Schema } from './settings-schema.ts';
-import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.js';
+import { imgbbClient as ImgbbClient } from '../photos/imgbb-client.ts';
 import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import { cleanGarminKey } from '../garmin/garmin-api.ts';
 import { readCustomLayerBackup, readPrivateLayerFile } from '../maps/custom-overlay-transfer.js';

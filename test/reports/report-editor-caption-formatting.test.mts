@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EDITOR_URL, loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-helpers.mjs';
 import type { LoadedPage } from '../helpers/load-page.mts';
-import { reportPhoto as Pending } from '../../src/photos/report-photo.js';
+import { reportPhoto as Pending } from '../../src/photos/report-photo.ts';
 
 const image = '[img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320" height="200"]';
 const figure = (caption: string) => `[figure]${image}[figcaption]${caption}[/figcaption][/figure]`;

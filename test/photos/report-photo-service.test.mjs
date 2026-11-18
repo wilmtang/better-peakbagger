@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { photoStore as Store } from '../../src/photos/photo-store.js';
-import { imgbbClient as Client } from '../../src/photos/imgbb-client.js';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
+import { photoStore as Store } from '../../src/photos/photo-store.ts';
+import { imgbbClient as Client } from '../../src/photos/imgbb-client.ts';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 import { createReportPhotoService, reportPhotoOwner } from '../../src/background/report-photo-service.js';
 
 const image = { width: 2, height: 1, dataUrl: 'data:image/png;base64,aW1hZ2U=', thumbnail: 'data:image/png;base64,dGh1bWI=' };

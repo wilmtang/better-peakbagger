@@ -13,7 +13,7 @@
 // source pane follows the extension's light/dark theme like every other
 // surface.
 
-import { instagramPasteUrl } from './instagram-url.js';
+import { instagramPasteUrl } from './instagram-url.ts';
 import { EditorState } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';

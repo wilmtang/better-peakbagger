@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
+import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { loadOptions, el, waitFor, favoriteKey, favoriteStore, registerCleanup } from '../helpers/options-helpers.mjs';
 

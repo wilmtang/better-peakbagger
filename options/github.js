@@ -11,12 +11,12 @@
 // github.com / api.github.com host permissions that the worker needs; the
 // ascent and TR backup setting controls only ascent-specific affordances and writes.
 
-import { githubError as GithubError } from '../src/github/github-error-copy.js';
-import { githubErrors as GithubErrors } from '../src/github/github-errors.js';
+import { githubError as GithubError } from '../src/github/github-error-copy.ts';
+import { githubErrors as GithubErrors } from '../src/github/github-errors.ts';
 import { dom as Dom } from '../src/ui/dom.ts';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
-import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.js';
+import { STORAGE_KEY as GITHUB_AUTH_STORAGE_KEY } from '../src/github/github-auth.ts';
 
 const { ERROR_CODES } = GithubErrors;
 

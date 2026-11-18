@@ -25,7 +25,7 @@
 // Idempotent: safe to inject more than once into the same global.
 
 
-import { instagramBlocks, instagramPasteUrl } from './instagram-url.js';
+import { instagramBlocks, instagramPasteUrl } from './instagram-url.ts';
 
 // The allowlisted AST. Node kinds share one shape because the converters walk
 // them generically; each reader knows which fields its `t` or `type` carries.

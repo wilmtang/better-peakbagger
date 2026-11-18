@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.js';
+import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.ts';
 
 const buddyFixture = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
 const climberFixture = await readFile(new URL('../fixtures/pages/climber-home.html', import.meta.url), 'utf8');

@@ -665,7 +665,7 @@ and never leaves the browser profile. It is not synced to another browser or
 device and is not sent to Peakbagger, GitHub, or the extension developer.
 
 `src/reports/report-editor.ts` owns persistence and recovery. The pure
-`src/reports/report-drafts.js` module is the shared identity, expiry, and limit contract
+`src/reports/report-drafts.ts` module is the shared identity, expiry, and limit contract
 used by the editor and the manager in `options/drafts.js`.
 
 ### Identity: one key per climber and form target
@@ -1214,7 +1214,7 @@ loading still requires **Load post** or this device's automatic-load
 consent. No link/image toolbar tool or Instagram API key is required.
 
 The shared URL/label/standalone-line rules live in
-[instagram-url.js](../src/reports/instagram-url.js), with regression examples in
+[instagram-url.ts](../src/reports/instagram-url.ts), with regression examples in
 [instagram-url.test.mjs](../test/reports/instagram-url.test.mjs) and the native
 reader case in [report-security.test.mts](../test/reports/report-security.test.mts).
 

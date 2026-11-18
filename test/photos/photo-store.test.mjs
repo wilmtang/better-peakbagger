@@ -4,10 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
-import { photoStore as Store } from '../../src/photos/photo-store.js';
-import { photoBackup as Backup } from '../../src/photos/photo-backup.js';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { photoStore as Store } from '../../src/photos/photo-store.ts';
+import { photoBackup as Backup } from '../../src/photos/photo-backup.ts';
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';

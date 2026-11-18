@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import * as I from '../src/favorites/ignored-climbers.js';
-import { observeIgnored, mutateIgnored } from '../src/favorites/ignored-client.js';
-import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
+import * as I from '../src/favorites/ignored-climbers.ts';
+import { observeIgnored, mutateIgnored } from '../src/favorites/ignored-client.ts';
+import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.ts';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.ts';
 import { isPeakbaggerUrl } from '../src/peakbagger/peakbagger-origin.ts';
 import { peakbaggerError } from '../src/peakbagger/peakbagger-error.ts';

@@ -14,8 +14,8 @@
 // itself from the resulting storage change.
 
 import { createBackupReview } from './backup-review.js';
-import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
-import { githubError as GithubError } from '../src/github/github-error-copy.js';
+import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.ts';
+import { githubError as GithubError } from '../src/github/github-error-copy.ts';
 import { STORAGE_KEY as SETTINGS_STORAGE_KEY } from '../src/settings/settings.ts';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { hasGithubPermission, observeGithubAccess } from './github.js';

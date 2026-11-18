@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import * as I from '../favorites/ignored-climbers.js';
-import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
+import * as I from '../favorites/ignored-climbers.ts';
+import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.ts';
 
 // Both lists, including sync reconciliation, share one short storage lane.
 // A check in a separate queue could let concurrent favorite/ignore adds win.

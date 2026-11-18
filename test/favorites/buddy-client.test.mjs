@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { changeBuddy, readBuddyProfile } from '../../src/favorites/buddy-client.js';
-import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.js';
+import { changeBuddy, readBuddyProfile } from '../../src/favorites/buddy-client.ts';
+import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.ts';
 import { makeChromeStub } from '../helpers/load-page.mts';
 
 const html = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');

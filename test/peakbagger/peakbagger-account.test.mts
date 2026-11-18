@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { ownerClimberId } from '../../src/profile/profile-backup-core.js';
+import { ownerClimberId } from '../../src/profile/profile-backup-core.ts';
 import { decodeHtmlEntities, peakbaggerAccount } from '../../src/peakbagger/peakbagger-account.ts';
 
 test('account readers do not depend on iterating Firefox Xray URLSearchParams', () => {

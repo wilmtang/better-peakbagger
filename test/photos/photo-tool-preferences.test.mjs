@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoToolPreferences as Preferences } from '../../src/photos/photo-tool-preferences.js';
+import { photoToolPreferences as Preferences } from '../../src/photos/photo-tool-preferences.ts';
 
 test('stored tool preferences reject corrupt fields and ignore annotation content', () => {
     assert.deepEqual(Preferences.clean('route', {

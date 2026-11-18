@@ -160,7 +160,7 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.ts` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
-| Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
+| Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.ts`, `src/photos/photo-renderer.ts`, `src/photos/photo-library.ts`, `src/photos/photo-store.ts`, `src/photos/photo-archive.ts` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.ts` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. 3D keeps the last page pixels for an immediate return, and discards them if the camera moved off them. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.ts`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
@@ -175,15 +175,15 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-lifecycle.js`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.ts`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
-| Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
-| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
+| Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.ts` | Isolated-world filter/sort and owner-only backup pipeline |
+| Favorite climbers | `src/favorites/favorite-climbers.ts`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.ts`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
-| Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
+| Report-draft manager | `src/reports/report-drafts.ts`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, `src/peakbagger/peakbagger-error.ts`, `src/peakbagger/peakbagger-cloudflare.ts`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
-| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.ts`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
-| ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
+| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.ts`, `src/github/github-errors.ts`, `src/github/github-api.ts`, `src/github/github-auth.ts`, `src/github/github-client.ts`, `src/github/github-write-queue.ts`, `src/github/github-backup.ts`, `src/photos/photo-backup.ts`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
+| ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.ts`, `src/photos/imgbb-client.ts`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
 | Manual settings transfer | `src/settings/settings-transfer.ts`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
 
 Extend the owning surface rather than publishing cross-feature globals. Two
@@ -770,7 +770,7 @@ Peakbagger's submitted `JournalText`. Conversions pass through the allowlisted
 model in `src/reports/report-markup.ts`; the active view flushes before Preview,
 Save, postback, page exit, or feature disablement. Final Save remains native.
 
-`src/reports/report-drafts.js` defines bounded, expiring recovery identities.
+`src/reports/report-drafts.ts` defines bounded, expiring recovery identities.
 The editor and `options/drafts.js` share that contract; restoration is explicit.
 The worker serializes generation-checked mutations and retains recovery data
 until `src/ascent/ascent-saved.js` confirms a matching pending Save intent.
@@ -778,7 +778,7 @@ until `src/ascent/ascent-saved.js` confirms a matching pending Save intent.
 See [trip-report-editor.md](trip-report-editor.md) for conversion paths,
 sanitization, lossy-import protection, media restrictions, and draft lifecycle.
 
-`src/reports/instagram-url.js` validates post identity without a network or DOM
+`src/reports/instagram-url.ts` validates post identity without a network or DOM
 parser. The AST stores ordinary links; `instagram-ui.js` enhances only standalone
 post links in Rich/Markdown previews and saved-ascent readers. Its device-local,
 default-off preference never crosses the page-world settings bridge. Loading
@@ -798,7 +798,7 @@ retain the provider's own origin; they do not make it same-origin with its paren
 The captioned provider endpoint keeps author text inside the sandbox. The wrapper
 accepts only a numeric `MEASURE` message from its actual child WindowProxy
 **and** the exact `https://www.instagram.com` origin. Opaque/null and other origins
-are rejected. `src/reports/instagram-sizing.js` bounds
+are rejected. `src/reports/instagram-sizing.ts` bounds
 that height to 320–1,600 pixels at both frame boundaries. Completion waits for the
 first valid measurement, with a one-second post-load fallback to a scrolling
 viewport; the report expands once and ignores later resizing. Pending content is
@@ -832,7 +832,7 @@ overwrite each other and leave the cached visible width at zero, enabling an
 extra whole-slide step. Fixing BPB's width removes that trigger without needing
 Instagram permission or changing Instagram's controls.
 
-`src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
+`src/reports/report-protection.tson` installs Chrome's saved-ascent response CSP
 before parsing. Firefox uses the synchronous `report-protection-firefox.js`
 header listener with the shared policy because its DNR implementation lacks the
 Cloudflare response-header exclusion. Existing site CSP is preserved. A separate
@@ -858,9 +858,9 @@ tab, and expiry; only a validated HTTPS image result may return. A failed
 insertion does not undo a successful upload.
 
 `photos/photos.ts` owns UI orchestration; the pure project and renderer modules
-own annotation validation and metadata-free export; `src/photos/photo-store.js`
+own annotation validation and metadata-free export; `src/photos/photo-store.ts`
 owns IndexedDB pixels, projects, revisions, upload journals, and tombstones.
-The pure `src/photos/photo-url.js` owns bounded HTTPS URL validation, reused
+The pure `src/photos/photo-url.ts` owns bounded HTTPS URL validation, reused
 independently by upload responses, catalog entries, and stored delete secrets.
 Replacement waits for outgoing saves, and concurrent writes compare revisions.
 Published edits create new versions. Report display size never resizes the
@@ -1207,16 +1207,16 @@ below remains independent of ignored membership.
 
 | Module | Boundary and responsibility |
 | --- | --- |
-| `src/favorites/ignored-climbers.js` | Pure schema, exact HTTPS profile identity, bounded backup parser/serializer, visibility arithmetic and three-way merge with absence as a deletion |
+| `src/favorites/ignored-climbers.ts` | Pure schema, exact HTTPS profile identity, bounded backup parser/serializer, visibility arithmetic and three-way merge with absence as a deletion |
 | `src/background/ignored-store.js` | Sole ignored-list writer; one mutation lane for idempotent entry operations, revision/signature-guarded replacements and atomic sync reconciliation |
-| `src/favorites/ignored-client.js` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
-| `src/favorites/favorite-source.js` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
-| `src/favorites/climber-ignore.js`, `options/ignored.js` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
-| `src/favorites/climber-card-state.js`, `src/favorites/climber-hover-card.ts` | Pure link identity/membership presenter and top-level isolated name-link card; worker Favorite/Ignore operations, authenticated Buddy absence check before Ignore, and explicit inline Buddy actions |
-| `src/favorites/buddy-client.js`, `src/favorites/buddy-state.js` | Exact owner/target/native-form validation, narrowly scoped Buddy POST, uncached confirmation and bounded intent schema; status recovery never repeats a POST |
+| `src/favorites/ignored-client.ts` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
+| `src/favorites/favorite-source.ts` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
+| `src/favorites/climber-ignore.ts`, `options/ignored.js` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
+| `src/favorites/climber-card-state.ts`, `src/favorites/climber-hover-card.ts` | Pure link identity/membership presenter and top-level isolated name-link card; worker Favorite/Ignore operations, authenticated Buddy absence check before Ignore, and explicit inline Buddy actions |
+| `src/favorites/buddy-client.ts`, `src/favorites/buddy-state.ts` | Exact owner/target/native-form validation, narrowly scoped Buddy POST, uncached confirmation and bounded intent schema; status recovery never repeats a POST |
 | `src/background/buddy-store.js` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
-| `src/favorites/buddy-cache.js`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
-| `src/favorites/report-adapters.js`, `src/favorites/peak-report-filter.js` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
+| `src/favorites/buddy-cache.ts`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
+| `src/favorites/report-adapters.ts`, `src/favorites/peak-report-filter.ts` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.ts` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
 | `src/background/climber-list-sync.js` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
@@ -1283,15 +1283,15 @@ sync must never acquire the third-party names stored in either local dataset.
 
 | Module or surface | Runtime boundary | Owns | Does not own |
 | --- | --- | --- | --- |
-| `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
+| `src/favorites/favorite-climbers.ts` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.ts` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
 | `src/favorites/climber-favorite.ts` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` (on `options/favorites.html`) | Standalone list page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, and reversible bulk actions including the mirror confirm/undo | Direct custom-list persistence, GitHub token access, or repository writes |
 | `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
-| `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
+| `src/profile/profile-backup-core.ts` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, and `src/peakbagger/peakbagger-error.ts` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
 | `src/background/favorites-store.js` and `src/background/background.ts` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
-| `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/github-routes.js`, `src/github/github-write-queue.ts`, and `src/github/github-client.ts` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.js` owns list management on its own page,
 `options/favorites.html`; the Settings **Climber lists** subsection comes first
@@ -1385,7 +1385,7 @@ effective mode, opt the entry into removal synchronization, or make it part of
 the live Buddy cache. The global removal preference controls confirmed native
 Buddy removals regardless of an individual favorite's provenance.
 
-Every reader cleans data through `src/favorites/favorite-climbers.js` before use. Climber
+Every reader cleans data through `src/favorites/favorite-climbers.ts` before use. Climber
 ids must be positive safe integers. Names replace non-breaking spaces, collapse
 whitespace, trim, and retain at most 200 UTF-16 code units. Added-at values must
 be finite and non-negative, and custom provenance must be exactly `manual` or
@@ -1647,7 +1647,7 @@ sync.
 ### GitHub transfer and privacy boundary
 
 Custom favorites stay in local storage. The manager now provides bounded,
-kind-checked JSON export/import through `src/favorites/climber-files.js` and
+kind-checked JSON export/import through `src/favorites/climber-files.ts` and
 `options/climber-files.js`; ignored climbers have a separate file. Imports
 preview replacement counts, then use the existing worker signature/revision
 checks and list membership policy. Concurrent local changes require a new

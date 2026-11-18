@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
+import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.ts';
 import { climberListLane } from './climber-list-policy.js';
 import { storageValue } from '../storage/storage-value.ts';
 

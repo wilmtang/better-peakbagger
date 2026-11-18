@@ -8,7 +8,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.js';
+import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.ts';
 
 // A commit recorder whose window is a promise the test resolves by hand, so a
 // batch stays open exactly as long as the test wants it to.

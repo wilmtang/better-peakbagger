@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createBuddyStore } from '../../src/background/buddy-store.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.js';
-import * as I from '../../src/favorites/ignored-climbers.js';
+import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.ts';
+import * as I from '../../src/favorites/ignored-climbers.ts';
 
 const entry = { cid: 900002, name: 'Casey Alpine', addedAt: 1 };
 const begin = { phase: 'begin', ownerCid: 900001, cid: entry.cid, name: entry.name, action: 'add' };

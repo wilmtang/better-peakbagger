@@ -4,8 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
-import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.js';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
+import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.ts';
 
 const HASH = 'a'.repeat(64);
 const TIME = '2026-07-27T18:00:00.000Z';

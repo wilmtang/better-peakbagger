@@ -1,0 +1,79 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { profileId } from './ignored-climbers.ts';
+import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.ts';
+
+export interface SelectedReportRecord {
+    row: HTMLTableRowElement;
+    climberId: number | null;
+}
+
+export interface SelectedReportTable {
+    table: HTMLTableElement;
+    records: SelectedReportRecord[];
+}
+
+export interface AscentReportSurface {
+    cid: number;
+    cell: HTMLTableCellElement;
+    row: HTMLTableRowElement;
+    heading: HTMLHeadingElement;
+}
+
+const text = (element: Element | null | undefined): string => (element?.textContent || '').replace(/\s+/g, ' ').trim();
+export const authorInCell = (cell: Element): number | null => {
+    const links = [...cell.querySelectorAll<HTMLAnchorElement>('a[href]')];
+    if (links.length !== 1) return null;
+    return profileId(links[0].href, cell.ownerDocument.baseURI);
+};
+export const selectedReportTable = (doc: Document): SelectedReportTable | null => {
+    const candidates = [...doc.querySelectorAll<HTMLTableElement>('table.gray')].filter(table => {
+        const headers = [...(table.rows[0]?.cells || [])].map(text);
+        if (headers.join('|').toLowerCase() !== 'date|climber|type|gps|tr words|link') return false;
+        const region = table.parentElement;
+        if (!region) return false;
+        // Only direct section text counts; descendant tables/neighboring
+        // photos cannot lend this table a Selected Trip Reports identity.
+        const section = [...region.childNodes].filter(node => node !== table && node.nodeName !== 'TABLE')
+            .map(node => node.textContent).join(' ');
+        return region.tagName === 'TD' && /\bAscent Info\b/i.test(section)
+            && /\bSelected Trip Reports\b/i.test(section);
+    });
+    if (candidates.length !== 1) return null;
+    const table = candidates[0];
+    const records: SelectedReportRecord[] = [];
+    for (const row of [...table.rows].slice(1)) {
+        if (row.cells.length !== 6) return null;
+        const links = [...row.cells[0].querySelectorAll<HTMLAnchorElement>('a[href]')];
+        if (links.length !== 1) return null;
+        try {
+            const url = new URL(links[0].href, doc.baseURI);
+            if (!isPeakbaggerUrl(url.href) || !/^\/climber\/ascent\.aspx$/i.test(url.pathname)
+                || !/^\d+$/.test(url.searchParams.get('aid') || '')) return null;
+        } catch { return null; }
+        records.push({ row, climberId: authorInCell(row.cells[1]) });
+    }
+    return { table, records };
+};
+
+// Validated against a read-only authenticated page on 2026-10-01. The author
+// h2 and report h2 are siblings of the same ascent surface. Navigation and
+// links inside report prose are deliberately never author candidates.
+export const ascentReport = (doc: Document): AscentReportSurface | null => {
+    const authors = [...doc.querySelectorAll('h2')].filter(h => /^Climber:\s*/i.test(text(h)));
+    const headings = [...doc.querySelectorAll('h2')].filter(h => text(h) === 'Ascent Trip Report');
+    if (authors.length !== 1 || headings.length !== 1) return null;
+    const cid = authorInCell(authors[0]);
+    const cell = headings[0].closest('td');
+    const parent = cell?.parentElement;
+    const row = parent?.tagName === 'TR' ? parent as HTMLTableRowElement : null;
+    const table = cell?.closest('table.gray');
+    const surface = table?.closest('#bpb-ascent-table-split')?.parentElement ?? table?.parentElement;
+    if (!cid || !cell || !row || !table || !surface || row.cells.length !== 1 || Number(cell.getAttribute('colspan')) !== 2
+        || cell.firstElementChild !== headings[0]
+        || !surface.contains(authors[0])
+        || cell.querySelector('iframe#Gmap,iframe#MasterMap,form,input,button:not([data-bpb-climber-ui]):not([data-bpb-report-media-ui])')) return null;
+    const content = text(cell).replace(/^Ascent Trip Report\s*/, '');
+    if (!content && !cell.querySelector('img,video,audio,iframe')) return null;
+    return { cid, cell, row, heading: headings[0] };
+};

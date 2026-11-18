@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import JSZip from 'jszip';
-import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
+import { photoArchive as Archive } from '../../src/photos/photo-archive.ts';
 
 test('builds a CSP-safe project archive with the original and JSON sidecars', async () => {
     const project = { schemaVersion: 1, localId: 'photo-1' };

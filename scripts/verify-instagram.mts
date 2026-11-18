@@ -15,7 +15,7 @@ import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
 import { readSettingsFragmentLanding, settingsFragmentLanded } from './settings-fragment-verification.mjs';
-import { canonicalInstagramUrl } from '../src/reports/instagram-url.js';
+import { canonicalInstagramUrl } from '../src/reports/instagram-url.ts';
 import { verifyReportImageHelp } from './verify-report-image-help.mjs';
 import { createVerificationRoot } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';

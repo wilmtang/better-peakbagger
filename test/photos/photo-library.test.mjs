@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { canonicalInstagramUrl } from '../reports/instagram-url.js';
+import { canonicalInstagramUrl } from '../reports/instagram-url.ts';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 
 const KEY='bpbInstagramFrameGrants';

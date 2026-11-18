@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
+import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
 import * as helpers from '../helpers/options-helpers.mjs';
 
 import type { ChromeStub, LoadPage, PageDom, PageElement, StubMessage, WaitFor } from '../helpers/page-types.mts';

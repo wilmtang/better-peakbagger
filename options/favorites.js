@@ -3,12 +3,12 @@
 //
 // Better Peakbagger — Favorite climbers settings manager.
 
-import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
-import { beginBuddyCacheRead, publishBuddyCache } from '../src/favorites/buddy-cache.js';
+import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.ts';
+import { beginBuddyCacheRead, publishBuddyCache } from '../src/favorites/buddy-cache.ts';
 import { peakbaggerError as PeakbaggerError } from '../src/peakbagger/peakbagger-error.ts';
 import { isPeakbaggerPageOrigin, PEAKBAGGER_HOSTS, PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.ts';
 import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.ts';
-import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.js';
+import { numericParam, ownerClimberId } from '../src/profile/profile-backup-core.ts';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 

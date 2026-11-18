@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoReportSize as ReportSize } from '../../src/photos/photo-report-size.js';
+import { photoReportSize as ReportSize } from '../../src/photos/photo-report-size.ts';
 
 test('the report size choices have one readable default and an unsized Original', () => {
     assert.deepEqual(ReportSize.CHOICES, [

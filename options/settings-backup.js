@@ -6,7 +6,7 @@
 import { createBackupReview } from './backup-review.js';
 import { settings as S } from '../src/settings/settings.ts';
 import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.ts';
-import { githubError as GithubError } from '../src/github/github-error-copy.js';
+import { githubError as GithubError } from '../src/github/github-error-copy.ts';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { boundedText as BoundedText } from '../src/net/bounded-text.ts';
 import { GITHUB_ORIGINS, hasGithubPermission, observeGithubAccess } from './github.js';

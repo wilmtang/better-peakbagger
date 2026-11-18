@@ -22,8 +22,8 @@ import {
     IDBTransaction,
 } from 'fake-indexeddb';
 import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mts';
-import { photoLibrary as Library } from '../../../src/photos/photo-library.js';
-import { photoStore as Store } from '../../../src/photos/photo-store.js';
+import { photoLibrary as Library } from '../../../src/photos/photo-library.ts';
+import { photoStore as Store } from '../../../src/photos/photo-store.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');

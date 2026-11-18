@@ -1,21 +1,21 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { guardRootBackup } from '../github/root-backup-guard.js';
+import { guardRootBackup } from '../github/root-backup-guard.ts';
 import { createClimberListSync } from './climber-list-sync.js';
-import * as Ignored from '../favorites/ignored-climbers.js';
+import * as Ignored from '../favorites/ignored-climbers.ts';
 import { createIgnoredStore } from './ignored-store.js';
 import { settings as Settings } from '../settings/settings.ts';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.ts';
 import { customLayerBackup } from '../maps/custom-overlay-transfer.js';
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY } from '../maps/custom-overlay-schema.js';
-import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.js';
-import { photoBackup as PhotoBackup } from '../photos/photo-backup.js';
-import { photoStore as PhotoStore } from '../photos/photo-store.js';
-import { githubAuth as GithubAuth } from '../github/github-auth.js';
-import { githubClient as GithubClient } from '../github/github-client.js';
-import { githubErrors as GithubErrors } from '../github/github-errors.js';
-import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.js';
+import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.ts';
+import { photoBackup as PhotoBackup } from '../photos/photo-backup.ts';
+import { photoStore as PhotoStore } from '../photos/photo-store.ts';
+import { githubAuth as GithubAuth } from '../github/github-auth.ts';
+import { githubClient as GithubClient } from '../github/github-client.ts';
+import { githubErrors as GithubErrors } from '../github/github-errors.ts';
+import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.ts';
 import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { trustedActions as TrustedActions } from './trusted-actions.js';

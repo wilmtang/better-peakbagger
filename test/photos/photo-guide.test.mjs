@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
 
 const html = await fs.readFile(new URL('../../photos/guide.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/guide.js', import.meta.url), 'utf8');

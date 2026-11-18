@@ -14,7 +14,7 @@
 //
 // src/settings/settings.js owns storage access and layers it on top of this module.
 
-import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.js';
+import { photoToolPreferences as ToolPreferences } from '../photos/photo-tool-preferences.ts';
 import { customOverlaySchema } from '../maps/custom-overlay-schema.js';
 
 // Stored and bridged values are untrusted until they pass through this schema.

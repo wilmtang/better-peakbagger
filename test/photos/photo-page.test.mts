@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import { fixtureDom } from '../helpers/page-dom.mts';
 import { marked } from 'marked';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
 
 const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
@@ -53,15 +53,15 @@ test('the packaged photo page exposes the editor, library, and credential bounda
     assert.deepEqual(entry?.sources, [
         'settings/settings-schema.ts',
         'settings/settings.ts',
-        'photos/photo-project.js',
-        'photos/photo-renderer.js',
-        'photos/photo-library.js',
-        'photos/photo-store.js',
-        'photos/photo-archive.js',
-        'photos/imgbb-client.js',
-        'photos/photo-report-size.js',
-        'photos/photo-upload-transaction.js',
-        'photos/report-photo.js',
+        'photos/photo-project.ts',
+        'photos/photo-renderer.ts',
+        'photos/photo-library.ts',
+        'photos/photo-store.ts',
+        'photos/photo-archive.ts',
+        'photos/imgbb-client.ts',
+        'photos/photo-report-size.ts',
+        'photos/photo-upload-transaction.ts',
+        'photos/report-photo.ts',
         'photos-main.js',
     ]);
     assert.ok(COPY_FILES.some(([from, to]) =>

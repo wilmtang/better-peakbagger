@@ -3,9 +3,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoBackup as Backup } from '../../src/photos/photo-backup.js';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
-import { photoProject as Project } from '../../src/photos/photo-project.js';
+import { photoBackup as Backup } from '../../src/photos/photo-backup.ts';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';

@@ -5,16 +5,16 @@
 
 import { settings as S } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { favoriteClimbers as F } from './favorite-climbers.js';
+import { favoriteClimbers as F } from './favorite-climbers.ts';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
-import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
-import { observeClimberMembership } from './climber-membership.js';
-import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
-import { climberProfileFeedback } from './climber-profile-feedback.js';
-import { reserveBuddyPresentation } from './buddy-presentation.js';
-import { buddyIntentState } from './climber-card-state.js';
-import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
+import { numericParam, ownerClimberId } from '../profile/profile-backup-core.ts';
+import { observeClimberMembership, type ClimberMembershipState } from './climber-membership.ts';
+import { changeBuddy, applyBuddyProfileState } from './buddy-client.ts';
+import { climberProfileFeedback } from './climber-profile-feedback.ts';
+import { reserveBuddyPresentation } from './buddy-presentation.ts';
+import { buddyIntentState } from './climber-card-state.ts';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.ts';
 
 const fetchDocument = fetchPeakbaggerDocument as unknown as (
     url: string | null,
@@ -40,13 +40,7 @@ interface BuddyIntentEntry {
     leaseUntil: number;
 }
 
-interface MembershipState {
-    favorites?: FavoritesList;
-    ignored?: { entries: { cid: number }[] };
-    buddyIntents?: BuddyIntentEntry[];
-    blockedIds: Set<number>;
-    error: string;
-}
+type MembershipState = ClimberMembershipState;
 
 interface PendingBuddyMutation {
     action: 'add' | 'remove';
@@ -103,7 +97,7 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
         const view = buddyLock();
         return view.buddyInFlight || view.buddyCheckBlocked;
     };
-    const additionBlocked = () => ignoreSaving() || !membership?.ignored || !!membership.error || membership.blockedIds.has(pageCid);
+    const additionBlocked = () => ignoreSaving() || !membership?.ignored || !!membership.error || !!membership.blockedIds?.has(pageCid);
     const blockedReason = () => ignoreSaving()
         ? 'Saving ignored climbers…'
         : membership?.error || (!membership?.ignored

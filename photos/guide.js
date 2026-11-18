@@ -7,7 +7,7 @@
 // the symbol a climber is taught here is the same one the export paints. The
 // rest of the guide is static markup; only the glyphs come from code.
 
-import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
+import { photoRenderer as Renderer } from '../src/photos/photo-renderer.ts';
 import { initSectionNav } from '../src/ui/section-nav.ts';
 
 for (const slot of document.querySelectorAll('[data-symbol]')) {

@@ -13,8 +13,8 @@ import {
     githubAuth as Auth,
     STORAGE_KEY,
     EPOCH_KEY,
-} from '../../src/github/github-auth.js';
-import { githubErrors as GithubErrors } from '../../src/github/github-errors.js';
+} from '../../src/github/github-auth.ts';
+import { githubErrors as GithubErrors } from '../../src/github/github-errors.ts';
 
 const { ERROR_CODES } = GithubErrors;
 

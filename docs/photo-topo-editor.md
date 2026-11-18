@@ -271,7 +271,7 @@ The boundaries are deliberate:
 
 ## Editor and project model
 
-`src/photos/photo-project.js` owns the versioned, pure project schema. A project
+`src/photos/photo-project.ts` owns the versioned, pure project schema. A project
 records source dimensions and SHA-256 identity, export format, viewport state,
 and an ordered list of annotation objects. Supported objects are:
 
@@ -311,7 +311,7 @@ regions remain browser Undo/Redo. Annotation deletion, undo/redo, and nudging
 consume the key only when the corresponding editor action is available, and
 leaving the Editor ends any coalesced gesture.
 
-`src/photos/photo-renderer.js` is the export boundary. It serializes a clean SVG
+`src/photos/photo-renderer.ts` is the export boundary. It serializes a clean SVG
 representation, decodes that into Canvas, and exports a newly encoded image.
 Opacity rides on each object's own group, which dims a route's referenced
 arrowhead marker and a label's contrast plate along with the mark;
@@ -348,7 +348,7 @@ warning updates live with the setting and is not an upload gate; ImgBB still
 decides the account's actual size limit.
 
 The explicit **Download project** action first warns that the original file and
-any metadata it contains will leave browser storage. `src/photos/photo-archive.js`
+any metadata it contains will leave browser storage. `src/photos/photo-archive.ts`
 writes the original plus `project.json` and `photo.json` as a bounded,
 uncompressed ZIP32 archive. It is a small CSP-safe writer; no runtime
 compression library or dynamic code-generation shim enters the extension
@@ -392,7 +392,7 @@ the current version does not reveal its superseded history.
 ## Local IndexedDB ownership
 
 The `betterPeakbaggerPhotos` database is versioned independently from
-`storage.sync` and `storage.local`. `src/photos/photo-store.js` owns these
+`storage.sync` and `storage.local`. `src/photos/photo-store.ts` owns these
 stores:
 
 | Store | Contents | Backup eligibility |
@@ -460,7 +460,7 @@ extension's identically-pathed page. `PHOTO_IMGBB_STATUS` answers only whether
 a key exists; `PHOTO_IMGBB_LEASE_KEY` provides the value only to that photo
 page immediately before its direct upload.
 
-`src/photos/imgbb-client.js` uses `POST` with `multipart/form-data`, a binary
+`src/photos/imgbb-client.ts` uses `POST` with `multipart/form-data`, a binary
 `image` part, and the optional name. It requires:
 
 - a nonempty valid key;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { instagramEmbedHeight } from '../../src/reports/instagram-sizing.js';
+import { instagramEmbedHeight } from '../../src/reports/instagram-sizing.ts';
 
 test('only finite positive numeric provider sizes can influence the embed height',()=>{
     for(const value of [undefined,null,'640','640px',{},[],0,-1,NaN,Infinity,-Infinity])assert.equal(instagramEmbedHeight(value),null);

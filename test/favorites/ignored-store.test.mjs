@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as I from '../../src/favorites/ignored-climbers.js';
+import * as I from '../../src/favorites/ignored-climbers.ts';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { observeIgnored } from '../../src/favorites/ignored-client.js';
+import { observeIgnored } from '../../src/favorites/ignored-client.ts';
 const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: cid });
 const harness = () => {
     const values = {};

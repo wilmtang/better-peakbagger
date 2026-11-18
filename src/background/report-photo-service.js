@@ -1,12 +1,12 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { photoStore as Store } from '../photos/photo-store.js';
-import { photoLibrary as Library } from '../photos/photo-library.js';
-import { photoProject as Project } from '../photos/photo-project.js';
-import { reportPhoto as Pending } from '../photos/report-photo.js';
-import { imgbbClient as Client } from '../photos/imgbb-client.js';
-import { reportDrafts as Drafts } from '../reports/report-drafts.js';
+import { photoStore as Store } from '../photos/photo-store.ts';
+import { photoLibrary as Library } from '../photos/photo-library.ts';
+import { photoProject as Project } from '../photos/photo-project.ts';
+import { reportPhoto as Pending } from '../photos/report-photo.ts';
+import { imgbbClient as Client } from '../photos/imgbb-client.ts';
+import { reportDrafts as Drafts } from '../reports/report-drafts.ts';
 
 export const reportPhotoOwner = source => {
     try {

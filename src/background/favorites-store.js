@@ -8,7 +8,7 @@
 // worker. Operation-style changes compose against the latest stored value;
 // destructive replacements require the signature the user reviewed.
 
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
 import { climberListLane, assertFavoriteMembership } from './climber-list-policy.js';
 
 const publicError = (code, message) => ({ code, message });

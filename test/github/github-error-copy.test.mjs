@@ -3,8 +3,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubError as GithubError } from '../../src/github/github-error-copy.js';
-import { githubErrors as GithubErrors } from '../../src/github/github-errors.js';
+import { githubError as GithubError } from '../../src/github/github-error-copy.ts';
+import { githubErrors as GithubErrors } from '../../src/github/github-errors.ts';
 
 test('every typed GitHub auth and backup failure has specific user-facing copy', () => {
     const codes = new Set([

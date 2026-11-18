@@ -3,8 +3,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
-import { photoUploadTransaction as Transaction } from '../../src/photos/photo-upload-transaction.js';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { photoUploadTransaction as Transaction } from '../../src/photos/photo-upload-transaction.ts';
 
 const NOW = '2026-07-30T12:00:00.000Z';
 const LATER = '2026-07-30T12:01:00.000Z';

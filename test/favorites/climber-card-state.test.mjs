@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { climberCardTarget, climberCardState } from '../../src/favorites/climber-card-state.js';
+import { climberCardTarget, climberCardState } from '../../src/favorites/climber-card-state.ts';
 
 const cid = 900002, ownerCid = 900001;
 const entry = { cid, name: 'Casey Alpine', addedAt: 1, source: 'manual' };

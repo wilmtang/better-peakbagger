@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createInstagramDisplayRegistration, INSTAGRAM_DISPLAY_ID } from '../../src/reports/instagram-display-registration.js';
+import { createInstagramDisplayRegistration, INSTAGRAM_DISPLAY_ID } from '../../src/reports/instagram-display-registration.ts';
 test('Instagram display registration is serialized, grant-dependent and removable without requesting access',async()=>{
     let allowed=false,registered=[],requests=0;const changes=[],notified=[];
     const api={permissions:{contains:async()=>allowed,request:()=>{requests++;},onAdded:{addListener:fn=>changes.push(fn)},onRemoved:{addListener:fn=>changes.push(fn)}},

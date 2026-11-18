@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { imgbbClient as Client } from '../../src/photos/imgbb-client.js';
+import { imgbbClient as Client } from '../../src/photos/imgbb-client.ts';
 
 const KEY = 'secret-imgbb-key';
 const successPayload = (overrides = {}) => ({

@@ -3,7 +3,7 @@
 //
 // Worker-owned confirmation boundary for local trip-report drafts.
 
-import { reportDrafts as ReportDrafts } from '../reports/report-drafts.js';
+import { reportDrafts as ReportDrafts } from '../reports/report-drafts.ts';
 
 const PENDING_KEY = 'bpbPendingReportDraftSaves';
 const TTL_MS = 30 * 60 * 1000;

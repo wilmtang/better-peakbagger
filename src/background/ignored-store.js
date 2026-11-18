@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import * as I from '../favorites/ignored-climbers.js';
+import * as I from '../favorites/ignored-climbers.ts';
 import { climberListLane, assertIgnoredMembership } from './climber-list-policy.js';
 
 const failure = (code, message) => ({ ok: false, error: { code, message } });

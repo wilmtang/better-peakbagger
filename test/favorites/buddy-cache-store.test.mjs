@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.js';
 import { createBuddyStore } from '../../src/background/buddy-store.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { BUDDY_CACHE_EPOCH_KEY } from '../../src/favorites/buddy-cache.js';
+import { BUDDY_CACHE_EPOCH_KEY } from '../../src/favorites/buddy-cache.ts';
 
 const target = { cid: 3, name: 'New Buddy' };
 const cache = (entries, fetchedAt = 1) => ({ ownerCid: 1, entries, fetchedAt });

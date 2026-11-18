@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.js';
+import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.ts';
 
 const editFixture = await readFile(new URL('../fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
 const items = [1, 2, 3].map(aid => ({

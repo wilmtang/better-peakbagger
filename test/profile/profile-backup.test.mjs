@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { evalBundle, fireTrustedEvent, loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
-import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.js';
+import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.ts';
 
 const PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999';
 const YEAR_PAGE_URL = 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&y=2024';

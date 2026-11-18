@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanPhotoUrl, PHOTO_URL_LIMIT } from '../../src/photos/photo-url.js';
+import { cleanPhotoUrl, PHOTO_URL_LIMIT } from '../../src/photos/photo-url.ts';
 
 test('photo URL boundaries normalize HTTPS and reject credentials, other schemes, and oversized input', () => {
     assert.equal(cleanPhotoUrl('https://EXAMPLE.org:443/photo.png'), 'https://example.org/photo.png');

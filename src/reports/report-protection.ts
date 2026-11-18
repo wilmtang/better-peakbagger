@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { protectedReportDocument } from './report-security-policy.ts';
-import { createInstagramPresentation } from './instagram-ui.js';
+import { createInstagramPresentation } from './instagram-ui.ts';
 import { reportMarkup } from './report-markup.ts';
 import { inspectReportScripts } from './report-script-source.ts';
 import { createScriptNotice } from './report-script-notice.ts';

@@ -23,14 +23,14 @@
 // therefore keep the local recovery copy.
 
 import { installReportLocalPhotos } from './report-local-photos.ts';
-import { createInstagramPresentation } from './instagram-ui.js';
+import { createInstagramPresentation } from './instagram-ui.ts';
 import { createStableText } from '../ui/stable-text.ts';
-import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.ts';
 import { settings as Settings } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { reportMarkup as Markup } from './report-markup.ts';
 import type { ConversionDiagnostic } from './report-markup.ts';
-import { reportDrafts as ReportDrafts } from './report-drafts.js';
+import { reportDrafts as ReportDrafts } from './report-drafts.ts';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.ts';
 import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';

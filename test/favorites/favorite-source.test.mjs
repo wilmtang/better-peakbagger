@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createFavoriteSource } from '../../src/favorites/favorite-source.js';
+import { createFavoriteSource } from '../../src/favorites/favorite-source.ts';
 import { makeChromeStub } from '../helpers/load-page.mts';
-import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
+import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.ts';
 const harness = (cache, owner = 1) => {
     const dom = new JSDOM(owner ? `<div>Logged in: Test | <a href="/climber/climber.aspx?cid=${owner}">My Home Page</a></div>` : '',
         { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });

@@ -16,11 +16,11 @@ import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
-import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
-import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.js';
+import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
+import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.ts';
 import { readIgnoredSyncState } from '../../src/background/climber-list-sync.js';
 import { SYNC_KEY as IGNORED_SYNC_KEY, IGNORED_KEY, serializeBackup as serializeIgnoredBackup,
-    parseBackup as parseIgnoredBackup } from '../../src/favorites/ignored-climbers.js';
+    parseBackup as parseIgnoredBackup } from '../../src/favorites/ignored-climbers.ts';
 
 const workerBundle = await fs.readFile(process.env.BPB_GITHUB_WORKER_BUNDLE || new URL('../../dist/background.js', import.meta.url), 'utf8');
 

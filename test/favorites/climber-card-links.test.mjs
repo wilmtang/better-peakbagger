@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { climberProfileLists } from '../../src/favorites/climber-card-state.js';
+import { climberProfileLists } from '../../src/favorites/climber-card-state.ts';
 import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent } from '../helpers/load-page.mts';
 
 const origin = 'https://www.peakbagger.com', profileUrl = `${origin}/climber/climber.aspx?cid=900002`;

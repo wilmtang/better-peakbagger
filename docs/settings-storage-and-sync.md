@@ -257,7 +257,7 @@ files without a `kind` field remain compatible.
 List files exclude Buddy cache/owner metadata, native Buddy membership, settings,
 credentials, sync baselines and filter state. Import never edits Peakbagger's
 Buddy List. Existing automatic backups or ignored sync, if already enabled on
-this device, can transfer the resulting list change. See [file formats](../src/favorites/climber-files.js),
+this device, can transfer the resulting list change. See [file formats](../src/favorites/climber-files.ts),
 [file controls](../options/climber-files.js), and [list policy](../src/background/climber-list-policy.js).
 
 ## GitHub behavior and overwrite protection
@@ -285,9 +285,9 @@ these safeguards do not turn them into two-way sync.
 For migration, connect the destination with automatic transfers off, restore the
 desired settings/lists, then choose which automatic transfers to enable locally.
 Changing those choices no longer changes other browser profiles. See
-[root-backup guard](../src/github/root-backup-guard.js),
+[root-backup guard](../src/github/root-backup-guard.ts),
 [GitHub routes](../src/background/github-routes.js), and
-[GitHub client](../src/github/github-client.js).
+[GitHub client](../src/github/github-client.ts).
 
 ## Verification and remaining limits
 

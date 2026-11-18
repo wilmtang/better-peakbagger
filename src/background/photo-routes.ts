@@ -3,12 +3,12 @@
 //
 // Better Peakbagger — trusted photo-page credential and report-return routes.
 
-import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
-import { photoLibrary as Library } from '../photos/photo-library.js';
+import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.ts';
+import { photoLibrary as Library } from '../photos/photo-library.ts';
 import { sanitizeReportDimension } from '../reports/report-markup.ts';
 import { createPackagedPageMatcher } from './sender-policy.js';
 import { createReportPhotoService, reportPhotoOwner } from './report-photo-service.js';
-import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.ts';
 import { trustedActions as TrustedActions } from './trusted-actions.js';
 
 const RETURN_CONTEXTS_KEY = 'bpbPhotoEditorReturns';

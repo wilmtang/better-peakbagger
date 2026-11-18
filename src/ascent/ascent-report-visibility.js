@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { observeIgnored } from '../favorites/ignored-client.js';
-import { ascentReport } from '../favorites/report-adapters.js';
-import { reportStyle, utilityButton } from '../favorites/report-controls.js';
+import { observeIgnored } from '../favorites/ignored-client.ts';
+import { ascentReport } from '../favorites/report-adapters.ts';
+import { reportStyle, utilityButton } from '../favorites/report-controls.ts';
 
 let state = { list: null, error: '' }, render = () => {}, startupRow = null, originalVisibility = '';
 const observer = observeIgnored(chrome, next => { state = next; render(); });

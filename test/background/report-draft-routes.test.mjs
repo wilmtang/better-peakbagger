@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createReportDraftRoutes, reportDraftRoutes as Routes }
     from '../../src/background/report-draft-routes.js';
-import { reportDrafts as Drafts } from '../../src/reports/report-drafts.js';
+import { reportDrafts as Drafts } from '../../src/reports/report-drafts.ts';
 
 const CLOCK = Date.parse('2026-08-08T12:00:00.000Z');
 

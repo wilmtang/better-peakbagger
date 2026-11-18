@@ -10,7 +10,7 @@ import { enablePeakLinkOrder } from '../../src/maps/peak-link-order.js';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
 import { readPeakNations } from '../../src/avalanche/avalanche-location.ts';
-import { selectedReportTable } from '../../src/favorites/report-adapters.js';
+import { selectedReportTable } from '../../src/favorites/report-adapters.ts';
 
 // The built bundle (IIFE) stands in for the injected content script.
 const source = await readFile(new URL('../../dist/content/peak-links.js', import.meta.url), 'utf8');

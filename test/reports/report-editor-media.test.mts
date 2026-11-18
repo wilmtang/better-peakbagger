@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 import { pointerEvent as untypedPointerEvent } from '../helpers/pointer-event.mjs';
 import { loadEditor as untypedLoadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
-import { photoLibrary as Library } from '../../src/photos/photo-library.js';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 
 // The editor helpers hand back jsdom page objects, which ship no types.
 import type { PageDom, StubMessage } from '../helpers/page-types.mts';

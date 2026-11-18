@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { imgbbAuth as Auth } from '../../src/photos/imgbb-auth.js';
+import { imgbbAuth as Auth } from '../../src/photos/imgbb-auth.ts';
 
 const fakeArea = () => {
     const values = {};

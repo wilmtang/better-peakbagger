@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFavoritesStore } from '../../src/background/favorites-store.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.js';
-import * as I from '../../src/favorites/ignored-climbers.js';
+import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.ts';
+import * as I from '../../src/favorites/ignored-climbers.ts';
 import { harness as syncHarness, entry } from '../helpers/ignored-sync-harness.mjs';
 
 const favorite = cid => ({ ...entry(cid), source: 'manual' });

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { installInstagramDisplay } from '../../src/reports/instagram-provider.js';
+import { installInstagramDisplay } from '../../src/reports/instagram-provider.ts';
 
 function fixture(url='https://www.instagram.com/p/Fixture/embed/captioned/') {
     const dom=new JSDOM('<div class="Embed"><ul><li>Photo</li><li>Video</li></ul><button aria-label="Go back">Previous</button><button aria-label="Next">Next</button></div>',{url});

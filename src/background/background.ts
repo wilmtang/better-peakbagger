@@ -6,9 +6,9 @@
 
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
-import '../reports/report-protection-firefox.js';
+import '../reports/report-protection-firefox.ts';
 import { createInstagramFrames } from './instagram-frames.js';
-import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.js';
+import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.ts';
 import { captureCore as Core, type PeakCandidate, type RawWaypoint } from '../capture/capture-core.ts';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.ts';
 import { capturePhases as CapturePhases } from '../capture/capture-phases.ts';
@@ -23,11 +23,11 @@ import {
 } from '../capture/provider-timing.ts';
 import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
 import { createBuddyStore } from './buddy-store.js';
-import { BUDDY_MESSAGE } from '../favorites/buddy-state.js';
-import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.js';
+import { BUDDY_MESSAGE } from '../favorites/buddy-state.ts';
+import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.ts';
 import { createBuddyCacheStore } from './buddy-cache-store.js';
 import { createIgnoredStore } from './ignored-store.js';
-import * as Ignored from '../favorites/ignored-climbers.js';
+import * as Ignored from '../favorites/ignored-climbers.ts';
 import { createGithubRoutes } from './github-routes.js';
 import { createCaltopoRoutes } from './caltopo-routes.js';
 import { createAlltrailsRoutes } from './alltrails-routes.js';

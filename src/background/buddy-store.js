@@ -1,10 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
+import { BUDDY_INTENTS_KEY, readBuddyIntents } from '../favorites/buddy-state.ts';
 import { climberListLane, assertFavoriteMembership } from './climber-list-policy.js';
 import { applyFavoritesMutation } from './favorites-store.js';
-import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.js';
+import { BUDDY_CACHE_EPOCH_KEY, newBuddyCacheEpoch } from '../favorites/buddy-cache.ts';
 
 export const createBuddyStore = ({ storage, settings, now = Date.now, token = () => crypto.randomUUID() }) => {
     const run = climberListLane(storage);

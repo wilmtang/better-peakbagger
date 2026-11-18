@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as Files from '../../src/favorites/climber-files.js';
+import * as Files from '../../src/favorites/climber-files.ts';
 import { JSDOM } from 'jsdom';
 import { mountClimberFileTransfer } from '../../options/climber-files.js';
 import { createFavoritesStore } from '../../src/background/favorites-store.js';

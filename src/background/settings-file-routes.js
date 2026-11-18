@@ -5,8 +5,8 @@
 
 import { settings as Settings } from '../settings/settings.ts';
 import { settingsTransfer as Transfer } from '../settings/settings-transfer.ts';
-import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
-import { githubAuth as GithubAuth } from '../github/github-auth.js';
+import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.ts';
+import { githubAuth as GithubAuth } from '../github/github-auth.ts';
 import { storageValue as StorageValue } from '../storage/storage-value.ts';
 import { customLayerBackup } from '../maps/custom-overlay-transfer.js';
 

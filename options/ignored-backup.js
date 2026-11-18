@@ -1,10 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
-import { mutateIgnored } from '../src/favorites/ignored-client.js';
+import { mutateIgnored } from '../src/favorites/ignored-client.ts';
 import { hasGithubPermission, observeGithubAccess } from './github.js';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
-import * as I from '../src/favorites/ignored-climbers.js';
+import * as I from '../src/favorites/ignored-climbers.ts';
 
 export const initIgnoredBackup = ({ extensionApi } = {}) => {
     const root = document.getElementById('ignored-github'); if (!root) return;

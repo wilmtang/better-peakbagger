@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import * as Files from '../src/favorites/climber-files.js';
+import * as Files from '../src/favorites/climber-files.ts';
 import { boundedText as Text } from '../src/net/bounded-text.ts';
 import { optionsUtils as UI } from './options-utils.js';
 import { createStableText } from '../src/ui/stable-text.ts';

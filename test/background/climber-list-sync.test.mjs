@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import * as I from '../../src/favorites/ignored-climbers.js';
+import * as I from '../../src/favorites/ignored-climbers.ts';
 import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
 
 test('explicitly enabled connected sync initializes by preserving both lists', async () => {

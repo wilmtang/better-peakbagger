@@ -3,7 +3,7 @@
 /* global document, window, location */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import * as Files from '../src/favorites/climber-files.js';
+import * as Files from '../src/favorites/climber-files.ts';
 
 // Shipped manager and native file downloads; storage/worker replies are held
 // fixtures. The store tests separately exercise the real mutation guards.

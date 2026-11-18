@@ -19,9 +19,9 @@ const markedContext = vm.createContext({});
 vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
 globalThis.marked = markedContext.marked;
 
-const { githubClient: Client } = await import('../../src/github/github-client.js');
+const { githubClient: Client } = await import('../../src/github/github-client.ts');
 const { githubBackup: Backup } = await import('../../src/github/github-backup.ts');
-const { githubErrors: GithubErrors } = await import('../../src/github/github-errors.js');
+const { githubErrors: GithubErrors } = await import('../../src/github/github-errors.ts');
 const { ERROR_CODES } = GithubErrors;
 
 const snapshot = (overrides = {}) => ({

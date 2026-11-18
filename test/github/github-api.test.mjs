@@ -4,8 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { githubApi as GithubApi } from '../../src/github/github-api.js';
-import { githubErrors as GithubErrors } from '../../src/github/github-errors.js';
+import { githubApi as GithubApi } from '../../src/github/github-api.ts';
+import { githubErrors as GithubErrors } from '../../src/github/github-errors.ts';
 
 const { ERROR_CODES, GithubError } = GithubErrors;
 
@@ -366,7 +366,7 @@ test('the shared error boundary normalizes untyped failures before worker messag
 });
 
 test('auth discovery and repository clients contain no private GitHub REST transport', async () => {
-    for (const file of ['../../src/github/github-auth.js', '../../src/github/github-client.js']) {
+    for (const file of ['../../src/github/github-auth.ts', '../../src/github/github-client.ts']) {
         const source = await readFile(new URL(file, import.meta.url), 'utf8');
         assert.doesNotMatch(source, /api\.github\.com/);
         assert.doesNotMatch(source, /X-GitHub-Api-Version/);

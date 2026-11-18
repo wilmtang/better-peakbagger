@@ -27,7 +27,7 @@ Files read, in full or in the part relevant to a finding:
   `src/reports/report-script-source.ts`, `report-script-notice.ts`,
   `report-format-painter.ts`
 - Ignored-report surfaces: `src/ascent/ascent-report-visibility.js`,
-  `src/favorites/peak-report-filter.js`
+  `src/favorites/peak-report-filter.ts`
 - Network helpers: `src/weather/open-meteo-client.js`, `src/net/*`,
   `src/background/peakbagger-request-scheduler.js`
 - Weather day/week windows: `src/weather/weather-day.js`, `weather-week.js`
