@@ -1317,6 +1317,42 @@ async function main() {
             throw new Error(`Firefox favorite control did not mount: ${JSON.stringify(state)}`, { cause: error });
         });
         await waitForBuddyAdditionReady();
+        const waitForBuddyStorage = async (
+            description: string,
+            predicate: (snapshot: {
+                favorites: { entries?: { cid: number; source?: string }[] } | undefined;
+                cache: { entries?: { cid: number }[] } | undefined;
+            }) => boolean,
+        ) => {
+            const climberHandle = await driver!.getWindowHandle();
+            await driver!.switchTo().newWindow('tab');
+            try {
+                await driver!.get(favoriteSettingsUrl);
+                await driver!.wait(async () => {
+                    const snapshot = await driver!.executeAsyncScript((done: (result?: unknown) => void) => {
+                        const api = globalThis.browser || globalThis.chrome;
+                        api.storage.local.get(['bpbFavoriteClimbers', 'bpbBuddyCache'])
+                            .then(result => done({
+                                favorites: result.bpbFavoriteClimbers,
+                                cache: result.bpbBuddyCache,
+                            }), failure => done({ error: String(failure) }));
+                    }) as {
+                        favorites?: { entries?: { cid: number; source?: string }[] };
+                        cache?: { entries?: { cid: number }[] };
+                        error?: string;
+                    };
+                    if (snapshot.error) throw new Error(snapshot.error);
+                    return predicate({ favorites: snapshot.favorites, cache: snapshot.cache });
+                }, 15_000, description);
+            } finally {
+                await driver!.close();
+                await driver!.switchTo().window(climberHandle);
+            }
+        };
+        const waitForBuddyRequests = (count: number, description: string) => driver!.wait(() =>
+            fixture!.requests.buddyMutations - buddyMutationBaseline.buddyMutations >= count
+                && fixture!.requests.buddyReports - buddyMutationBaseline.buddyReports >= count,
+        15_000, description);
         await driver.findElement(By.id('BuddyButton')).click();
         const buddyAdded = await waitForScript(driver, `
       const nativeButton = document.getElementById("BuddyButton");
@@ -1326,12 +1362,28 @@ async function main() {
         favorite: favorite.textContent,
       } : false;
     `, 'the confirmed Firefox Buddy addition');
+        await waitForBuddyRequests(1, 'the initial Firefox Buddy addition refresh');
+        await waitForBuddyStorage(
+            'the initial Firefox Buddy addition cache and favorite',
+            ({ favorites, cache }) => Boolean(
+                favorites?.entries?.some(entry => entry.cid === 900002 && entry.source === 'buddy')
+                && cache?.entries?.some(entry => entry.cid === 900002),
+            ),
+        );
         await driver.findElement(By.id('BuddyButton')).click();
         const removalPreserved = await waitForScript(driver, `
       const nativeButton = document.getElementById("BuddyButton");
       const favorite = document.getElementById("bpb-climber-favorite");
       return /^Add\\b/.test(nativeButton?.value || "") && favorite?.textContent === "★";
     `, 'the default Firefox Buddy removal policy');
+        await waitForBuddyRequests(2, 'the default Firefox Buddy removal refresh');
+        await waitForBuddyStorage(
+            'the default Firefox Buddy removal cache refresh and preserved favorite',
+            ({ favorites, cache }) => Boolean(
+                favorites?.entries?.some(entry => entry.cid === 900002)
+                && cache?.entries && !cache.entries.some(entry => entry.cid === 900002),
+            ),
+        );
         assertState(
             buddyAdded.favorite === '★' && removalPreserved,
             'Firefox did not add a confirmed Buddy or preserve the favorite on default removal',
@@ -1364,11 +1416,27 @@ async function main() {
       return /^Remove\\b/.test(document.getElementById("BuddyButton")?.value || "")
         && document.getElementById("bpb-climber-favorite")?.textContent === "★";
     `, 'the second confirmed Firefox Buddy addition');
+        await waitForBuddyRequests(3, 'the opt-in Firefox Buddy addition refresh');
+        await waitForBuddyStorage(
+            'the opt-in Firefox Buddy addition cache and favorite',
+            ({ favorites, cache }) => Boolean(
+                favorites?.entries?.some(entry => entry.cid === 900002)
+                && cache?.entries?.some(entry => entry.cid === 900002),
+            ),
+        );
         await driver.findElement(By.id('BuddyButton')).click();
         const removalSynced = await waitForScript(driver, `
       return /^Add\\b/.test(document.getElementById("BuddyButton")?.value || "")
         && document.getElementById("bpb-climber-favorite")?.textContent === "☆";
     `, 'the opted-in Firefox Buddy removal policy');
+        await waitForBuddyRequests(4, 'the opt-in Firefox Buddy removal refresh');
+        await waitForBuddyStorage(
+            'the opt-in Firefox Buddy removal cache and favorite removal',
+            ({ favorites, cache }) => Boolean(
+                favorites?.entries && !favorites.entries.some(entry => entry.cid === 900002)
+                && cache?.entries && !cache.entries.some(entry => entry.cid === 900002),
+            ),
+        );
         assertState(
             removalSynced
         && fixture.requests.buddyMutations - buddyMutationBaseline.buddyMutations === 4

@@ -70,7 +70,7 @@ together.
 ### Phase 1 — Firefox Buddy removal sync race (F3: product + verifier)
 
 **Root cause:**
-1. **Product FIFO epoch race in `src/favorites/climber-favorite.js` (lines 264–305) and `src/favorites/buddy-cache.js` (lines 29–35):**
+1. **Product FIFO epoch race in `src/favorites/climber-favorite.ts` (originally JS) and `src/favorites/buddy-cache.js` (lines 29–35):**
    `refreshAfterBuddyMutation` is not serialized. In each call,
    `beginBuddyCacheRead` (`line 267`) captures `snapshot = E1` before fetching
    `BuddyList`, and `publishBuddyCache` (`line 289`) runs **before**
@@ -106,7 +106,7 @@ together.
      `buddyReports >= 3` before clicking Remove.
 
 **Fix:**
-- Convert `src/favorites/climber-favorite.js` to TypeScript (`.ts`) and serialize
+- Convert `src/favorites/climber-favorite.ts` from `.js` and serialize
   `refreshAfterBuddyMutation` (coalescing to the latest queued mutation so a
   subsequent Remove runs `beginBuddyCacheRead` *after* the preceding refresh
   settles, or supersedes an older unconfirmed refresh before it publishes).
