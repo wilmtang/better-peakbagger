@@ -100,7 +100,7 @@ try {
         const firefox = (await import('selenium-webdriver/firefox.js')).default;
         const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
         resources.defer('cloud Firefox processes', () => stopOwnedFirefoxProcesses(temporaryRoot));
-        const options = new firefox.Options().addArguments('-headless').setProfile(profile)
+        const options = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com');
         options.enableBidi(); options.setAcceptInsecureCerts(true);
         const service = new firefox.ServiceBuilder().addArguments(`--profile-root=${temporaryRoot}`);

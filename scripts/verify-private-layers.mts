@@ -115,7 +115,7 @@ try {
         const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
         const prepared = await prepareFirefoxSource({ temporaryRoot: root, distDir: source });resources.defer('private Firefox source', () => prepared.cleanup());resources.defer('private Firefox processes', () => stopOwnedFirefoxProcesses(root));
         const profile = path.join(root, 'profile');await mkdir(profile);
-        const configuration = new firefox.Options().addArguments('-headless').setProfile(profile)
+        const configuration = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,tiles.example.com').setPreference('webgl.sanitize-unmasked-renderer', false);
         configuration.enableBidi(); configuration.setAcceptInsecureCerts(true);
         const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(configuration).setFirefoxService(new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${root}`)).build() as FirefoxDriver;resources.defer('private Firefox', () => quitFirefoxDriver(driver, root));

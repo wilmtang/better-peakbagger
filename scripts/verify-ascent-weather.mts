@@ -200,7 +200,7 @@ async function runWeatherVerification() {
             resources.defer('weather Firefox source', () => prepared.cleanup());
             resources.defer('weather Firefox processes', () => stopOwnedFirefoxProcesses(temporaryRoot));
             const profile = path.join(temporaryRoot, 'profile'); await mkdir(profile);
-            const options = new firefox.Options().addArguments('-headless').setProfile(profile)
+            const options = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
                 .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com');
             options.enableBidi(); options.setAcceptInsecureCerts(true);
             if (interactionsMode) options.setPreference('intl.locale.requested', verificationLocale)

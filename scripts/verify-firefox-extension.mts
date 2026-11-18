@@ -203,7 +203,7 @@ async function main() {
         );
 
         const options = (new firefox.Options()
-            .addArguments('-headless')
+            .addArguments('-headless', '-no-remote')
             .enableBidi() as firefox.Options)
             .setProfile(profileTemplate)
             .setPreference('network.dns.localDomains', [

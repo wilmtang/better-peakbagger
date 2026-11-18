@@ -47,7 +47,7 @@ try {
         const prepared = await prepareFirefoxSource({ temporaryRoot: profile });
         resources.defer('inline Buddy Firefox source', () => prepared.cleanup());
         const profileTemplate = path.join(profile, 'profile'); await mkdir(profileTemplate);
-        const options = new firefox.Options().addArguments('-headless').setProfile(profileTemplate)
+        const options = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profileTemplate)
             .setPreference('network.dns.localDomains', 'www.peakbagger.com,peakbagger.com');
         options.enableBidi(); options.setAcceptInsecureCerts(true);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
