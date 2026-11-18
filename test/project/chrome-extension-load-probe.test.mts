@@ -10,11 +10,13 @@ import test from 'node:test';
 import yaml from 'js-yaml';
 
 import {
+    evaluateProbeMode,
     evaluateProbeSuccess,
     formatProbeMarkdown,
     parseProbeArgs,
     PROBE_MODES,
     probeLaunchSpec,
+    type ProbeModeEvaluationInput,
     type ProbeReport,
 } from '../../scripts/probe-chrome-extension-load.mts';
 import { chromeLaunchOptions, PEAKBAGGER_HOST_RULE } from '../../scripts/verification-launch.mts';
@@ -27,6 +29,25 @@ type WorkflowStep = {
     with?: Record<string, unknown>;
     env?: Record<string, string>;
 };
+
+const healthyCandidate = (overrides: Partial<ProbeModeEvaluationInput> = {}): ProbeModeEvaluationInput => ({
+    extensionId: 'abcdefghijklmnopabcdefghijklmnop',
+    cdpError: null,
+    registry: {
+        totalRecords: 2,
+        id: 'abcdefghijklmnopabcdefghijklmnop',
+        location: 'COMMAND_LINE',
+        registryStatus: 'ENABLED',
+        disableReasons: [],
+        manifestVersion: 3,
+        pathMatches: true,
+    },
+    contentScript: { injected: true, theme: 'light', mapLinks: true },
+    worker: { ok: true, workerStarted: true, extensionIdMatch: true, error: null },
+    error: null,
+    teardownError: null,
+    ...overrides,
+});
 
 test('probe argument parser accepts valid flags and rejects unknown or duplicate inputs before launching', () => {
     assert.deepEqual(parseProbeArgs([]), {
@@ -104,11 +125,75 @@ test('probe launch specs separate baseline CLI loading, --disable-extensions rem
     });
 });
 
-test('probe success evaluation and Markdown summary distinguish partial and strict outcomes', () => {
+test('per-mode evaluation requires complete content-script injection, healthy registry/worker and clean teardown', () => {
+    assert.equal(evaluateProbeMode(healthyCandidate()), true);
+    assert.equal(evaluateProbeMode(healthyCandidate({
+        registry: { ...healthyCandidate().registry!, location: 'UNPACKED', registryStatus: null },
+    })), true);
+
+    const rejected: [string, ProbeModeEvaluationInput][] = [
+        ['missing extensionId', healthyCandidate({ extensionId: null })],
+        ['partial content script (theme only, no mapLinks)', healthyCandidate({
+            contentScript: { injected: true, theme: 'light', mapLinks: false },
+        })],
+        ['partial content script (mapLinks only, no theme)', healthyCandidate({
+            contentScript: { injected: true, theme: null, mapLinks: true },
+        })],
+        ['uninjected content script', healthyCandidate({
+            contentScript: { injected: false, theme: 'light', mapLinks: true },
+        })],
+        ['missing registry record', healthyCandidate({ registry: null })],
+        ['registry ID mismatch', healthyCandidate({
+            registry: { ...healthyCandidate().registry!, id: 'otherextensionidotherextensionid' },
+        })],
+        ['registry path mismatch', healthyCandidate({
+            registry: { ...healthyCandidate().registry!, pathMatches: false },
+        })],
+        ['disabled registry status', healthyCandidate({
+            registry: { ...healthyCandidate().registry!, registryStatus: 'DISABLED' },
+        })],
+        ['non-empty disable reasons', healthyCandidate({
+            registry: { ...healthyCandidate().registry!, disableReasons: [1] },
+        })],
+        ['wrong manifest version', healthyCandidate({
+            registry: { ...healthyCandidate().registry!, manifestVersion: 2 },
+        })],
+        ['CDP error', healthyCandidate({ cdpError: 'Extensions.loadUnpacked rejected' })],
+        ['dead worker reply', healthyCandidate({
+            worker: { ok: false, workerStarted: true, extensionIdMatch: true, error: 'no listener' },
+        })],
+        ['worker never started', healthyCandidate({
+            worker: { ok: true, workerStarted: false, extensionIdMatch: true, error: null },
+        })],
+        ['worker ID mismatch', healthyCandidate({
+            worker: { ok: true, workerStarted: true, extensionIdMatch: false, error: null },
+        })],
+        ['execution error', healthyCandidate({ error: 'navigation failed' })],
+        ['teardown error', healthyCandidate({ teardownError: 'profile removal failed' })],
+    ];
+    for (const [label, candidate] of rejected) {
+        assert.equal(evaluateProbeMode(candidate), false, label);
+    }
+});
+
+test('probe success evaluation rejects any teardown leak even when another mode passes', () => {
     assert.equal(evaluateProbeSuccess([], false), false);
-    assert.equal(evaluateProbeSuccess([{ passed: false }, { passed: true }], false), true);
-    assert.equal(evaluateProbeSuccess([{ passed: false }, { passed: true }], true), false);
-    assert.equal(evaluateProbeSuccess([{ passed: true }, { passed: true }], true), true);
+    assert.equal(evaluateProbeSuccess([
+        { passed: false, teardownError: null },
+        { passed: true, teardownError: null },
+    ], false), true);
+    assert.equal(evaluateProbeSuccess([
+        { passed: false, teardownError: 'browser close timed out' },
+        { passed: true, teardownError: null },
+    ], false), false, 'leaked resources must fail the probe regardless of requireAll');
+    assert.equal(evaluateProbeSuccess([
+        { passed: false, teardownError: null },
+        { passed: true, teardownError: null },
+    ], true), false);
+    assert.equal(evaluateProbeSuccess([
+        { passed: true, teardownError: null },
+        { passed: true, teardownError: null },
+    ], true), true);
 
     const report: ProbeReport = {
         platform: 'linux',
@@ -116,8 +201,23 @@ test('probe success evaluation and Markdown summary distinguish partial and stri
         nodeVersion: 'v24.0.0',
         headed: false,
         requireAll: false,
-        overallPassed: true,
+        overallPassed: false,
         results: [{
+            mode: 'cli-default',
+            passed: false,
+            durationMs: 10020,
+            browserVersion: '156.0.8078.4',
+            extensionId: 'abcdefghijklmnopabcdefghijklmnop',
+            cdpExtensionId: null,
+            cdpError: null,
+            registry: healthyCandidate().registry,
+            registryRawRecords: 2,
+            contentScript: { injected: false, theme: 'light', mapLinks: false },
+            worker: { ok: true, workerStarted: true, extensionIdMatch: true, error: null },
+            browserLogs: [],
+            error: null,
+            teardownError: null,
+        }, {
             mode: 'cdp-load-unpacked',
             passed: true,
             durationMs: 420,
@@ -125,25 +225,18 @@ test('probe success evaluation and Markdown summary distinguish partial and stri
             extensionId: 'abcdefghijklmnopabcdefghijklmnop',
             cdpExtensionId: 'abcdefghijklmnopabcdefghijklmnop',
             cdpError: null,
-            registry: {
-                totalRecords: 1,
-                id: 'abcdefghijklmnopabcdefghijklmnop',
-                location: 'UNPACKED',
-                registryStatus: 'ENABLED',
-                disableReasons: [],
-                manifestVersion: 3,
-                pathMatches: true,
-            },
-            registryRawRecords: 1,
+            registry: { ...healthyCandidate().registry!, location: 'UNPACKED' },
+            registryRawRecords: 2,
             contentScript: { injected: true, theme: 'light', mapLinks: true },
             worker: { ok: true, workerStarted: true, extensionIdMatch: true, error: null },
             browserLogs: [],
             error: null,
+            teardownError: null,
         }],
     };
     const markdown = formatProbeMarkdown(report);
-    assert.match(markdown, /\*\*PASS\*\*/);
-    assert.match(markdown, /`cdp-load-unpacked` \| PASS \| 156\.0\.8078\.4 \| UNPACKED \(ENABLED\)/);
+    assert.match(markdown, /partial \(theme=light, mapLinks=no\)/);
+    assert.match(markdown, /`cdp-load-unpacked` \| PASS \| 156\.0\.8078\.4 \| UNPACKED \(ENABLED\) \| yes \(theme=light, mapLinks=yes\)/);
 });
 
 test('manual Linux Chrome probe workflow stays isolated to workflow_dispatch with pinned actions', async () => {
@@ -176,4 +269,5 @@ test('manual Linux Chrome probe workflow stays isolated to workflow_dispatch wit
     assert.doesNotMatch(probeStep.run, /\$\{\{/, 'inputs must pass through env rather than shell interpolation');
     const upload = steps.find(step => step.name === 'Upload probe report and logs');
     assert.equal(upload?.if, 'always()');
+    assert.equal(upload?.with?.['if-no-files-found'], 'ignore');
 });

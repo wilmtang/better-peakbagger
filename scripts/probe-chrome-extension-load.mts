@@ -16,7 +16,8 @@
 import { access, appendFile, mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer, waitForCondition } from './browser-verification-fixtures.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
 import {
@@ -57,16 +58,10 @@ export interface ProbeRegistrySummary {
     pathMatches: boolean;
 }
 
-export interface ProbeModeResult {
-    mode: ProbeMode;
-    passed: boolean;
-    durationMs: number;
-    browserVersion: string | null;
+export interface ProbeModeEvaluationInput {
     extensionId: string | null;
-    cdpExtensionId: string | null;
     cdpError: string | null;
     registry: ProbeRegistrySummary | null;
-    registryRawRecords: number | null;
     contentScript: {
         injected: boolean;
         theme: string | null;
@@ -78,8 +73,18 @@ export interface ProbeModeResult {
         extensionIdMatch: boolean;
         error: string | null;
     };
-    browserLogs: string[];
     error: string | null;
+    teardownError: string | null;
+}
+
+export interface ProbeModeResult extends ProbeModeEvaluationInput {
+    mode: ProbeMode;
+    passed: boolean;
+    durationMs: number;
+    browserVersion: string | null;
+    cdpExtensionId: string | null;
+    registryRawRecords: number | null;
+    browserLogs: string[];
 }
 
 export interface ProbeReport {
@@ -187,11 +192,32 @@ export function probeLaunchSpec(
     };
 }
 
+export function evaluateProbeMode(candidate: ProbeModeEvaluationInput): boolean {
+    if (!candidate.extensionId) return false;
+    if (candidate.cdpError !== null || candidate.error !== null || candidate.teardownError !== null) {
+        return false;
+    }
+    const registryHealthy = candidate.registry !== null
+        && candidate.registry.id === candidate.extensionId
+        && candidate.registry.pathMatches
+        && (!candidate.registry.registryStatus || candidate.registry.registryStatus === 'ENABLED')
+        && candidate.registry.disableReasons.length === 0
+        && candidate.registry.manifestVersion === 3;
+    const contentScriptHealthy = candidate.contentScript.injected
+        && Boolean(candidate.contentScript.theme)
+        && candidate.contentScript.mapLinks;
+    const workerHealthy = candidate.worker.ok
+        && candidate.worker.workerStarted
+        && candidate.worker.extensionIdMatch;
+    return registryHealthy && contentScriptHealthy && workerHealthy;
+}
+
 export function evaluateProbeSuccess(
-    results: readonly Pick<ProbeModeResult, 'passed'>[],
+    results: readonly Pick<ProbeModeResult, 'passed' | 'teardownError'>[],
     requireAll: boolean,
 ): boolean {
     if (results.length === 0) return false;
+    if (results.some(result => result.teardownError !== null)) return false;
     return requireAll
         ? results.every(result => result.passed)
         : results.some(result => result.passed);
@@ -211,11 +237,14 @@ export function formatProbeMarkdown(report: ProbeReport): string {
         const registryLabel = item.registry
             ? `${item.registry.location ?? 'unknown'} (${item.registry.registryStatus ?? 'no-status'})`
             : `missing (${item.registryRawRecords ?? 0} records)`;
-        const contentLabel = item.contentScript.injected
-            ? `yes (theme=${item.contentScript.theme ?? 'none'})`
-            : 'no';
-        const workerLabel = item.worker.ok && item.worker.workerStarted ? 'yes' : 'no';
-        const note = (item.error ?? item.cdpError ?? item.worker.error ?? '')
+        const hasTheme = Boolean(item.contentScript.theme);
+        const contentLabel = hasTheme && item.contentScript.mapLinks
+            ? `yes (theme=${item.contentScript.theme}, mapLinks=yes)`
+            : hasTheme || item.contentScript.mapLinks
+                ? `partial (theme=${item.contentScript.theme ?? 'none'}, mapLinks=${item.contentScript.mapLinks ? 'yes' : 'no'})`
+                : 'no';
+        const workerLabel = item.worker.ok && item.worker.workerStarted && item.worker.extensionIdMatch ? 'yes' : 'no';
+        const note = (item.teardownError ?? item.error ?? item.cdpError ?? item.worker.error ?? '')
             .replace(/\|/g, '\\|')
             .replace(/\r?\n/g, ' ')
             .slice(0, 160);
@@ -236,6 +265,35 @@ interface RawRegistryRecord {
     registry_status?: unknown;
     disable_reasons?: unknown;
     manifest_version?: unknown;
+}
+
+async function pollExtensionsInternals(
+    registryPage: { goto(url: string): Promise<unknown>; evaluate<T>(fn: () => T): Promise<T> },
+): Promise<{ total: number | null; found: RawRegistryRecord | null }> {
+    let lastTotal: number | null = null;
+    try {
+        return await waitForCondition(async () => {
+            await registryPage.goto('chrome://extensions-internals/');
+            const snapshot = await registryPage.evaluate(() => {
+                try {
+                    const records = JSON.parse(document.body.innerText) as unknown;
+                    if (!Array.isArray(records)) return { total: null, found: null };
+                    const found = (records as RawRegistryRecord[]).find(item => item?.name === 'Better Peakbagger') ?? null;
+                    return { total: records.length, found };
+                } catch {
+                    return { total: null, found: null };
+                }
+            });
+            lastTotal = snapshot.total;
+            return snapshot.found ? snapshot : false;
+        }, {
+            description: 'Better Peakbagger entry in chrome://extensions-internals/',
+            timeoutMs: 10_000,
+            intervalMs: 150,
+        }) as Promise<{ total: number | null; found: RawRegistryRecord | null }>;
+    } catch {
+        return { total: lastTotal, found: null };
+    }
 }
 
 async function runSingleMode(
@@ -262,8 +320,8 @@ async function runSingleMode(
         worker: { ok: false, workerStarted: false, extensionIdMatch: false, error: null },
         browserLogs,
         error: null,
+        teardownError: null,
     };
-    let caughtError: unknown = null;
     try {
         const profile = await createVerificationRoot(
             modeResources,
@@ -315,29 +373,7 @@ async function runSingleMode(
         }
 
         const registryPage = await context.newPage();
-        await registryPage.goto('chrome://extensions-internals/');
-        const registrySnapshot = await registryPage.waitForFunction(() => {
-            try {
-                const records = JSON.parse(document.body.innerText) as RawRegistryRecord[];
-                if (!Array.isArray(records)) return false;
-                const found = records.find(item => item?.name === 'Better Peakbagger');
-                return found ? { total: records.length, found } : false;
-            } catch {
-                return false;
-            }
-        }, null, { timeout: 10_000 })
-            .then(handle => handle.jsonValue() as Promise<{ total: number; found: RawRegistryRecord }>)
-            .catch(async () => {
-                const fallbackTotal = await registryPage.evaluate(() => {
-                    try {
-                        const parsed = JSON.parse(document.body.innerText) as unknown;
-                        return Array.isArray(parsed) ? parsed.length : null;
-                    } catch {
-                        return null;
-                    }
-                }).catch(() => null);
-                return { total: fallbackTotal ?? 0, found: null };
-            });
+        const registrySnapshot = await pollExtensionsInternals(registryPage);
         result.registryRawRecords = registrySnapshot.total;
         if (registrySnapshot.found && typeof registrySnapshot.found.id === 'string') {
             const record = registrySnapshot.found;
@@ -346,7 +382,7 @@ async function runSingleMode(
                 ? await realpath(record.path).catch(() => String(record.path))
                 : '';
             result.registry = {
-                totalRecords: registrySnapshot.total,
+                totalRecords: registrySnapshot.total ?? 0,
                 id: recordId,
                 location: typeof record.location === 'string' ? record.location : null,
                 registryStatus: typeof record.registry_status === 'string' ? record.registry_status : null,
@@ -371,12 +407,15 @@ async function runSingleMode(
             return theme && mapLinks ? { injected: true, theme, mapLinks } : false;
         }, null, { timeout: 10_000 })
             .then(handle => handle.jsonValue() as Promise<{ injected: boolean; theme: string | null; mapLinks: boolean }>)
-            .catch(async () => peakPage.evaluate(() => ({
-                injected: Boolean(document.documentElement.dataset.bpbTheme)
-                    || Boolean(document.getElementById('bpb-peak-map-links')),
-                theme: document.documentElement.dataset.bpbTheme ?? null,
-                mapLinks: Boolean(document.getElementById('bpb-peak-map-links')),
-            })));
+            .catch(async () => peakPage.evaluate(() => {
+                const theme = document.documentElement.dataset.bpbTheme ?? null;
+                const mapLinks = Boolean(document.getElementById('bpb-peak-map-links'));
+                return {
+                    injected: Boolean(theme) && mapLinks,
+                    theme,
+                    mapLinks,
+                };
+            }));
         result.contentScript = contentProbe;
         await peakPage.close();
 
@@ -397,37 +436,24 @@ async function runSingleMode(
             };
             await optionsPage.close();
         }
-
-        const registryHealthy = result.registry !== null
-            && result.registry.pathMatches
-            && (!result.registry.registryStatus || result.registry.registryStatus === 'ENABLED')
-            && result.registry.disableReasons.length === 0
-            && result.registry.manifestVersion === 3;
-        result.passed = Boolean(result.extensionId)
-            && result.cdpError === null
-            && registryHealthy
-            && result.contentScript.injected
-            && result.worker.ok
-            && result.worker.workerStarted
-            && result.worker.extensionIdMatch;
     } catch (error) {
-        caughtError = error;
         result.error = error instanceof Error ? error.message : String(error);
     }
     try {
         await modeResources.dispose(null);
     } catch (disposeError) {
-        if (!caughtError) {
-            result.passed = false;
-            result.error = disposeError instanceof Error ? disposeError.message : String(disposeError);
-        }
+        const detail = disposeError instanceof Error ? disposeError.message : String(disposeError);
+        result.teardownError = detail;
+        result.error = result.error ? `${result.error}; teardown failed: ${detail}` : `teardown failed: ${detail}`;
     }
+    result.passed = evaluateProbeMode(result);
     result.durationMs = Date.now() - startedAt;
     return result;
 }
 
 async function main(): Promise<void> {
     const parsed = parseProbeArgs(process.argv.slice(2));
+    assertChromeLaunchAllowed();
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
     const dist = process.env.BPB_VERIFY_EXTENSION_SOURCE
         ? path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE)
@@ -476,8 +502,11 @@ async function main(): Promise<void> {
         }
         console.log(JSON.stringify(report, null, 2));
         if (!report.overallPassed) {
+            const teardownFailed = results.some(item => item.teardownError !== null);
             fatalError = new Error(
-                `Chrome extension load probe failed (${parsed.requireAll ? 'all modes required' : 'no mode succeeded'})`,
+                teardownFailed
+                    ? 'Chrome extension load probe failed resource teardown'
+                    : `Chrome extension load probe failed (${parsed.requireAll ? 'all modes required' : 'no mode succeeded'})`,
             );
         }
     } catch (error) {
