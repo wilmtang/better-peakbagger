@@ -2,7 +2,7 @@
 
 Status: proposed; root causes traced against `HEAD`, no verifier or runtime behavior changed yet.
 
-Companion to [CI: Linux by default, macOS only for hardware WebGL](ci-macos-gpu-only.md).
+Companion to [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md).
 Moving jobs off macOS reduces 5-slot runner queueing, not intermittent test
 failures. This plan addresses the intermittent failures themselves without
 loosening assertions, hiding errors or adding blind retries.
@@ -246,7 +246,7 @@ consecutive local runs each of
 - Consequently, F3 (a Firefox-only Buddy race) failed `Chrome current extension smoke`
   while all Firefox jobs were green.
 
-**Options (owner decision, coordinate with [ci-macos-gpu-only.md](ci-macos-gpu-only.md)):**
+**Options (owner decision, coordinate with [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md)):**
 - **Option A (keep together, rely on Phase 1–3 fixes):** Keep
   `verify-store-packages.mjs` atomic so one job builds and tests the exact
   paired store zips. Zero workflow churn.

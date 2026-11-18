@@ -9,11 +9,6 @@
   (the worker was converted to TypeScript first). F1, F2, F6b and F18 wait on
   browser measurements.
 
-- [CI: Linux by default, macOS only for hardware WebGL](ci-macos-gpu-only.md)
-  — proposed, with the manual Linux Chrome extension-loading probe committed
-  locally (`probe-linux-chrome-extension.yml`, unpushed). Firefox surfaces move
-  first; backup layout is an owner decision.
-
 - [CI verifier flakiness remediation](ci-verifier-flakiness.md)
   — proposed companion plan auditing the last 40 `Test` runs, separating eight
   already-fixed intermittent job failures from the five open failure groups
@@ -73,6 +68,8 @@ execution records, never the source of truth for shipped code.
 
 Historical weather records are consolidated in the
 [weather closure ledger](../weather.md#audit-closure-ledger).
+
+- [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md)
 
 ### Archived records
 

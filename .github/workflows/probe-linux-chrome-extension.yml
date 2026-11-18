@@ -1,6 +1,7 @@
 name: Probe Linux Chrome extension loading
 
-# Manual one-off probe for phase 2 of docs/plans/ci-macos-gpu-only.md.
+# Manual one-off probe for phase 2 of
+# https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md.
 # Never runs on push or pull_request, and does not alter required checks.
 on:
   workflow_dispatch:
