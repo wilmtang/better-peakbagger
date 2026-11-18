@@ -99,7 +99,7 @@ test('every page-local bundle source is linted like shared source', async () => 
         const config = await eslint.calculateConfigForFile(file);
         const relative = path.relative(projectRoot, file);
         assert.ok(config, `${relative} must have lint configuration`);
-        if (/\.[cm]?tsx?$/.test(file)) {
+        if (/\.(?:[cm]?tsx?|svelte)$/.test(file)) {
             assert.equal(config.rules?.['no-undef']?.[0], 0, `${relative} delegates undeclared names to TypeScript`);
             assert.equal(config.rules?.['@typescript-eslint/no-unused-vars']?.[0], 2, `${relative} must use typed lint rules`);
         } else assert.equal(config.rules?.['no-undef']?.[0], 2, `${relative} must be checked for undeclared names`);

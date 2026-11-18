@@ -151,14 +151,24 @@ export default defineConfig([
     },
     {
         // Ordinary runtime TypeScript stays independent of compiled Svelte:
-        // it reaches a component only through the island adapter.
+        // it reaches a component only through the island adapter, while
+        // explicit island owners may pass .svelte components into mountIsland.
         // Legacy runtime JavaScript is covered too until M7 converts it.
         files: runtimeRoots.map(directory => `${directory}/**/*.{js,mjs,ts}`),
-        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts'],
+        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts', 'options/unit-settings.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: [{
                 group: ['*.svelte', '*.svelte.ts', '*.svelte.js'],
                 message: 'Mount Svelte through src/ui/svelte-island.ts; controllers do not import components or rune modules.',
+            }] }],
+        },
+    },
+    {
+        files: ['options/unit-settings.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: [{
+                group: ['*.svelte.ts', '*.svelte.js'],
+                message: 'Island owners mount .svelte components and must not import .svelte.ts rune modules directly.',
             }] }],
         },
     },

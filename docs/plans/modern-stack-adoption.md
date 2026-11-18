@@ -803,7 +803,7 @@ the first production component ships.
   emission, copying, manifest/page references and package expectations as one
   change; do not silently accept an unstyled widget.
 - When Svelte is first shipped, update
-  [reviewed dependency metadata](../../scripts/dependency-metadata.mjs),
+  [reviewed dependency metadata](../../scripts/dependency-metadata.mts),
   [AMO notes](../../scripts/create-amo-metadata.mts) and
   [acknowledgements](../../ACKNOWLEDGEMENTS.md). Notices are generated into
   `dist/THIRD_PARTY_NOTICES.txt` from bundled inputs, including shipped transitive

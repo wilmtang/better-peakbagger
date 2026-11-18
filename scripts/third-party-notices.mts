@@ -1,6 +1,10 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Metafile } from 'esbuild';
 
 import {
     NON_PACKAGE_NOTICES,
@@ -9,11 +13,31 @@ import {
     nodeModule,
     root,
 } from './build-config.mts';
-import { REVIEWED_PACKAGE_LICENSES } from './dependency-metadata.mjs';
+import { REVIEWED_PACKAGE_LICENSES } from './dependency-metadata.mts';
+
+export interface NoticeFileEntry {
+    readonly name: string;
+    readonly text: string;
+}
+
+export interface PackageNoticeRecord {
+    readonly key: string;
+    readonly name: string;
+    readonly version: string;
+    readonly license: string;
+    readonly licenseSource: string;
+    readonly notices: readonly NoticeFileEntry[];
+}
+
+interface PackageManifestJson {
+    readonly name?: string;
+    readonly version?: string;
+    readonly license?: unknown;
+}
 
 const NOTICE_FILE = /^(?:licen[cs]e|copying|notice)(?:[._-].*)?$/i;
 
-async function packageRootForFile(filePath) {
+async function packageRootForFile(filePath: string): Promise<string | null> {
     let directory = path.dirname(filePath);
     while (directory !== path.dirname(directory)) {
         if (directory === root) break;
@@ -21,26 +45,26 @@ async function packageRootForFile(filePath) {
             await readFile(path.join(directory, 'package.json'), 'utf8');
             return directory;
         } catch (error) {
-            if (error.code !== 'ENOENT') throw error;
+            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
         }
         directory = path.dirname(directory);
     }
     return null;
 }
 
-async function packageNotice(packageRoot) {
+async function packageNotice(packageRoot: string): Promise<PackageNoticeRecord> {
     const packageJsonPath = path.join(packageRoot, 'package.json');
-    const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8'));
+    const packageJson = JSON.parse(await readFile(packageJsonPath, 'utf8')) as PackageManifestJson;
     const key = path.relative(root, packageRoot).split(path.sep).join('/');
     let license = typeof packageJson.license === 'string'
         ? packageJson.license.trim()
         : '';
     let licenseSource = `${key}/package.json`;
-    if (!license) {
+    if (!license && packageJson.name) {
         const reviewed = REVIEWED_PACKAGE_LICENSES[packageJson.name];
         if (reviewed?.version === packageJson.version) {
             license = reviewed.license;
-            licenseSource = 'exact reviewed override in scripts/dependency-metadata.mjs';
+            licenseSource = 'exact reviewed override in scripts/dependency-metadata.mts';
         }
     }
     const noticeNames = (await readdir(packageRoot))
@@ -52,15 +76,15 @@ async function packageNotice(packageRoot) {
     })));
     return validatePackageNoticeMetadata({
         key,
-        name: packageJson.name,
-        version: packageJson.version,
+        name: packageJson.name ?? '',
+        version: packageJson.version ?? '',
         license,
         licenseSource,
         notices,
     });
 }
 
-export function validatePackageNoticeMetadata(record) {
+export function validatePackageNoticeMetadata(record: PackageNoticeRecord): PackageNoticeRecord {
     if (!record.name || !record.version || !record.license || !record.licenseSource) {
         throw new Error(`Shipped package ${record.key} has incomplete name, version, license, or license-source metadata.`);
     }
@@ -73,7 +97,7 @@ export function validatePackageNoticeMetadata(record) {
     return record;
 }
 
-function renderRecord(record) {
+function renderRecord(record: PackageNoticeRecord): string {
     const noticeText = record.notices
         .map(({ name, text }) => `----- ${name} -----\n${text}`)
         .join('\n\n');
@@ -92,8 +116,10 @@ function renderRecord(record) {
     ].join('\n');
 }
 
-export async function collectThirdPartyNotices({ metafiles }) {
-    const packageRoots = new Set();
+export async function collectThirdPartyNotices({ metafiles }: {
+    readonly metafiles: readonly Metafile[];
+}): Promise<PackageNoticeRecord[]> {
+    const packageRoots = new Set<string>();
     const bundledInputs = metafiles.flatMap((metafile) => Object.keys(metafile.inputs));
     const runtimeInputs = [
         ...bundledInputs.map((input) => path.resolve(root, input)),
@@ -114,7 +140,7 @@ export async function collectThirdPartyNotices({ metafiles }) {
         validatePackageNoticeMetadata({
             ...override,
             key: `reviewed-override:${override.key}`,
-            licenseSource: 'reviewed override in scripts/build-config.mjs',
+            licenseSource: 'reviewed override in scripts/build-config.mts',
             notices: [{
                 name: override.noticeFile,
                 text: (await readFile(path.join(root, override.noticeFile), 'utf8')).trim(),
@@ -127,7 +153,7 @@ export async function collectThirdPartyNotices({ metafiles }) {
     return records;
 }
 
-export function renderThirdPartyNotices(records) {
+export function renderThirdPartyNotices(records: readonly PackageNoticeRecord[]): string {
     return [
         'Better Peakbagger Third-Party Notices',
         '',
@@ -138,7 +164,10 @@ export function renderThirdPartyNotices(records) {
     ].join('\n');
 }
 
-export async function writeThirdPartyNotices({ metafiles, outputDir = distDir }) {
+export async function writeThirdPartyNotices({ metafiles, outputDir = distDir }: {
+    readonly metafiles: readonly Metafile[];
+    readonly outputDir?: string;
+}): Promise<{ readonly records: PackageNoticeRecord[]; readonly output: string }> {
     const records = await collectThirdPartyNotices({ metafiles });
     const output = renderThirdPartyNotices(records);
     await writeFile(path.join(outputDir, 'THIRD_PARTY_NOTICES.txt'), output);

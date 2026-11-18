@@ -49,7 +49,7 @@ import {
     distDir,
     type BundleEntry,
 } from './build-config.mts';
-import { writeThirdPartyNotices } from './third-party-notices.mjs';
+import { writeThirdPartyNotices } from './third-party-notices.mts';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');

@@ -19,7 +19,7 @@ import { createAmoJwt, inspectAmoVersion } from '../../scripts/check-amo-version
 import {
     dependencyVersionsFromLock,
     validateReviewedDependencyMetadata,
-} from '../../scripts/dependency-metadata.mjs';
+} from '../../scripts/dependency-metadata.mts';
 import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mts';
 import {
     ChromeWebStoreRequestError,
@@ -44,7 +44,7 @@ import {
     resolveReleaseDate,
     validateReleasePreflight,
 } from '../../scripts/release-bump.mjs';
-import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mjs';
+import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mts';
 import {
     isRetryableFirefoxStartup,
     ownedFirefoxPids,
@@ -380,6 +380,7 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
         ['MapLibre GL JS', 'maplibre'],
         ['tz-lookup', 'tzLookup'],
         ['SunCalc', 'sunCalc'],
+        ['Svelte', 'svelte'],
     ]) {
         assert.ok(metadata.version.approval_notes.includes(`${label} ${dependencyVersions[key]}`),
             `approval notes must name locked ${label} ${dependencyVersions[key]}`);
@@ -887,6 +888,9 @@ test('generated notices cover the real editor and copied runtime graph', async (
         'marked',
         'tz-lookup',
         'suncalc',
+        'svelte',
+        'esm-env',
+        'clsx',
         'BetaCreator symbol geometry',
     ]) {
         assert.ok(components.includes(required), `missing notice for ${required}`);
@@ -931,6 +935,16 @@ test('generated notices cover the real editor and copied runtime graph', async (
         warningBaseline: WEB_EXT_WARNING_BASELINE,
         noticeInventory: notices,
     }), /must derive Marked versions from package-lock\.json instead of hardcoding 18\.0\.10/);
+
+    const missingSvelteNotice = notices.replace(/^Component: svelte$/m, 'Component: removed-svelte');
+    assert.throws(() => validateReviewedDependencyMetadata({
+        packageLock,
+        approvalNotes,
+        acknowledgements,
+        reportEditorDocs,
+        warningBaseline: WEB_EXT_WARNING_BASELINE,
+        noticeInventory: missingSvelteNotice,
+    }), /THIRD_PARTY_NOTICES\.txt does not contain svelte@/);
 });
 
 test('notice generation fails closed for missing package metadata or notice text', () => {

@@ -31,6 +31,8 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
     ['@typescript-eslint/no-unused-vars:3']);
     assert.deepEqual(await lint('options/probe-controller.ts', "import Panel from './Panel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
         ['no-restricted-imports:1', 'no-restricted-imports:2'], 'controllers reach components only through the island adapter');
+    assert.deepEqual(await lint('options/unit-settings.ts', "import Panel from './UnitSettingsPanel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
+        ['no-restricted-imports:2'], 'island owners may import compiled .svelte components, not .svelte.ts rune modules');
     assert.deepEqual(await lint('options/probe-legacy.js', "import Panel from './Panel.svelte';\nexport default Panel;\n"),
         ['no-restricted-imports:1'], 'legacy runtime JavaScript is held to the same boundary');
     assert.deepEqual(await lint('src/ui/svelte-island.ts', "import { createIslandProps } from './svelte-island-props.svelte.ts';\nexport default createIslandProps;\n"), []);
@@ -62,13 +64,16 @@ test('a component and its rune module compile through the normal, minified and i
             assert.ok(inputs.some(file => file.startsWith('node_modules/svelte/src/internal/client/')), 'the client runtime is bundled');
             // An allowlist: anything else from node_modules, such as the compiler
             // or its parser dependencies, fails here by name.
-            const runtime = /^node_modules\/(?:svelte\/src\/(?:internal\/(?:client|shared|flags)\/.+|internal\/disclose-version\.js|(?:attachments|reactivity|store|legacy)\/.+|[^/]+\.js)|esm-env\/(?:index|true|false)\.js|clsx\/dist\/.+)$/;
+            const runtime = /^node_modules\/(?:svelte\/src\/(?:internal\/(?:client|shared|flags)\/.+|(?:attachments|reactivity|store|legacy)\/.+|[^/]+\.js)|esm-env\/(?:index|true|false)\.js|clsx\/dist\/.+)$/;
             assert.deepEqual(inputs.filter(file => file.startsWith('node_modules/') && !runtime.test(file)), [],
                 'only the Svelte client runtime and its two small dependencies ship');
+            assert.equal(inputs.some(file => file.endsWith('/disclose-version.js')), false,
+                'discloseVersion stays disabled in shipped builds');
             assert.ok(inputs.includes('node_modules/esm-env/false.js') && !inputs.includes('node_modules/esm-env/dev-fallback.js'),
                 'the runtime\'s DEV flag is pinned to production');
             const code = await readFile(path.join(outputDir, 'svelte-fixture', 'island.js'), 'utf8');
             assert.doesNotMatch(code, /\bnew Function\s*\(|\beval\s*\(|\bimportScripts\s*\(|\bimport\s*\(/, 'no runtime code generation or loading');
+            assert.doesNotMatch(code, /\.innerHTML\s*=/, 'tree fragments avoid innerHTML assignments flagged by addons-linter');
             // Exactly these, none loadable: XML namespace identifiers and
             // Svelte's error-reference and issue-report text, plus the custom
             // overlay relay identifier the shared settings schema validates.

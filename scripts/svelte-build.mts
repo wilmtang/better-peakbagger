@@ -36,6 +36,8 @@ import type { CompileOptions, ModuleCompileOptions } from 'svelte/compiler';
 export const SVELTE_COMPILER_OPTIONS = Object.freeze({
     runes: true,
     dev: false,
+    fragments: 'tree',
+    discloseVersion: false,
     css: 'injected',
     generate: 'client',
     cssHash: ({ css, hash }) => `svelte-${hash(css)}`,

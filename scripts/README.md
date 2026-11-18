@@ -45,7 +45,7 @@ independent of the existing targets.
 - [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
 - [create-amo-metadata.mts](create-amo-metadata.mts)
 - [create-chrome-description.mjs](create-chrome-description.mjs)
-- [dependency-metadata.mjs](dependency-metadata.mjs)
+- [dependency-metadata.mts](dependency-metadata.mts)
 - [privacy-guard.mjs](privacy-guard.mjs)
 - [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness and types for `test/dom/*.dom.mts` (routing, extension stub, per-case contexts, selection).
 - [svelte-build.mts](svelte-build.mts) — The shared Svelte compiler settings and esbuild plugin every bundle receives.
@@ -61,7 +61,7 @@ independent of the existing targets.
 - [release-readiness.mts](release-readiness.mts) — Prepares permission disclosures and reports bounded optional public service probes; authentication and Google's uploaded-draft validation remain manual.
 - [select-release-artifact.mjs](select-release-artifact.mjs)
 - [stage-ui-ux-skill-update.mjs](stage-ui-ux-skill-update.mjs) — Enforces the checked skill-only patch and prepares the direct-main automation commit without executing downloaded helpers.
-- [third-party-notices.mjs](third-party-notices.mjs)
+- [third-party-notices.mts](third-party-notices.mts)
 - [update-ui-ux-skill.mjs](update-ui-ux-skill.mjs) — Pinned upstream skill updates with local-guidance preservation; `--check` previews without writing.
 - [verify-release-archive.mjs](verify-release-archive.mjs)
 - [verify-store-packages.mjs](verify-store-packages.mjs)

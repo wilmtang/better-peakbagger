@@ -944,7 +944,7 @@ attributed:
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
 | `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
-| `svelte` | the `svelte` runtime once a bundle imports a component; the compiler, checker and lint tools never | not yet (M6) |
+| `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by esbuild; compiler, checker, and lint tools never | yes (runtime only) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 

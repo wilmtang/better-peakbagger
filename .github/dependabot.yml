@@ -11,7 +11,8 @@
 # third-party code shipped with the extension; their names distinguish esbuild
 # bundling from copying a prebuilt browser file intact. `package.json` lists
 # every dependency under devDependencies; `tooling` and `jsdom` are genuinely
-# development-only, and `svelte` is until a shipped bundle imports a component.
+# development-only, while the `svelte` group ships only the `svelte` client
+# runtime (`svelte`, `clsx`, `esm-env`) into bundles importing components.
 #
 # Every npm group merges automatically once the four required checks pass; see
 # `.github/workflows/dependabot-auto-merge.yml`. The last two npm groups are
@@ -113,12 +114,14 @@ updates:
           - "@types/node"
           - "@types/chrome"
 
-      # The Svelte compiler/runtime and the tools that compile, check and lint
-      # it. They move together so a compiler release cannot outpace its checker
-      # or lint parser. The svelte runtime ships once M6 imports a component.
+      # The Svelte compiler/runtime (and its shipped helpers `clsx` / `esm-env`)
+      # plus the tools that check and lint it. They move together so a compiler
+      # release cannot outpace its checker or lint parser.
       svelte:
         patterns:
           - svelte
+          - clsx
+          - esm-env
           - esbuild-svelte
           - svelte-check
           - eslint-plugin-svelte

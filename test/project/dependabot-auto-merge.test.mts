@@ -239,9 +239,28 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
         /^  firefox-required:\n[\s\S]*?name: Firefox extension smoke[\s\S]*?if: always\(\)[\s\S]*?test "\$FIREFOX_RESULT" = success[\s\S]*?test "\$GPU_RESULT" = success/m);
 });
 
+const SVELTE_RUNTIME_PACKAGES = new Set(['svelte', 'esm-env', 'clsx']);
+const SVELTE_COMPILER_PACKAGES = ['esbuild-svelte', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser'] as const;
+
+const checkBundledGroups = (
+    bundledPackages: readonly string[],
+    bundledPatterns: readonly string[],
+    copiedPatterns: readonly string[],
+    sveltePatterns: readonly string[],
+): void => {
+    for (const packageName of bundledPackages) {
+        const expectedPatterns = SVELTE_RUNTIME_PACKAGES.has(packageName) ? sveltePatterns : bundledPatterns;
+        assert.ok(expectedPatterns.some(pattern => matchesPattern(packageName, pattern)),
+            `${packageName} is bundled by the build graph but absent from its Dependabot runtime group`);
+        assert.equal(copiedPatterns.some(pattern => matchesPattern(packageName, pattern)), false,
+            `${packageName} is bundled but also matches copied-runtime`);
+    }
+};
+
 test('runtime dependency groups match actual esbuild metafiles', async () => {
     const bundledPatterns = groupPatterns('bundled-runtime');
     const copiedPatterns = groupPatterns('copied-runtime');
+    const sveltePatterns = groupPatterns('svelte');
     const copiedPackages = new Set(VENDOR_COPY
         .filter(([source, output]) => output.startsWith('vendor/')
             && !/license/i.test(source)
@@ -256,12 +275,7 @@ test('runtime dependency groups match actual esbuild metafiles', async () => {
     const importedPackages = await bundledPackagesForEntries(ENTRIES);
     const bundledPackages = [...importedPackages]
         .filter(packageName => !copiedPackages.has(packageName));
-    for (const packageName of bundledPackages) {
-        assert.ok(bundledPatterns.some(pattern => matchesPattern(packageName, pattern)),
-            `${packageName} is bundled by the build graph but absent from bundled-runtime`);
-        assert.equal(copiedPatterns.some(pattern => matchesPattern(packageName, pattern)), false,
-            `${packageName} is bundled but also matches copied-runtime`);
-    }
+    checkBundledGroups(bundledPackages, bundledPatterns, copiedPatterns, sveltePatterns);
     for (const packageName of copiedPackages) {
         assert.ok(copiedPatterns.some(pattern => matchesPattern(packageName, pattern)),
             `${packageName} is copied by the build graph but absent from copied-runtime`);
@@ -270,6 +284,24 @@ test('runtime dependency groups match actual esbuild metafiles', async () => {
     }
     assert.ok(bundledPackages.includes('tz-lookup'));
     assert.ok(bundledPackages.includes('suncalc'));
+    for (const expected of SVELTE_RUNTIME_PACKAGES) {
+        assert.ok(bundledPackages.includes(expected),
+            `shipped Svelte runtime package ${expected} must be discovered in production metafiles`);
+        assert.throws(
+            () => checkBundledGroups(
+                bundledPackages,
+                bundledPatterns,
+                copiedPatterns,
+                sveltePatterns.filter(pattern => pattern !== expected),
+            ),
+            new RegExp(`${expected} is bundled`),
+            `removing ${expected} from the Dependabot svelte group must fail the guard`,
+        );
+    }
+    for (const compilerTool of SVELTE_COMPILER_PACKAGES) {
+        assert.equal(bundledPackages.includes(compilerTool), false,
+            `compiler tool ${compilerTool} must never ship into production bundles`);
+    }
 });
 
 test('metafile extraction captures compiled Svelte runtime packages and ignores erased type-only imports', async () => {
