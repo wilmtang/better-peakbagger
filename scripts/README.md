@@ -141,7 +141,7 @@ independent of the existing targets.
 - [verify-climber-hover-card.mjs](verify-climber-hover-card.mjs)
 - [verify-climber-list-ui.mts](verify-climber-list-ui.mts)
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)
-- [verify-climber-transitions.mjs](verify-climber-transitions.mjs)
+- [verify-climber-transitions.mts](verify-climber-transitions.mts)
 - [verify-inline-buddies.mts](verify-inline-buddies.mts)
 - [verify-profile-editor.mts](verify-profile-editor.mts)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)

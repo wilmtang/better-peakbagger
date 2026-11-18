@@ -1298,7 +1298,7 @@ screenshots rather than treating requested outer window sizes as viewport proof.
 Run build-owning npm commands sequentially in one worktree: concurrent build
 publication can collide. All runners close only their disposable browser/profile.
 
-After building, `node scripts/verify-climber-transitions.mjs --checks=card-links`
+After building, `node scripts/verify-climber-transitions.mts --checks=card-links`
 checks the compact name card in hidden Chrome and Firefox at 390, 768 and 1280
 pixels, both themes and normal/enlarged text, plus 320-pixel wrapping. It verifies
 all-year ascent URLs, social links from existing profile evidence without new

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { climberCheckOptions } from '../../scripts/verify-climber-transitions.mjs';
+import { climberCheckOptions } from '../../scripts/verify-climber-transitions.mts';
 
 test('climber verification defaults to all transitions and fails closed on empty or misspelled selections', () => {
     assert.equal(climberCheckOptions([]).checks, 'all');
