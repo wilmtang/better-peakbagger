@@ -215,7 +215,7 @@ test('probe success evaluation rejects any teardown leak even when another mode 
             contentScript: { injected: false, theme: 'light', mapLinks: false },
             worker: { ok: true, workerStarted: true, extensionIdMatch: true, error: null },
             browserLogs: [],
-            error: null,
+            error: 'C:\\path\\|pipe\nnext line',
             teardownError: null,
         }, {
             mode: 'cdp-load-unpacked',
@@ -236,7 +236,19 @@ test('probe success evaluation rejects any teardown leak even when another mode 
     };
     const markdown = formatProbeMarkdown(report);
     assert.match(markdown, /partial \(theme=light, mapLinks=no\)/);
+    assert.match(markdown, /\| C:\\\\path\\\\\\\|pipe next line \|/);
     assert.match(markdown, /`cdp-load-unpacked` \| PASS \| 156\.0\.8078\.4 \| UNPACKED \(ENABLED\) \| yes \(theme=light, mapLinks=yes\)/);
+
+    const truncatedBoundaryReport: ProbeReport = {
+        ...report,
+        results: [{
+            ...report.results[0],
+            error: `${'a'.repeat(159)}|tail\\more`,
+        }],
+    };
+    const boundaryMarkdown = formatProbeMarkdown(truncatedBoundaryReport);
+    assert.match(boundaryMarkdown, new RegExp(`\\| ${'a'.repeat(159)}\\\\\\| \\|`));
+    assert.doesNotMatch(boundaryMarkdown, /[^\\]\\ \|$/m);
 });
 
 test('manual Linux Chrome probe workflow stays isolated to workflow_dispatch with pinned actions', async () => {

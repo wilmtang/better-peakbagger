@@ -141,7 +141,7 @@ independent of the existing targets.
 - [verify-climber-hover-card.mjs](verify-climber-hover-card.mjs)
 - [verify-climber-list-ui.mts](verify-climber-list-ui.mts)
 - [verify-climber-membership.mjs](verify-climber-membership.mjs)
-- [verify-climber-transitions.mjs](verify-climber-transitions.mjs)
+- [verify-climber-transitions.mts](verify-climber-transitions.mts)
 - [verify-inline-buddies.mts](verify-inline-buddies.mts)
 - [verify-profile-editor.mts](verify-profile-editor.mts)
 - [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
@@ -162,7 +162,7 @@ independent of the existing targets.
 - [verify-custom-layer-menu.mts](verify-custom-layer-menu.mts) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
 - [verify-private-layers.mts](verify-private-layers.mts) — protected query parameters and automatic TileJSON detection in real Settings, private map settings-file round-trip, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
 - [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
-- [verify-peak-cards.mjs](verify-peak-cards.mjs)
+- [verify-peak-cards.mts](verify-peak-cards.mts)
 - [verify-summit-cloud.mts](verify-summit-cloud.mts) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
 - [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)

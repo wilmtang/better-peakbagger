@@ -49,7 +49,7 @@ import { trustedActions as TrustedActions } from './trusted-actions.js';
 import { createTerrainPrefetch } from './terrain-prefetch.js';
 import { publicErrors as PublicErrors } from './public-errors.js';
 import { settings as Settings } from '../settings/settings.js';
-import { peakbaggerAccount as PeakbaggerAccount } from '../peakbagger/peakbagger-account.js';
+import { peakbaggerAccount as PeakbaggerAccount } from '../peakbagger/peakbagger-account.ts';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
 import {
     PEAKBAGGER_ORIGIN,

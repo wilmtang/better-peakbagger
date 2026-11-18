@@ -68,7 +68,7 @@ try {
         const prepared = await prepareFirefoxSource({ temporaryRoot: root }); resources.defer('settings fragment Firefox source', () => prepared.cleanup());
         resources.defer('settings fragment Firefox processes', () => stopOwnedFirefoxProcesses(root));
         const profile = path.join(root, 'profile'); await mkdir(profile);
-        const options = new firefox.Options().addArguments('-headless').setProfile(profile);
+        const options = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile);
         if (process.env.FIREFOX_BIN) options.setBinary(process.env.FIREFOX_BIN);
         const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(options)
             .setFirefoxService(new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${root}`)).build() as FirefoxDriver;

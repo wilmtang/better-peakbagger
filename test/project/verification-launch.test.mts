@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
@@ -43,4 +43,18 @@ test('the shared launcher runs the Seatbelt preflight before every Chrome launch
     const launch = source.indexOf('chromium.launchPersistentContext(');
     assert.notEqual(launch, -1);
     assert.match(source.slice(Math.max(0, launch - 180), launch), /assertChromeLaunchAllowed\(\);/);
+});
+
+test('every Selenium Firefox verifier isolates its disposable profile with -no-remote alongside -headless', async () => {
+    const scriptsDir = new URL('../../scripts/', import.meta.url);
+    const files = (await readdir(scriptsDir)).filter(name => /^verify-.*\.(?:mts|mjs)$/.test(name)).sort();
+    const missing: string[] = [];
+    for (const file of files) {
+        const source = await readFile(new URL(file, scriptsDir), 'utf8');
+        if (!source.includes('firefox.Options')) continue;
+        if (!/\.addArguments\([^)]*['"]-headless['"][^)]*['"]-no-remote['"]/.test(source)) {
+            missing.push(file);
+        }
+    }
+    assert.deepEqual(missing, []);
 });

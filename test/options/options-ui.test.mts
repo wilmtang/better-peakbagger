@@ -1047,7 +1047,7 @@ test('settings import rejects invalid and newer files without changing settings'
 
 // ---- Sidebar section navigation -----------------------------------------
 //
-// src/ui/section-nav.js is the controller; options/options.js and
+// src/ui/section-nav.ts is the controller; options/options.js and
 // photos/guide.js only call initSectionNav(). These tests exercise it
 // through the real options page because that is where the tall, dynamically
 // sized sections live.
@@ -1409,6 +1409,7 @@ for (const hash of ['#capture-garmin', '#general']) {
             prepareWindow: (window: PageWindow) => {
                 const content = window.document.querySelector('.content');
                 const target = window.document.getElementById('capture-garmin');
+                Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
                 content.getBoundingClientRect = () => rect({ top: 100 });
                 target.getBoundingClientRect = () => rect({ top: target.hidden ? 0 : 450 - content.scrollTop });
                 const nativeStyle = window.getComputedStyle.bind(window);
@@ -1419,6 +1420,8 @@ for (const hash of ['#capture-garmin', '#general']) {
         const content = dom.window.document.querySelector('.content');
         assert.equal(el(dom, 'capture-garmin').hidden, true);
         assert.equal(content.scrollTop, 0);
+        // Synthetic reveal must not depend on animation frames to clear inline scroll-behavior.
+        dom.window.requestAnimationFrame = () => 1;
         release();
         await waitFor(dom, () => !el(dom, 'capture-garmin').hidden);
         assert.equal(content.scrollTop, hash === '#capture-garmin' ? 326 : 0,

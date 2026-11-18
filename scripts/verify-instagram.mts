@@ -221,7 +221,7 @@ export async function verifyInstagram(kind: string,{live=false,screenshots,displ
             const {Builder,By,Key}=await import('selenium-webdriver');const firefox=(await import('selenium-webdriver/firefox.js')).default;
             const prepared=await prepareFirefoxSource({temporaryRoot:root,distDir:source});resources.defer('Instagram Firefox source',()=>prepared.cleanup());resources.defer('Instagram Firefox processes',()=>stopOwnedFirefoxProcesses(root));
             const profile=path.join(root,'profile');await mkdir(profile);
-            const options=new firefox.Options().addArguments('-headless').setProfile(profile)
+            const options=new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
                 .setPreference('network.dns.localDomains','www.peakbagger.com').setPreference('network.proxy.type',1)
                 .setPreference('network.proxy.ssl','127.0.0.1').setPreference('network.proxy.ssl_port',proxyPort)
                 .setPreference('network.proxy.no_proxies_on','www.peakbagger.com,127.0.0.1,localhost');

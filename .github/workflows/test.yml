@@ -249,10 +249,9 @@ jobs:
 
   backup-layout:
     name: Backup layout (${{ matrix.browser }})
-    # Native font metrics are part of these existing assertions. Linux
-    # qualification exposed separate backup portability defects; preserve the
-    # established macOS coverage rather than weakening it during CI work.
-    runs-on: macos-15-intel
+    # Runs on Linux alongside the portable layout shards; only hardware Metal
+    # WebGL suites remain on macOS.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -270,7 +269,7 @@ jobs:
         with:
           fixture-browser: ${{ matrix.browser }}
 
-      - name: Verify native-font backup layout
+      - name: Verify backup layout
         run: |
           mkdir -p browser-evidence
           npm run verify -- layout-stability --${{ matrix.browser }}-only --suite=backups 2>&1 | tee browser-evidence/backups.log

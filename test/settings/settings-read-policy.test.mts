@@ -22,7 +22,7 @@ const FAIL_SOFT = Object.freeze({
         { count: 2, kind: 'safe-gate', reason: 'return connection status and gate default-off ascent snapshots' },
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
-    'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
+    'src/favorites/climber-favorite.ts': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
     'src/maps/map-settings-bridge.ts': [{ count: 1, kind: 'display', reason: 'publish validated map settings for the BigMap and Peak-page bridges' }],
     'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
     'src/profile/profile-units.js': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],

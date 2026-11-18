@@ -252,7 +252,7 @@ async function run(browserName: string) {
             resources.defer('capture Firefox source', prepared.cleanup);
             const profile = path.join(temporaryRoot, 'profile');
             await mkdir(profile);
-            const options = new firefox.Options().addArguments('-headless').setProfile(profile)
+            const options = new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
                 .windowSize(verificationViewport)
                 .setPreference('network.proxy.type', 1)
                 .setPreference('network.proxy.ssl', '127.0.0.1')

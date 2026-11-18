@@ -23,7 +23,7 @@ test('the guide ships as a packaged page with no inline script', () => {
     assert.ok(COPY_FILES.some(([from, to]) =>
         from === 'photos/guide.html' && to === 'photos/guide.html'));
     assert.deepEqual(ENTRIES.find(entry => entry.out === 'photos/guide.js')?.sources,
-        ['photos/photo-project.js', 'photos/photo-renderer.js', 'ui/section-nav.js', 'photos-guide.js']);
+        ['photos/photo-project.js', 'photos/photo-renderer.js', 'ui/section-nav.ts', 'photos-guide.js']);
     assert.deepEqual([...doc.querySelectorAll('script')].map(node => node.getAttribute('src')),
         ['photos-head.js', 'guide.js'],
         'no inline script, and the theme resolves before the stylesheet paints');

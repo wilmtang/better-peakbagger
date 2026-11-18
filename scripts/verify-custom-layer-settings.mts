@@ -44,7 +44,7 @@ try {
         const { Builder, By, Key } = await import('selenium-webdriver'), firefox = (await import('selenium-webdriver/firefox.js')).default;
         const prepared = await prepareFirefoxSource({ temporaryRoot: root, distDir: path.resolve('dist') });resources.defer('Settings source', () => prepared.cleanup());resources.defer('Settings processes', () => stopOwnedFirefoxProcesses(root));
         const profile = path.join(root, 'profile');await mkdir(profile);
-        const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(new firefox.Options().addArguments('-headless').setProfile(profile))
+        const driver = await new Builder().forBrowser('firefox').setFirefoxOptions(new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile))
             .setFirefoxService(new firefox.ServiceBuilder().addArguments('--allow-system-access', `--profile-root=${root}`)).build() as FirefoxDriver;resources.defer('Settings Firefox', () => quitFirefoxDriver(driver, root));
         const addon = await driver.installAddon(prepared.sourceDir, true);await driver.setContext(firefox.Context.CHROME);
         const url = await driver.executeScript<string>('return WebExtensionPolicy.getByID(arguments[0]).getURL("options/options.html");', addon);await driver.setContext(firefox.Context.CONTENT);await driver.get(url + '#custom-map-layers');

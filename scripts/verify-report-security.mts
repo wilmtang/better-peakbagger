@@ -68,7 +68,7 @@ export async function verifyReportSecurity(kind: string, { baseline = false } = 
             const prepared=await prepareFirefoxSource({temporaryRoot:root});resources.defer('security Firefox source',()=>prepared.cleanup());
             resources.defer('security Firefox processes',()=>stopOwnedFirefoxProcesses(root));
             const profile=path.join(root,'profile');await mkdir(profile);
-            const options=new firefox.Options().addArguments('-headless').setProfile(profile)
+            const options=new firefox.Options().addArguments('-headless', '-no-remote').setProfile(profile)
                 .setPreference('network.dns.localDomains','www.peakbagger.com,www.instagram.com');
             options.setAcceptInsecureCerts(true);
             if(process.env.FIREFOX_BIN)options.setBinary(process.env.FIREFOX_BIN);

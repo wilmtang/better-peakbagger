@@ -23,7 +23,7 @@ import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mts';
 import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mjs';
 import { verifyAscentFilters } from './verify-ascent-filters.mjs';
-import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mjs';
+import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mts';
 import type { Page, Route } from 'playwright';
 
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their serialized argument under its own name. */

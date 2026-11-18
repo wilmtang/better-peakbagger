@@ -6,7 +6,7 @@
 
 import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
 import { classifyResponse } from '../peakbagger/peakbagger-response.js';
-import { peakbaggerAccount } from '../peakbagger/peakbagger-account.js';
+import { peakbaggerAccount } from '../peakbagger/peakbagger-account.ts';
 export { classifyResponse } from '../peakbagger/peakbagger-response.js';
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();

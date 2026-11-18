@@ -9,7 +9,7 @@
 // endpoint that capture already uses.
 
 import { PEAKBAGGER_ORIGIN } from './peakbagger-origin.js';
-import { peakbaggerAccount as PeakbaggerAccount } from './peakbagger-account.js';
+import { peakbaggerAccount as PeakbaggerAccount } from './peakbagger-account.ts';
 import { peakbaggerError as PeakbaggerError } from './peakbagger-error.js';
 import { fetchPeakbaggerResource } from './peakbagger-request.js';
 

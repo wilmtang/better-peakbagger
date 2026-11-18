@@ -9,21 +9,15 @@
   (the worker was converted to TypeScript first). F1, F2, F6b and F18 wait on
   browser measurements.
 
-- [CI verifier flakiness remediation](ci-verifier-flakiness.md)
-  — proposed companion plan auditing the last 40 `Test` runs, separating eight
-  already-fixed intermittent job failures from the five open failure groups
-  (FIFO Buddy cache-epoch race, `#ignored-github` hash alignment, Firefox BiDi
-  cancelled-request handling, card-readiness diagnostics and two instrumented
-  watch items).
-
 - [Release pipeline reliability and turnaround](release-pipeline-reliability.md)
   — early store readiness, permanent capture evidence, exact package promotion,
   parallel browser checks and a protected post-upload Chrome checkpoint.
 
 - [Repository follow-up ledger](follow-ups.md)
-  — the single list of what completed audits left open: the unpatched deepmerge
-  advisory (tooling only, no longer a release blocker), terrain warming timing, Linux backup widths, hosted CI and manual
-  release checks. Includes the latest full acceptance run.
+  — the single list of what completed audits left open: the development-only
+  `picomatch` advisory, Garmin distribution review, instrumented F5 and single-pass
+  CI watch items, hosted Dependabot validation, and manual release checks.
+  Includes the latest acceptance run.
 
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
@@ -70,6 +64,7 @@ Historical weather records are consolidated in the
 [weather closure ledger](../weather.md#audit-closure-ledger).
 
 - [CI: Linux by default, macOS only for hardware WebGL](https://github.com/wilmtang/better-peakbagger/blob/86c975a09f884e3726a726e05dc248048f589240/docs/plans/ci-macos-gpu-only.md)
+- [CI verifier flakiness remediation](https://github.com/wilmtang/better-peakbagger/blob/893853927c3a02c58600de32add1aa7e50196e6f/docs/plans/ci-verifier-flakiness.md)
 
 ### Archived records
 

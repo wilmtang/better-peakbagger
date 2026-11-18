@@ -176,12 +176,12 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Full Screen and Peak maps | `src/maps/big-map.ts`, `src/maps/peak-map.js` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
-| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.js`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
-| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.js` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
+| Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
+| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.js`, `src/theme/theme.js`, `src/theme/panel-theme.js`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
 | Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js`, `src/caltopo/caltopo-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
-| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.js` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
+| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.ts`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
 | Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
@@ -257,7 +257,7 @@ expiry before the origin scheduler resumes.
 Settings remains one continuous document inside the `.content` scroll
 container. Sidebar entries are ordinary fragment links, so the URL, history,
 keyboard behavior, and modified-click behavior stay browser-native. The
-controller is `src/ui/section-nav.js`, and it adds only active-section
+controller is `src/ui/section-nav.ts`, and it adds only active-section
 tracking, a nav lock that prevents the highlight from sweeping through
 intermediate sections, and a distance-aware override of the CSS motion.
 `options/options.js` and `photos/guide.js` each call `initSectionNav()` and own
@@ -1285,7 +1285,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | --- | --- | --- | --- |
 | `src/favorites/favorite-climbers.js` | Pure ES module bundled into each caller | Validation, normalization, bounds, parsers, merge/mirror semantics, native Buddy-action labels, stable signatures, effective membership, comparators, and fuzzy scoring | Applying a mutation to the stored list, DOM globals, storage, fetch, extension messaging, or UI |
 | `src/ascent/ascent-filter.ts` | Isolated content script at `document_start` | Peak-ascent row identities, Favorites chip state/count, automatic Buddy revalidation, and opportunistic Buddy-page caching | Custom-list management or GitHub transfer |
-| `src/favorites/climber-favorite.js` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
+| `src/favorites/climber-favorite.ts` | Separate isolated content script at `document_end` | The custom-favorite control plus native Buddy-action detection, full-navigation and in-place postback refresh, and confirmed custom-list synchronization | Arbitrary profile lookup or trusting an unconfirmed click as a successful Buddy mutation |
 | `options/favorites.js` (on `options/favorites.html`) | Standalone list page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, and reversible bulk actions including the mirror confirm/undo | Direct custom-list persistence, GitHub token access, or repository writes |
 | `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
@@ -1612,7 +1612,7 @@ Within that boundary, the options manager supports these distinct operations:
   **Keep Buddy removals in sync** setting opts into removal. Full lists and
   unconfirmed/failed actions fail non-destructively.
 
-On public climber pages, `src/favorites/climber-favorite.js` mounts a compact outlined or
+On public climber pages, `src/favorites/climber-favorite.ts` mounts a compact outlined or
 filled star beside the page title only when custom mode is active, the page
 exposes a valid id/name, and the page id is not the detected owner id. Its full
 add/remove action remains in the accessible label and tooltip. Add creates a
@@ -1729,7 +1729,7 @@ The focused automated evidence is deliberately split by boundary:
   Buddy refresh, merge, and the default-off removal preference.
 - `test/options/options-ui.test.mts` covers distance-aware sidebar navigation;
   `test/options/options-github.test.mts` covers the explicit GitHub messages.
-- `test/favorites/climber-favorite.test.mjs` covers manual add/remove, self exclusion,
+- `test/favorites/climber-favorite.test.mts` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.
 - `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options

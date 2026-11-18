@@ -258,7 +258,7 @@ let userSorted = false;      // a header sort the user chose must beat the auto-
 // this page in place or navigated it through optOutInstantSort(). It is also
 // not evidence of a chosen sort: whatever the other tab shows, this page's
 // order is still the one Peakbagger served, so `userSorted` must stay false and
-// the newest-first flip must still apply here. src/ui/section-nav.js holds the
+// the newest-first flip must still apply here. src/ui/section-nav.ts holds the
 // same bar for the settings sidebar.
 const isModifiedClick = (event: MouseEvent) => event.defaultPrevented || event.button !== 0
     || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;

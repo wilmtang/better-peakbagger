@@ -16,6 +16,60 @@ import { reserveBuddyPresentation } from './buddy-presentation.js';
 import { buddyIntentState } from './climber-card-state.js';
 import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
+const fetchDocument = fetchPeakbaggerDocument as unknown as (
+    url: string | null,
+    options?: { kind?: string; signal?: AbortSignal },
+) => Promise<{ kind: string; error?: { code?: string }; document?: Document }>;
+
+interface FavoriteEntry {
+    cid: number;
+    name: string;
+    addedAt: number;
+    source: string;
+}
+
+interface FavoritesList {
+    schemaVersion: number;
+    entries: FavoriteEntry[];
+}
+
+interface BuddyIntentEntry {
+    cid: number;
+    ownerCid: number;
+    status: string;
+    leaseUntil: number;
+}
+
+interface MembershipState {
+    favorites?: FavoritesList;
+    ignored?: { entries: { cid: number }[] };
+    buddyIntents?: BuddyIntentEntry[];
+    blockedIds: Set<number>;
+    error: string;
+}
+
+interface PendingBuddyMutation {
+    action: 'add' | 'remove';
+    cid: number;
+}
+
+interface SavedBuddyAttributes {
+    title: string | null;
+    disabled: string | null;
+    description: string | null;
+}
+
+type BuddyControlElement = HTMLElement & {
+    disabled?: boolean;
+    id: string;
+    value?: string;
+    form?: HTMLFormElement | null;
+};
+
+type FavoriteMutation =
+    | { kind: 'add'; entry: FavoriteEntry }
+    | { kind: 'remove'; cid: number };
+
 const BUDDY_MUTATION_SESSION_KEY = 'bpbPendingBuddyMutation';
 const BUDDY_MUTATION_MAX_AGE_MS = 5 * 60 * 1000;
 const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
@@ -32,45 +86,55 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
     const feedback = climberProfileFeedback();
 
     let mode = Schema.DEFAULTS.favoritesSource;
-    let favorites = F.cleanFavorites(null);
-    let button = null;
+    let favorites = F.cleanFavorites(null) as FavoritesList;
+    let button: HTMLButtonElement | null = null;
     let busy = false;
     let errorMessage = '';
-    let activeBuddyMutation = null;
-    let membership = null;
-    const buddyTitles = new WeakMap();
-    const busyBuddyAria = new WeakMap();
+    let activeBuddyMutation: PendingBuddyMutation | null = null;
+    let membership: MembershipState | null = null;
+    // Serialize postback refreshes so an overlapping remove never begins its cache
+    // epoch while an earlier add refresh is still reading or publishing.
+    let buddyRefreshQueue: Promise<void> = Promise.resolve();
+    const buddyTitles = new WeakMap<Element, SavedBuddyAttributes>();
+    const busyBuddyAria = new WeakMap<Element, string | null>();
     const ignoreSaving = () => document.getElementById('bpb-climber-ignore')?.getAttribute('aria-busy') === 'true';
     const buddyLock = () => buddyIntentState({ cid: pageCid, ownerCid: ownerClimberId(document), membership });
-    const buddyActionBlocked = () => { const view = buddyLock(); return view.buddyInFlight || view.buddyCheckBlocked; };
+    const buddyActionBlocked = () => {
+        const view = buddyLock();
+        return view.buddyInFlight || view.buddyCheckBlocked;
+    };
     const additionBlocked = () => ignoreSaving() || !membership?.ignored || !!membership.error || membership.blockedIds.has(pageCid);
-    const blockedReason = () => ignoreSaving() ? 'Saving ignored climbers…' : membership?.error || (!membership?.ignored ? 'Loading climber lists…'
-        : membership.ignored.entries.some(entry => entry.cid === pageCid)
-            ? `Unignore ${name} before adding to favorites or your Buddy List.`
-            : 'Finish the pending ignored-climber sync before adding to favorites or your Buddy List.');
-    const setAttribute = (element, attribute, value) => {
+    const blockedReason = () => ignoreSaving()
+        ? 'Saving ignored climbers…'
+        : membership?.error || (!membership?.ignored
+            ? 'Loading climber lists…'
+            : membership.ignored.entries.some(entry => entry.cid === pageCid)
+                ? `Unignore ${name} before adding to favorites or your Buddy List.`
+                : 'Finish the pending ignored-climber sync before adding to favorites or your Buddy List.');
+    const setAttribute = (element: Element, attribute: string, value: string | null) => {
         if (element.getAttribute(attribute) === value) return;
-        if (value === null) element.removeAttribute(attribute); else element.setAttribute(attribute, value);
+        if (value === null) element.removeAttribute(attribute);
+        else element.setAttribute(attribute, value);
     };
 
-    const mutateFavorites = async mutation => {
+    const mutateFavorites = async (mutation: FavoriteMutation): Promise<FavoritesList> => {
         const response = await chrome.runtime.sendMessage({
             type: F.MUTATION_MESSAGE_TYPE,
             mutation,
-        });
+        }) as { ok?: boolean; favorites?: unknown; error?: { message?: string } } | undefined;
         if (!response?.ok) throw new Error(response?.error?.message || 'Favorite climbers are unavailable.');
-        favorites = F.cleanFavorites(response.favorites);
+        favorites = F.cleanFavorites(response.favorites) as FavoritesList;
         return favorites;
     };
 
-    const takePendingBuddyMutation = () => {
-        let raw = null;
+    const takePendingBuddyMutation = (): PendingBuddyMutation | null => {
+        let raw: string | null = null;
         try {
             raw = sessionStorage.getItem(BUDDY_MUTATION_SESSION_KEY);
             sessionStorage.removeItem(BUDDY_MUTATION_SESSION_KEY);
         } catch { return null; }
         if (!raw) return null;
-        let value = null;
+        let value: { version?: unknown; cid?: unknown; action?: unknown; at?: unknown } | null = null;
         try { value = JSON.parse(raw); }
         catch { return null; }
         const age = Date.now() - Number(value?.at);
@@ -82,35 +146,46 @@ const BUDDY_CONTROL_SELECTOR = F.BUDDY_CONTROL_SELECTOR;
             : null;
     };
 
-    const buddyActionForControl = F.buddyControlAction;
+    const buddyActionForControl = F.buddyControlAction as (control: Element | null | undefined) => 'add' | 'remove' | null;
 
-    const buddyControls = root => {
-        const controls = [];
-        if (root?.matches?.(BUDDY_CONTROL_SELECTOR)) controls.push(root);
-        if (root?.querySelectorAll) controls.push(...root.querySelectorAll(BUDDY_CONTROL_SELECTOR));
+    const buddyControls = (root: Node | null | undefined): BuddyControlElement[] => {
+        const controls: BuddyControlElement[] = [];
+        if (root && root instanceof Element && root.matches?.(BUDDY_CONTROL_SELECTOR)) {
+            controls.push(root as BuddyControlElement);
+        }
+        if (root && 'querySelectorAll' in root && typeof root.querySelectorAll === 'function') {
+            controls.push(...(root.querySelectorAll(BUDDY_CONTROL_SELECTOR) as NodeListOf<BuddyControlElement>));
+        }
         return controls;
     };
 
-    const decorateBuddyControls = root => {
+    const decorateBuddyControls = (root: Node | null | undefined) => {
         for (const control of buddyControls(root)) {
             const action = buddyActionForControl(control);
             if (!action) continue;
             control.classList.add('bpb-native-buddy-action');
             reserveBuddyPresentation(control);
-            if (buddyActionBlocked() || action === 'add' && additionBlocked()) {
-                if (!buddyTitles.has(control)) buddyTitles.set(control, {
-                    title: control.getAttribute('title'), disabled: busyBuddyAria.has(control)
-                        ? busyBuddyAria.get(control) : control.getAttribute('aria-disabled'),
-                    description: control.getAttribute('aria-describedby'),
-                });
+            if (buddyActionBlocked() || (action === 'add' && additionBlocked())) {
+                if (!buddyTitles.has(control)) {
+                    buddyTitles.set(control, {
+                        title: control.getAttribute('title'),
+                        disabled: busyBuddyAria.has(control)
+                            ? busyBuddyAria.get(control) ?? null
+                            : control.getAttribute('aria-disabled'),
+                        description: control.getAttribute('aria-describedby'),
+                    });
+                }
                 control.dataset.bpbBuddyBlocked = 'true';
                 setAttribute(control, 'aria-disabled', 'true');
-                setAttribute(control, 'title', buddyActionBlocked() ? buddyLock().buddyCheckBlocked
-                    ? 'Check buddy status from the original account.' : 'Buddy change in progress.' : blockedReason());
-                setAttribute(control, 'aria-describedby', [buddyTitles.get(control).description,
+                setAttribute(control, 'title', buddyActionBlocked()
+                    ? buddyLock().buddyCheckBlocked
+                        ? 'Check buddy status from the original account.'
+                        : 'Buddy change in progress.'
+                    : blockedReason());
+                setAttribute(control, 'aria-describedby', [buddyTitles.get(control)?.description,
                     'bpb-climber-membership-note'].filter(Boolean).join(' '));
             } else if (buddyTitles.has(control)) {
-                const original = buddyTitles.get(control);
+                const original = buddyTitles.get(control)!;
                 delete control.dataset.bpbBuddyBlocked;
                 setAttribute(control, 'title', original.title);
                 setAttribute(control, 'aria-disabled', original.disabled);
@@ -137,10 +212,10 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         document.head.appendChild(style);
     };
 
-    const clearRememberedBuddyMutation = mutation => {
+    const clearRememberedBuddyMutation = (mutation: PendingBuddyMutation) => {
         try {
             const raw = sessionStorage.getItem(BUDDY_MUTATION_SESSION_KEY);
-            const remembered = raw ? JSON.parse(raw) : null;
+            const remembered = raw ? JSON.parse(raw) as { version?: unknown; cid?: unknown; action?: unknown } : null;
             if (remembered?.version === 1
                 && remembered.cid === mutation.cid
                 && remembered.action === mutation.action) {
@@ -149,7 +224,7 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         } catch { /* a blocked or malformed page store needs no cleanup */ }
     };
 
-    const rememberBuddyMutation = control => {
+    const rememberBuddyMutation = (control: BuddyControlElement | null | undefined) => {
         if (!control || control.disabled) return;
         const action = buddyActionForControl(control);
         if (!action) return;
@@ -172,48 +247,83 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         // Supported real-site controls use the same reserved, confirmed path
         // as the card. Keep the legacy observer for other native markup.
         let savingBuddy = false;
-        let buddyError = '', buddyWarning = '';
-        const saveBuddy = async (control, checkOnly = false) => {
+        let buddyError = '';
+        let buddyWarning = '';
+        const saveBuddy = async (control: BuddyControlElement, checkOnly = false) => {
             if (savingBuddy) return;
             busyBuddyAria.set(control, control.getAttribute('aria-disabled'));
-            savingBuddy = true; control.setAttribute('aria-disabled', 'true'); control.dataset.bpbBuddyPending = 'true';
-            const retry = event => { if (event.isTrusted === true) void saveBuddy(control, true); };
-            feedback.set('buddy', { text: checkOnly ? 'Checking buddy status…' : 'Saving buddy…', busy: true, priority: 110,
-                retry: buddyError || buddyWarning ? retry : null, retryLabel: 'Check status', retryName: 'Check buddy status' });
+            savingBuddy = true;
+            control.setAttribute('aria-disabled', 'true');
+            control.dataset.bpbBuddyPending = 'true';
+            const retry = (event: Event) => { if (event.isTrusted === true) void saveBuddy(control, true); };
+            feedback.set('buddy', {
+                text: checkOnly ? 'Checking buddy status…' : 'Saving buddy…',
+                busy: true,
+                priority: 110,
+                retry: buddyError || buddyWarning ? retry : null,
+                retryLabel: 'Check status',
+                retryName: 'Check buddy status',
+            });
             try {
-                const result = await changeBuddy({ api: chrome, target: { cid: pageCid, name }, ownerCid: ownCid,
-                    action: control.id === 'RemoveBuddy' ? 'remove' : 'add', checkOnly,
-                    origin: location.origin, currentOwner: () => ownerClimberId(document) });
+                const result = await changeBuddy({
+                    api: chrome,
+                    target: { cid: pageCid, name },
+                    ownerCid: ownCid,
+                    action: control.id === 'RemoveBuddy' ? 'remove' : 'add',
+                    checkOnly,
+                    origin: location.origin,
+                    currentOwner: () => ownerClimberId(document),
+                }) as { buddy: boolean; warning?: string };
                 applyBuddyProfileState(document, result.buddy);
                 reserveBuddyPresentation(control);
-                buddyError = ''; buddyWarning = result.warning || '';
-                feedback.set('buddy', { text: buddyWarning ? 'Check lists.' : result.buddy ? 'Buddy added.' : 'Buddy removed.',
-                    error: buddyWarning, retry: buddyWarning ? retry : null, disabled: buddyActionBlocked,
-                    retryLabel: 'Check status', retryName: 'Check buddy status', priority: buddyWarning ? 80 : 20 });
+                buddyError = '';
+                buddyWarning = result.warning || '';
+                feedback.set('buddy', {
+                    text: buddyWarning ? 'Check lists.' : result.buddy ? 'Buddy added.' : 'Buddy removed.',
+                    error: buddyWarning,
+                    retry: buddyWarning ? retry : null,
+                    disabled: buddyActionBlocked,
+                    retryLabel: 'Check status',
+                    retryName: 'Check buddy status',
+                    priority: buddyWarning ? 80 : 20,
+                });
                 feedback.announce(buddyWarning || (result.buddy ? 'Climbing buddy added.' : 'Climbing buddy removed.'));
             } catch (error) {
-                buddyError = error.message;
-                feedback.set('buddy', { text: 'Unconfirmed.', error: buddyError, retry, disabled: buddyActionBlocked,
-                    retryLabel: 'Check status', retryName: 'Check buddy status', priority: 80 });
+                buddyError = (error as Error).message;
+                feedback.set('buddy', {
+                    text: 'Unconfirmed.',
+                    error: buddyError,
+                    retry,
+                    disabled: buddyActionBlocked,
+                    retryLabel: 'Check status',
+                    retryName: 'Check buddy status',
+                    priority: 80,
+                });
                 feedback.announce(buddyError);
             } finally {
-                control.disabled = false; delete control.dataset.bpbBuddyPending;
+                control.disabled = false;
+                delete control.dataset.bpbBuddyPending;
                 control.setAttribute('aria-disabled', 'false');
                 savingBuddy = false;
                 busyBuddyAria.delete(control);
                 decorateBuddyControls(document);
             }
         };
-        if (document.querySelector('#AddBuddy, #RemoveBuddy')) feedback.registerBuddyCheck(event => {
-            if (event.isTrusted !== true) return;
-            const control = document.querySelector('#AddBuddy, #RemoveBuddy');
-            if (control) void saveBuddy(control, true);
-            else feedback.set('buddy', { text: 'Unavailable.', error: 'Open the climber profile to check buddy status.', priority: 80 });
-        });
-        const interceptBuddy = event => {
-            const control = event.type === 'submit' ? event.submitter : event.target?.closest?.('#AddBuddy, #RemoveBuddy');
+        if (document.querySelector('#AddBuddy, #RemoveBuddy')) {
+            feedback.registerBuddyCheck((event: Event) => {
+                if (event.isTrusted !== true) return;
+                const control = document.querySelector<BuddyControlElement>('#AddBuddy, #RemoveBuddy');
+                if (control) void saveBuddy(control, true);
+                else feedback.set('buddy', { text: 'Unavailable.', error: 'Open the climber profile to check buddy status.', priority: 80 });
+            });
+        }
+        const interceptBuddy = (event: Event) => {
+            const control = event.type === 'submit'
+                ? ((event as SubmitEvent).submitter as BuddyControlElement | null)
+                : ((event.target as Element | null)?.closest?.('#AddBuddy, #RemoveBuddy') as BuddyControlElement | null);
             if (!control || !['AddBuddy', 'RemoveBuddy'].includes(control.id)) return;
-            event.preventDefault(); event.stopImmediatePropagation();
+            event.preventDefault();
+            event.stopImmediatePropagation();
             const pending = membership?.buddyIntents?.some(entry => entry.cid === pageCid && entry.status !== 'confirmed');
             if (event.isTrusted !== true || savingBuddy || buddyActionBlocked() || (control.id === 'AddBuddy' && additionBlocked() && !pending)) return;
             void saveBuddy(control, pending);
@@ -223,8 +333,9 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
         const observer = new MutationObserver(records => {
             for (const record of records) {
                 if (record.type === 'attributes') decorateBuddyControls(record.target);
-                if (record.target?.id === 'bpb-climber-ignore' && record.attributeName === 'aria-busy') {
-                    decorateBuddyControls(document); mount();
+                if ((record.target as Element | null)?.id === 'bpb-climber-ignore' && record.attributeName === 'aria-busy') {
+                    decorateBuddyControls(document);
+                    mount();
                 }
                 for (const node of record.addedNodes || []) decorateBuddyControls(node);
             }
@@ -243,46 +354,56 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
             childList: true,
             subtree: true,
         });
-        document.addEventListener('click', event => {
-            const control = event.target?.closest?.(BUDDY_CONTROL_SELECTOR);
-            if (buddyActionForControl(control) && (buddyActionBlocked() || buddyActionForControl(control) === 'add' && additionBlocked())) {
-                event.preventDefault(); event.stopImmediatePropagation(); return;
+        document.addEventListener('click', (event: MouseEvent) => {
+            const control = (event.target as Element | null)?.closest?.(BUDDY_CONTROL_SELECTOR) as BuddyControlElement | null;
+            if (buddyActionForControl(control) && (buddyActionBlocked() || (buddyActionForControl(control) === 'add' && additionBlocked()))) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
             }
             if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             rememberBuddyMutation(control);
         }, true);
-        document.addEventListener('submit', event => {
-            const fallback = event.target?.querySelector?.('button[type="submit"], input[type="submit"], input[type="image"]');
-            const control = event.submitter || fallback;
-            if (buddyActionForControl(control) && (buddyActionBlocked() || buddyActionForControl(control) === 'add' && additionBlocked())) {
-                event.preventDefault(); event.stopImmediatePropagation(); return;
+        document.addEventListener('submit', (event: SubmitEvent) => {
+            const fallback = (event.target as Element | null)?.querySelector?.('button[type="submit"], input[type="submit"], input[type="image"]') as BuddyControlElement | null;
+            const control = (event.submitter as BuddyControlElement | null) || fallback;
+            if (buddyActionForControl(control) && (buddyActionBlocked() || (buddyActionForControl(control) === 'add' && additionBlocked()))) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
             }
             rememberBuddyMutation(control);
         }, true);
     };
 
-    const refreshAfterBuddyMutation = async mutation => {
+    const runRefreshAfterBuddyMutation = async (mutation: PendingBuddyMutation | null) => {
         if (!mutation || ownCid == null) return;
         try {
             const snapshot = await beginBuddyCacheRead(chrome);
             const [settings, result] = await Promise.all([
                 S.get(),
-                fetchPeakbaggerDocument(F.signedInBuddyListUrl(location.origin), { kind: 'buddies' }),
+                fetchDocument(F.signedInBuddyListUrl(location.origin), { kind: 'buddies' }),
             ]);
             if (result.kind !== 'ok') {
                 if (result.error?.code === 'rate-limit') {
                     const message = `${peakbaggerError.message(result.error)} Your saved favorites were kept.`;
-                    feedback.set('buddy', { text: 'Unavailable.', error: message, priority: 80,
-                        retryLabel: 'Check status', retryName: 'Check buddy status', retry: event => {
+                    feedback.set('buddy', {
+                        text: 'Unavailable.',
+                        error: message,
+                        priority: 80,
+                        retryLabel: 'Check status',
+                        retryName: 'Check buddy status',
+                        retry: (event: Event) => {
                             if (event.isTrusted === true) void refreshAfterBuddyMutation(mutation);
-                        } });
+                        },
+                    });
                     feedback.announce(message);
                 }
                 return;
             }
             const responseOwner = ownerClimberId(result.document);
             if (responseOwner !== ownCid) return;
-            const entries = F.parseBuddyDocument(result.document);
+            const entries = F.parseBuddyDocument(result.document) as { cid: number; name: string }[];
             feedback.set('buddy', null);
             const target = entries.find(entry => entry.cid === pageCid);
             const confirmed = mutation.action === 'add' ? !!target : !target;
@@ -302,6 +423,13 @@ html[data-bpb-theme="dark"] .bpb-native-buddy-action:focus-visible { outline-col
                 }
             }
         } catch { /* preserve the last valid cache and custom list on any failure */ }
+    };
+
+    const refreshAfterBuddyMutation = (mutation: PendingBuddyMutation | null): Promise<void> => {
+        if (!mutation || ownCid == null) return Promise.resolve();
+        const run = buddyRefreshQueue.catch(() => {}).then(() => runRefreshAfterBuddyMutation(mutation));
+        buddyRefreshQueue = run;
+        return run;
     };
 
     const pendingBuddyMutation = takePendingBuddyMutation();
@@ -350,9 +478,14 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
             ? `Favorites can hold up to ${F.LIMIT.toLocaleString('en-US')} climbers.`
             : actionLabel);
         button.setAttribute('aria-describedby', 'bpb-climber-membership-note');
-        feedback.set('favorite', { text: busy ? 'Saving favorites…' : errorMessage ? 'Favorites not saved.' : '',
-            error: errorMessage, busy, disabled: button.disabled && !busy, priority: busy ? 100 : 80,
-            retry: errorMessage || busy ? () => { void toggle(); } : null });
+        feedback.set('favorite', {
+            text: busy ? 'Saving favorites…' : errorMessage ? 'Favorites not saved.' : '',
+            error: errorMessage,
+            busy,
+            disabled: button.disabled && !busy,
+            priority: busy ? 100 : 80,
+            retry: errorMessage || busy ? () => { void toggle(); } : null,
+        });
         if (errorMessage) feedback.announce(errorMessage);
     };
 
@@ -379,7 +512,7 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
             }
             feedback.announce(included() ? 'Favorite added.' : 'Favorite removed.');
         } catch (error) {
-            errorMessage = error.message || 'Favorite climbers are unavailable. Try again.';
+            errorMessage = (error as Error).message || 'Favorite climbers are unavailable. Try again.';
         } finally {
             busy = false;
             paint();
@@ -402,14 +535,14 @@ html[data-bpb-theme="dark"] #bpb-climber-favorite[aria-pressed="true"] { border-
 
     chrome.storage.onChanged.addListener((changes, area) => {
         if (area !== 'local' || !changes[F.FAVORITES_KEY]) return;
-        favorites = F.cleanFavorites(changes[F.FAVORITES_KEY].newValue);
+        favorites = F.cleanFavorites(changes[F.FAVORITES_KEY].newValue) as FavoritesList;
         mount();
     });
-    S.subscribe(settings => {
+    S.subscribe((settings: { favoritesSource?: unknown }) => {
         mode = Schema.favoritesSource(settings.favoritesSource);
         mount();
     });
-    observeClimberMembership(chrome, state => {
+    observeClimberMembership(chrome, (state: MembershipState) => {
         membership = state;
         if (state.favorites) favorites = state.favorites;
         decorateBuddyControls(document);
