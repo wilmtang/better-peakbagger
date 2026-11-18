@@ -245,9 +245,9 @@ export function formatProbeMarkdown(report: ProbeReport): string {
                 : 'no';
         const workerLabel = item.worker.ok && item.worker.workerStarted && item.worker.extensionIdMatch ? 'yes' : 'no';
         const note = (item.teardownError ?? item.error ?? item.cdpError ?? item.worker.error ?? '')
-            .replace(/[\\|]/g, '\\$&')
             .replace(/\r?\n/g, ' ')
-            .slice(0, 160);
+            .slice(0, 160)
+            .replace(/[\\|]/g, '\\$&');
         lines.push(
             `| \`${item.mode}\` | ${item.passed ? 'PASS' : 'FAIL'} | ${item.browserVersion ?? 'n/a'} `
             + `| ${registryLabel} | ${contentLabel} | ${workerLabel} | ${item.durationMs}ms | ${note || 'ok'} |`,

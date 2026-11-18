@@ -143,7 +143,8 @@ const findClosingTagEnd = (lower: string, tagName: string, from: number): number
 };
 
 const stripCommentsAndInertBlocksPass = (input: string): string => {
-    const lower = input.toLowerCase();
+    // Lowercase ASCII letters only so non-ASCII expansions (e.g. 'İ' -> 'i\u0307') cannot shift slice offsets.
+    const lower = input.replace(/[A-Z]/g, ch => ch.toLowerCase());
     let out = '';
     let pos = 0;
     while (pos < input.length) {

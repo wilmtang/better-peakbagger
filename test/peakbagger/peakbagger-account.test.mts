@@ -94,6 +94,14 @@ test('HTML adapter strips nested or unclosed inert blocks and tags without leaki
 
     const unclosedTagInNav = '<div>Logged in: Test | <a href="/climber/climber.aspx?cid=17">My Home Page<b title="unclosed</a></div>';
     assert.deepEqual(peakbaggerAccount.fromHtml(unclosedTagInNav, url), { status: 'signed-in', cid: '17' });
+
+    for (const prefix of ['<!-- İzmir -->', '<script>const x = "İzmir";</script>', 'İİ<script>x</script>']) {
+        assert.deepEqual(
+            peakbaggerAccount.fromHtml(`${prefix}${nav(home('/climber/climber.aspx?cid=17'))}`, url),
+            { status: 'signed-in', cid: '17' },
+            prefix,
+        );
+    }
 });
 
 test('real masked native navigation remains readable in DOM and worker adapters', async () => {
