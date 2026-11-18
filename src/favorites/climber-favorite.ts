@@ -33,13 +33,6 @@ interface FavoritesList {
     entries: FavoriteEntry[];
 }
 
-interface BuddyIntentEntry {
-    cid: number;
-    ownerCid: number;
-    status: string;
-    leaseUntil: number;
-}
-
 type MembershipState = ClimberMembershipState;
 
 interface PendingBuddyMutation {
