@@ -207,7 +207,7 @@ export const initSectionNav = (): void => {
             lockTo(link);
         });
     }
-    window.addEventListener('hashchange', () => {
+    window.addEventListener('hashchange', event => {
         const fromLinkClick = !!pendingLinkClick
             && pendingLinkClick.hash === location.hash
             && Date.now() - pendingLinkClick.at < 1000;
@@ -220,6 +220,18 @@ export const initSectionNav = (): void => {
             const margin = parseFloat(getComputedStyle(target.section).scrollMarginTop) || 0;
             content.scrollTop += target.section.getBoundingClientRect().top
                 - content.getBoundingClientRect().top - margin;
+            lockTo(target.link);
+            return;
+        }
+        if (!event.isTrusted || !(content.clientHeight > 0)) {
+            // Synthetic reveals (like Garmin's async reveal) and unlaid-out views
+            // never started a native smooth scroll; finish synchronously.
+            const previousBehavior = content.style.scrollBehavior;
+            content.style.scrollBehavior = 'auto';
+            alignPaneToSection(target.section);
+            if (previousBehavior) content.style.scrollBehavior = previousBehavior;
+            else content.style.removeProperty('scroll-behavior');
+            lastScrollTop = content.scrollTop;
             lockTo(target.link);
             return;
         }
