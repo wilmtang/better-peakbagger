@@ -5,7 +5,7 @@ import { instagramEmbedHeight } from './instagram-sizing.js';
 import { createStableText } from '../ui/stable-text.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 
 const IDLE='Connects to Instagram';
 const PENDING='Loading…';

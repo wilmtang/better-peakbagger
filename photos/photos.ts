@@ -12,7 +12,7 @@ import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
 import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.js';
 import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.js';
 import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
-import { settings as Settings } from '../src/settings/settings.js';
+import { settings as Settings } from '../src/settings/settings.ts';
 import { listFocusRestorer } from '../src/ui/list-focus.ts';
 import { readPhotoSourceUrl } from '../src/photos/photo-source-url.js';
 import { photoOutput as Output } from '../src/photos/photo-output.ts';

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ascentIdentity } from '../gpx/saved-gpx-source.js';
+import { ascentIdentity } from '../gpx/saved-gpx-source.ts';
 
 const LOAD_TIMEOUT_MS = 25_000;
 

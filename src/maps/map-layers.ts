@@ -13,7 +13,7 @@ import { OVERLAY_MIN_ZOOM, SLOPE_BANDS, publicLandInfo, overlayBounds, rasterTil
 import { readLayerSnapshot, readLayerStatus, mergeLandCooldowns, readAttributionInset } from './map-layer-protocol.ts';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
-import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
+import { createMapFrameLifecycle } from '../gpx/map-frame-lifecycle.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createMapLocationMenu } from './map-location-menu.ts';
 import { bindMapLocationMenu } from './peak-weather-map.js';

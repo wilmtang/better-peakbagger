@@ -158,10 +158,10 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | --- | --- | --- |
 | Background coordination | `src/background/background.ts`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
-| Capture Peakbagger transport | `src/peakbagger/peakbagger-page.js` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
+| Capture Peakbagger transport | `src/peakbagger/peakbagger-page.ts` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.js`, `src/photos/photo-renderer.js`, `src/photos/photo-library.js`, `src/photos/photo-store.js`, `src/photos/photo-archive.js` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
-| Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.js` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
+| Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.ts` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. 3D keeps the last page pixels for an immediate return, and discards them if the camera moved off them. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
 | Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.ts`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
 | Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.ts`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
@@ -177,14 +177,14 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.js` | Isolated-world filter/sort and owner-only backup pipeline |
 | Favorite climbers | `src/favorites/favorite-climbers.js`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
-| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.js`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
+| Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.ts`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.js`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.js`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.js`, `src/onx/onx-import.js`, `src/alltrails/alltrails-import.js`, `src/caltopo/caltopo-import.js` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
-| Peakbagger request boundary | `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, `src/peakbagger/peakbagger-error.js`, `src/peakbagger/peakbagger-cloudflare.js`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
+| Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
+| Peakbagger request boundary | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, `src/peakbagger/peakbagger-error.ts`, `src/peakbagger/peakbagger-cloudflare.ts`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.js`, `src/github/github-errors.js`, `src/github/github-api.js`, `src/github/github-auth.js`, `src/github/github-client.js`, `src/github/github-write-queue.js`, `src/github/github-backup.ts`, `src/photos/photo-backup.js`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.js`, `src/photos/imgbb-client.js`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
-| Manual settings transfer | `src/settings/settings-transfer.js`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
+| Manual settings transfer | `src/settings/settings-transfer.ts`, `src/background/settings-file-routes.js`, `options/settings-backup.js` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
 
 Extend the owning surface rather than publishing cross-feature globals. Two
 deliberate page-realm globals bridge worker-injected functions where an ES
@@ -195,22 +195,22 @@ shapes. They are adapter APIs, not general module seams.
 ### Live Peakbagger reads
 
 User-triggered Peakbagger reads share one fail-closed boundary. The pure
-`src/peakbagger/peakbagger-response.js` validates both status and resource-specific body
+`src/peakbagger/peakbagger-response.ts` validates both status and resource-specific body
 shape because a login page or `PBError.aspx` redirect can finish as HTTP 200.
-`src/peakbagger/peakbagger-cloudflare.js` separately owns the stricter managed-challenge
+`src/peakbagger/peakbagger-cloudflare.ts` separately owns the stricter managed-challenge
 signature used by peakbagger-cli: status 403 plus either `cf-mitigated:
 challenge` or `Just a moment` within the first 2,000 body characters. It also
-owns the shared human-check copy and recovery action. `src/peakbagger/peakbagger-request.js`
+owns the shared human-check copy and recovery action. `src/peakbagger/peakbagger-request.ts`
 enforces the authenticated, no-cache fetch policy, a bounded timeout,
 response-body and DOM-parser handling, and Peakbagger-origin validation.
-`src/peakbagger/peakbagger-error.js` maps the remaining typed failures to consistent copy
+`src/peakbagger/peakbagger-error.ts` maps the remaining typed failures to consistent copy
 and recovery actions for sign-out, network, timeout, rate limit, server, missing
 resource, page drift, parser, identity, and device-storage failures.
 
 The Buddy/favorites surfaces, profile and individual backup, saved-GPX analyzer,
 login checks, and capture summit lookup all use that boundary. Activity capture
 invokes it in a canonical Peakbagger tab because a worker request can be
-challenged even while the signed-in site works; `src/peakbagger/peakbagger-page.js`
+challenged even while the signed-in site works; `src/peakbagger/peakbagger-page.ts`
 allows only `/Default.aspx` and bounded `/Async/pllbb2.aspx` queries. It does not
 read cookies. When capture has just opened or waited for a Peakbagger page, the
 page adapter may instead return only allowlisted global-account navigation
@@ -333,7 +333,7 @@ data it can observe; it is an architecture change, not a packaging detail.
 
 `src/settings/settings-schema.ts` is the only source of settings defaults, bounds, and
 validators. It is pure so storage writers, MAIN-world readers, and the terrain
-frame can all import the same checks. `src/settings/settings.js` adds
+frame can all import the same checks. `src/settings/settings.ts` adds
 storage access and subscriptions; it does not redefine the schema. Its 67
 portable preferences use `storage.sync.bpbSettings`; nine device values use
 `storage.local.bpbDeviceSettings` (version 1): map dimensions, terrain-cache
@@ -388,7 +388,7 @@ Peak weather and snow share `src/peakbagger/peak-units.ts` to resolve automatic
 units from the first unit in the native elevation heading. Missing or ambiguous
 headings leave the shared resolver's imperial fallback intact.
 
-The ascent-page `src/settings/bridge.js` exchanges settings with the MAIN-world analyzer
+The ascent-page `src/settings/bridge.ts` exchanges settings with the MAIN-world analyzer
 and pushes live storage changes back to it. Page-world writes are restricted to
 the analyzer-owned controls: distance/elevation units, route/casing colors, map viewport size, and
 the remembered map layer. Theme, feature gates, capture privacy preferences,
@@ -486,7 +486,7 @@ non-ownership.
 
 ### 2. One parser and two representations
 
-`src/gpx/gpx-parse.js` is the shared on-page parser for provider exports and local
+`src/gpx/gpx-parse.ts` is the shared on-page parser for provider exports and local
 file selection. It returns track segments with latitude, longitude, optional
 elevation and time; optional waypoint latitude, longitude, and normalized name;
 and an optional normalized first track name. It never returns source XML.
@@ -514,7 +514,7 @@ only; the worker also refuses summit processing on edits. The draft filler's
 synthetic file change is ignored so it cannot recursively process its own
 cleaned upload. The original disk file is never changed. The Options-only
 `removeGpxTimestamps` preference projects a local file through
-`src/gpx/gpx-timestamps.js` before any native upload, including direct Save.
+`src/gpx/gpx-timestamps.ts` before any native upload, including direct Save.
 Preparation excludes the original input from form submission and blocks Preview
 and Save until replacement completes; invalid XML/read/replacement failures
 clear the native upload. A checkbox scoped to that file can restore timestamps.
@@ -530,7 +530,7 @@ apply.
 ### 3. Validation and complete summit lookup
 
 `src/background/background.ts` funnels both entry points through `analyzeTrack()` and the
-pure algorithms in `src/capture/capture-core.js`. The pipeline sanitizes coordinates,
+pure algorithms in `src/capture/capture-core.ts`. The pipeline sanitizes coordinates,
 preserves segment boundaries, rejects unusable time/elevation data, and computes
 corridor boxes from the validated track.
 
@@ -565,7 +565,7 @@ No-GPS and no-match results remain reusable until the user explicitly chooses
 **Check again**. A validated cooldown is authoritative even for a forced retry.
 
 Shared distance, elevation-gain, and scoring primitives live in
-`src/gpx/gpx-metrics.js` and `src/capture/capture-core.js`. The ascent-page analyzer and the
+`src/gpx/gpx-metrics.ts` and `src/capture/capture-core.ts`. The ascent-page analyzer and the
 draft pipeline must not grow independent versions of the same math.
 
 ### 4. Confidence is evidence
@@ -576,10 +576,10 @@ geometry, track direction, and elevation behavior. Strong matches are selected
 by default; Probable matches remain opt-in. Neither label claims that the user
 summited the mountain.
 
-`src/capture/capture-core.js` assigns four classifications, but only two clear
+`src/capture/capture-core.ts` assigns four classifications, but only two clear
 the visible-match bar. The remaining two reach a surface solely through the
 bound-peak closest-approach fallback below, and
-`src/capture/match-confidence.js` owns what every surface calls them: Strong,
+`src/capture/match-confidence.ts` owns what every surface calls them: Strong,
 Probable, or **Off track**, with one CSS tone each. Confidence copy is the one
 place in this product that must not overstate, so no renderer may re-derive
 that name — a summit picker that said "Off track" and a draft banner that then
@@ -891,7 +891,7 @@ trackpoints and segment breaks, and admits route, elevation, and time data as
 independent capabilities. Invalid points split map geometry rather than
 joining a route across a gap.
 
-Distance and gain come from `src/gpx/gpx-metrics.js`. The analyzer reports adjusted
+Distance and gain come from `src/gpx/gpx-metrics.ts`. The analyzer reports adjusted
 metrics and shows a raw-versus-adjusted note when the difference is material.
 Timestamped tracks add elapsed time, time-to-summit/back, local clock labels,
 multi-day boundaries, and possible camping stops.
@@ -1289,7 +1289,7 @@ sync must never acquire the third-party names stored in either local dataset.
 | `options/favorites.js` (on `options/favorites.html`) | Standalone list page | Source selection, Buddy refresh status, custom-list provenance counts/filtering, and reversible bulk actions including the mirror confirm/undo | Direct custom-list persistence, GitHub token access, or repository writes |
 | `options/favorites-backup.js` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
 | `src/profile/profile-backup-core.js` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
-| `src/peakbagger/peakbagger-request.js`, `src/peakbagger/peakbagger-response.js`, and `src/peakbagger/peakbagger-error.js` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
+| `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, and `src/peakbagger/peakbagger-error.ts` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
 | `src/background/favorites-store.js` and `src/background/background.ts` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
 | `src/background/github-routes.js`, `src/github/github-write-queue.js`, and `src/github/github-client.js` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
@@ -1866,7 +1866,7 @@ No single green command proves the extension works:
   MapLibre on a reported hardware GPU with synthetic route, peak, basemap, and
   DEM fixtures. They use stubbed extension storage APIs through the production settings
   bridge and do not contact the live terrain service. Both serve the showcase over HTTPS on a
-  Peakbagger hostname, because `src/peakbagger/peakbagger-request.js` refuses
+  Peakbagger hostname, because `src/peakbagger/peakbagger-request.ts` refuses
   any other origin and the analyzer fetches its GPX through that guard.
 
 Hidden browser checks establish DOM and runtime behavior, not native focus,

@@ -57,7 +57,7 @@ for the standard setup, not merely an advanced configuration check.
 | [Standalone uploader](../../photos/photos.ts) | Owns image decoding, source/export formats, annotation projects, local recovery, direct upload, and report return. | Add host selection; branch video preparation before image-only work. Keep existing photo-format choices. |
 | [Local report photos](../../src/reports/report-local-photos.ts), [worker service](../../src/background/report-photo-service.js) | Pasted photos are re-encoded, bounded to 16 MiB, stored locally, then uploaded sequentially after a trusted Save Ascent action. | Select and persist a host for pending photos; keep the existing image-only size/privacy boundary. |
 | [Photo routes](../../src/background/photo-routes.ts) | Exact packaged photo page can obtain an ImgBB key; report content scripts cannot. Return authority is bound to source/editor contexts. | Provider-aware status and narrowly scoped upload credentials; typed, revalidated media returns. |
-| [Settings](../../options/imgbb.ts), [transfer](../../src/settings/settings-transfer.js) | ImgBB credential is device-local. Explicit credential export can include it; ordinary backup cannot. | Separate Imgur connection from ImgBB credentials and make Imgur export behavior explicit. |
+| [Settings](../../options/imgbb.ts), [transfer](../../src/settings/settings-transfer.ts) | ImgBB credential is device-local. Explicit credential export can include it; ordinary backup cannot. | Separate Imgur connection from ImgBB credentials and make Imgur export behavior explicit. |
 
 This is more than an endpoint substitution. Merely accepting `.mp4` would fail
 the image decoder, catalog validation, mandatory delete-URL commit, and report

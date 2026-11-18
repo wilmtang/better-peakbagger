@@ -67,7 +67,7 @@ its successful visual checks do not establish live provider compatibility.
   Progress follows real worker phases: checking ownership/session, reading the
   route, and finding summits. Do not fake percentages or insert status rows
   above the feed. Dismissing the panel does not cancel work; **Cancel** does.
-- On results, reuse [shared match confidence](../../src/capture/match-confidence.js),
+- On results, reuse [shared match confidence](../../src/capture/match-confidence.ts),
   selection defaults, encounter ordering, timestamp choice, and draft-opening
   rules. Display **Open 1 draft** or **Open 2 drafts**. Preserve the current
   per-capture timestamp exception and its lock once opening starts.

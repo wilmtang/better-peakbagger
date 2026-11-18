@@ -5,12 +5,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
-import { peakbaggerError as PeakbaggerError } from '../../src/peakbagger/peakbagger-error.js';
+import { peakbaggerError as PeakbaggerError } from '../../src/peakbagger/peakbagger-error.ts';
 import {
     fetchPeakbaggerDocument,
     fetchPeakbaggerResource,
-} from '../../src/peakbagger/peakbagger-request.js';
-import { MAX_PEAKBAGGER_PEAKS_BYTES } from '../../src/capture/capture-resource-limits.js';
+} from '../../src/peakbagger/peakbagger-request.ts';
+import { MAX_PEAKBAGGER_PEAKS_BYTES } from '../../src/capture/capture-resource-limits.ts';
 
 const URL = 'https://www.peakbagger.com/report/report.aspx?r=b';
 const BUDDIES = `<!doctype html><html><body>

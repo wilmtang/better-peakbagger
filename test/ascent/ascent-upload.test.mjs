@@ -10,7 +10,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
-import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
+import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.ts';
 
 const FIXTURE = 'climber-ascentedit.html';
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=900001';

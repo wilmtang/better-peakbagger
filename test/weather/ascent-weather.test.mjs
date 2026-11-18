@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { weatherFixture } from '../helpers/weather-fixture.mjs';
-import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.js';
+import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.ts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const [ascent, peak, bundle, layoutBundle, challenge] = await Promise.all([

@@ -4,8 +4,8 @@
 // Fills a prepared Peakbagger ascent editor and submits each acknowledged
 // Preview once. A failed Preview can be retried explicitly; Save stays manual.
 
-import { matchLabel, matchTone } from '../capture/match-confidence.js';
-import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.js';
+import { matchLabel, matchTone } from '../capture/match-confidence.ts';
+import { MAX_UPLOAD_POINTS, MAX_TRACK_SEGMENTS } from '../capture/upload-limits.ts';
 import { units as Units } from '../ui/units.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 

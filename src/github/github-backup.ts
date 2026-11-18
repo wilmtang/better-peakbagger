@@ -48,7 +48,7 @@
 import {
     PEAKBAGGER_ORIGIN,
     isPeakbaggerUrl,
-} from '../peakbagger/peakbagger-origin.js';
+} from '../peakbagger/peakbagger-origin.ts';
 
 const SCHEMA_VERSION = 1;
 

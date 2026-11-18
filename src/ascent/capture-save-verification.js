@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
+import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.ts';
 import { ascentPage } from './ascent-page.js';
-import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.ts';
 
 const matchesAscentResource = (value, origin, aid, path) => {
     try {

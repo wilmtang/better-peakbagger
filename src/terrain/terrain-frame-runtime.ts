@@ -3,8 +3,8 @@
 //
 // Better Peakbagger — injectable MapLibre renderer runtime.
 
-import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
-import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
+import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.ts';
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.ts';
 import { settingsSchema } from '../settings/settings-schema.ts';
 import type * as MapLibre from 'maplibre-gl';
 import type { LngLat, Map as MapLibreMap, MapMouseEvent, Popup, PointLike } from 'maplibre-gl';

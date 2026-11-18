@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { mapFrameLifecycle as MapFrameLifecycle } from '../../src/gpx/map-frame-lifecycle.js';
+import { mapFrameLifecycle as MapFrameLifecycle } from '../../src/gpx/map-frame-lifecycle.ts';
 import { waitFor } from '../helpers/load-page.mts';
 
 test('one frame lifecycle publishes insertion, load, replacement, and removal', async () => {

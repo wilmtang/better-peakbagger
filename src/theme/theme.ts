@@ -22,7 +22,7 @@
 //
 // See docs/dark-mode-flash.md.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { createDynamicInlineColorApplier } from './dynamic-inline-colors.ts';
 import { darkCss } from './site-dark-css.ts';
 import { createNativeMapTheme } from './native-map-theme.ts';

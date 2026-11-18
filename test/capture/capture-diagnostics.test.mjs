@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createCaptureDiagnostics } from '../../src/capture/capture-diagnostics.js';
+import { createCaptureDiagnostics } from '../../src/capture/capture-diagnostics.ts';
 
 test('capture diagnostics are inert by default', () => {
     let reports = 0;

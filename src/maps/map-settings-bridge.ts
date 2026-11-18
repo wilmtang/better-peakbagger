@@ -5,7 +5,7 @@
 // coordinators. Each bridge names its own message marker and projects only the
 // fields its page needs; storage and write access stay in the isolated world.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 
 type Settings = Record<string, unknown>;
 

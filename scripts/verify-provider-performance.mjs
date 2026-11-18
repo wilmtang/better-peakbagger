@@ -6,7 +6,7 @@
 
 import fs from 'node:fs/promises';
 import { chromium, firefox } from 'playwright';
-import { MAX_GPX_TRACK_POINTS } from '../src/capture/capture-resource-limits.js';
+import { MAX_GPX_TRACK_POINTS } from '../src/capture/capture-resource-limits.ts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const providerBundle = await fs.readFile(new URL('../dist/provider-page.js', import.meta.url), 'utf8');

@@ -5,7 +5,7 @@ import { dom } from '../ui/dom.ts';
 import { createStableText } from '../ui/stable-text.ts';
 import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';

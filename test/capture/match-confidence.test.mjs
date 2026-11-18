@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { CLASSIFICATIONS, matchLabel, matchTone } from '../../src/capture/match-confidence.js';
+import { CLASSIFICATIONS, matchLabel, matchTone } from '../../src/capture/match-confidence.ts';
 
 test('every classification has a name and a tone', () => {
     assert.deepEqual(CLASSIFICATIONS, ['strong', 'probable', 'possible', 'weak']);
@@ -40,7 +40,7 @@ test('an unrecognized classification degrades to the below-bar name and tone', (
 // classification added there must not reach a surface unnamed.
 test('the classification list covers every value capture-core assigns', async () => {
     const source = await readFile(
-        new URL('../../src/capture/capture-core.js', import.meta.url), 'utf8');
+        new URL('../../src/capture/capture-core.ts', import.meta.url), 'utf8');
     const assigned = new Set([...source.matchAll(/classification\s*=\s*'([a-z-]+)'/g)]
         .map(match => match[1]));
     assert.ok(assigned.size >= 4, `capture-core assigned only ${assigned.size} classifications`);

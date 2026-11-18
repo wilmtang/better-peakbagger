@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { settings as Settings } from '../src/settings/settings.js';
+import { settings as Settings } from '../src/settings/settings.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';
 
 const element = <Type extends HTMLElement>(id: string) => document.getElementById(id) as Type;

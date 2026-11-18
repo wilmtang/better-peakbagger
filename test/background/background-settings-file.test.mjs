@@ -4,8 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSettingsFileRoutes } from '../../src/background/settings-file-routes.js';
-import { createSettingsStore } from '../../src/settings/settings.js';
-import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
+import { createSettingsStore } from '../../src/settings/settings.ts';
+import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../../src/github/github-auth.js';
 import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';

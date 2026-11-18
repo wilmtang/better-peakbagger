@@ -5,7 +5,7 @@
 // Browser surfaces pass Documents and storage values in explicitly so they all
 // apply the same validation without coupling this module to extension APIs.
 
-import { PEAKBAGGER_HOSTS } from '../peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_HOSTS } from '../peakbagger/peakbagger-origin.ts';
 
 const SCHEMA_VERSION = 1;
 const FAVORITES_KEY = 'bpbFavoriteClimbers';

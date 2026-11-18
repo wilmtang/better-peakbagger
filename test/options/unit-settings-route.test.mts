@@ -7,7 +7,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.js';
+import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import {
     SETTINGS_PATCH, settingsPatchRoute,

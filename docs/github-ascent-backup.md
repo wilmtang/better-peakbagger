@@ -120,7 +120,7 @@ link, which automatically tracks endpoint query changes.
 | `src/profile/profile-backup-core.js` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
 | `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
 | `src/favorites/favorite-climbers.js` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
-| `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
+| `src/settings/settings-transfer.ts` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
 | `src/photos/photo-backup.js` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
 | `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
 | `photos/photos.ts` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
@@ -182,7 +182,7 @@ The classification does not trust `response.ok`:
 
 - A Cloudflare managed challenge requires status 403 plus either
   `cf-mitigated: challenge` or `Just a moment` in the first 2,000 body
-  characters; this strict detector lives in `src/peakbagger/peakbagger-cloudflare.js`.
+  characters; this strict detector lives in `src/peakbagger/peakbagger-cloudflare.ts`.
 - status 0, 429, and 5xx responses classify as `transient`.
 - other non-2xx responses classify as `wrong-content`.
 - a GPX response is valid only if its body contains a `<gpx` root marker.

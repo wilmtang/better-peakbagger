@@ -6,7 +6,7 @@ import {
     GAIA_PERMISSION,
     MAX_GAIA_GPX_BYTES,
     prepareGaiaImport,
-} from '../gaia/gaia-import.js';
+} from '../gaia/gaia-import.ts';
 import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
 
 export function createGaiaRoutes(options) {

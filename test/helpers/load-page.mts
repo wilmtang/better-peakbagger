@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { createSettingsStore } from '../../src/settings/settings.js';
+import { createSettingsStore } from '../../src/settings/settings.ts';
 import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.js';
 import { createIgnoredStore } from '../../src/background/ignored-store.js';
 import { createBuddyStore } from '../../src/background/buddy-store.js';
@@ -21,7 +21,7 @@ import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.js';
 import { BUDDY_CACHE_MESSAGE } from '../../src/favorites/buddy-cache.js';
 import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.js';
 import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
-import { isPeakbaggerSenderUrl } from '../../src/peakbagger/peakbagger-origin.js';
+import { isPeakbaggerSenderUrl } from '../../src/peakbagger/peakbagger-origin.ts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import type { ChromeStub, PageDocument, StoredRecord, StubArea, StubMessage, TestWindow } from './page-types.mts';
 

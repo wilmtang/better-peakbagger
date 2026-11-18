@@ -3,9 +3,9 @@
 import * as I from '../src/favorites/ignored-climbers.js';
 import { observeIgnored, mutateIgnored } from '../src/favorites/ignored-client.js';
 import { favoriteClimbers as F } from '../src/favorites/favorite-climbers.js';
-import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.js';
-import { isPeakbaggerUrl } from '../src/peakbagger/peakbagger-origin.js';
-import { peakbaggerError } from '../src/peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../src/peakbagger/peakbagger-request.ts';
+import { isPeakbaggerUrl } from '../src/peakbagger/peakbagger-origin.ts';
+import { peakbaggerError } from '../src/peakbagger/peakbagger-error.ts';
 
 export const initIgnored = api => {
     void api.runtime.sendMessage({ type: 'GITHUB_IGNORED_LIST', action: 'check' }).catch(() => {});

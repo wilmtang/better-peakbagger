@@ -5,9 +5,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from '../helpers/test-dom.mts';
 
-import { captureCore as Core } from '../../src/capture/capture-core.js';
-import { gpxParse as Parse } from '../../src/gpx/gpx-parse.js';
-import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.js';
+import { captureCore as Core } from '../../src/capture/capture-core.ts';
+import { gpxParse as Parse } from '../../src/gpx/gpx-parse.ts';
+import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.ts';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
@@ -20,12 +20,6 @@ function readQualityScore(quality: object): number {
     return quality.score;
 }
 type TrackPoint = ReturnType<typeof point>;
-interface Match {
-    id: number; name: string; confidence: number; classification: string;
-    encounter: TrackPoint & {segmentIndex: number; edgeIndex: number; fraction: number};
-    evidence: {distanceM: number; elevationDeltaM: number | null; ambiguous: boolean};
-    draftFields: {suffix?: string};
-}
 // The JS implementation accepts a numeric reference time; its null default
 // alone is too narrow for the inferred signature.
 const formatEncounterDateTime = Core.formatEncounterDateTime as (time: number, metadata: Record<string, unknown>, referenceTime?: number | null) => {date: string; time: string};
@@ -164,7 +158,7 @@ test('Peakbagger peak parsing validates coordinates and enforces its structure c
 
 test('full-resolution segment projection detects a sparse summit crossing', async () => {
     const segments = [[point(0, -0.001, 100), point(0, 0.001, 100)]];
-    const matches: Match[] = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
+    const matches = await Core.detectPeaksAsync(segments, [{ id: 1, name: 'Sparse Peak', location: '', lat: 0, lon: 0, elevationM: 100 }], 1);
     assert.equal(matches.length, 1);
     assert.equal(matches[0].classification, 'strong');
     assert.ok(matches[0].evidence.distanceM < 0.01);
@@ -195,7 +189,7 @@ test('nearby peaks sharing one encounter are capped unless one clearly leads', a
         point(0, 0, 100),
         point(0, 0.001, 80)
     ]];
-    const matches: Match[] = await Core.detectPeaksAsync(segments, [
+    const matches = await Core.detectPeaksAsync(segments, [
         { id: 4, name: 'Main', location: '', lat: 0, lon: 0, elevationM: 100 },
         { id: 5, name: 'Subpeak', location: '', lat: 0, lon: 0.00001, elevationM: 100 }
     ], 1);
@@ -228,7 +222,7 @@ test('chained ambiguity caps every peak regardless of the order Peakbagger retur
     const c = peakAt(3, 'C', 700);
     // A–B and B–C share an encounter window; A–C do not.
     for (const order of [[a, b, c], [c, a, b], [b, c, a], [c, b, a]]) {
-        const matches: Match[] = await Core.detectPeaksAsync([segment], order, 1);
+        const matches = await Core.detectPeaksAsync([segment], order, 1);
         assert.equal(matches.length, 3, `order ${order.map(peak => peak.name).join('')}`);
         for (const match of matches) {
             assert.ok(
@@ -257,10 +251,10 @@ test('cooperative peak detection caps crowded summits and checks cancellation fo
         prominenceFt: 100,
     }));
     let checkpoints = 0;
-    const cooperative: Match[] = await Core.detectPeaksAsync([segment], peaks, 0.91, {
+    const cooperative = await Core.detectPeaksAsync([segment], peaks, 0.91, {
         checkpoint: async () => { checkpoints++; },
     });
-    assert.deepEqual(cooperative.map((match: Match) => match.id).sort((a: number, b: number) => a - b), peaks.map(peak => peak.id));
+    assert.deepEqual(cooperative.map(match => match.id).sort((a: number, b: number) => a - b), peaks.map(peak => peak.id));
     assert.ok(cooperative.every(match => match.classification === 'probable' && match.evidence.ambiguous));
     assert.ok(checkpoints >= peaks.length, 'every peak offers cancellation a checkpoint');
 });
@@ -348,7 +342,7 @@ test('cooperative peak detection preserves encounter-policy boundary results', a
     for (const [index, scenario] of cases.entries()) {
         const qualityScore = scenario.qualityScore ?? 1;
         let checkpoints = 0;
-        const cooperative: Match[] = await Core.detectPeaksAsync(
+        const cooperative = await Core.detectPeaksAsync(
             scenario.segments,
             scenario.peaks,
             qualityScore,
@@ -561,7 +555,7 @@ test('Capitol draft totals match shared analyzer metrics without reordering seri
     const metrics = Metrics.computeMetricsForSegments(segments);
 
     assert.ok(Math.abs(fields.upGainM! + fields.downGainM! - metrics.gainM) < 1e-9);
-    assert.ok(Math.abs(fields.upDistanceM + fields.downDistanceM - metrics.distanceM) < 1e-9);
+    assert.ok(Math.abs(fields.upDistanceM! + fields.downDistanceM! - metrics.distanceM) < 1e-9);
     assert.equal(Math.round(metrics.gainM * 100) / 100, 1747.89);
 
     const serialized = new JSDOM(Core.serializeUploadGpx(segments), {
@@ -705,7 +699,7 @@ test('same-day draft suffixes follow encounter order without mutating matches', 
 
     const assigned = Core.assignDraftSuffixes(matches);
 
-    assert.deepEqual(assigned.map((match: Match) => match.draftFields.suffix), ['c', '', 'a', 'b']);
+    assert.deepEqual(assigned.map(match => match.draftFields.suffix), ['c', '', 'a', 'b']);
     assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
 });
 
@@ -717,11 +711,11 @@ test('draft selection prepares one track order, confidence order, and fallback t
 
     const prepared = Core.prepareDraftSelection(matches);
 
-    assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [8, 7]);
-    assert.deepEqual(prepared.confidenceOrdered.map((match: Match) => match.id), [8, 7]);
+    assert.deepEqual(prepared.trackOrdered.map(match => match.id), [8, 7]);
+    assert.deepEqual(prepared.confidenceOrdered.map(match => match.id), [8, 7]);
     assert.deepEqual(Array.from(prepared.sequenceById), [['8', 1], ['7', 2]]);
     assert.equal(prepared.fallbackTripName, 'Earlier / Later');
-    assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['b', 'a']);
+    assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['b', 'a']);
     assert.equal(Reflect.get(matches[0].draftFields, 'suffix'), undefined);
 });
 
@@ -765,14 +759,14 @@ test('draft ordering never treats an unavailable encounter distance as zero', ()
             { id: 7, name: 'First', confidence: 80, draftFields: { date, upDistanceM: 500 } },
             { id: 8, name: 'Unknown', confidence: 90, draftFields: { date, upDistanceM: null } },
         ]);
-        assert.deepEqual(prepared.trackOrdered.map((match: Match) => match.id), [7, 8]);
+        assert.deepEqual(prepared.trackOrdered.map(match => match.id), [7, 8]);
         assert.equal(prepared.sequenceById.get('7'), 1);
         assert.equal(prepared.fallbackTripName, 'First / Unknown');
-        if (date) assert.deepEqual(prepared.matches.map((match: Match) => match.draftFields.suffix), ['a', 'b']);
+        if (date) assert.deepEqual(prepared.matches.map(match => match.draftFields.suffix), ['a', 'b']);
     }
     const measured = Core.prepareDraftSelection([
         { id: 7, name: 'Later', draftFields: { upDistanceM: 500 } },
         { id: 8, name: 'Start', draftFields: { upDistanceM: 0 } },
     ]);
-    assert.deepEqual(measured.trackOrdered.map((match: Match) => match.id), [8, 7], 'a measured zero remains valid');
+    assert.deepEqual(measured.trackOrdered.map(match => match.id), [8, 7], 'a measured zero remains valid');
 });

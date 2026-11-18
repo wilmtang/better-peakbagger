@@ -7,7 +7,7 @@
 
 import { readVectorPaint } from '../maps/vector-basemap.ts';
 import type { VectorPaint } from '../maps/vector-basemap.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { terrainCamera } from './terrain-camera.js';
 import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
 import { readLayerSnapshot, readLayerStatus, readBasemapChoices, readAttributionInset } from '../maps/map-layer-protocol.ts';

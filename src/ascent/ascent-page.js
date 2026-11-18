@@ -16,7 +16,7 @@
 // when the persisted form omits it. Selectors here are validated against a
 // masked ascent.aspx fixture and confirmed on live Peakbagger before release.
 
-import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.ts';
 
 const clean = value => (typeof value === 'string' ? value : '').replace(/\s+/g, ' ').trim();
 

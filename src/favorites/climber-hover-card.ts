@@ -3,11 +3,11 @@
 
 import { dom as D } from '../ui/dom.ts';
 import { createStableText } from '../ui/stable-text.ts';
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.ts';
-import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { observeClimberMembership } from './climber-membership.js';

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { PEAKBAGGER_ORIGIN, isPeakbaggerUrl } from './peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN, isPeakbaggerUrl } from './peakbagger-origin.ts';
 
 export type AccountLinkLabel = 'My Home Page' | 'Edit Account' | 'Add Ascent' | 'My Ascents';
 

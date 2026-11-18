@@ -3,11 +3,11 @@
 //
 // Better Peakbagger — custom favorite toggle on public climber pages.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { favoriteClimbers as F } from './favorite-climbers.js';
-import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
 import { observeClimberMembership } from './climber-membership.js';
 import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';

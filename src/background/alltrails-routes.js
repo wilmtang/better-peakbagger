@@ -6,7 +6,7 @@ import {
     ALLTRAILS_PERMISSION,
     MAX_ALLTRAILS_GPX_BYTES,
     prepareAlltrailsImport,
-} from '../alltrails/alltrails-import.js';
+} from '../alltrails/alltrails-import.ts';
 import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
 
 export function createAlltrailsRoutes(options) {

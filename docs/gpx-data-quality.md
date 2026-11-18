@@ -61,7 +61,7 @@ documented in [mountain-local-time.md](mountain-local-time.md).
 
 Field validity alone does not prove that every segment describes the same
 activity. The saved-ascent analyzer runs the pure
-`src/gpx/gpx-segment-diagnostics.js` policy before chart sampling. It preserves
+`src/gpx/gpx-segment-diagnostics.ts` policy before chart sampling. It preserves
 the original parsed segments and source point identities, then calculates
 separate source and interpreted metric views. Activity capture, local-file
 processing, and prepared drafts do **not** apply this additional policy.

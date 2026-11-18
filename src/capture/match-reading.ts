@@ -5,7 +5,7 @@
 // the integer percentage capture-core assigns (0–100); it is never rescaled
 // here. Every surface that prints a reading uses this so the popup and the
 // activity inbox say the same thing, visibly and to assistive technology.
-import { matchLabel } from './match-confidence.js';
+import { matchLabel } from './match-confidence.ts';
 
 export interface MatchReading { text: string; spoken: string }
 

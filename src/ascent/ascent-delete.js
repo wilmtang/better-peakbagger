@@ -7,7 +7,7 @@
 // will not touch GitHub until an authenticated, complete My Ascents list proves
 // that the ascent no longer exists.
 
-import { settings as Settings } from '../settings/settings.js';
+import { settings as Settings } from '../settings/settings.ts';
 
 const DELETE_BUTTON_IDS = new Set(['DeleteButton', 'DeleteButton2']);
 const SUBMITTING_EVENT = 'bpb:ascent-delete-submitting';

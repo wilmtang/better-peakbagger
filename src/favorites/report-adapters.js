@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { profileId } from './ignored-climbers.js';
-import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.ts';
 const text = element => (element?.textContent || '').replace(/\s+/g, ' ').trim();
 export const authorInCell = cell => {
     const links = [...cell.querySelectorAll('a[href]')];

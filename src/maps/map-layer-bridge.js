@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { createSnotelClient } from '../snow/snotel-client.js';
 import { readSnotelMapStations } from '../snow/snotel-map-data.js';
 import { nearbySnotelStations } from '../snow/snotel-data.js';

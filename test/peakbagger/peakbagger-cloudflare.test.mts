@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from '../helpers/test-dom.mts';
 
-import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.js';
+import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.ts';
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { cloudflareFindings } from '../helpers/source-policies.mts';
 
@@ -59,7 +59,7 @@ test('runtime Cloudflare signatures and Peakbagger human-check copy remain centr
     assert.deepEqual(sources.flatMap(cloudflareFindings), []);
 
     const providerClassifier = await readFile(
-        fileURLToPath(new URL('../../src/capture/provider-response.js', import.meta.url)),
+        fileURLToPath(new URL('../../src/capture/provider-response.ts', import.meta.url)),
         'utf8',
     );
     assert.match(providerClassifier, /cf-mitigated/,

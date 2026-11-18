@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from '../../src/garmin/garmin-store.js';
+import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { createGarminImports, importRange } from '../../src/garmin/garmin-imports.ts';
 import { GarminError } from '../../src/garmin/garmin-api.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';

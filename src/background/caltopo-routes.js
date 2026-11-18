@@ -6,7 +6,7 @@ import {
     CALTOPO_PERMISSION,
     MAX_CALTOPO_GPX_BYTES,
     prepareCaltopoImport,
-} from '../caltopo/caltopo-import.js';
+} from '../caltopo/caltopo-import.ts';
 import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
 
 export function createCaltopoRoutes(options) {

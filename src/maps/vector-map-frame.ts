@@ -5,7 +5,7 @@ import * as maplibre from 'maplibre-gl';
 import type { Map as MapLibreMap, RequestParameters, StyleSpecification } from 'maplibre-gl';
 import { terrainStyle } from '../terrain/terrain-style.ts';
 import type { VectorStyle } from '../terrain/terrain-style.ts';
-import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.ts';
 import { VECTOR_MESSAGE, readVectorView, readVectorPaint, vectorBasemap } from './vector-basemap.ts';
 import type { VectorView } from './vector-basemap.ts';
 import { vectorMapAvailability, vectorMapReadyToPublish } from './vector-map-availability.ts';

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
 import { createCaltopoRoutes } from '../../src/background/caltopo-routes.js';
-import { CALTOPO_IMPORT_URL, CALTOPO_PERMISSION } from '../../src/caltopo/caltopo-import.js';
+import { CALTOPO_IMPORT_URL, CALTOPO_PERMISSION } from '../../src/caltopo/caltopo-import.ts';
 
 const sender = {
     tab: { id: 7, windowId: 9 },

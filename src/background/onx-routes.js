@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { MAX_ONX_GPX_BYTES, ONX_IMPORT_URL, ONX_PERMISSION, ONX_EXPORT_BUDGET_MS,
-    ONX_ATTEMPTS_KEY, probeOnxImporter, prepareOnxImport } from '../onx/onx-import.js';
-import { ascentIdentity } from '../gpx/saved-gpx-source.js';
+    ONX_ATTEMPTS_KEY, probeOnxImporter, prepareOnxImport } from '../onx/onx-import.ts';
+import { ascentIdentity } from '../gpx/saved-gpx-source.ts';
 import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
 import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 

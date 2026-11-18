@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { pageSettingsClient as PageSettingsClient } from '../../src/settings/page-settings-client.js';
+import { pageSettingsClient as PageSettingsClient } from '../../src/settings/page-settings-client.ts';
 
 const createTimers = () => {
     let now = 0;

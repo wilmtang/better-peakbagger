@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
     CAPTURE_ERROR_CODES,
     captureErrorPolicy,
-} from '../../src/capture/capture-error-policy.js';
+} from '../../src/capture/capture-error-policy.ts';
 
 const REQUIRED_CODES = [
     'unsupported', 'activity-changed', 'provider-page-not-ready', 'provider-page-timeout',

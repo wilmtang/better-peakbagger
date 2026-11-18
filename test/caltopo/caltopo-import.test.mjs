@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { prepareCaltopoImport, MAX_CALTOPO_GPX_BYTES } from '../../src/caltopo/caltopo-import.js';
+import { prepareCaltopoImport, MAX_CALTOPO_GPX_BYTES } from '../../src/caltopo/caltopo-import.ts';
 
 const GPX = '<gpx><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 const run = async ({ url = 'https://caltopo.com/map.html', before = '', duplicate = false,

@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
     classifyProviderBody,
     classifyProviderResponse,
-} from '../../src/capture/provider-response.js';
+} from '../../src/capture/provider-response.ts';
 
 const response = (status, {
     headers = {},

@@ -3,8 +3,8 @@
 //
 // Better Peakbagger — exact-options-page manual settings file transfer.
 
-import { settings as Settings } from '../settings/settings.js';
-import { settingsTransfer as Transfer } from '../settings/settings-transfer.js';
+import { settings as Settings } from '../settings/settings.ts';
+import { settingsTransfer as Transfer } from '../settings/settings-transfer.ts';
 import { imgbbAuth as ImgbbAuth } from '../photos/imgbb-auth.js';
 import { githubAuth as GithubAuth } from '../github/github-auth.js';
 import { storageValue as StorageValue } from '../storage/storage-value.ts';

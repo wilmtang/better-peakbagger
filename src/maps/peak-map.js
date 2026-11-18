@@ -5,7 +5,7 @@
 // Dynamic Map. Runs in MAIN world to inspect the page-owned, same-origin
 // MasterMap frame while settings and the renderer remain extension-isolated.
 
-import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';

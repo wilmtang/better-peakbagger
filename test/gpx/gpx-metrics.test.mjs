@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { gpxParse as GpxParse } from '../../src/gpx/gpx-parse.js';
-import { gpxMetrics as GpxMetrics } from '../../src/gpx/gpx-metrics.js';
+import { gpxParse as GpxParse } from '../../src/gpx/gpx-parse.ts';
+import { gpxMetrics as GpxMetrics } from '../../src/gpx/gpx-metrics.ts';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
 
 test('geographic coordinate validation accepts only finite latitude and longitude bounds', () => {

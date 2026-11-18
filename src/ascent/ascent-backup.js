@@ -13,7 +13,7 @@
 import { ascentPage as AscentPage } from './ascent-page.js';
 import { ascentBackupSource as Source } from './ascent-backup-source.js';
 import { githubError as GithubError } from '../github/github-error-copy.js';
-import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { dom as Dom } from '../ui/dom.ts';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';
 import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';

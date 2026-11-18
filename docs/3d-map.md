@@ -70,7 +70,7 @@ details:
    `src/terrain/terrain-coordinator.ts` owns state transitions, timeouts,
    camera handoff, terrain-compass updates, optional accepted-view notification,
    and failure recovery. The analyzer and Full
-   Screen Map also share `src/gpx/map-frame-lifecycle.js` for native MasterMap
+   Screen Map also share `src/gpx/map-frame-lifecycle.ts` for native MasterMap
    identity: late insertion, reload, replacement, and removal must rebind every
    Leaflet consumer rather than expire on a polling budget. Surface modules
    still own subject identity, geometry collection, consent-pending state, and
@@ -139,7 +139,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
 | `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
-| `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
+| `src/gpx/map-frame-lifecycle.ts` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.ts` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.ts` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
@@ -932,7 +932,7 @@ receiver check.
 
 The terrain showcase intentionally stubs storage and bridge protocol, but it is
 served over HTTPS on `www.peakbagger.com` rather than `http://localhost`,
-because `src/peakbagger/peakbagger-request.js` refuses any other origin and the
+because `src/peakbagger/peakbagger-request.ts` refuses any other origin and the
 analyzer fetches its GPX through that guard. Over plain HTTP the route never
 loads and every terrain check times out; see *A plain-HTTP fixture breaks these
 checks* in [`development.md`](development.md).

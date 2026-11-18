@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { dom } from '../ui/dom.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { mountainTime } from '../time/mountain-time.ts';

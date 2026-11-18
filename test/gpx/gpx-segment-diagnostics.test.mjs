@@ -3,9 +3,9 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { gpxMetrics as M } from '../../src/gpx/gpx-metrics.js';
-import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS } from '../../src/capture/capture-resource-limits.js';
-import { diagnoseGpxSegments as diagnose, diagnosticMetricInputs } from '../../src/gpx/gpx-segment-diagnostics.js';
+import { gpxMetrics as M } from '../../src/gpx/gpx-metrics.ts';
+import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS } from '../../src/capture/capture-resource-limits.ts';
+import { diagnoseGpxSegments as diagnose, diagnosticMetricInputs } from '../../src/gpx/gpx-segment-diagnostics.ts';
 import { suspectSegments, metricInputs } from '../helpers/suspect-gpx.mjs';
 
 test('synthetic contamination independently doubles distance and extends elapsed time', () => {

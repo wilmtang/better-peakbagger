@@ -5,7 +5,7 @@ import { observeIgnored } from './ignored-client.js';
 import { createFavoriteSource } from './favorite-source.js';
 import { selectedReportTable } from './report-adapters.js';
 import { reportStyle, utilityButton, paintReveal, accountRecovery } from './report-controls.js';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { createStableText } from '../ui/stable-text.ts';
 
 let ignored = null, ignoredError = '', preference = null, preferenceError = '', sourceState = null;

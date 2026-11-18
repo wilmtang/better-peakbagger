@@ -126,7 +126,7 @@ decided them that day; the milestone text below follows these decisions.
 
 | Decision | Chosen | Why | Not chosen |
 | --- | --- | --- | --- |
-| How M4 types the settings write route | A narrow typed adapter beside the Units owner | `settings.js` is a source in 24 bundles, and M7 step 2 already owns converting the store. | Converting `src/settings/settings.js` inside M4. |
+| How M4 types the settings write route | A narrow typed adapter beside the Units owner | `settings.js` is a source in 24 bundles, and M7 step 2 already owns converting the store. | Converting `src/settings/settings.ts` inside M4. |
 | Runner for M4.5's browser tier | A `verify` target on the existing `playwright` library harness | [verify-layout-stability.mts](../../scripts/verify-layout-stability.mts) already drives fixture pages in both engines inside CI's `layout` and `fixture-preflight` jobs. A second runner would add a package and a file convention that the `npm test` glob would also try to execute. | `@playwright/test`, which `904317c4` had named. |
 | Where jsdom's retirement lives | Its own milestone, M7.5 | "No authored JavaScript" and "no jsdom" are different results. Once jsdom is gone every DOM test needs a browser, and Chrome launches are forbidden in the Codex Seatbelt sandbox, so that cost should not hold M7 open. | Keeping it in M7's exit, or dropping the retirement. |
 
@@ -223,7 +223,7 @@ Status: complete on November 13, 2026.
   the worker's `applyPatch`, and cover transport loss, invalid replies,
   rejected writes and storage failure; ten `@ts-expect-error` examples fail the
   checker on misuse.
-- **Intentionally not changed:** `src/settings/settings.js` and the options
+- **Intentionally not changed:** `src/settings/settings.ts` and the options
   controller `options/options.js` stay JavaScript (M7). The controller's `save`
   still calls the store's `set` directly; the Units owner sees it only through
   the typed `UnitSettingsSave` contract. Reply validation and error messages are
@@ -239,7 +239,7 @@ Status: complete on November 13, 2026.
   real-browser run; `test/options` and `test/settings` pass.
 
 The Units panel never touches `src/ui/runtime-message.ts`. Its `save` goes from
-the options controller to `set` in [settings.js](../../src/settings/settings.js),
+the options controller to `set` in [settings.ts](../../src/settings/settings.ts),
 which sends a `SETTINGS_PATCH` runtime message; the worker case in
 [background.ts](../../src/background/background.ts) applies the patch. The
 options page does not write storage itself. M4 types that route. Converting

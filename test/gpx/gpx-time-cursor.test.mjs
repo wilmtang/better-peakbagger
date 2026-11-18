@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GPX_TIME_CURSOR, GPX_TIME_CURSOR_REQUEST, gpxCursorTime, readGpxTimeCursor, createGpxTimeCursorPublisher } from '../../src/gpx/gpx-time-cursor.js';
+import { GPX_TIME_CURSOR, GPX_TIME_CURSOR_REQUEST, gpxCursorTime, readGpxTimeCursor, createGpxTimeCursorPublisher } from '../../src/gpx/gpx-time-cursor.ts';
 
 const time = Date.parse('2024-07-12T13:32:00Z');
 const point = { timeState: 'valid', ms: time, lat: 46, lon: -121 };

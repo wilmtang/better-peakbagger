@@ -138,13 +138,13 @@ Other local state has separate owners and does not belong in a settings file:
 | Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.ts) | Device layout |
 | Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.js) | Device layout |
 | Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.ts), [panel theme](../src/theme/panel-theme.ts) | Mirror of portable `theme`, not a separate theme choice |
-| Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.js) | Per-device authorization; key transfer does not copy it |
+| Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.ts) | Per-device authorization; key transfer does not copy it |
 | Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.js) | Pending source IDs for deferred private record cleanup on deletion |
 | Provider request budgets | `budget:<host>` in IndexedDB `bpb-private-map-sources-v1`; [custom private store](../src/background/custom-private-store.js) | Device-local hourly/daily request counters |
 
 ## Migration and settings files
 
-[Settings storage](../src/settings/settings.js) reads the portable and device
+[Settings storage](../src/settings/settings.ts) reads the portable and device
 records through the same schema. Worker-owned writes serialize the two stores,
 retain device choices on replacement, and report persistence failures. Failed
 authoritative reads cannot become default-filled export or preservation data.
@@ -160,10 +160,10 @@ Legacy GitHub toggles are preserved only for an existing local token/repository
 when creating the device record. Fresh devices cannot inherit transfer consent
 from browser sync. An existing ignored-sync record retains its choice. Legacy
 map dimensions/cache budget seed the device record; later sync changes cannot
-replace it. [Settings migration](../src/settings/settings.js) and
+replace it. [Settings migration](../src/settings/settings.ts) and
 [connection selection](../src/background/github-routes.js) enforce this boundary.
 
-[Settings transfer schema v7](../src/settings/settings-transfer.js) exports
+[Settings transfer schema v7](../src/settings/settings-transfer.ts) exports
 portable keys, a `customLayers` envelope, and (for manual settings file exports)
 matching `privateCustomLayers`. It still reads supported v1–v6 files, stripping
 their old device and transfer values. Import replaces the portable snapshot after

@@ -13,7 +13,7 @@ import { reportMarkup as Markup } from '../reports/report-markup.ts';
 import {
     fetchPeakbaggerDocument,
     fetchPeakbaggerResource,
-} from '../peakbagger/peakbagger-request.js';
+} from '../peakbagger/peakbagger-request.ts';
 
 const trim = value => (typeof value === 'string' ? value : value == null ? '' : String(value)).trim();
 

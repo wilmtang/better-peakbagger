@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.ts';
 
 export const IGNORED_KEY = 'bpbIgnoredClimbers';
 export const PEAK_FILTER_KEY = 'bpbPeakReportFilter';

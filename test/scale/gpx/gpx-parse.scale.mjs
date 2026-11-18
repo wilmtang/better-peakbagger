@@ -8,8 +8,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { gpxParse } from '../../../src/gpx/gpx-parse.js';
-import { MAX_GPX_TRACK_POINTS } from '../../../src/capture/capture-resource-limits.js';
+import { gpxParse } from '../../../src/gpx/gpx-parse.ts';
+import { MAX_GPX_TRACK_POINTS } from '../../../src/capture/capture-resource-limits.ts';
 
 globalThis.DOMParser = new JSDOM('').window.DOMParser;
 

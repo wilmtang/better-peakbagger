@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { prepareOnxImport, probeOnxImporter } from '../../src/onx/onx-import.js';
+import { prepareOnxImport, probeOnxImporter } from '../../src/onx/onx-import.ts';
 
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 

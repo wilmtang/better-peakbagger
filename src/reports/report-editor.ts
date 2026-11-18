@@ -26,7 +26,7 @@ import { installReportLocalPhotos } from './report-local-photos.ts';
 import { createInstagramPresentation } from './instagram-ui.js';
 import { createStableText } from '../ui/stable-text.ts';
 import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
-import { settings as Settings } from '../settings/settings.js';
+import { settings as Settings } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { reportMarkup as Markup } from './report-markup.ts';
 import type { ConversionDiagnostic } from './report-markup.ts';

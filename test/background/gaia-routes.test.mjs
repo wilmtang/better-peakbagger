@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createGaiaRoutes } from '../../src/background/gaia-routes.js';
-import { GAIA_MAP_URL, GAIA_PERMISSION } from '../../src/gaia/gaia-import.js';
+import { GAIA_MAP_URL, GAIA_PERMISSION } from '../../src/gaia/gaia-import.ts';
 
 const sender = {
     tab: { id: 7, windowId: 9 },

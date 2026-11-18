@@ -21,7 +21,7 @@
 // options/unit-settings-contract.ts.
 
 import type { settingsSchema } from '../src/settings/settings-schema.ts';
-import { createSettingsStore } from '../src/settings/settings.js';
+import { createSettingsStore } from '../src/settings/settings.ts';
 
 export type Settings = ReturnType<typeof settingsSchema.clean>;
 export type SettingsKey = keyof Settings;
@@ -66,7 +66,7 @@ export interface SettingsPatchRoute<Patch extends SettingsPatch = SettingsPatch>
 export const settingsPatchRoute = (transport: SettingsPatchTransport): SettingsPatchRoute => {
     const store = createSettingsStore({
         area: null, localArea: null, onChanged: null,
-        sendMessage: (message: SettingsPatchRequest) => transport(message),
+        sendMessage: message => transport(message as SettingsPatchRequest),
     });
     return { set: patch => store.set(patch) };
 };

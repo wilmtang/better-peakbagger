@@ -7,8 +7,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { createSettingsStore } from '../../src/settings/settings.js';
-import { createPageSettingsClient } from '../../src/settings/page-settings-client.js';
+import { createSettingsStore } from '../../src/settings/settings.ts';
+import { createPageSettingsClient } from '../../src/settings/page-settings-client.ts';
 
 import {
     instrumentTerrainFrameHtml,
@@ -195,7 +195,7 @@ test('the shared fixture certificate is self-signed for a Peakbagger host and di
 test('the request guard that makes the HTTPS fixture necessary is still in force', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
     const { fetchPeakbaggerResource } = await import(
-        new URL('../../src/peakbagger/peakbagger-request.js', import.meta.url).href);
+        new URL('../../src/peakbagger/peakbagger-request.ts', import.meta.url).href);
     let called = false;
     const overHttp = await fetchPeakbaggerResource('http://www.peakbagger.com/scripts/showcase/terrain.gpx', {
         kind: 'gpx', fetchFn: async () => { called = true; },

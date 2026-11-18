@@ -8,7 +8,7 @@ import { createStableText } from '../ui/stable-text.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.ts';
 import { requestDeadline } from '../net/request-deadline.ts';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { readPeakWeatherSubject } from '../weather/peak-weather-subject.ts';
 import { readPeakNations } from '../avalanche/avalanche-location.ts';
 import { createSnotelClient } from './snotel-client.js';

@@ -3,7 +3,7 @@
 
 import { terrainTiles as TerrainTiles } from '../terrain/terrain-tiles.js';
 import { terrainCache as TerrainCache } from '../terrain/terrain-cache.ts';
-import { settings as Settings } from '../settings/settings.js';
+import { settings as Settings } from '../settings/settings.ts';
 
 const PREFETCH_RATE_MS = 15 * 1000;
 const PREFETCH_TILE_CAP = 32;

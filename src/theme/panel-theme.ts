@@ -5,7 +5,7 @@
 // storage is asynchronous, so a synchronous page-local mirror supplies the
 // first frame and the authoritative synced setting reconciles it afterward.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 
 const CACHE_KEY = 'bpbThemePref';
 const root = document.documentElement;

@@ -4,10 +4,10 @@
 // Pure profile-backup primitives shared by the ClimbListC content script and
 // fixture/unit tests. No extension APIs or ambient document are read here.
 
-import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
-import { classifyResponse } from '../peakbagger/peakbagger-response.js';
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.ts';
+import { classifyResponse } from '../peakbagger/peakbagger-response.ts';
 import { peakbaggerAccount } from '../peakbagger/peakbagger-account.ts';
-export { classifyResponse } from '../peakbagger/peakbagger-response.js';
+export { classifyResponse } from '../peakbagger/peakbagger-response.ts';
 
 const trim = value => String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
 

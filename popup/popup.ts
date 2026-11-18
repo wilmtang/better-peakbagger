@@ -1,13 +1,13 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
-import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
+import { capturePhases as CapturePhases } from '../src/capture/capture-phases.ts';
+import { captureErrorPolicy } from '../src/capture/capture-error-policy.ts';
 import { matchReading } from '../src/capture/match-reading.ts';
 import { providerFromUrl } from '../src/capture/provider-url.ts';
-import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.ts';
 import { waitingCountLabel } from '../src/garmin/garmin-badge.ts';
-import { settings as Settings } from '../src/settings/settings.js';
+import { settings as Settings } from '../src/settings/settings.ts';
 import { units as Units } from '../src/ui/units.ts';
 import { createStableText } from '../src/ui/stable-text.ts';
 import { rateLimitMessage } from '../src/net/rate-limit.ts';

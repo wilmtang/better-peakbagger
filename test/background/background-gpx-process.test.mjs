@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
-import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.js';
+import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.ts';
 import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { units } from '../ui/units.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 

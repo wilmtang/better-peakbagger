@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.ts';
 import { readCustomSource, customUrl, readCustomRegistry } from './custom-overlay-schema.js';
 import { createCustomParser } from './custom-overlay-parser.js';
 import { createCustomClient, customFailure } from './custom-overlay-client.js';

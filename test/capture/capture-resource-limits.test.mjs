@@ -4,8 +4,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { captureCore as Core } from '../../src/capture/capture-core.js';
-import { captureResourceLimits as Limits } from '../../src/capture/capture-resource-limits.js';
+import { captureCore as Core } from '../../src/capture/capture-core.ts';
+import { captureResourceLimits as Limits } from '../../src/capture/capture-resource-limits.ts';
 
 const corridorTrack = pointCount => Array.from({ length: pointCount }, (_, index) => ({
     lat: 0,

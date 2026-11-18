@@ -6,10 +6,10 @@ import { build } from 'esbuild';
 import JSZip from 'jszip';
 import { patchJsZipCsp, jsZipCspPlugin } from '../../scripts/jszip-csp-patch.mjs';
 import { fixtures } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
-import { decodeFitActivity } from '../../src/garmin/fit-activity.js';
+import { decodeFitActivity } from '../../src/garmin/fit-activity.ts';
 
 test('browser ZIP decoding works with dynamic code disabled and rejects string callbacks', async () => {
-    const built = await build({ entryPoints: ['src/garmin/fit-activity.js'], bundle: true, write: false,
+    const built = await build({ entryPoints: ['src/garmin/fit-activity.ts'], bundle: true, write: false,
         platform: 'browser', format: 'iife', globalName: 'Decoder', plugins: [jsZipCspPlugin()] });
     const code = built.outputFiles[0].text;
     assert(!/new Function\(/.test(code));

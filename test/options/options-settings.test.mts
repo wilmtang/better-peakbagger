@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
-import { settingsTransfer } from '../../src/settings/settings-transfer.js';
+import { settingsTransfer } from '../../src/settings/settings-transfer.ts';
 import * as helpers from '../helpers/options-helpers.mjs';
 import { rect, type ChromeStub, type LoadPage, type PageDom, type PageElement, type StubMessage, type WaitFor } from '../helpers/page-types.mts';
 

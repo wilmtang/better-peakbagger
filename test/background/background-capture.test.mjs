@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from '../../src/garmin/garmin-store.js';
+import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
 
 // The worker ships as one bundle (gpx-metrics + capture-core + settings-schema

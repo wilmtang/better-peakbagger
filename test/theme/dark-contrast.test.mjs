@@ -248,7 +248,7 @@ test('map overlays use the BPB panel palette with readable control text in both 
 });
 
 test('the GPX analyzer panel has one theming system, not two', async () => {
-    const { gpxPanelCss } = await import('../../src/gpx/gpx-panel-css.js');
+    const { gpxPanelCss } = await import('../../src/gpx/gpx-panel-css.ts');
     const panelRules = parseRules(gpxPanelCss.replace(/\/\*[\s\S]*?\*\//g, ''));
     const light = Object.fromEntries(Object.entries(panelRules.get('#bpb-gpx-analysis') || {})
         .filter(([key]) => key.startsWith('--bpb-gpx-')));

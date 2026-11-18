@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { canonicalInstagramUrl } from './instagram-url.js';
 import { instagramEmbedHeight } from './instagram-sizing.js';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 const api=globalThis.browser||globalThis.chrome;
 const token=location.hash.slice(1);
 let parentOrigin='*';

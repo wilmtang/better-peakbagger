@@ -10,13 +10,13 @@
 type PageOwned = ReturnType<typeof JSON.parse>;
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
-import { gpxMetrics } from '../gpx/gpx-metrics.js';
+import { gpxMetrics } from '../gpx/gpx-metrics.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
 import { peakMarkers } from './peak-markers.js';
 import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.js';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.js';
-import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.js';
+import { mapFrameLifecycle as MapFrameLifecycle } from '../gpx/map-frame-lifecycle.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 
 // Kept as an IIFE for early-exit control flow (non-Full-Screen-Map pages);
@@ -256,7 +256,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
     const findMapIframe = () => frameLifecycle.current();
 
     const resolveMapContext = () => {
-        const candidates = [];
+        const candidates: PageOwned[] = [];
         const iframe = findMapIframe();
         try { if (iframe && iframe.contentWindow) candidates.push(iframe.contentWindow); }
         catch (error) { /* A cross-origin frame is not ours to read. */ }
@@ -400,7 +400,7 @@ import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
         if (!activeMap || !activeMapWin || typeof activeMap.eachLayer !== 'function') return emptyRoute();
         const L = activeMapWin.L;
         if (!L) return emptyRoute();
-        const segments: PageOwned = [];
+        const segments: [number, number][][] = [];
         const colors: PageOwned = [];
         const links: PageOwned = [];
         const tracks: PageOwned = [];

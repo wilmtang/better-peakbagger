@@ -18,7 +18,7 @@ test('theme resolution preserves explicit preferences and resolves system once',
 
 test('theme consumers delegate instead of keeping local system-resolution copies', async () => {
     const files = [
-        '../../src/settings/settings.js',
+        '../../src/settings/settings.ts',
         '../../src/gpx/gpx-analyzer.js',
         '../../src/maps/big-map.ts',
         '../../src/maps/peak-map.js',

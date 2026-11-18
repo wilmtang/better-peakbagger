@@ -4,7 +4,7 @@ import JSZip from 'jszip';
 import { fixtures, matches, crc } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
 import { readFitMessages } from '../../src/garmin/fit-message-reader.ts';
 import { projectRaw } from '../../docs/plans/experiments/fit-decoders/projection.mjs';
-import { decodeFitActivity, decodeGarminRecording } from '../../src/garmin/fit-activity.js';
+import { decodeFitActivity, decodeGarminRecording } from '../../src/garmin/fit-activity.ts';
 
 for (const fixture of fixtures()) test(`strict FIT: ${fixture.name}`, () => {
     const read = () => projectRaw(readFitMessages(fixture.bytes, { messageNumbers: [0, 18, 20, 21, 34], maxInputBytes: 8 * 1024 * 1024 }));

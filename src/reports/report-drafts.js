@@ -8,7 +8,7 @@
 // silently disagreeing. This module intentionally has no DOM or browser-API
 // dependency.
 
-import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.ts';
 
 const PREFIX = 'bpbReportDraft:';
 const TTL_MS = 14 * 24 * 60 * 60 * 1000;

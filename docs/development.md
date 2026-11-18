@@ -48,7 +48,7 @@ Better Peakbagger module uses a global as an internal dependency.
   terrain verifiers, and `showcase:render` — creates a one-day self-signed
   certificate in a disposable directory and deletes it in teardown, so the local
   fixture is served over HTTPS on a real Peakbagger hostname. That is required
-  by the product, not a formality: `src/peakbagger/peakbagger-request.js`
+  by the product, not a formality: `src/peakbagger/peakbagger-request.ts`
   refuses any other origin.
 
 ## TypeScript creation and modification policy
@@ -868,7 +868,7 @@ Dependency updates arrive automatically; see
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach.
-`src/peakbagger/peakbagger-page.js` uses the same mechanism for capture requests
+`src/peakbagger/peakbagger-page.ts` uses the same mechanism for capture requests
 that Cloudflare can reject from the worker while accepting from the signed-in
 site. Its request API accepts only the canonical login page and bounded
 summit-box endpoint. Its account-evidence API exposes only allowlisted global
@@ -1227,7 +1227,7 @@ add it to the merge-step condition, for example
 - Every fixture server — the terrain verifiers, `verify -- terrain lod`, and `showcase:render` — serves
   over **HTTPS on `www.peakbagger.com`**, with a self-signed certificate minted
   per run and deleted in teardown. This is a product constraint, not a
-  preference: `src/peakbagger/peakbagger-request.js` refuses any URL that is not
+  preference: `src/peakbagger/peakbagger-request.ts` refuses any URL that is not
   `https:` on a Peakbagger host, and the GPX Analyzer fetches its track through
   that guard. See *A plain-HTTP fixture breaks these checks* below.
 - `npm run verify -- browsers` loads the real Chrome and derived Firefox manifests.
@@ -1312,7 +1312,7 @@ and screen-reader speech remain separate checks.
 
 ### A plain-HTTP fixture breaks these checks
 
-`src/peakbagger/peakbagger-request.js` refuses any URL whose protocol is not
+`src/peakbagger/peakbagger-request.ts` refuses any URL whose protocol is not
 `https:` or whose host is not `peakbagger.com`/`www.peakbagger.com`, before it
 fetches anything. That guard is a security property and must not be relaxed to
 suit a test. The GPX Analyzer fetches its track through it, so a fixture served

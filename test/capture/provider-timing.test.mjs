@@ -9,7 +9,7 @@ import {
     PROVIDER_EXPORT_TIMEOUT_MS,
     PROVIDER_OWNERSHIP_TIMEOUT_MS,
     PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
-} from '../../src/capture/provider-timing.js';
+} from '../../src/capture/provider-timing.ts';
 
 test('provider timing gives page export ownership before the worker margin', () => {
     assert.equal(PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,

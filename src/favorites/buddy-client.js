@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { ownerClimberId } from '../profile/profile-backup-core.js';
-import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument, fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.ts';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { BUDDY_MESSAGE } from './buddy-state.js';
 import { climberProfileLists } from './climber-card-state.js';
 

@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { removeGpxTimestamps } from '../../src/gpx/gpx-timestamps.js';
+import { removeGpxTimestamps } from '../../src/gpx/gpx-timestamps.ts';
 
 test('local timestamp projection covers metadata, waypoint, route, track and prefixed time elements', () => {
     const dom = new JSDOM();

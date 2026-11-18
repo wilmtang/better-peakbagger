@@ -8,7 +8,7 @@
 // needed. Buddy
 // and peak-list pages reuse only the sorter; they have no beta filter surface.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
 import * as I from '../favorites/ignored-climbers.js';

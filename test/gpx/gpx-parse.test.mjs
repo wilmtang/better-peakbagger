@@ -7,11 +7,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { gpxParse } from '../../src/gpx/gpx-parse.js';
+import { gpxParse } from '../../src/gpx/gpx-parse.ts';
 import {
     MAX_GPX_TRACK_SEGMENTS,
     MAX_GPX_WAYPOINTS,
-} from '../../src/capture/capture-resource-limits.js';
+} from '../../src/capture/capture-resource-limits.ts';
 
 // The parser's only platform dependency is DOMParser; give it jsdom's.
 const { DOMParser } = new JSDOM('').window;

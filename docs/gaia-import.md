@@ -70,7 +70,7 @@ it separate from backup and GPX Analyzer bundles prevents a map-service failure
 from disabling those features.
 
 `src/ascent/ascent-page.js` finds Peakbagger's stored-track link. Before
-showing the control, `src/gpx/saved-gpx-source.js` requires:
+showing the control, `src/gpx/saved-gpx-source.ts` requires:
 
 - an HTTPS Peakbagger `climber/ascent.aspx` page with exactly one positive
   `aid`;

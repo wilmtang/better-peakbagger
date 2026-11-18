@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
 
 export const BUDDY_CACHE_MESSAGE = 'BUDDY_CACHE_UPDATE';
 export const BUDDY_CACHE_EPOCH_KEY = 'bpbBuddyCacheEpoch';

@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createGarminBadge } from './garmin-badge.ts';
-import { createGarminStore, garminPublicSummary } from './garmin-store.js';
+import { createGarminStore, garminPublicSummary } from './garmin-store.ts';
 import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.ts';
-import { decodeGarminRecording } from './fit-activity.js';
+import { decodeGarminRecording } from './fit-activity.ts';
 import { createPackagedPageMatcher } from '../background/sender-policy.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { publicErrors as PublicErrors } from '../background/public-errors.js';

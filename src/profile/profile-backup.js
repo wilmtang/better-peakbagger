@@ -8,8 +8,8 @@
 import { profileBackupCore as Core } from './profile-backup-core.js';
 import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.js';
 import { githubError as GithubError } from '../github/github-error-copy.js';
-import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
-import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.ts';
+import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { dom as Dom } from '../ui/dom.ts';
 import { createStableText } from '../ui/stable-text.ts';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';

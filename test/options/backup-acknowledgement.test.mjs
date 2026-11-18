@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.js';
-import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
+import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { loadOptions, el, waitFor, favoriteKey, favoriteStore, registerCleanup } from '../helpers/options-helpers.mjs';
 
 registerCleanup();

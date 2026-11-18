@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
+import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.ts';
 
 // The built bundle (IIFE) evaluated in each page's jsdom realm, so the module
 // reads that page's document/location — exactly as the injected script does.

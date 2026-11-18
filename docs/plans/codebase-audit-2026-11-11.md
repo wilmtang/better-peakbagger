@@ -213,7 +213,7 @@ from code only.
 
 **Root cause.** `createGarminStore` keeps the whole inbox — connection, scan
 cursor, receipts and every item's reduced route — under the single key
-`current` (`src/garmin/garmin-store.js` lines 23–37). `mutate` reads that
+`current` (`src/garmin/garmin-store.ts` lines 23–37). `mutate` reads that
 record, runs the callback, and writes the whole record back, plus the summary.
 Stored items normally are full-size: `prepare` persists the reduced route
 (`background.js` lines 3651–3657), and the reducer fills its 3,000-point budget
@@ -239,7 +239,7 @@ Consequences in the callers (line numbers in `garmin-imports.ts` unless noted):
 
 ```js
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from './src/garmin/garmin-store.js';
+import { createGarminStore } from './src/garmin/garmin-store.ts';
 const point = i => ({ lat: 46.8 + i * 1e-5, lon: -121.7 + i * 1e-5, ele: 1500 + i * 0.1, time: 1760000000000 + i * 1000 });
 const item = id => ({ id: String(id), phase: 'ready', saved: [], summary: { id: String(id), date: '2026-10-01', type: 'hiking' },
     analysis: { matches: [{ id: 1, name: 'x', classification: 'strong', confidence: 90 }],
@@ -461,7 +461,7 @@ inbox prints "Strong · 92% confidence".
 
 No user-visible error today, since visible matches score at least 60. Type it
 as `number`, delete the scale guess, and format through one helper beside
-`matchLabel` in `src/capture/match-confidence.js` so both surfaces and their
+`matchLabel` in `src/capture/match-confidence.ts` so both surfaces and their
 accessible names agree. Unit-test the helper.
 
 ### F8 — Popup selection write on every render
@@ -624,9 +624,9 @@ A second pass read the highest-risk code in full: `src/capture/*`,
 `src/net/bounded-text.ts`, all 4,169 lines of `src/background/background.ts`,
 `src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
-`src/gpx/gpx-parse.js`, and the ascent-editor scripts `ascent-draft.js`,
+`src/gpx/gpx-parse.ts`, and the ascent-editor scripts `ascent-draft.js`,
 `ascent-upload.ts`, `ascent-saved.js`, `capture-save-verification.js` and
-`ascent-page.js`. Not read: `src/gpx/gpx-metrics.js` and the route modules the
+`ascent-page.js`. Not read: `src/gpx/gpx-metrics.ts` and the route modules the
 worker delegates to (GitHub, photos, report drafts, imports, custom layers).
 No browser was launched for this pass either.
 
@@ -752,7 +752,7 @@ The manifest injects content scripts on both `peakbagger.com` and
 `www.peakbagger.com`, and `peakbagger-origin.js` accepts both as senders. The
 capture transport does not: the page helper refuses any request unless
 `location.origin` is exactly `https://www.peakbagger.com`
-(`src/peakbagger/peakbagger-page.js`, `validRequest`), the summit-box URL is
+(`src/peakbagger/peakbagger-page.ts`, `validRequest`), the summit-box URL is
 hard-coded to `www` (`background.js` line 1232), the helper-tab lookup queries
 only `www` (line 1107), and "canonical tab" means the `www` origin (lines
 567–570).

@@ -4,8 +4,8 @@
 // Better Peakbagger — settings file transfer and GitHub backup controls.
 
 import { createBackupReview } from './backup-review.js';
-import { settings as S } from '../src/settings/settings.js';
-import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.js';
+import { settings as S } from '../src/settings/settings.ts';
+import { settingsTransfer as Transfer } from '../src/settings/settings-transfer.ts';
 import { githubError as GithubError } from '../src/github/github-error-copy.js';
 import { runtimeMessage as RuntimeMessage } from '../src/ui/runtime-message.ts';
 import { boundedText as BoundedText } from '../src/net/bounded-text.ts';

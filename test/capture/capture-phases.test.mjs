@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { capturePhases } from '../../src/capture/capture-phases.js';
+import { capturePhases } from '../../src/capture/capture-phases.ts';
 
 test('capture terminal phases have one shared immutable definition', () => {
     assert.deepEqual(capturePhases.TERMINAL_PHASES, [

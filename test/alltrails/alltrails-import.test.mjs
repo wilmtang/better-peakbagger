@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { JSDOM } from 'jsdom';
-import { MAX_ALLTRAILS_GPX_BYTES, prepareAlltrailsImport } from '../../src/alltrails/alltrails-import.js';
+import { MAX_ALLTRAILS_GPX_BYTES, prepareAlltrailsImport } from '../../src/alltrails/alltrails-import.ts';
 
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 

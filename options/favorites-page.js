@@ -9,7 +9,7 @@
 // sync). This page supplies all three; the GitHub backup for the list lives on
 // the Settings page and is driven separately.
 
-import { settings as S } from '../src/settings/settings.js';
+import { settings as S } from '../src/settings/settings.ts';
 import { initFavorites } from './favorites.js';
 import { initIgnored } from './ignored.js';
 import { initClimberFiles } from './climber-files.js';

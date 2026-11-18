@@ -22,15 +22,15 @@ export function settingsDefaultFindings(source: RuntimeSource): string[] {
 }
 export function uploadLimitFindings(source: RuntimeSource): string[] {
     const pattern = /(?:points?|waypoints?|segments?)\w*\.length\s*[<>]=?\s*(?:3000|50)\b|[<>]=?\s*(?:3000|50)\b\s*(?:\)|;).*(?:point|segment)/i;
-    return source.file !== 'src/capture/upload-limits.js' && matches(source, pattern)
+    return source.file !== 'src/capture/upload-limits.ts' && matches(source, pattern)
         ? [finding(source, 'hardcodes a Peakbagger upload limit')] : [];
 }
 export function cloudflareFindings(source: RuntimeSource): string[] {
-    if (source.file === 'src/peakbagger/peakbagger-cloudflare.js') return [];
+    if (source.file === 'src/peakbagger/peakbagger-cloudflare.ts') return [];
     const findings = [];
     // Provider response classification owns its documented response marker,
     // but must never take over Peakbagger's human-check copy.
-    if (source.file !== 'src/capture/provider-response.js' && matches(source, /cf-mitigated|_cf_chl_opt|cf-chl-|challenge-platform|Just a moment/)) {
+    if (source.file !== 'src/capture/provider-response.ts' && matches(source, /cf-mitigated|_cf_chl_opt|cf-chl-|challenge-platform|Just a moment/)) {
         findings.push(finding(source, 'duplicates Cloudflare classification'));
     }
     if (matches(source, /Peakbagger is asking for a human check|Complete check on Peakbagger/)) findings.push(finding(source, 'duplicates Peakbagger human-check copy'));
@@ -40,7 +40,7 @@ export function originFindings(source: RuntimeSource): string[] {
     const findings = new Set<string>();
     for (const text of source.variants) for (const line of text.split('\n')) {
         if (/https:\/\/peakbagger\.com/i.test(line)) findings.add(finding(source, 'uses the non-canonical absolute origin'));
-        if (source.file === 'src/peakbagger/peakbagger-origin.js') continue;
+        if (source.file === 'src/peakbagger/peakbagger-origin.ts') continue;
         const isPattern = /\/[^/\n]*peakbagger\\?\.com[^/\n]*\/[gimsuy]*/i.test(line) && !line.includes('https://') && !line.includes('http://');
         const isHostSet = /new Set\(\[[^\]]*peakbagger\.com/i.test(line);
         if ((isPattern || isHostSet) && /peakbagger\\?\.com/i.test(line)) findings.add(finding(source, 'duplicates the host check'));

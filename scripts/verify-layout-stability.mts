@@ -14,7 +14,7 @@ import { retainBrowserFailure, verificationScreenshots } from './browser-verific
 import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
+import { gpxPanelCss } from '../src/gpx/gpx-panel-css.ts';
 import { darkCss } from '../src/theme/site-dark-css.ts';
 import { verifySettingsActions } from './verify-settings-actions.mts';
 import { verifyClimberFiles } from './verify-climber-files.mjs';

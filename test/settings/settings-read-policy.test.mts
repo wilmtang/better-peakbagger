@@ -27,7 +27,7 @@ const FAIL_SOFT = Object.freeze({
     'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
     'src/profile/profile-units.js': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],
     'src/reports/report-editor.ts': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
-    'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
+    'src/settings/bridge.ts': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
     'src/terrain/terrain-map.ts': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
 });
 

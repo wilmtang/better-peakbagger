@@ -5,13 +5,13 @@
 // is read only after a trusted provider click. Each destination's visible
 // preview and final confirmation remain the user's review gate.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { ascentPage as AscentPage } from './ascent-page.js';
-import { savedGpxSource as GpxSource } from '../gpx/saved-gpx-source.js';
-import { MAX_CALTOPO_GPX_BYTES } from '../caltopo/caltopo-import.js';
-import { MAX_ALLTRAILS_GPX_BYTES } from '../alltrails/alltrails-import.js';
-import { MAX_GAIA_GPX_BYTES } from '../gaia/gaia-import.js';
-import { MAX_ONX_GPX_BYTES, ONX_EXPORT_BUDGET_MS } from '../onx/onx-import.js';
+import { savedGpxSource as GpxSource } from '../gpx/saved-gpx-source.ts';
+import { MAX_CALTOPO_GPX_BYTES } from '../caltopo/caltopo-import.ts';
+import { MAX_ALLTRAILS_GPX_BYTES } from '../alltrails/alltrails-import.ts';
+import { MAX_GAIA_GPX_BYTES } from '../gaia/gaia-import.ts';
+import { MAX_ONX_GPX_BYTES, ONX_EXPORT_BUDGET_MS } from '../onx/onx-import.ts';
 import { dom as Dom } from '../ui/dom.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';

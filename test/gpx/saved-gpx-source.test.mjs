@@ -9,11 +9,11 @@ import {
     readSourceGpx,
     storedTrackLink,
     validateGpx,
-} from '../../src/gpx/saved-gpx-source.js';
-import { MAX_GAIA_GPX_BYTES } from '../../src/gaia/gaia-import.js';
-import { MAX_ALLTRAILS_GPX_BYTES } from '../../src/alltrails/alltrails-import.js';
-import { MAX_ONX_GPX_BYTES } from '../../src/onx/onx-import.js';
-import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request.js';
+} from '../../src/gpx/saved-gpx-source.ts';
+import { MAX_GAIA_GPX_BYTES } from '../../src/gaia/gaia-import.ts';
+import { MAX_ALLTRAILS_GPX_BYTES } from '../../src/alltrails/alltrails-import.ts';
+import { MAX_ONX_GPX_BYTES } from '../../src/onx/onx-import.ts';
+import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request.ts';
 
 const ascent = 'https://www.peakbagger.com/climber/ascent.aspx?aid=42';
 const download = 'https://www.peakbagger.com/climber/GPXFile.aspx?aid=42&sep=1';

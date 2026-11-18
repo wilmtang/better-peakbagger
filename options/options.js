@@ -4,7 +4,7 @@
 // Better Peakbagger — options page controller.
 
 import { initOrderSettings } from './order-settings.js';
-import { settings as S } from '../src/settings/settings.js';
+import { settings as S } from '../src/settings/settings.ts';
 import { terrainCache as TerrainCache } from '../src/terrain/terrain-cache.ts';
 import { panelTheme as Theme } from '../src/theme/panel-theme.ts';
 import { optionsUtils as OptionsUtils } from './options-utils.js';

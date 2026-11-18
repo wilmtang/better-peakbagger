@@ -4,7 +4,7 @@
 // Better Peakbagger — MapLibre renderer hosted by terrain/terrain.html.
 
 import * as maplibre from 'maplibre-gl';
-import { settings } from '../settings/settings.js';
+import { settings } from '../settings/settings.ts';
 import { startTerrainFrame } from './terrain-frame-runtime.ts';
 
 // A web-accessible extension frame can be embedded directly by a Peakbagger

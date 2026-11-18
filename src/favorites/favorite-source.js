@@ -3,8 +3,8 @@
 import { favoriteClimbers as F } from './favorite-climbers.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { ownerClimberId } from '../profile/profile-backup-core.js';
-import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
 
 // One source policy for peak reports and full ascent lists. Empty is valid;

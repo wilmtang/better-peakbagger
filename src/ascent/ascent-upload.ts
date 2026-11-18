@@ -13,19 +13,19 @@
 // and the exactly-once GPS Preview all belong to src/ascent/ascent-draft.js; Save is
 // always the user's.
 
-import { matchLabel, matchTone } from '../capture/match-confidence.js';
+import { matchLabel, matchTone } from '../capture/match-confidence.ts';
 import {
     CORRIDOR_TOTAL_TIMEOUT_MS,
     MAX_GPX_BYTES,
     MAX_GPX_TEXT_CHARS,
     gpxLimitMessage,
-} from '../capture/capture-resource-limits.js';
-import { removeGpxTimestamps } from '../gpx/gpx-timestamps.js';
-import { gpxParse } from '../gpx/gpx-parse.js';
-import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
+} from '../capture/capture-resource-limits.ts';
+import { removeGpxTimestamps } from '../gpx/gpx-timestamps.ts';
+import { gpxParse } from '../gpx/gpx-parse.ts';
+import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.ts';
 import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import { requestDeadline as Deadline } from '../net/request-deadline.ts';
-import { settings as Settings } from '../settings/settings.js';
+import { settings as Settings } from '../settings/settings.ts';
 import { units as Units } from '../ui/units.ts';
 import { createStableText } from '../ui/stable-text.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';

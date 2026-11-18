@@ -6,7 +6,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.js';
+import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.ts';
 
 import {
     activateToolbarTarget,

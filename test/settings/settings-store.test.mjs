@@ -3,9 +3,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.js';
+import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
-import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.js';
+import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 
 const makeArea = (initial = {}) => {
     const data = { ...initial };
