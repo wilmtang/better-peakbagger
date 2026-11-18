@@ -2,15 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, cp, readFile, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, cp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium, firefox } from 'playwright';
 import type { Frame } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
 import { createBrowserFixtureServer, waitForCondition as waitForValue, resolveFixtureFile } from './browser-verification-fixtures.mjs';
 import { snowMapDocument } from './verify-snow-map-fixture.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { createResourceStack } from './resource-stack.mjs';
 import { decodePng } from './browser-verification-png.mts';
 import { MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.ts';
@@ -84,8 +82,7 @@ const cooldownOnly = args.includes('--cooldown-only');
 const root = path.resolve(import.meta.dirname, '..'), resources = createResourceStack();
 let failure, summary, failurePage, failureContext;
 try {
-    const profile = await mkdtemp(path.join(tmpdir(), 'bpb-vector-map-'));
-    resources.defer('vector profile', () => rm(profile, { recursive: true, force: true }));
+    const profile = await createVerificationRoot(resources, 'bpb-vector-map-', 'vector profile');
     let html = await snowMapDocument();
     html = html.replace('html,body,#map{height:100%;margin:0}', 'html,body{margin:0}#map{height:440px}h1,p{margin:12px;font:16px Arial}')
         .replace('#selmap{position:absolute;top:10px;right:10px;z-index:1000}', '#map{position:relative}#selboxdiv{font:11px Tahoma,Verdana,Arial Narrow;padding:5px;top:10px;right:10px;width:170px;position:absolute;z-index:1000;background:white;border:2px solid black}')
@@ -106,16 +103,11 @@ try {
         const module = path.join(extensionRoot, terrainMode ? 'terrain/terrain-frame.js' : 'terrain/vector-map-frame.js');
         await writeFile(module, (terrainMode ? instrumentMap : instrumentVectorMap)(await readFile(module, 'utf8')));
     }
-    if (!firefoxMode) assertChromeLaunchAllowed();
-    const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(profile, firefoxMode ? {
-        headless: true, ignoreHTTPSErrors: true, viewport: { width: 1280, height: 800 },
-        firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com', 'webgl.sanitize-unmasked-renderer': false },
-    } : { channel: 'chromium', headless: true, viewport: { width: 1280, height: 800 },
-        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1',
-            `--disable-extensions-except=${extensionRoot}`, `--load-extension=${extensionRoot}`],
-    });
-    resources.defer('vector browser', () => context.close());
+    const browserViewport = { width: 1280, height: 800 };
+    const context = firefoxMode
+        ? await launchVerificationFirefox(resources, 'vector browser', profile, { viewport: browserViewport, firefoxUserPrefs: { 'webgl.sanitize-unmasked-renderer': false } })
+        : await launchVerificationChrome(resources, 'vector browser', profile, { viewport: browserViewport, ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+            hosts: [PEAKBAGGER_HOST_RULE], trustArgs: fixture.chromeTrustArgs, extension: extensionRoot });
     if (terrainMode && !firefoxMode) {
         const worker = await waitForCondition(() => context.serviceWorkers()[0], { description: 'real extension worker startup' });
         await worker.evaluate(async () => {

@@ -21,7 +21,7 @@ either feature an avalanche *risk* assessment for the mountain or route.
    [ATES definition](https://avalanche.org/avalanche-encyclopedia/terrain/avalanche-terrain-exposure/avalanche-terrain-exposure-scale-ates/)
    separates landscape exposure from changing snowpack conditions.
 2. **The current extension already has the right first integration point.**
-   [peak-links.js](../../src/maps/peak-links.js) validates the explicitly labelled
+   [peak-links.ts](../../src/maps/peak-links.ts) validates the explicitly labelled
    WGS84 decimal coordinates, anchors an inset to the native Links section, and
    adds Windy, Copernicus, and country-gated AirNow links. Its external anchors
    already use `noopener noreferrer`. Adding an avalanche source here avoids
@@ -153,7 +153,7 @@ pure, locally maintained source registry. Implemented files:
 
 ```text
 src/avalanche/avalanche-links.js       provider registry and safe URL builders
-src/avalanche/avalanche-location.js    strict Nation parsing, if needed
+src/avalanche/avalanche-location.ts    strict Nation parsing, if needed
 test/avalanche/avalanche-links.test.mjs
 ```
 

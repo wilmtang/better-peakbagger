@@ -4,8 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-// @ts-expect-error jsdom ships no type declarations.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 import { marked } from 'marked';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
@@ -14,12 +13,12 @@ const html = await fs.readFile(new URL('../../photos/photos.html', import.meta.u
 const source = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
 const styles = await fs.readFile(new URL('../../photos/photos.css', import.meta.url), 'utf8');
 const panelStyles = await fs.readFile(new URL('../../src/theme/panel.css', import.meta.url), 'utf8');
-const dom = new JSDOM(html);
+const dom = fixtureDom(html);
 const doc = dom.window.document;
 // The settings page is a separate document, so its section ids can only be
 // checked against the photo page's deep links by parsing both.
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
-const optionsDoc = new JSDOM(optionsHtml).window.document;
+const optionsDoc = fixtureDom(optionsHtml).window.document;
 const guideHtml = await fs.readFile(new URL('../../photos/guide.html', import.meta.url), 'utf8');
 const readme = await fs.readFile(new URL('../../README.md', import.meta.url), 'utf8');
 // The README is an overview, not another copy of the detailed photo contract.
@@ -96,7 +95,7 @@ test('the packaged photo page exposes the editor, library, and credential bounda
 test('every extension panel paints from the one shared design language', async () => {
     assert.ok(COPY_FILES.some(([from, to]) =>
         from === 'src/theme/panel.css' && to === 'css/panel.css'));
-    for (const page of [doc, new JSDOM(await fs.readFile(
+    for (const page of [doc, fixtureDom(await fs.readFile(
         new URL('../../photos/guide.html', import.meta.url), 'utf8')).window.document, optionsDoc]) {
         assert.deepEqual(
             [...page.querySelectorAll('link[rel="stylesheet"]')].map(node => node.getAttribute('href'))[0],
@@ -165,9 +164,9 @@ test('file format, JPEG quality, and the encoded size are summarized beside the 
     assert.equal(doc.getElementById('jpeg-quality-control').hidden, true,
         'quality only appears when the effective output is JPEG');
     const estimate = doc.getElementById('upload-estimate').parentElement;
-    assert.equal(estimate.getAttribute('role'), 'status');
-    assert.equal(estimate.getAttribute('aria-live'), 'polite');
-    assert.match(estimate.textContent, /full resolution.+annotations included/is);
+    assert.equal(estimate!.getAttribute('role'), 'status');
+    assert.equal(estimate!.getAttribute('aria-live'), 'polite');
+    assert.match(estimate!.textContent, /full resolution.+annotations included/is);
     assert.ok(format.closest('.editor-footer'));
     assert.match(doc.querySelector('label.upload-option > span').textContent, /^File format$/);
     const summary = doc.getElementById('output-summary');
@@ -276,7 +275,7 @@ test('every climbing symbol is painted from the renderer and reachable by keyboa
         .map(button => button.dataset.tool);
     assert.deepEqual(symbolTools, [...Project.MARKER_TYPES]);
     for (const button of doc.querySelectorAll('[data-tool] [data-symbol]')) {
-        assert.equal(button.dataset.symbol, button.closest('[data-tool]').dataset.tool);
+        assert.equal(button.dataset.symbol, button.closest('[data-tool]')!.dataset.tool);
         assert.equal(button.childElementCount, 0, 'the slot must be filled at runtime');
     }
     // The rail's own hints are what the page reads to build its shortcut map,
@@ -446,12 +445,12 @@ test('settings deep links land on section ids the settings page actually defines
     // rather than the navigation.
     const targets = [...doc.querySelectorAll('a[href]')]
         .map(link => link.getAttribute('href'))
-        .filter(href => !/^[a-z][a-z0-9+.-]*:/i.test(href))
-        .map(href => ({ href, id: /^(?:\.{1,2}\/)*options\/options\.html#(.+)$/.exec(href)?.[1] }))
+        .filter(href => !/^[a-z][a-z0-9+.-]*:/i.test(href!))
+        .map(href => ({ href, id: /^(?:\.{1,2}\/)*options\/options\.html#(.+)$/.exec(href!)?.[1] }))
         .filter(target => target.id);
     assert.ok(targets.length, 'the photo page should deep-link into the settings page');
     for (const { href, id } of targets) {
-        assert.ok(optionsDoc.getElementById(id),
+        assert.ok(optionsDoc.getElementById(id!),
             `${href} points at a section id options.html does not define`);
     }
 });

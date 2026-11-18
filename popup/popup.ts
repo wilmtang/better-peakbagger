@@ -3,7 +3,7 @@
 
 import { capturePhases as CapturePhases } from '../src/capture/capture-phases.js';
 import { captureErrorPolicy } from '../src/capture/capture-error-policy.js';
-import { matchLabel } from '../src/capture/match-confidence.js';
+import { matchReading } from '../src/capture/match-reading.ts';
 import { providerFromUrl } from '../src/capture/provider-url.js';
 import { PEAKBAGGER_ORIGIN } from '../src/peakbagger/peakbagger-origin.js';
 import { waitingCountLabel } from '../src/garmin/garmin-badge.ts';
@@ -14,7 +14,7 @@ import { rateLimitMessage } from '../src/net/rate-limit.js';
 
 // The worker owns these records; the popup reads only the fields it renders.
 interface CaptureError { code?: string; message?: string; recovery?: string; recoveryTabId?: number; fromWorker?: boolean; retryAt?: number }
-interface PeakMatch { id: number; name: string; confidence?: string; evidence: { distanceM: number; elevationDeltaM: number; trackQuality: number; ambiguous?: boolean }; [field: string]: unknown }
+interface PeakMatch { id: number; name: string; confidence?: number; evidence: { distanceM: number; elevationDeltaM: number; trackQuality: number; ambiguous?: boolean }; [field: string]: unknown }
 // Index access covers the many optional result fields, which vary by phase.
 interface CaptureJob { phase: string; provider?: string; activityId?: string | number; error?: CaptureError | null; matches: PeakMatch[]; selectedIds: number[]; message?: string; progress?: { completed?: number; total?: number }; track: { originalPointCount: number; retainedPointCount: number; maxDeviationM: number }; [field: string]: unknown }
 interface CardAction { label: string; primary?: boolean; pending?: boolean; onClick: (event: MouseEvent) => unknown }
@@ -356,8 +356,15 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
         openButton.textContent = count === 1 ? 'Open 1 draft' : `Open ${count} drafts`;
         openButton.disabled = count === 0;
         openButton.setAttribute('aria-disabled', String(count === 0 || resultActionPending));
-        currentJob!.selectedIds = selectedIds();
-        void ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab!.id, selectedIds: selectedIds() });
+        // Write only a selection the worker does not already hold: rendering a
+        // job would otherwise echo the worker's own selection back to it. A lost
+        // write affects only what a reopened popup shows; Open drafts sends its
+        // own selection.
+        const ids = selectedIds();
+        const previous = currentJob!.selectedIds || [];
+        currentJob!.selectedIds = ids;
+        if (ids.length === previous.length && ids.every(id => previous.includes(id))) return;
+        ext.runtime.sendMessage({ type: 'CAPTURE_SELECTION', tabId: activeTab!.id, selectedIds: ids }).catch(() => {});
     };
 
     const renderResults = (job: CaptureJob) => {
@@ -407,8 +414,9 @@ interface CardOptions { actions?: CardAction[]; action?: CardAction; loading?: b
             // holds visible matches. Resolve the name through the shared owner
             // anyway: a row whose classification changed would otherwise keep
             // reading "Probable" while saying nothing changed.
-            confidence.textContent = `${matchLabel(match.classification)} · ${match.confidence}%`;
-            confidence.setAttribute('aria-label', `${matchLabel(match.classification)} match · ${match.confidence}% confidence`);
+            const reading = matchReading(match.classification as string, match.confidence);
+            confidence.textContent = reading.text;
+            confidence.setAttribute('aria-label', reading.spoken);
             row.append(checkbox, text, confidence);
             list.append(row);
         });

@@ -74,8 +74,15 @@ runs:
         if [ -n "$CHROME_PATH" ]; then
           echo "CHROME_BIN=$CHROME_PATH" >> "$GITHUB_ENV"
           echo "BPB_EXPECT_CHROME_VERSION=$CHROME_VERSION" >> "$GITHUB_ENV"
+        else
+          # Hosted Ubuntu images pre-set CHROME_BIN=/usr/bin/google-chrome
+          # (branded Chrome 137+, which ignores --load-extension). Clear it so
+          # Playwright launches its installed Chrome for Testing binary.
+          echo "CHROME_BIN=" >> "$GITHUB_ENV"
         fi
         if [ -n "$FIREFOX_PATH" ]; then
           echo "FIREFOX_BIN=$FIREFOX_PATH" >> "$GITHUB_ENV"
           echo "BPB_EXPECT_FIREFOX_VERSION=$FIREFOX_VERSION" >> "$GITHUB_ENV"
+        else
+          echo "FIREFOX_BIN=" >> "$GITHUB_ENV"
         fi

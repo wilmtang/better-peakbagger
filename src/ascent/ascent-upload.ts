@@ -1,0 +1,974 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Ascent-editor upload processing (isolated world, ascentedit.aspx).
+//
+// A fresh "Add Ascent" form gets today's date filled in, and when the user
+// picks a .gpx file in Peakbagger's native GPS Track field the native Preview
+// button is swapped for the extension's ✦ Process button. Processing parses
+// the file on this page (the raw XML never leaves it), resolves the climb's
+// timezone offline from the track's starting coordinate, and asks the
+// background worker to run the same corridor-lookup/detection/derivation
+// pipeline activity capture uses. Draft delivery, the privacy-cleaned upload,
+// and the exactly-once GPS Preview all belong to src/ascent/ascent-draft.js; Save is
+// always the user's.
+
+import { matchLabel, matchTone } from '../capture/match-confidence.js';
+import {
+    CORRIDOR_TOTAL_TIMEOUT_MS,
+    MAX_GPX_BYTES,
+    MAX_GPX_TEXT_CHARS,
+    gpxLimitMessage,
+} from '../capture/capture-resource-limits.js';
+import { removeGpxTimestamps } from '../gpx/gpx-timestamps.js';
+import { gpxParse } from '../gpx/gpx-parse.js';
+import { gpxMetrics as Metrics } from '../gpx/gpx-metrics.js';
+import { boundedText as BoundedText } from '../net/bounded-text.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.js';
+import { settings as Settings } from '../settings/settings.js';
+import { units as Units } from '../ui/units.js';
+import { createStableText } from '../ui/stable-text.js';
+import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
+// @ts-expect-error tz-lookup ships no type declarations.
+import tzlookup from 'tz-lookup';
+
+const zoneAt = tzlookup as (lat: number, lon: number) => string;
+interface GpxMatch {
+    id: number | string; name: string; classification: string; confidence?: number; selected?: boolean;
+    time?: string; upDistanceM?: number; closestApproachM?: number;
+}
+// The worker's GPX_PROCESS_START reply; only the fields this page reads.
+interface ProcessReply {
+    phase?: string; message?: string; error?: { code?: string; message?: string }; jobId?: string;
+    matches?: GpxMatch[]; boundFallback?: GpxMatch | null; boundPid?: number | string | null;
+    pageSessionId?: string; selectionGeneration?: number; selectionNonce?: string;
+}
+interface ApplyReply { ok?: boolean; error?: { message?: string }; tabIds?: number[]; groupWarning?: unknown }
+interface FileIdentity { name: string; size: number; lastModified: number; type: string }
+interface PreparedSelection {
+    file: File; attachedFile: File; identity: FileIdentity; nonce: string; generation: number; includeTimestampsOnce: boolean;
+}
+type StableText = ReturnType<typeof createStableText>;
+type DisplayUnits = Parameters<typeof Units.formatDistance>[1];
+type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
+
+(() => {
+    'use strict';
+
+    const ext = ((globalThis as { browser?: typeof chrome }).browser || globalThis.chrome) as typeof chrome | undefined;
+    if (!ext) return;
+
+    // The worker owns a 60-second corridor deadline, preceded by login and
+    // selection checks. The page needs a slightly wider backstop around the
+    // whole message round trip so a lost worker reply cannot leave Process in
+    // a permanent busy state.
+    const GPX_PREPARATION_TIMEOUT_MS = 20_000;
+    const GPX_PROCESS_REPLY_TIMEOUT_MS = CORRIDOR_TOTAL_TIMEOUT_MS + 20_000;
+
+    const pad = (value: number) => String(value).padStart(2, '0');
+
+    const localToday = (nowDate = new Date()) =>
+        `${nowDate.getFullYear()}-${pad(nowDate.getMonth() + 1)}-${pad(nowDate.getDate())}`;
+
+    // The if-empty guard is the create/edit discriminator: an existing ascent
+    // being edited arrives with its date populated and is never touched. Mark
+    // only our generated value so local GPX processing may replace it with the
+    // track's date without mistaking a date the user entered for a default.
+    const autofillDate = () => {
+        const field = document.getElementById('DateText') as HTMLInputElement | null;
+        if (!field || String(field.value || '').trim()) return false;
+        const clearGeneratedMarker = (event: Event) => {
+            if (event.isTrusted) delete field.dataset.bpbAutofilled;
+        };
+        field.addEventListener('input', clearGeneratedMarker);
+        field.addEventListener('change', clearGeneratedMarker);
+        field.value = localToday();
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+        field.dataset.bpbAutofilled = 'date';
+        return true;
+    };
+
+    // ---- Offline timezone: track start coordinate → UTC offset -------------
+    //
+    // Provider metadata carries an activity's local start; a bare file does
+    // not. Resolve the IANA zone from the tz-lookup raster bundled into this
+    // content script and read its offset at the track's start instant via Intl
+    // — entirely offline, per docs/mountain-local-time.md.
+    // Failures fall back to the longitude estimate, exactly as the analyzer's.
+
+    const zoneOffsetMinutes = (timeZone: string, atMs: number) => {
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+            .formatToParts(new Date(atMs));
+        const name = parts.find(part => part.type === 'timeZoneName')?.value || '';
+        const match = /^(?:GMT|UTC)(?:([+-])(\d{1,2}):(\d{2}))?$/.exec(name);
+        if (!match) return null;
+        if (!match[1]) return 0;
+        const value = Number(match[2]) * 60 + Number(match[3]);
+        return match[1] === '-' ? -value : value;
+    };
+
+    const resolveUtcOffsetMinutes = (segments: { lat: number | null; lon: number | null; time?: number | null }[][] | null | undefined) => {
+        const points = (segments || []).flat();
+        const start = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon));
+        if (!start) return null;
+        const timed = points.find(point => Metrics.isValidCoordinate(point.lat, point.lon)
+            && Metrics.isValidTimestamp(point.time));
+        const referenceMs = timed ? timed.time as number : Date.now();
+        try {
+            const offset = zoneOffsetMinutes(zoneAt(start.lat as number, start.lon as number), referenceMs);
+            if (Metrics.isValidUtcOffsetMinutes(offset)) return offset;
+        } catch (_error) {
+            // A zone id unknown to this browser's ICU keeps the labelled solar
+            // estimate below.
+        }
+        return Metrics.longitudeUtcOffsetMinutes(start.lon as number);
+    };
+
+    // Peakbagger renders both values on the editor, but orders each unit pair
+    // according to the page preference. Auto follows that native order; an
+    // explicit extension choice remains authoritative.
+    const detectPageUnits = () => {
+        for (const [imperialId, metricId] of [['UpMi', 'UpKm'], ['StartFt', 'StartM']]) {
+            const fields = [...document.querySelectorAll(`#${imperialId}, #${metricId}`)];
+            if (fields.length === 2) return fields[0].id === metricId ? 'metric' : 'imperial';
+        }
+        return 'imperial';
+    };
+
+    // detectPageUnits stays here — it reads this page's own field order — and
+    // is handed to the shared resolver rather than reimplementing the
+    // preference logic beside it.
+    const resolveDisplayUnits = (settings: Parameters<typeof Units.resolveUnits>[0]) => Units.resolveUnits(settings, detectPageUnits, 'distance');
+    const formatTrackDistance = Units.formatDistance;
+    const formatApproachDistance = Units.formatApproach;
+
+    // ---- The ✦ Process button ---------------------------------------------
+
+    const setupUploadProcessing = () => {
+        const upload = document.getElementById('GPXUpload') as HTMLInputElement | null;
+        const nativePreview = document.getElementById('GPXPreview');
+        if (!upload || !nativePreview) return;
+        const nativeRemove = document.getElementById('GPXRemove');
+        const sharedNativeActions = nativeRemove?.parentElement === nativePreview.parentElement;
+        const actionGroup = document.createElement('span');
+        actionGroup.className = 'bpb-upload-actions';
+        nativePreview.closest('td')?.classList.add('bpb-upload-cell');
+        nativePreview.before(actionGroup);
+        actionGroup.append(nativePreview);
+        if (sharedNativeActions && nativeRemove) actionGroup.append(nativeRemove);
+
+        const uploadCell = upload.closest('td');
+        if (uploadCell && !document.getElementById('bpb-capture-hint')) {
+            const hint = document.createElement('p');
+            hint.id = 'bpb-capture-hint';
+            hint.className = 'bpb-capture-hint';
+            const captureHint = document.createElement('span');
+            captureHint.id = 'bpb-capture-provider-hint';
+            captureHint.textContent = 'Garmin or Strava activity? Open it there, then click Better Peakbagger in the browser toolbar to capture it directly.';
+            const dropHint = document.createElement('span');
+            dropHint.id = 'bpb-gpx-drop-hint';
+            dropHint.className = 'bpb-gpx-drop-hint';
+            dropHint.textContent = 'Or drop one GPX file anywhere on this page.';
+            hint.append(captureHint, dropHint);
+            uploadCell.append(hint);
+        }
+        const providerHint = document.getElementById('bpb-capture-provider-hint');
+        const providerHintText = providerHint?.textContent;
+        const preparationText = providerHint ? createStableText(providerHint) : null;
+        preparationText?.reserve([providerHintText, 'Preparing GPX…']);
+        const timestampChoice = document.createElement('label');
+        timestampChoice.className = 'bpb-timestamp-choice';
+        timestampChoice.hidden = true;
+        const includeTimestamps = document.createElement('input');
+        includeTimestamps.type = 'checkbox';
+        includeTimestamps.id = 'bpb-include-timestamps-once';
+        const timestampLabel = document.createElement('span');
+        timestampLabel.textContent = 'Include timestamps for this file';
+        const timestampHint = document.createElement('small');
+        timestampHint.textContent = 'Removed by default. Applies to this file only.';
+        timestampLabel.append(timestampHint);
+        timestampChoice.append(includeTimestamps, timestampLabel);
+        uploadCell?.insertBefore(timestampChoice, document.getElementById('bpb-capture-hint'));
+        let timestampSourceFile: File | null = null;
+        let preparingFile = false;
+        // The latch belongs to the preparation that set it, not to the request
+        // token: restoring the native controls advances the token without
+        // starting a preparation, and must not leave Save and Preview blocked.
+        let preparation = 0;
+        // File replacement is asynchronous. Block native Preview/form submission
+        // while preparing, and exclude the original upload from native postbacks.
+        document.addEventListener('click', event => {
+            if (!(event.target as Element | null)?.closest?.('#GPXPreview, #SaveButton, #SaveButton2')) return;
+            if (!preparingFile) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        upload.form?.addEventListener('submit', (event: SubmitEvent) => {
+            if (!preparingFile) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }, true);
+        includeTimestamps.addEventListener('click', event => {
+            if (includeTimestamps.getAttribute('aria-disabled') === 'true') event.preventDefault();
+        });
+        includeTimestamps.addEventListener('change', () => {
+            if (!timestampSourceFile || includeTimestamps.getAttribute('aria-disabled') === 'true') return;
+            void handleFileChange(timestampSourceFile, { keepTimestampChoice: true });
+        });
+
+        const dropHint = document.getElementById('bpb-gpx-drop-hint');
+        if (dropHint) {
+            const describedBy = new Set((upload.getAttribute('aria-describedby') || '')
+                .split(/\s+/).filter(Boolean));
+            describedBy.add(dropHint.id);
+            upload.setAttribute('aria-describedby', [...describedBy].join(' '));
+        }
+
+        const dropOverlay = document.createElement('div');
+        dropOverlay.id = 'bpb-gpx-page-drop-overlay';
+        dropOverlay.className = 'bpb-gpx-page-drop-overlay';
+        dropOverlay.setAttribute('role', 'status');
+        dropOverlay.setAttribute('aria-live', 'polite');
+        dropOverlay.setAttribute('aria-atomic', 'true');
+        dropOverlay.setAttribute('aria-hidden', 'true');
+
+        const dropOverlayMessage = document.createElement('div');
+        dropOverlayMessage.className = 'bpb-gpx-page-drop-message';
+        const dropOverlayBadge = document.createElement('span');
+        dropOverlayBadge.className = 'bpb-gpx-page-drop-badge';
+        dropOverlayBadge.setAttribute('aria-hidden', 'true');
+        dropOverlayBadge.textContent = 'GPX';
+        const dropOverlayTitle = document.createElement('strong');
+        dropOverlayTitle.textContent = 'Drop GPX to add it';
+        const dropOverlayDetail = document.createElement('span');
+        dropOverlayDetail.textContent = 'Release anywhere on this page';
+        dropOverlayMessage.append(dropOverlayBadge, dropOverlayTitle, dropOverlayDetail);
+        dropOverlay.append(dropOverlayMessage);
+        document.body.append(dropOverlay);
+
+        let button: HTMLButtonElement | null = null;
+        let attachButton: HTMLButtonElement | null = null, retryProcessButton: HTMLButtonElement | null = null;
+        let labelElement: HTMLElement | null = null;
+        let processText: StableText | null = null;
+        let status: HTMLElement | null = null;
+        let card: HTMLElement | null = null;
+        let requestToken = 0;
+        let selectionGeneration = 0;
+        let selectedFile: PreparedSelection | null = null;
+        let dropDepth = 0;
+        const pageSessionId = (() => {
+            try { return globalThis.crypto.randomUUID(); }
+            catch (error) { return `page-${Date.now()}-${Math.random().toString(36).slice(2)}`; }
+        })();
+        let selectionNonceSequence = 0;
+        const newSelectionNonce = () => {
+            try { return globalThis.crypto.randomUUID(); }
+            catch (error) {
+                return `selection-${++selectionNonceSequence}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            }
+        };
+
+        const fileIdentity = (file: File | null | undefined): FileIdentity => ({
+            name: String(file?.name || '(no file)').slice(0, 255),
+            size: file && Number.isSafeInteger(file.size) && file.size >= 0 ? file.size : 0,
+            lastModified: file && Number.isFinite(file.lastModified) && file.lastModified >= 0
+                ? file.lastModified : 0,
+            type: String(file?.type || '').slice(0, 100),
+        });
+        const sameFileIdentity = (left: FileIdentity | null | undefined, right: FileIdentity | null | undefined) => !!left && !!right
+            && left.name === right.name && left.size === right.size
+            && left.lastModified === right.lastModified && left.type === right.type;
+        const selectionMessage = (generation: number, selectionNonce: string) => ({
+            pageSessionId,
+            selectionGeneration: generation,
+            selectionNonce,
+        });
+
+        const clearStatus = () => {
+            status?.remove();
+            status = null;
+        };
+
+        const showStatus = (kind: string, message: string) => {
+            clearStatus();
+            status = document.createElement('span');
+            status.className = `bpb-upload-status bpb-upload-status-${kind}`;
+            status.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+            status.textContent = message;
+            actionGroup.insertAdjacentElement('afterend', status);
+        };
+
+        const removeCard = () => {
+            card?.remove();
+            card = null;
+        };
+
+        const resetNativeUi = () => {
+            removeCard();
+            retryProcessButton?.remove(); retryProcessButton = null;
+            attachButton?.remove();
+            attachButton = null;
+            button?.remove();
+            button = null;
+            labelElement = null;
+            processText = null;
+            includeTimestamps.setAttribute('aria-disabled', String(preparingFile));
+            nativePreview.classList.remove('bpb-native-preview-hidden');
+        };
+
+        const restoreNative = ({ reason = null, retry = false }: { reason?: string | null; retry?: boolean } = {}) => {
+            const file = nativeGpxFile();
+            requestToken++;
+            const generation = ++selectionGeneration;
+            selectedFile = null;
+            resetNativeUi();
+            return ext.runtime.sendMessage({
+                type: 'GPX_PROCESS_INVALIDATE',
+                ...selectionMessage(generation, newSelectionNonce()),
+                ...(reason ? { reason } : {}),
+            }).then(result => {
+                if (!retry || !result?.ok || result.preserved || generation !== selectionGeneration || nativeGpxFile() !== file || !file) return;
+                retryProcessButton = document.createElement('button');
+                retryProcessButton.type = 'button'; retryProcessButton.className = 'bpb-attach-gpx-button bpb-process-retry';
+                retryProcessButton.textContent = 'Process again';
+                const retryButton = retryProcessButton;
+                retryButton.addEventListener('click', async () => {
+                    if (retryButton.getAttribute('aria-disabled') === 'true') return;
+                    retryButton.setAttribute('aria-disabled', 'true');
+                    await handleFileChange(timestampSourceFile || file, { keepTimestampChoice: true });
+                    if (!selectedFile || !button || nativeGpxFile() !== selectedFile.attachedFile) return;
+                    button.focus({ preventScroll: true });
+                    void processFile();
+                });
+                (document.getElementById('GPXRemove') || nativePreview).after(retryProcessButton);
+            }).catch(() => {});
+        };
+
+        const releaseNativeAfterDraftHandoff = () => {
+            requestToken++;
+            selectedFile = null;
+            resetNativeUi();
+        };
+
+        const nativeGpxFile = () => {
+            const file = upload.files && upload.files[0];
+            return file && /\.gpx$/i.test(file.name || '') ? file : null;
+        };
+        const currentGpxFile = () => {
+            const file = nativeGpxFile();
+            if (!file || !selectedFile || file !== selectedFile.attachedFile
+                || !sameFileIdentity(fileIdentity(selectedFile.file), selectedFile.identity)) return null;
+            return selectedFile.file;
+        };
+
+        const setBusy = (label: string) => {
+            if (!button) return;
+            button.disabled = true;
+            includeTimestamps.setAttribute('aria-disabled', 'true');
+            button.setAttribute('aria-busy', 'true');
+            processText!.set(label);
+        };
+
+        const setIdle = () => {
+            if (!button) return;
+            button.disabled = false;
+            includeTimestamps.setAttribute('aria-disabled', String(preparingFile));
+            button.removeAttribute('aria-busy');
+            processText!.set('Process');
+        };
+
+        // While a file is being re-prepared, the controls that would act on it
+        // wait: Attach GPX and the summit card's actions.
+        const syncPreparingControls = () => {
+            for (const control of [attachButton, ...(card?.querySelectorAll<HTMLButtonElement>('.bpb-summit-actions button') || [])]) {
+                if (control) control.setAttribute('aria-disabled', String(preparingFile));
+            }
+        };
+
+        const showProcessButton = ({ attachmentOnly = false } = {}) => {
+            clearStatus();
+            removeCard();
+            if (!attachButton) {
+                attachButton = document.createElement('button');
+                attachButton.type = 'button';
+                attachButton.className = 'bpb-attach-gpx-button';
+                attachButton.textContent = 'Attach GPX';
+                attachButton.title = 'Preview this file on the current ascent without finding summits or changing ascent details';
+                attachButton.addEventListener('click', async () => {
+                    const file = nativeGpxFile();
+                    if (!file || preparingFile) return;
+                    const restored = restoreNative();
+                    const token = requestToken;
+                    await restored;
+                    if (token !== requestToken || nativeGpxFile() !== file) return;
+                    clearStatus();
+                    nativePreview.click();
+                });
+                nativePreview.insertAdjacentElement('afterend', attachButton);
+                syncPreparingControls();
+            }
+            nativePreview.classList.add('bpb-native-preview-hidden');
+            // Existing ascents own their aid. Summit processing creates new
+            // drafts and must never navigate an edit into a new-ascent form.
+            if (attachmentOnly || new URLSearchParams(location.search).has('aid')) return;
+            if (!button) {
+                button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'bpb-process-button';
+                button.setAttribute('aria-label', 'Process the chosen GPX and fill this form');
+                const glyph = document.createElement('span');
+                glyph.className = 'bpb-process-glyph';
+                glyph.setAttribute('aria-hidden', 'true');
+                glyph.textContent = '✦';
+                labelElement = document.createElement('span');
+                labelElement.className = 'bpb-process-label';
+                processText = createStableText(labelElement);
+                processText.reserve(['Process', 'Reading track…', 'Finding summits…', 'Filling form…', 'Opening drafts…', 'Restoring…']);
+                button.append(glyph, labelElement);
+                button.addEventListener('click', () => void processFile());
+                nativePreview.parentNode!.insertBefore(button, nativePreview);
+            }
+            setIdle();
+        };
+
+        const fail = (message: string, { retry = true } = {}) => {
+            showStatus('error', message);
+            restoreNative({ retry });
+        };
+
+        const applySelection = async (response: ProcessReply, selectedIds: number[], primaryId: number | null, token: number) => {
+            if (token !== requestToken || !selectedFile
+                || response.pageSessionId !== pageSessionId
+                || response.selectionGeneration !== selectedFile.generation
+                || response.selectionNonce !== selectedFile.nonce) return;
+            setBusy(primaryId !== null ? 'Filling form…' : 'Opening drafts…');
+            let applied: ApplyReply | undefined;
+            try {
+                applied = await ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_APPLY',
+                    jobId: response.jobId,
+                    selectedIds,
+                    primaryId,
+                    ...selectionMessage(selectedFile.generation, selectedFile.nonce),
+                });
+            } catch (error) {
+                if (token !== requestToken) return;
+                console.error('Better Peakbagger: prepared draft delivery failed', error);
+                fail('The prepared draft could not be delivered. Reload the ascent form and try again.', { retry: false });
+                return;
+            }
+            if (token !== requestToken) return;
+            if (!applied?.ok) {
+                removeCard();
+                fail(applied?.error?.message || 'The prepared draft could not be delivered.', { retry: false });
+                return;
+            }
+            removeCard();
+            if (primaryId === null) {
+                // Only sibling drafts were opened; this page keeps its native
+                // upload path.
+                const count = (applied.tabIds || []).length;
+                const tabs = `${count} draft tab${count === 1 ? '' : 's'}`;
+                showStatus('info', applied.groupWarning
+                    ? `Opened ${tabs}. Your browser didn’t group them.`
+                    : `Opened ${tabs} in the Peak Drafts group.`);
+            } else if (applied.groupWarning) {
+                showStatus('info', 'Drafts opened. Your browser didn’t group the tabs.');
+            }
+            if (primaryId === null) releaseNativeAfterDraftHandoff();
+            // With a primary, src/ascent/ascent-draft.js now fills this page (bound)
+            // or the standard draft delivery fills it after navigation
+            // (unbound); Peakbagger's postback then restores the native
+            // buttons. The button deliberately stays busy until then.
+        };
+
+        // ---- Summit picker card (plan §3.4, Option C) ----------------------
+
+        const summitChip = (match: GpxMatch) => {
+            const chip = document.createElement('span');
+            chip.className = `bpb-summit-chip bpb-summit-chip-${matchTone(match.classification)}`;
+            chip.textContent = matchLabel(match.classification);
+            return chip;
+        };
+
+        // The card title already says "along this track"; keep each row's
+        // encounter short enough to never truncate.
+        const encounterMeta = (match: GpxMatch, units: DisplayUnits) => {
+            const parts: string[] = [];
+            if (match.time) parts.push(`at ${match.time}`);
+            if (Number.isFinite(match.upDistanceM)) parts.push(formatTrackDistance(match.upDistanceM, units));
+            return parts.join(' · ');
+        };
+
+        const showSummitCard = (response: ProcessReply, token: number, units: DisplayUnits) => {
+            removeCard();
+            clearStatus();
+            setIdle();
+            const matches = response.matches || [];
+            const fallback = response.boundFallback || null;
+            const boundPid = response.boundPid === null || response.boundPid === undefined
+                ? null : String(response.boundPid);
+            const confidenceById = new Map<string, number | undefined>();
+
+            card = document.createElement('section');
+            card.className = 'bpb-summit-card';
+            card.setAttribute('aria-label', 'Summits detected along this track');
+
+            const heading = document.createElement('h3');
+            heading.className = 'bpb-summit-card-title';
+            heading.textContent = matches.length === 0
+                ? 'No summits detected within range of this track'
+                : matches.length === 1
+                    ? 'One summit detected along this track'
+                    : `${matches.length} summits detected along this track`;
+            card!.append(heading);
+
+            const list = document.createElement('ul');
+            list.className = 'bpb-summit-list';
+            const checkboxes = new Map<string, HTMLInputElement>();
+
+            const summitRow = (match: GpxMatch, { fallbackRow = false } = {}) => {
+                confidenceById.set(String(match.id), match.confidence);
+                const item = document.createElement('li');
+                const label = document.createElement('label');
+                label.className = 'bpb-summit-row';
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'bpb-summit-check';
+                checkbox.checked = !fallbackRow && (match.selected === true || String(match.id) === boundPid);
+                checkboxes.set(String(match.id), checkbox);
+                const name = document.createElement('span');
+                name.className = 'bpb-summit-name';
+                name.textContent = match.name;
+                const confidence = document.createElement('span');
+                confidence.className = 'bpb-summit-confidence';
+                confidence.textContent = `${match.confidence}%`;
+                const meta = document.createElement('span');
+                meta.className = 'bpb-summit-meta';
+                meta.textContent = fallbackRow
+                    ? `${formatApproachDistance(match.closestApproachM as number, units)} from the summit`
+                    : encounterMeta(match, units);
+                label.append(checkbox, name, summitChip(match), confidence, meta);
+                item.append(label);
+                return item;
+            };
+
+            matches.forEach(match => list.append(summitRow(match)));
+
+            if (fallback) {
+                const note = document.createElement('p');
+                note.className = 'bpb-summit-note';
+                note.textContent = `Your track’s closest approach to ${fallback.name} is ${formatApproachDistance(fallback.closestApproachM as number, units)} from the summit. Check it to use ${fallback.name} anyway.`;
+                card!.append(note);
+                list.append(summitRow(fallback, { fallbackRow: true }));
+            } else if (boundPid !== null && !matches.some(match => String(match.id) === boundPid)) {
+                const note = document.createElement('p');
+                note.className = 'bpb-summit-note';
+                note.textContent = 'Your track never comes within range of this page’s peak; the summits above can open as drafts instead.';
+                card!.append(note);
+            }
+            card!.append(list);
+
+            const actions = document.createElement('div');
+            actions.className = 'bpb-summit-actions';
+            const applyButton = document.createElement('button');
+            applyButton.type = 'button';
+            applyButton.className = 'bpb-summit-apply';
+            const applyText = createStableText(applyButton), countLabel = '8'.repeat(String(checkboxes.size).length);
+            applyText.reserve(['Fill this ascent', `Open ${countLabel} drafts`, `Fill + open ${countLabel} drafts`]);
+            const cancelButton = document.createElement('button');
+            cancelButton.type = 'button';
+            cancelButton.className = 'bpb-summit-cancel';
+            cancelButton.textContent = 'Cancel';
+            actions.append(applyButton, cancelButton);
+            card!.append(actions);
+
+            const selection = () => {
+                const selectedIds = [...checkboxes].filter(([, checkbox]) => checkbox.checked).map(([id]) => id);
+                let primaryId: string | null = null;
+                if (boundPid !== null) {
+                    primaryId = selectedIds.includes(boundPid) ? boundPid : null;
+                } else if (selectedIds.length) {
+                    primaryId = selectedIds.reduce((best, id) =>
+                        (confidenceById.get(id) ?? -1) > (confidenceById.get(best) ?? -1) ? id : best);
+                }
+                return { selectedIds, primaryId };
+            };
+
+            const updateAction = () => {
+                const { selectedIds, primaryId } = selection();
+                const siblingCount = selectedIds.length - (primaryId === null ? 0 : 1);
+                applyButton.disabled = !selectedIds.length;
+                applyText.set(primaryId === null
+                    ? (siblingCount ? `Open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}` : 'Fill this ascent')
+                    : siblingCount
+                        ? `Fill + open ${siblingCount} draft${siblingCount === 1 ? '' : 's'}`
+                        : 'Fill this ascent');
+            };
+            for (const checkbox of checkboxes.values()) checkbox.addEventListener('change', updateAction);
+            updateAction();
+
+            applyButton.addEventListener('click', () => {
+                const { selectedIds, primaryId } = selection();
+                if (!selectedIds.length || preparingFile) return;
+                applyButton.disabled = true;
+                cancelButton.disabled = true;
+                void applySelection(response, selectedIds.map(Number),
+                    primaryId === null ? null : Number(primaryId), token);
+            });
+            cancelButton.addEventListener('click', () => {
+                if (preparingFile) return;
+                restoreNative({ retry: true });
+            });
+
+            actionGroup.insertAdjacentElement('afterend', card!);
+            syncPreparingControls();
+        };
+
+        const handleProcessResult = async (response: ProcessReply, token: number, units: DisplayUnits) => {
+            if (!response || response.phase === 'error') {
+                // Processing again cannot succeed on the bare host; the message says where it can.
+                fail(response?.error?.message || 'The GPX could not be processed.', { retry: response?.error?.code !== 'peakbagger-host' });
+                return;
+            }
+            if (response.phase === 'no-gps') {
+                fail(response.message || 'This file contains no usable route coordinates.');
+                return;
+            }
+            if (response.phase === 'no-matches') {
+                fail('Summits were searched along the whole track, but no Peakbagger peak lies within range of it.');
+                return;
+            }
+
+            const matches = response.matches || [];
+            const boundPid = response.boundPid === null || response.boundPid === undefined
+                ? null : String(response.boundPid);
+            // Option C: exactly one detected summit that is (or, on an unbound
+            // page, becomes) this page's peak fills immediately, no card;
+            // ambiguity is the only thing that earns UI.
+            if (matches.length === 1 && !response.boundFallback
+                && (boundPid === null || String(matches[0].id) === boundPid)) {
+                await applySelection(response, [Number(matches[0].id)], Number(matches[0].id), token);
+                return;
+            }
+            showSummitCard(response, token, units);
+        };
+
+        const processFile = async () => {
+            const file = currentGpxFile();
+            if (!file || !button || button.disabled) return;
+            const selection = selectedFile!;
+            const token = ++requestToken;
+            clearStatus();
+            setBusy('Reading track…');
+            let settings;
+            try {
+                settings = await Settings.requireCurrent();
+            } catch (error) {
+                if (token !== requestToken) return;
+                console.error('Better Peakbagger: capture settings read failed', error);
+                fail('Capture settings could not be read. Reload and try again. Nothing was captured.');
+                return;
+            }
+            try {
+                const displayUnits = resolveDisplayUnits(settings);
+                const text = await BoundedText.readBoundedBlobText(file, {
+                    maxBytes: MAX_GPX_BYTES,
+                    maxChars: MAX_GPX_TEXT_CHARS,
+                    label: 'GPX file',
+                    signal: undefined,
+                });
+                const parsed = gpxParse.parseGpxData(text, {
+                    retainWaypoints: settings.retainWaypoints,
+                    includeTripName: settings.fillTripInfo
+                });
+                const utcOffsetMinutes = resolveUtcOffsetMinutes(parsed.segments);
+                if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
+                setBusy('Finding summits…');
+                const deadline = Deadline.createRequestDeadline(GPX_PROCESS_REPLY_TIMEOUT_MS);
+                let response: ProcessReply | undefined;
+                try {
+                    response = await deadline.run(ext.runtime.sendMessage({
+                        type: 'GPX_PROCESS_START',
+                        segments: parsed.segments,
+                        waypoints: parsed.waypoints,
+                        trackName: parsed.trackName,
+                        utcOffsetMinutes,
+                        includeTimestampsOnce: selection.includeTimestampsOnce,
+                        ...selectionMessage(selection.generation, selection.nonce),
+                    }));
+                } finally {
+                    deadline.clear();
+                }
+                if (token !== requestToken || selectedFile !== selection || currentGpxFile() !== file) return;
+                if (response?.pageSessionId !== pageSessionId
+                    || response?.selectionGeneration !== selection.generation
+                    || response?.selectionNonce !== selection.nonce) return;
+                await handleProcessResult(response!, token, displayUnits);
+            } catch (caught) {
+                const error = caught as CodedError | null;
+                if (token !== requestToken) return;
+                if (error?.code === 'no-gps-data') {
+                    fail('This file has no track points. Peakbagger’s own Preview may still accept it.');
+                    return;
+                }
+                if (error?.code === 'invalid-gpx') {
+                    fail('The GPX file contains invalid XML.');
+                    return;
+                }
+                if (error?.code === 'gpx-too-large' || BoundedText.isLimitError(error)) {
+                    fail(gpxLimitMessage());
+                    return;
+                }
+                if (Deadline.isTimeout(error)) {
+                    console.error('Better Peakbagger: summit lookup reply timed out', error);
+                    fail('Summit lookup stopped responding. Use Peakbagger’s Preview, or Process again to retry.');
+                    return;
+                }
+                console.error('Better Peakbagger: local GPX read failed', error);
+                fail('The GPX file could not be read. Reload the ascent form and try again.');
+            }
+        };
+
+        const handleFileChange = async (file: File | null | undefined, { keepTimestampChoice = false } = {}) => {
+            const token = ++requestToken;
+            const owner = ++preparation;
+            const deadline = Deadline.createRequestDeadline(GPX_PREPARATION_TIMEOUT_MS);
+            const generation = ++selectionGeneration;
+            const identity = fileIdentity(file);
+            const nonce = newSelectionNonce();
+            selectedFile = null;
+            timestampSourceFile = file || null;
+            if (!keepTimestampChoice) includeTimestamps.checked = false;
+            preparingFile = true;
+            preparationText?.set('Preparing GPX…');
+            upload.disabled = true;
+            syncPreparingControls();
+            includeTimestamps.setAttribute('aria-disabled', 'true');
+            clearStatus();
+            if (!keepTimestampChoice) resetNativeUi();
+            else if (button) setBusy('Reading track…');
+            try {
+                // Invalidate the old generation before reading settings or file
+                // bytes; a slow projection must not leave an earlier Apply live.
+                const invalidated = await deadline.run(ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_INVALIDATE',
+                    ...selectionMessage(generation, nonce),
+                }));
+                if (token !== requestToken || generation !== selectionGeneration) return;
+                if (!invalidated?.ok) throw new Error('The selected GPX could not be prepared. Reload the ascent form and try again.');
+                let settings: Awaited<ReturnType<typeof Settings.requireCurrent>>;
+                try { settings = await deadline.run(Settings.requireCurrent()); }
+                catch (error) {
+                    console.error('Better Peakbagger: capture settings read failed', error);
+                    throw Object.assign(new Error('Capture settings could not be read. Reload and try again. Nothing was captured.'), { settingsUnavailable: true });
+                }
+                if (token !== requestToken) return;
+                timestampChoice.hidden = !settings.removeGpxTimestamps || !file || !/\.gpx$/i.test(file.name || '');
+                const includeTimestampsOnce = settings.removeGpxTimestamps && includeTimestamps.checked;
+                let attachedFile = file as File;
+                if (file && /\.gpx$/i.test(file.name || '') && settings.removeGpxTimestamps && !includeTimestampsOnce) {
+                    const text = await deadline.run(BoundedText.readBoundedBlobText(file, {
+                        maxBytes: MAX_GPX_BYTES, maxChars: MAX_GPX_TEXT_CHARS, label: 'GPX file', signal: undefined,
+                    }));
+                    attachedFile = new File([removeGpxTimestamps(text)], file.name, {
+                        type: file.type || 'application/gpx+xml', lastModified: file.lastModified,
+                    });
+                }
+                if (token !== requestToken) return;
+                // Replaces the native upload too: Attach GPX and direct Save must
+                // not accidentally send the original timestamps.
+                if (file && /\.gpx$/i.test(file.name || '') && attachedFile !== nativeGpxFile()) {
+                    const transfer = new DataTransfer();
+                    if (attachedFile) transfer.items.add(attachedFile);
+                    upload.files = transfer.files;
+                }
+                if (!file || !/\.gpx$/i.test(file.name || '')) return;
+                selectedFile = { file, attachedFile, identity, nonce, generation, includeTimestampsOnce: !!includeTimestampsOnce };
+                showProcessButton({ attachmentOnly: invalidated.preserved === true });
+            } catch (caught) {
+                const error = caught as CodedError;
+                if (token !== requestToken) return;
+                // Clear the native file on failure: fallback must never upload
+                // the unprocessed original while timestamp removal is selected.
+                upload.value = '';
+                timestampSourceFile = null;
+                timestampChoice.hidden = true;
+                resetNativeUi();
+                showStatus('error', error.settingsUnavailable ? error.message
+                    : BoundedText.isLimitError(error) ? gpxLimitMessage()
+                        : 'The selected GPX could not be prepared safely. Choose the file again to retry.');
+            } finally {
+                deadline.clear();
+                if (owner === preparation) {
+                    preparingFile = false;
+                    preparationText?.set(providerHintText);
+                    upload.disabled = false;
+                    includeTimestamps.setAttribute('aria-disabled', 'false');
+                    syncPreparingControls();
+                }
+            }
+        };
+
+        // Keep drop discovery collection-shaped even while this page admits a
+        // single GPX. A later batch flow can resolve directories and hand the
+        // resulting ordered files to the same admission seam instead of
+        // teaching the event handlers to silently pick one transfer item.
+        const transferHasFiles = (transfer: DataTransfer | null | undefined) => {
+            if (!transfer) return false;
+            if ([...(transfer.types || [])].includes('Files')) return true;
+            return [...(transfer.items || [])].some(item => item.kind === 'file');
+        };
+
+        const transferIncludesDirectory = (transfer: DataTransfer | null | undefined) => [...(transfer?.items || [])]
+            .some(item => {
+                try { return item.webkitGetAsEntry?.()?.isDirectory === true; }
+                catch (error) { return false; }
+            });
+
+        const filesFromTransfer = (transfer: DataTransfer | null | undefined): File[] => {
+            const itemFiles = [...(transfer?.items || [])]
+                .filter(item => item.kind === 'file')
+                .map(item => item.getAsFile?.())
+                .filter((file): file is File => !!file);
+            return itemFiles.length ? itemFiles : [...(transfer?.files || [])];
+        };
+
+        const droppedFileCollection = (transfer: DataTransfer | null | undefined) => ({
+            files: filesFromTransfer(transfer),
+            includesDirectory: transferIncludesDirectory(transfer),
+        });
+
+        const droppedFileAdmission = (collection: { files: File[]; includesDirectory: boolean }): { files: File[]; error?: string } => {
+            if (collection.includesDirectory || collection.files.length > 1) {
+                return {
+                    error: 'Drop one GPX file at a time. Multiple files and folders aren’t supported yet.',
+                    files: collection.files,
+                };
+            }
+            if (collection.files.length !== 1 || !/\.gpx$/i.test(collection.files[0].name || '')) {
+                return { error: 'Drop a .gpx file to choose it.', files: collection.files };
+            }
+            return { files: collection.files };
+        };
+
+        const attachUploadFiles = (files: File[]) => {
+            const transfer = new DataTransfer();
+            files.forEach(file => transfer.items.add(file));
+            upload.files = transfer.files;
+            const attached = [...upload.files];
+            if (attached.length !== files.length) throw new Error('native file list rejected the drop');
+            return attached;
+        };
+
+        const resetDropCue = () => {
+            dropDepth = 0;
+            document.documentElement.classList.remove('is-gpx-page-drag-over');
+            dropOverlay.setAttribute('aria-hidden', 'true');
+        };
+
+        const onDragEnter = (event: DragEvent) => {
+            if (!transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            dropDepth += 1;
+            document.documentElement.classList.add('is-gpx-page-drag-over');
+            dropOverlay.setAttribute('aria-hidden', 'false');
+        };
+
+        const onDragOver = (event: DragEvent) => {
+            if (!transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+        };
+
+        const onDragLeave = (event: DragEvent) => {
+            if (!document.documentElement.classList.contains('is-gpx-page-drag-over')) return;
+            event.preventDefault();
+            dropDepth = Math.max(0, dropDepth - 1);
+            if (!dropDepth) resetDropCue();
+        };
+
+        const onDrop = (event: DragEvent) => {
+            if (!transferHasFiles(event.dataTransfer)) return;
+            event.preventDefault();
+            resetDropCue();
+            const admission = droppedFileAdmission(droppedFileCollection(event.dataTransfer));
+            if (admission.error) {
+                showStatus('error', admission.error);
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+                return;
+            }
+            try {
+                const attached = attachUploadFiles(admission.files);
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+                void handleFileChange(attached[0]);
+            } catch (error) {
+                console.error('Better Peakbagger: dropped GPX attachment failed', error);
+                showStatus('error', 'The dropped GPX could not be attached. Choose it with the file picker instead.');
+                uploadCell?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+            }
+        };
+
+        upload.addEventListener('change', event => {
+            // The capture draft flow attaches files programmatically; its
+            // synthetic change is not trusted and must not trigger the swap.
+            if (!event.isTrusted) return;
+            void handleFileChange(upload.files && upload.files[0]);
+        });
+        document.addEventListener('dragenter', onDragEnter);
+        document.addEventListener('dragover', onDragOver);
+        document.addEventListener('dragleave', onDragLeave);
+        document.addEventListener('drop', onDrop);
+        window.addEventListener('dragend', resetDropCue);
+        window.addEventListener('drop', resetDropCue);
+        document.getElementById('GPXRemove')?.addEventListener('click', () => {
+            timestampSourceFile = null;
+            timestampChoice.hidden = true;
+            includeTimestamps.checked = false;
+            preparingFile = false;
+            preparationText?.set(providerHintText);
+            upload.disabled = false;
+            includeTimestamps.setAttribute('aria-disabled', 'false');
+            restoreNative();
+        });
+        // Turning timestamp removal on while a file is chosen re-prepares it, so
+        // the native field never keeps a timed original for Save or Attach GPX.
+        let removeTimestamps: boolean | null = null;
+        const unsubscribeSettings = Settings.subscribe((settings: { removeGpxTimestamps?: boolean }) => {
+            const turnedOn = settings.removeGpxTimestamps === true && removeTimestamps === false;
+            removeTimestamps = settings.removeGpxTimestamps === true;
+            if (turnedOn && timestampSourceFile && nativeGpxFile()) void handleFileChange(timestampSourceFile);
+        });
+        void Settings.requireCurrent().then(settings => {
+            removeTimestamps ??= settings.removeGpxTimestamps === true;
+        }).catch(() => {});
+        PageLifecycle.create({
+            onSuspend: () => {
+                requestToken++;
+                selectedFile = null;
+                resetDropCue();
+                if (button) setBusy('Restoring…');
+                const generation = ++selectionGeneration;
+                void ext.runtime.sendMessage({
+                    type: 'GPX_PROCESS_INVALIDATE',
+                    ...selectionMessage(generation, newSelectionNonce()),
+                    reason: 'page-lifecycle',
+                }).catch(() => {});
+            },
+            onResume: () => {
+                const file = nativeGpxFile();
+                if (file) void handleFileChange(timestampSourceFile || file);
+                else restoreNative();
+            },
+            onDispose: () => {
+                unsubscribeSettings();
+                resetDropCue();
+                restoreNative({ reason: 'page-lifecycle' });
+            },
+        });
+    };
+
+    autofillDate();
+    setupUploadProcessing();
+})();

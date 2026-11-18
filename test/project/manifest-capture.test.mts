@@ -69,7 +69,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
     assert.deepEqual(manifest.background.scripts, ['background.js']);
     // The fail-closed coordinator is composed from these modules, in order.
     assert.deepEqual(bundleSources('background.js'),
-        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.ts', 'settings/settings-schema.ts', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.ts', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.ts', 'background/settings-file-routes.js', 'background/terrain-activation.ts', 'background/trusted-actions.js', 'background/gpx-handoff-routes.js', 'background/caltopo-routes.js', 'background/alltrails-routes.js', 'background/gaia-routes.js', 'background/onx-routes.js', 'background/terrain-prefetch.js', 'garmin/fit-message-reader.js', 'garmin/fit-activity.js', 'garmin/garmin-api.js', 'garmin/garmin-store.js', 'garmin/garmin-imports.ts', 'background/background.js']);
+        ['ui/units.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'capture/upload-limits.js', 'capture/capture-core.js', 'capture/capture-phases.js', 'capture/capture-error-policy.js', 'capture/capture-diagnostics.js', 'capture/provider-url.js', 'capture/provider-timing.js', 'terrain/terrain-tiles.js', 'terrain/terrain-cache.ts', 'settings/settings-schema.ts', 'settings/settings.js', 'settings/settings-transfer.js', 'favorites/favorite-climbers.js', 'github/github-errors.js', 'github/github-api.js', 'github/github-auth.js', 'github/github-client.js', 'github/github-write-queue.js', 'photos/imgbb-client.js', 'photos/imgbb-auth.js', 'photos/photo-project.js', 'photos/photo-library.js', 'photos/photo-store.js', 'photos/photo-backup.js', 'photos/report-photo.js', 'reports/report-markup.ts', 'peakbagger/peakbagger-origin.js', 'peakbagger/peakbagger-cloudflare.js', 'peakbagger/peakbagger-response.js', 'peakbagger/peakbagger-error.js', 'peakbagger/peakbagger-request.js', 'caltopo/caltopo-import.js', 'alltrails/alltrails-import.js', 'gaia/gaia-import.js', 'gpx/saved-gpx-source.js', 'onx/onx-import.js', 'background/public-errors.js', 'background/peakbagger-request-scheduler.js', 'background/favorites-store.js', 'background/github-routes.js', 'background/report-photo-service.js', 'background/photo-routes.ts', 'background/settings-file-routes.js', 'background/terrain-activation.ts', 'background/trusted-actions.js', 'background/gpx-handoff-routes.js', 'background/caltopo-routes.js', 'background/alltrails-routes.js', 'background/gaia-routes.js', 'background/onx-routes.js', 'background/terrain-prefetch.js', 'garmin/fit-message-reader.ts', 'garmin/fit-activity.js', 'garmin/garmin-api.ts', 'garmin/garmin-store.js', 'garmin/garmin-imports.ts', 'background/options-tab-routes.ts', 'background/background.ts']);
     assert.deepEqual(bundleSources('provider-page.js'), [
         'capture/provider-url.js',
         'capture/provider-response.js',
@@ -77,7 +77,7 @@ test('the worker ships as one bundle for both Chrome and Firefox', () => {
         'capture/provider-timing.js',
         'gpx/gpx-parse.js',
         'net/request-deadline.js',
-        'capture/provider-page.js',
+        'capture/provider-page.ts',
     ]);
     assert.deepEqual(bundleSources('peakbagger-page.js'), [
         'peakbagger/peakbagger-origin.js',
@@ -136,31 +136,19 @@ test('summit cloud loads before its shared layout owner without new network perm
     assert.ok(!manifest.host_permissions.some(pattern => /open-meteo/.test(pattern)));
 });
 
-test('ImgBB upload access is optional and scoped to its API origin', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://api.imgbb.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('imgbb.com')));
-});
-
-test('Gaia import access is optional and scoped to the Gaia web app', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://www.gaiagps.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('gaiagps.com')));
-});
-
-test('CalTopo import access is optional and scoped to its map host', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://caltopo.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('caltopo.com')));
-});
-
-test('AllTrails import access is optional and scoped to its web app', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://www.alltrails.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('alltrails.com')));
-});
-
-test('onX import access is optional and excludes its identity service', () => {
-    assert.ok(manifest.optional_host_permissions.includes('https://backcountry.onxmaps.com/*'));
-    assert.ok(!manifest.host_permissions.some(pattern => pattern.includes('onxmaps.com')));
-    assert.ok(!manifest.optional_host_permissions.some(pattern => pattern.includes('identity.onxmaps.com')));
-});
+for (const { name, origin, host, excludedOptional } of [
+    { name: 'ImgBB upload access is optional and scoped to its API origin', origin: 'https://api.imgbb.com/*', host: 'imgbb.com' },
+    { name: 'Gaia import access is optional and scoped to the Gaia web app', origin: 'https://www.gaiagps.com/*', host: 'gaiagps.com' },
+    { name: 'CalTopo import access is optional and scoped to its map host', origin: 'https://caltopo.com/*', host: 'caltopo.com' },
+    { name: 'AllTrails import access is optional and scoped to its web app', origin: 'https://www.alltrails.com/*', host: 'alltrails.com' },
+    { name: 'onX import access is optional and excludes its identity service', origin: 'https://backcountry.onxmaps.com/*', host: 'onxmaps.com', excludedOptional: 'identity.onxmaps.com' },
+]) {
+    test(name, () => {
+        assert.ok(manifest.optional_host_permissions.includes(origin));
+        assert.ok(!manifest.host_permissions.some(pattern => pattern.includes(host)));
+        if (excludedOptional) assert.ok(!manifest.optional_host_permissions.some(pattern => pattern.includes(excludedOptional)));
+    });
+}
 
 test('the canonical unpacked extension opens Chrome settings in a full tab', () => {
     assert.deepEqual(manifest.options_ui, {
@@ -320,7 +308,7 @@ test('Full Screen GPS maps get a narrow read-only bridge and a MAIN-world Leafle
     const pageEntry = contentEntry('content/big-map.js');
     assert.ok(bridgeEntry);
     assert.deepEqual(bridgeEntry.js, ['content/big-map-bridge.js']);
-    assert.deepEqual(bundleSources('content/big-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/big-map-bridge.js']);
+    assert.deepEqual(bundleSources('content/big-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/map-settings-bridge.ts', 'maps/big-map-bridge.ts']);
     assert.equal(bridgeEntry.world, undefined);
     assert.ok(pageEntry);
     // The MAIN-world enhancer also bundles the shared metrics + basemap +
@@ -371,9 +359,9 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ui/units.js', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.js', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
+        ['ui/units.js', 'ui/page-lifecycle.ts', 'capture/match-confidence.js', 'capture/upload-limits.js', 'peakbagger/peakbagger-origin.js', 'ascent/ascent-draft.js', 'gpx/gpx-parse.js', 'gpx/map-route-limits.js', 'gpx/gpx-metrics.js', 'settings/settings-schema.ts', 'settings/settings.js', 'gpx/gpx-timestamps.js', 'ascent/ascent-upload.ts', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.js', 'ui/dom.js', 'ui/runtime-message.js', 'photos/report-photo.js', 'photos/photo-project.js', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
     const timezoneConsumers = await Promise.all([
-        'src/ascent/ascent-upload.js',
+        'src/ascent/ascent-upload.ts',
         'src/time/mountain-time.js'
     ].map(path => fs.readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
     for (const source of timezoneConsumers) {
@@ -382,7 +370,8 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
     }
     const runtimeSource = await Promise.all([
         'src/ascent/ascent-draft.js',
-        'src/background/background.js',
+        'src/background/background.ts',
+        'src/background/options-tab-routes.ts',
         'popup/popup.ts'
     ].map(path => fs.readFile(new URL(`../../${path}`, import.meta.url), 'utf8')));
     // The draft surface may disable native Save controls while queued. Its
@@ -446,7 +435,7 @@ test('Peak-page 3D uses a narrow settings bridge, MAIN coordinator, and isolated
 
     assert.ok(settingsBridge);
     assert.deepEqual(settingsBridge.js, ['content/peak-map-bridge.js']);
-    assert.deepEqual(bundleSources('content/peak-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/peak-map-bridge.js']);
+    assert.deepEqual(bundleSources('content/peak-map-bridge.js'), ['settings/settings-schema.ts', 'settings/settings.js', 'maps/map-settings-bridge.ts', 'maps/peak-map-bridge.ts']);
     assert.equal(settingsBridge.run_at, 'document_start');
     assert.equal(settingsBridge.world, undefined);
 

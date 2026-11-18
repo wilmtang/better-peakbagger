@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 import {createInstagramPresentation} from '../../src/reports/instagram-ui.js';
-import {fireTrustedEvent,waitFor} from '../helpers/load-page.mjs';
+import {fireTrustedEvent,waitFor} from '../helpers/load-page.mts';
 const URL='https://www.instagram.com/p/fA9uwTtkSN/';
 function setup({issue,automatic=false,timeoutMs=1000}={}){
     const dom=new JSDOM('<!doctype html><div id="root"></div>',{url:'https://www.peakbagger.com/climber/ascent.aspx?aid=1',pretendToBeVisual:true});

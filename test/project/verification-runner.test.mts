@@ -18,34 +18,34 @@ test('verification targets preserve the existing checks and browser order with o
         [['browsers'], [['verify-extension.mts'], ['verify-firefox-extension.mts']]],
         [['capture-popup'], [['verify-capture-popup.mts']]],
         [['popup-photo-entry'], [['verify-popup-photo-entry.mts']]],
-        [['gpx-header'], [['verify-gpx-header.mjs']]],
+        [['gpx-header'], [['verify-gpx-header.mts']]],
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mts', '--firefox-only', '--surface=maps']]],
-        [['multi-summit'], [['verify-multi-summit.mjs']]],
+        [['multi-summit'], [['verify-multi-summit.mts']]],
         [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
         [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
-        [['instagram'], [['verify-instagram.mjs', 'chrome'], ['verify-instagram.mjs', 'firefox']]],
-        [['report-security'], [['verify-report-security.mjs', 'chrome'], ['verify-report-security.mjs', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
-        [['inline-buddies'], [['verify-inline-buddies.mjs'], ['verify-inline-buddies.mjs', '--firefox']]],
+        [['instagram'], [['verify-instagram.mts', 'chrome'], ['verify-instagram.mts', 'firefox']]],
+        [['report-security'], [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
+        [['inline-buddies'], [['verify-inline-buddies.mts'], ['verify-inline-buddies.mts', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mts']]],
-        [['capture-readiness', 'firefox'], [['verify-capture-readiness.mjs', 'firefox']]],
+        [['capture-readiness', 'firefox'], [['verify-capture-readiness.mts', 'firefox']]],
         [['provider-contracts'], [['verify-provider-contracts.mjs']]],
         [['provider-performance'], [['verify-provider-performance.mjs']]],
-        [['map-handoffs'], [['verify-map-handoffs.mjs']]],
-        [['onx'], [['verify-onx.mjs', 'chrome'], ['verify-onx.mjs', 'firefox']]],
+        [['map-handoffs'], [['verify-map-handoffs.mts']]],
+        [['onx'], [['verify-onx.mts', 'chrome'], ['verify-onx.mts', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
-        [['settings-navigation'], [['verify-settings-fragments.mjs', 'chrome'], ['verify-settings-fragments.mjs', 'firefox']]],
-        [['map-location'], [['verify-ascent-weather.mjs', '--map-location'], ['verify-ascent-weather.mjs', '--map-location', '--firefox']]],
-        [['api-rate-limits'], [['verify-api-rate-limits.mjs']]],
-        [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mjs']]],
+        [['settings-navigation'], [['verify-settings-fragments.mts', 'chrome'], ['verify-settings-fragments.mts', 'firefox']]],
+        [['map-location'], [['verify-ascent-weather.mts', '--map-location'], ['verify-ascent-weather.mts', '--map-location', '--firefox']]],
+        [['api-rate-limits'], [['verify-api-rate-limits.mts']]],
+        [['ascent-backup-lifecycle'], [['verify-ascent-backup-lifecycle.mts']]],
         [['peak-map-layout'], [['verify-peak-map-layout.mts']]],
-        [['weather-intervals'], [['verify-weather-intervals.mjs']]],
-        [['weather', '--live'], [['verify-ascent-weather.mjs', '--live'], ['verify-ascent-weather.mjs', '--firefox', '--live']]],
-        [['peak-weather'], [['verify-ascent-weather.mjs', '--peak'], ['verify-ascent-weather.mjs', '--peak', '--firefox']]],
-        [['snow'], [['verify-ascent-weather.mjs', '--snow'], ['verify-ascent-weather.mjs', '--snow', '--firefox']]],
-        [['snow-map'], [['verify-ascent-weather.mjs', '--snow-map'], ['verify-ascent-weather.mjs', '--snow-map', '--firefox']]],
-        [['peak-card-placement'], [['verify-ascent-weather.mjs', '--cards-placement'], ['verify-ascent-weather.mjs', '--cards-placement', '--firefox']]],
-        [['map-controls'], [['verify-map-controls.mjs'], ['verify-map-controls.mjs', '--firefox']]],
+        [['weather-intervals'], [['verify-weather-intervals.mts']]],
+        [['weather', '--live'], [['verify-ascent-weather.mts', '--live'], ['verify-ascent-weather.mts', '--firefox', '--live']]],
+        [['peak-weather'], [['verify-ascent-weather.mts', '--peak'], ['verify-ascent-weather.mts', '--peak', '--firefox']]],
+        [['snow'], [['verify-ascent-weather.mts', '--snow'], ['verify-ascent-weather.mts', '--snow', '--firefox']]],
+        [['snow-map'], [['verify-ascent-weather.mts', '--snow-map'], ['verify-ascent-weather.mts', '--snow-map', '--firefox']]],
+        [['peak-card-placement'], [['verify-ascent-weather.mts', '--cards-placement'], ['verify-ascent-weather.mts', '--cards-placement', '--firefox']]],
+        [['map-controls'], [['verify-map-controls.mts'], ['verify-map-controls.mts', '--firefox']]],
         [['terrain'], [['verify-terrain-visual.mts']]],
         [['terrain', 'chrome', '/tmp/terrain evidence'], [['verify-terrain-visual.mts', '/tmp/terrain evidence']]],
         [['terrain', 'firefox'], [['verify-firefox-terrain.mts']]],
@@ -126,14 +126,14 @@ test('profile editor rejects missing, unknown and extra selections before openin
 
 test('settings navigation rejects unknown and extra selections before opening a browser', () => {
     for (const args of [['chromee'], ['chrome', '--unknown']]) {
-        const result = spawnSync(process.execPath, [script('verify-settings-fragments.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-settings-fragments.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-settings-fragments/);
     }
 });
 
 test('focused no-argument verifiers reject unknown selections before opening a browser', () => {
-    for (const name of ['verify-api-rate-limits.mjs', 'verify-ascent-backup-lifecycle.mjs', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mjs']) {
+    for (const name of ['verify-api-rate-limits.mts', 'verify-ascent-backup-lifecycle.mts', 'verify-peak-map-layout.mts', 'verify-weather-intervals.mts']) {
         const result = spawnSync(process.execPath, [script(name), '--unknown'], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Usage: node scripts\//);
@@ -142,7 +142,7 @@ test('focused no-argument verifiers reject unknown selections before opening a b
 
 test('peak-card placement rejects unknown and conflicting selections before opening a browser', () => {
     for (const args of [['--cards-placement', '--unknown'], ['--cards-placement', '--cards'], ['--cards-placement', '--interactions']]) {
-        const result = spawnSync(process.execPath, [script('verify-ascent-weather.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-ascent-weather.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.equal(result.status, 1, result.stderr);
         assert.match(result.stderr, /Unsupported weather verification arguments/);
     }
@@ -151,7 +151,7 @@ test('peak-card placement rejects unknown and conflicting selections before open
 
 test('onX verification rejects unknown or empty selections before opening a browser', () => {
     for (const args of [[], ['chromee'], ['chrome', '--unknown'], ['firefox', '--screenshots=a', '--screenshots=b']]) {
-        const result = spawnSync(process.execPath, [script('verify-onx.mjs'), ...args], { encoding: 'utf8', timeout: 5000 });
+        const result = spawnSync(process.execPath, [script('verify-onx.mts'), ...args], { encoding: 'utf8', timeout: 5000 });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: verify-onx/);
     }

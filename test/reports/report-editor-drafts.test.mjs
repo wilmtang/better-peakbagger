@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
 

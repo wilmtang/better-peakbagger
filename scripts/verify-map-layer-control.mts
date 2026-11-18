@@ -6,14 +6,12 @@
 /* global document, window, getComputedStyle */
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-import { mkdtemp, mkdir, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, firefox } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { darkCss } from '../src/theme/site-dark-css.js';
 import { SLOPE_BANDS } from '../src/maps/map-overlay-providers.ts';
 
@@ -32,17 +30,12 @@ interface LayerHost { fixture: LayerFixture; setFixtureTheme(theme: string): voi
 const resources = createResourceStack(), screenshots = process.env.BPB_LAYER_SCREENSHOT_DIR;
 let primaryError: unknown, summary: unknown;
 try {
-    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-layer-control-'));
-    resources.defer('layer control temporary files', () => rm(temporaryRoot, { recursive: true, force: true }));
+    const temporaryRoot = await createVerificationRoot(resources, 'bpb-layer-control-', 'layer control temporary files');
     const fixture = await createBrowserFixtureServer({ temporaryRoot } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('layer control HTTPS fixture', () => fixture.close());
-    if (!firefoxMode) assertChromeLaunchAllowed();
-    const context = await (firefoxMode ? firefox : chromium).launchPersistentContext(temporaryRoot, firefoxMode ? {
-        headless: true, ignoreHTTPSErrors: true, firefoxUserPrefs: { 'network.dns.localDomains': 'www.peakbagger.com' },
-    } : {
-        channel: 'chromium', headless: true, args: [...fixture.chromeTrustArgs, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
-    });
-    resources.defer('layer control browser', () => context.close());
+    const context = firefoxMode
+        ? await launchVerificationFirefox(resources, 'layer control browser', temporaryRoot)
+        : await launchVerificationChrome(resources, 'layer control browser', temporaryRoot, { hosts: [PEAKBAGGER_HOST_RULE], trustArgs: fixture.chromeTrustArgs });
     const bundle = await build({ stdin: { contents: `
         import {createMapLayerControl} from './src/maps/map-layer-control.js';
         import {settingsSchema as schema} from './src/settings/settings-schema.js';

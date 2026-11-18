@@ -549,8 +549,8 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /chrome:\s*\n[\s\S]*?uses: \.\/\.github\/actions\/verify-package/);
     assert.match(
         workflow,
-        /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: macos-15-intel/,
-        'current Chrome must use the standard Intel macOS runner',
+        /chrome:\s*\n\s+name: Chrome current extension smoke[\s\S]{0,500}runs-on: ubuntu-24\.04/,
+        'current Chrome runs on standard Ubuntu once branded CHROME_BIN is cleared',
     );
     assert.match(workflow,
         /chrome-required:\s*\n[\s\S]*?name: Chrome extension smoke[\s\S]*?if: always\(\)/);
@@ -559,7 +559,7 @@ test('CI tests, lints, and exercises both real browser extensions', async () => 
     assert.match(workflow, /firefox:\s*\n[\s\S]*?"152\.0"[\s\S]*?- latest/);
     assert.match(workflow, /chrome-floor:\s*\n[\s\S]*?chrome-version: '128'/);
     assert.match(workflow, /firefox-version: \$\{\{ matrix\.firefox \}\}/);
-    assert.equal(workflow.match(/uses: \.\/\.github\/actions\/setup-verification/g)?.length, 10);
+    assert.equal(workflow.match(/uses: \.\/\.github\/actions\/setup-verification/g)?.length, 11);
     assert.match(workflow, /permissions:\s*\n\s+contents: read/);
     assert.match(workflow, /fetch-depth: 0[\s\S]*?run: npm run release:check-history/);
     await assert.rejects(
@@ -587,7 +587,9 @@ test('Chrome verifier accepts an exact externally installed floor binary', async
         'utf8',
     );
     assert.match(verifier, /process\.env\.CHROME_BIN/);
-    assert.match(verifier, /chromeBinary \? \{ executablePath: chromeBinary \}/);
+    // The shared launcher turns an exact binary into executablePath; its own
+    // test pins that mapping.
+    assert.match(verifier, /chromeBinary: chromeBinary \?\? undefined/);
     assert.match(verifier, /const backgroundShortcut = process\.platform === 'darwin' \? 'Meta\+Enter' : 'Control\+Enter'/,
         'background-tab disposition must use a real modified keyboard activation in hidden Chrome');
     assert.match(verifier, /keyboard\.press\('Shift\+Enter'\)/,

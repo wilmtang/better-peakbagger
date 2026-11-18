@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 import { loadEditor, editorReady, editors, typeRich, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 
 test('the editor mounts on the ascent form and hides the native textarea', async () => {

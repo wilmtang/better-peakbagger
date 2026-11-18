@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Better Peakbagger — the repeatable form of the measurement that diagnosed the
-// 3D tilt detail collapse (docs/archive/3d-tilt-detail-blink.md, section 9).
+// 3D tilt detail collapse (section 9 of
+// https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/3d-tilt-detail-blink.md).
 //
 // It drives the real extension frame — the same dist/ bundle verify -- terrain
 // loads — on hardware GL, headless, with locally generated Terrarium DEM tiles
@@ -16,7 +18,7 @@
 // anything about native focus or window placement. A live spot-check through
 // `npm run verify -- terrain` is still required before release.
 
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer } from 'node:https';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -40,15 +42,13 @@ import {
     manageChildProcess,
 } from './resource-stack.mjs';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { connectCdp, evaluate, waitForDebugPort, type Cdp, type CdpResult } from './terrain-cdp.mts';
 import { installTerrainLodProbe } from './terrain-lod-probe.mjs';
 import { tiltTransientFailure } from './terrain-lod-criteria.mts';
 
-// CDP responses are arbitrary protocol JSON, parsed at one boundary below.
-type CdpResult = ReturnType<typeof JSON.parse>;
 type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
 type IncomingMessage = Parameters<RequestListener>[0];
 type ServerResponse = Parameters<RequestListener>[1];
-interface Cdp { call(method: string, params?: object): Promise<CdpResult>; on(method: string, listener: (params: CdpResult) => void): void; close(): void; }
 // The serialized probe's sample, and the worst fallback read out of it.
 type ProbeSample = CdpResult;
 interface Shortfall { levels: number; share: number; }
@@ -214,71 +214,8 @@ const server = await resources.guard(() =>
 resources.defer('terrain LOD server', () => closeServer(server));
 
 // ---------------------------------------------------------------------------
-// CDP plumbing
+// CDP plumbing (connection and evaluation live in terrain-cdp.mts)
 // ---------------------------------------------------------------------------
-
-const waitForDebugPort = async (profile: string, child: ChildProcess, childState: { error?: Error | null }, timeoutMs = 10000) => {
-    const activePortFile = path.join(profile, 'DevToolsActivePort');
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        if (childState.error) throw new Error(`Chrome failed to start: ${childState.error.message}`, {
-            cause: childState.error,
-        });
-        if (child.exitCode !== null) throw new Error(`Chrome exited before opening CDP (${child.exitCode})`);
-        try {
-            const [port] = (await readFile(activePortFile, 'utf8')).trim().split('\n');
-            if (/^\d+$/.test(port)) return Number(port);
-        } catch { /* Chrome has not written the port file yet. */ }
-        await delay(50);
-    }
-    throw new Error('Timed out waiting for Chrome DevToolsActivePort');
-};
-
-const connectCdp = async (url: string): Promise<Cdp> => {
-    if (typeof WebSocket !== 'function') {
-        throw new Error('This verification script requires a Node.js runtime with global WebSocket support');
-    }
-    const socket = new WebSocket(url);
-    await new Promise((resolve, reject) => {
-        socket.addEventListener('open', resolve, { once: true });
-        socket.addEventListener('error', reject, { once: true });
-    });
-
-    let nextId = 1;
-    const pending = new Map<number, { method: string; resolve: (value: CdpResult) => void; reject: (reason: Error) => void }>();
-    const listeners = new Map<string, Array<(params: CdpResult) => void>>();
-    socket.addEventListener('message', event => {
-        const message = JSON.parse(String(event.data));
-        if (message.id) {
-            const promise = pending.get(message.id);
-            if (!promise) return;
-            pending.delete(message.id);
-            if (message.error) promise.reject(new Error(`${promise.method}: ${message.error.message}`));
-            else promise.resolve(message.result);
-            return;
-        }
-        for (const listener of listeners.get(message.method) || []) listener(message.params);
-    });
-
-    return {
-        call(method, params = {}) {
-            const id = nextId++;
-            socket.send(JSON.stringify({ id, method, params }));
-            return new Promise((resolve, reject) => pending.set(id, { method, resolve, reject }));
-        },
-        on(method, listener) {
-            if (!listeners.has(method)) listeners.set(method, []);
-            listeners.get(method)!.push(listener);
-        },
-        close() { socket.close(); }
-    };
-};
-
-const evaluate = async (cdp: Cdp, expression: string) => {
-    const result = await cdp.call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Runtime evaluation failed');
-    return result.result.value;
-};
 
 // Gate on the condition, never on a fixed sleep, and report the live value at
 // failure time rather than a snapshot taken earlier.

@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { accelerateTimeout, evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { accelerateTimeout, evalBundle, waitFor } from '../helpers/load-page.mts';
 
 test('the isolated captioned player retains only Instagram’s origin and authenticates size messages', async () => {
     const html=await readFile('src/reports/instagram.html','utf8');

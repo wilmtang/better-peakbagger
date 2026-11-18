@@ -37,7 +37,7 @@ record fields for comparison; it is not the proposed production import pipeline.
 
 The official Garmin SDK was **not executed or benchmarked**. Its custom license
 and the reasons for excluding it remain in the
-[integration plan](../../../archive/garmin-personal-api-draft-inbox.md#decoder-licensing-and-selection).
+[integration plan](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/garmin-personal-api-draft-inbox.md#decoder-licensing-and-selection).
 
 ## Results
 

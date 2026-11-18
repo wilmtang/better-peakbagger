@@ -335,7 +335,7 @@ Inspected the current map/settings/protocol/renderer sources and existing
 verification infrastructure on branch `main` at `e02b0fc4`. No runtime tests or
 browser rendering were run for this plan.
 
-Documentation verification: `node --test test/project/documentation.test.mjs`
+Documentation verification: `node --test test/project/documentation.test.mts`
 passed all three checks, including maintained and archived relative links.
 `git diff --check` passed for the plan and index.
 

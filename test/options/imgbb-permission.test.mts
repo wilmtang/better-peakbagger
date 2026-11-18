@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 import type { LoadPage, StubMessage } from '../helpers/page-types.mts';
 
 registerCleanup();

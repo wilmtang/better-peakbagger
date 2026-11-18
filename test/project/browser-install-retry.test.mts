@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -12,7 +12,12 @@ import { fileURLToPath } from 'node:url';
 const script = fileURLToPath(new URL('../../.github/actions/setup-verification/install-playwright-browser.sh', import.meta.url));
 
 // Runs the real script against recording stubs. `npx` fails until `succeedOn`.
-async function run({ succeedOn, runnerOs = 'Linux' }: { succeedOn: number; runnerOs?: string }) {
+async function run({ succeedOn, runnerOs = 'Linux', aptEtc, realSudoFileOps = false }: {
+    succeedOn: number;
+    runnerOs?: string;
+    aptEtc?: string;
+    realSudoFileOps?: boolean;
+}) {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'bpb-browser-install-'));
     const calls = path.join(directory, 'calls');
     try {
@@ -21,10 +26,17 @@ async function run({ succeedOn, runnerOs = 'Linux' }: { succeedOn: number; runne
             await chmod(path.join(directory, name), 0o755);
         };
         await stub('npx', `count=$(grep -c '^npx ' "${calls}"); [ "$count" -ge ${succeedOn} ]`);
-        await stub('sudo', 'exit 0');
+        await stub('sudo', realSudoFileOps
+            ? 'case "${1:-}" in perl|tee) exec "$@" ;; *) exit 0 ;; esac'
+            : 'exit 0');
         const result = spawnSync('bash', [script, 'firefox'], {
             encoding: 'utf8',
-            env: { ...process.env, PATH: `${directory}${path.delimiter}${process.env.PATH}`, RUNNER_OS: runnerOs },
+            env: {
+                ...process.env,
+                PATH: `${directory}${path.delimiter}${process.env.PATH}`,
+                RUNNER_OS: runnerOs,
+                ...(aptEtc ? { BPB_APT_ETC: aptEtc } : {}),
+            },
         });
         return { status: result.status, stdout: result.stdout,
             calls: (await readFile(calls, 'utf8')).trim().split('\n') };
@@ -55,6 +67,44 @@ test('other runner systems do not touch apt', async () => {
     const { status, calls } = await run({ succeedOn: 99, runnerOs: 'macOS' });
     assert.notEqual(status, 0);
     assert.deepEqual(calls, ['npx playwright install --with-deps firefox']);
+});
+
+test('a Linux retry rewrites Azure, EC2 and DEB822 Ubuntu mirror sources', async () => {
+    const aptEtc = await mkdtemp(path.join(os.tmpdir(), 'bpb-apt-etc-'));
+    try {
+        await mkdir(path.join(aptEtc, 'sources.list.d'), { recursive: true });
+        await mkdir(path.join(aptEtc, 'apt.conf.d'), { recursive: true });
+        const mirrorsPath = path.join(aptEtc, 'apt-mirrors.txt');
+        const sourcesPath = path.join(aptEtc, 'sources.list');
+        const deb822Path = path.join(aptEtc, 'sources.list.d', 'ubuntu.sources');
+        const confPath = path.join(aptEtc, 'apt.conf.d', '99-bpb-retry');
+        await writeFile(mirrorsPath,
+            'http://us-east-2.ec2.archive.ubuntu.com/ubuntu/\tpriority:1\n'
+            + 'http://azure.archive.ubuntu.com/ubuntu/\tpriority:2\n'
+            + 'http://security.ubuntu.com/ubuntu/\tpriority:3\n');
+        await writeFile(sourcesPath, 'deb http://clouds.archive.ubuntu.com/ubuntu noble main\n');
+        await writeFile(deb822Path,
+            'Types: deb\n'
+            + 'URIs: http://us-west-1.ec2.archive.ubuntu.com/ubuntu/ http://security.ubuntu.com/ubuntu/\n'
+            + 'Suites: noble\n');
+
+        const { status } = await run({ succeedOn: 2, aptEtc, realSudoFileOps: true });
+        assert.equal(status, 0);
+        assert.equal(await readFile(mirrorsPath, 'utf8'),
+            'http://archive.ubuntu.com/ubuntu/\tpriority:1\n'
+            + 'http://archive.ubuntu.com/ubuntu/\tpriority:2\n'
+            + 'http://security.ubuntu.com/ubuntu/\tpriority:3\n');
+        assert.equal(await readFile(sourcesPath, 'utf8'), 'deb http://archive.ubuntu.com/ubuntu noble main\n');
+        assert.equal(await readFile(deb822Path, 'utf8'),
+            'Types: deb\n'
+            + 'URIs: http://archive.ubuntu.com/ubuntu/ http://security.ubuntu.com/ubuntu/\n'
+            + 'Suites: noble\n');
+        const retryConf = await readFile(confPath, 'utf8');
+        assert.match(retryConf, /Acquire::Retries "3";/);
+        assert.match(retryConf, /Acquire::http::Timeout "20";/);
+    } finally {
+        await rm(aptEtc, { recursive: true, force: true });
+    }
 });
 
 test('every browser install in the shared action goes through the retry', async () => {

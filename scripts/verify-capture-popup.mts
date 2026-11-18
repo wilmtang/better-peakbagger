@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
@@ -9,10 +10,11 @@
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their serialized argument under its own name. */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import os from 'node:os';
 import { chromium, firefox } from 'playwright';
 import type { Browser, BrowserType, LaunchOptions, Page } from 'playwright';
 import { createResourceStack } from './resource-stack.mjs';
+import { activateToolbarTarget, waitForCondition } from './browser-verification-fixtures.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 
 const popupHtml = await fs.readFile(new URL('../dist/popup/popup.html', import.meta.url), 'utf8');
@@ -95,19 +97,15 @@ const verifyNativeSizing = async () => {
     const resources = createResourceStack();
     let failure = null;
     try {
-        const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'bpb-capture-popup-'));
-        resources.defer('popup profile', () => fs.rm(profile, { recursive: true, force: true }));
+        const profile = await createVerificationRoot(resources, 'bpb-capture-popup-', 'popup profile');
         const dist = await fs.realpath(new URL('../dist', import.meta.url));
-        assertChromeLaunchAllowed();
-        const context = await chromium.launchPersistentContext(profile, {
-            channel: 'chromium',
-            headless: true,
+        const context = await launchVerificationChrome(resources, 'popup browser', profile, {
             // Do not assign a viewport: browser action autosizing is the test.
             viewport: null,
             ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-            args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+            args: ['--enable-unsafe-extension-debugging'],
+            extension: dist,
         });
-        resources.defer('popup browser', () => context.close());
         const control = await context.newPage();
         await control.goto('chrome://extensions-internals/');
         const record = await control.waitForFunction(() => {
@@ -118,6 +116,12 @@ const verifyNativeSizing = async () => {
         }, null, { timeout: 15_000 }).then(handle => handle.jsonValue());
         if (await fs.realpath(record.path) !== dist) throw new Error('Wrong extension registered');
         await control.goto(`chrome-extension://${record.id}/options/options.html`);
+        const cdp = await context.browser()!.newBrowserCDPSession();
+        const target = await waitForCondition(async () => {
+            const { targetInfos } = await cdp.send('Target.getTargets', { filter: [{ type: 'tab', exclude: false }] });
+            return targetInfos.find(item => item.url === control.url()) || false;
+        }, { description: 'popup sizing control tab target' });
+        await activateToolbarTarget(cdp, control, target.targetId);
 
         const readLayout = () => control.evaluate(() => {
             const views = globalThis.chrome.extension.getViews({ type: 'popup' });
@@ -145,8 +149,8 @@ const verifyNativeSizing = async () => {
                     if (await globalThis.chrome.tabs.getZoom() !== tabZoom) {
                         throw new Error('Source tab zoom did not apply');
                     }
-                    await globalThis.chrome.action.openPopup();
                 }, { theme, tabZoom });
+                await cdp.send('Extensions.triggerAction', { id: record.id, targetId: target.targetId });
                 try {
                     await control.waitForFunction(theme => {
                         const popup = globalThis.chrome.extension.getViews({ type: 'popup' })[0];

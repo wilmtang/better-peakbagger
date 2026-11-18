@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-// @ts-expect-error jsdom ships no declarations; fixture DOM remains legacy until M4.5.
-import { JSDOM } from 'jsdom';
+import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
+import { rect } from '../helpers/page-types.mts';
+import type * as MapLocationMenu from '../../src/maps/map-location-menu.ts';
 import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
 import { weatherFixture as untypedWeatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
-import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.js';
+import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
 type WeatherBody = { latitude: number; longitude: number; elevation: number | null; utc_offset_seconds: number; hourly_units: Record<string, string>; hourly: Record<string, (number | null)[]> & { time: number[] } };
@@ -22,6 +23,16 @@ interface SetupOptions {
     saveModels?: (values: Values) => Promise<unknown>; metadataFn?: FixtureFetch; aqiFn?: FixtureFetch;
 }
 interface CapturedRequest { url: string; init: RequestOptions }
+// The stubbed extension API and the test-built location menu on the page window.
+interface WeatherChrome {
+    storage: {
+        local: { get(key: string | string[]): Promise<Values>; set(values: Values): Promise<unknown> };
+        sync: { get(): Promise<{ bpbSettings?: Values }> };
+        onChanged: { addListener(fn: StorageListener): void; removeListener(fn: StorageListener): void };
+    };
+    runtime?: { sendMessage(message: { type: string; patch: Values }): Promise<unknown> };
+}
+type WeatherWindow = FixtureWindow & { chrome: WeatherChrome; testMapMenu: typeof MapLocationMenu };
 interface HeldRequest { url: string; init: RequestOptions; resolve: (response: Response) => void }
 
 const [peak, bundle] = await Promise.all([
@@ -42,8 +53,8 @@ const reply = (url: string, _init?: RequestOptions) => {
         elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn }: SetupOptions = {}) {
-    const jsdom = new JSDOM(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = jsdom.window;
+    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
+    const win = jsdom.window as WeatherWindow;
     const requests: CapturedRequest[] = [], metadataRequests: CapturedRequest[] = [], listeners: StorageListener[] = [];
     const observers: { callback: (entries: { isIntersecting: boolean }[]) => void; disconnected: boolean }[] = [], resizeObservers: { callback: () => void; disconnected: boolean }[] = [];
     let clock = Date.parse(now);
@@ -59,20 +70,20 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         Object.assign(storedSettings, message.patch);
         return { ok: true, settings: { units: 'imperial', ...storedSettings } };
     } };
-    if (lazy) win.IntersectionObserver = class {
+    if (lazy) (win as { IntersectionObserver: unknown }).IntersectionObserver = class {
         callback: (entries: { isIntersecting: boolean }[]) => void; disconnected = false;
         constructor(callback: (entries: { isIntersecting: boolean }[]) => void) { this.callback = callback; observers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
     let chartWidth = 620;
-    win.HTMLElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
-    win.SVGElement.prototype.getBoundingClientRect = () => ({ width: chartWidth, height: 184, left: 0, top: 0 });
-    win.ResizeObserver = class {
+    win.HTMLElement.prototype.getBoundingClientRect = () => rect({ width: chartWidth, height: 184, left: 0, top: 0 });
+    win.SVGElement.prototype.getBoundingClientRect = () => rect({ width: chartWidth, height: 184, left: 0, top: 0 });
+    (win as { ResizeObserver: unknown }).ResizeObserver = class {
         callback: () => void; disconnected = false;
         constructor(callback: () => void) { this.callback = callback; resizeObservers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
-    win.fetch = async (url: string, init: RequestOptions) => {
+    (win as { fetch: unknown }).fetch = async (url: string, init: RequestOptions) => {
         if (new URL(url).pathname.startsWith('/data/')) {
             metadataRequests.push({ url, init });
             return metadataFn ? metadataFn(url, init) : new Response(JSON.stringify({ last_run_initialisation_time: Math.floor(clock / 1000) - 3600,
@@ -86,9 +97,9 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
             Date.parse(new Date(clock).toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400])));
         return new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
     };
-    win.postMessage = (data: unknown) => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data }));
+    win.postMessage = (data: unknown) => win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin, data }));
     win.eval(menuBundle);
-    const locationMenu = win.testMapMenu.createMapLocationMenu({ window: win, client: { lookup: async () => 1957, clear() {} } });
+    const locationMenu = win.testMapMenu.createMapLocationMenu({ window: browserWindow(win), client: { lookup: async () => 1957, clear() {} } });
     win.eval(bundle);
     return { win, locationMenu, doc: win.document, requests, metadataRequests, listeners, observers, resizeObservers,
         setNow: (next: string) => { clock = Date.parse(next); },
@@ -105,7 +116,7 @@ const chooseModel = (env: ReturnType<typeof setup>, id: string) => {
 };
 const openLocationMenu = (env: ReturnType<typeof setup>, latitude = 46.8, longitude = -121.7, extra = {}) => {
     const frame = env.doc.getElementById('Gmap');
-    frame.getBoundingClientRect = () => ({ left: 10, top: 10, right: 650, bottom: 435, width: 640, height: 425 });
+    frame.getBoundingClientRect = () => rect({ left: 10, top: 10, right: 650, bottom: 435, width: 640, height: 425 });
     env.locationMenu.show({ latitude, longitude, x: 100, y: 100, ...extra }, frame);
 };
 const selectLocation = (env: ReturnType<typeof setup>, latitude: number, longitude: number) => {
@@ -393,7 +404,7 @@ test('cloud details retain their graph, preserve gaps and use a fixed percentage
             for (const value of ['0%', '25%', '50%', '100%']) assert.ok(values.some(text => text.endsWith(`· ${value}`)), value);
             assert.equal(chart.dataset.weatherMetric, 'cloud');
             assert.deepEqual([...chart.querySelectorAll('.bpb-week-axis')].slice(0, 3).map(node => node.textContent), ['0%', '50%', '100%']);
-            assert.ok(chart.querySelector('.bpb-week-line').getAttribute('d').split('M').length > 2, 'missing cloud hours break the line');
+            assert.ok(chart.querySelector('.bpb-week-line').getAttribute('d')!.split('M').length > 2, 'missing cloud hours break the line');
             assert.ok(values.length < 24, 'missing cloud hours do not receive points');
             chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
             assert.ok(day.querySelector('.bpb-week-cursor'));
@@ -603,7 +614,7 @@ test('mixed weather units update live without changing the default or refetching
         const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
         await waitFor(() => day.querySelector('[role="tabpanel"]'));
         day.querySelector('[data-metric="precipitation"]').click();
-        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /mm/);
+        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label')!, /mm/);
         const requests = env.requests.length;
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { ...storedSettings, temperatureUnits: 'imperial', elevationUnits: 'imperial', windUnits: 'metric' } } }, 'sync')); await pause();
         assert.match(env.doc.querySelector('.bpb-week-temp').textContent, /°F/);
@@ -773,8 +784,8 @@ test('summary activation expands only the requested day without collapsing conte
         first.click();
         assert.equal(days[0].open, true); assert.ok(days[0].querySelector('.bpb-weather-hourly-table'));
         assert.equal(days[0].querySelector('[aria-selected="true"]').dataset.metric, 'code');
-        const scrolls: number[] = []; env.win.scrollBy = (value: ScrollToOptions) => scrolls.push(value.top || 0);
-        second.getBoundingClientRect = () => ({ top: days[0].open ? 500 : 200 });
+        const scrolls: number[] = []; (env.win as { scrollBy: unknown }).scrollBy = (value: ScrollToOptions) => scrolls.push(value.top || 0);
+        second.getBoundingClientRect = () => rect({ top: days[0].open ? 500 : 200 });
         second.click();
         assert.equal(days[0].open, true); assert.equal(days[1].open, true);
         assert.equal(env.doc.querySelectorAll('.bpb-week-day[open]').length, 2);
@@ -901,14 +912,14 @@ test('weather opt-out hides the whole table row, skips requests and updates live
     try {
         await new Promise(resolve => setTimeout(resolve, 0));
         const card = env.doc.getElementById('bpb-peak-weather'), row = card.closest('tr');
-        assert.equal(card.hidden, true); assert.equal(row.hidden, true); assert.equal(env.requests.length, 0);
+        assert.equal(card.hidden, true); assert.equal(row!.hidden, true); assert.equal(env.requests.length, 0);
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pagehide', { persisted: true }));
         env.win.dispatchEvent(new env.win.PageTransitionEvent('pageshow', { persisted: true }));
         assert.equal(env.requests.length, 0);
         update(true); await waitFor(() => !card.hidden); await settled(env);
-        assert.equal(card.hidden, false); assert.equal(row.hidden, false);
+        assert.equal(card.hidden, false); assert.equal(row!.hidden, false);
         const count = env.requests.length;
-        update(false); await waitFor(() => card.hidden); assert.equal(card.hidden, true); assert.equal(row.hidden, true);
+        update(false); await waitFor(() => card.hidden); assert.equal(card.hidden, true); assert.equal(row!.hidden, true);
         card.querySelector('.bpb-week-refresh').click();
         env.win.dispatchEvent(new env.win.Event('visibilitychange'));
         assert.equal(env.requests.length, count);
@@ -948,30 +959,30 @@ test('a late startup read cannot override a weather opt-out and a failed read st
 });
 
 test('peak identity and unique native coordinates fail closed without remote geocoding', () => {
-    const doc = new JSDOM(peak).window.document;
+    const doc = fixtureDom(peak).window.document;
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296')!.elevation, 4391);
     for (const url of ['https://evil.test/Peak.aspx?pid=2296', 'https://www.peakbagger.com/Peak.aspx?pid=2296&pid=2829', 'https://www.peakbagger.com/Peak.aspx?pid=0']) assert.equal(readPeakWeatherSubject(doc, url), null);
     doc.querySelector('h1').after(doc.querySelector('h1').cloneNode(true));
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
     doc.querySelectorAll('h1')[1].remove();
-    const coordinate = [...doc.querySelectorAll('tr')].find(row => row.cells[0]?.textContent.trim() === 'Latitude/Longitude (WGS84)');
-    coordinate.after(coordinate.cloneNode(true));
+    const coordinate = [...doc.querySelectorAll<HTMLTableRowElement>('tr')].find(row => row.cells[0]?.textContent.trim() === 'Latitude/Longitude (WGS84)');
+    coordinate!.after(coordinate!.cloneNode(true));
     assert.equal(readPeakWeatherSubject(doc, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
 });
 
 test('weather stays beside the map when native peak details follow it', async () => {
-    const fixture = new JSDOM(peak);
+    const fixture = fixtureDom(peak);
     const mapRow = fixture.window.document.getElementById('Gmap').closest('tr');
-    mapRow.parentElement.prepend(mapRow);
-    const nativeDetails = mapRow.nextElementSibling.textContent;
+    mapRow!.parentElement!.prepend(mapRow!);
+    const nativeDetails = mapRow!.nextElementSibling!.textContent;
     const env = setup({ html: fixture.serialize() });
     fixture.window.close();
     try {
         await settled(env);
         const map = env.doc.getElementById('Gmap').closest('tr');
         const weather = env.doc.getElementById('bpb-peak-weather-row');
-        assert.equal(map.nextElementSibling, weather);
-        assert.equal(weather.nextElementSibling.textContent, nativeDetails);
+        assert.equal(map!.nextElementSibling, weather);
+        assert.equal(weather.nextElementSibling!.textContent, nativeDetails);
     } finally { env.close(); }
 });
 
@@ -981,8 +992,8 @@ test('card stays in the right native table below map and includes sixteen comple
         await settled(env);
         const card = env.doc.getElementById('bpb-peak-weather'), map = env.doc.getElementById('Gmap');
         assert.equal(card.closest('table'), map.closest('table'));
-        assert.equal(card.closest('table').getAttribute('align'), 'right');
-        assert.equal(map.closest('tr').nextElementSibling, card.closest('tr'));
+        assert.equal(card.closest('table')!.getAttribute('align'), 'right');
+        assert.equal(map.closest('tr')!.nextElementSibling, card.closest('tr'));
         assert.ok(map.compareDocumentPosition(card) & env.win.Node.DOCUMENT_POSITION_FOLLOWING);
         assert.deepEqual([...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date), ['2024-11-04', '2024-11-03', '2024-11-02', '2024-11-01', '2024-10-31', '2024-10-30', '2024-10-29', '2024-10-28', '2024-10-27', '2024-10-26', '2024-10-25', '2024-10-24', '2024-10-23', '2024-10-22', '2024-10-21', '2024-10-20']);
         assert.match(card.querySelector('.bpb-week-range').textContent, /Oct 20.*Nov 4, 2024/);
@@ -1017,7 +1028,7 @@ test('independent hourly disclosures retain local DST folds and change units wit
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         const next = env.doc.querySelector('[data-date="2024-11-02"]');
         assert.equal(next.open, true); assert.match(next.textContent, /°C/); assert.match(next.textContent, /km\/h/);
-        assert.match(next.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /°C/);
+        assert.match(next.querySelector('.bpb-week-chart svg').getAttribute('aria-label')!, /°C/);
         assert.equal(env.doc.querySelector('[data-date="2024-11-03"]').open, true);
         assert.equal(env.requests.length, 1);
     } finally { env.close(); }
@@ -1034,7 +1045,7 @@ test('unchanged hourly pointer samples do not replace cursor or reading nodes', 
         frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 250 }));
         const text = readout.textContent, cursor = day.querySelector('.bpb-week-cursor');
         const observer = new env.win.MutationObserver(() => {});
-        observer.observe(frame.parentElement, { childList: true, subtree: true });
+        observer.observe(frame.parentElement!, { childList: true, subtree: true });
         for (let index = 0; index < 120; index++) frame.dispatchEvent(new env.win.MouseEvent('pointermove', { clientX: 250 }));
         assert.equal(observer.takeRecords().length, 0, 'unchanged samples must not churn the cursor or readout');
         assert.equal(day.querySelector('.bpb-week-cursor'), cursor);
@@ -1070,8 +1081,8 @@ test('hourly tabs, keyboard sampling, hover and pinned readings reuse data and r
         assert.equal(env.doc.activeElement, tabs[0]); assert.equal(tabs[0].getAttribute('aria-selected'), 'true');
         assert.equal(day.querySelector('.bpb-week-conditions').hidden, false);
         tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-        assert.equal(env.doc.activeElement, tabs.at(-1)); assert.equal(tabs.at(-1).dataset.metric, 'gust');
-        tabs.at(-1).dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+        assert.equal(env.doc.activeElement, tabs.at(-1)); assert.equal(tabs.at(-1)!.dataset.metric, 'gust');
+        tabs.at(-1)!.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
         tabs[0].dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
         assert.equal(env.doc.activeElement, temperature);
         temperature.focus(); temperature.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -1116,7 +1127,7 @@ test('missing hours break numeric lines and remain unavailable in conditions; mi
         await waitFor(() => day.querySelector('[role="tabpanel"]'));
         day.querySelector('[data-metric="temperature"]').click();
         assert.equal(day.querySelectorAll('.bpb-week-point').length, 22);
-        assert.equal((day.querySelector('.bpb-week-line').getAttribute('d').match(/M/g) || []).length, 3);
+        assert.equal((day.querySelector('.bpb-week-line').getAttribute('d')!.match(/M/g) || []).length, 3);
         const frame = day.querySelector('.bpb-week-chart');
         frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
         for (let i = 0; i < 8; i++) frame.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
@@ -1144,7 +1155,7 @@ test('Conditions keeps the nine compact rows, interval values and scroll on a un
         assert.match(grid.querySelector('[data-weather-row="temperature"]').textContent, /°F/);
         const rain = [...grid.querySelectorAll('[data-weather-row="precipitation"] td')];
         assert.match(rain[0].title, /12:00 AM PST.*01:00 AM PST/);
-        assert.match(rain.at(-1).title, /11:00 PM PST.*12:00 AM PST/);
+        assert.match(rain.at(-1)!.title, /11:00 PM PST.*12:00 AM PST/);
         grid.scrollLeft = 340; grid.focus();
         env.listeners.forEach(fn => fn({ bpbSettings: { newValue: { units: 'metric' } } }, 'sync')); await pause();
         const next = env.doc.querySelector('.bpb-week-conditions');
@@ -1275,7 +1286,7 @@ test('missing map retains right-column card; lazy loading never starts before vi
     const env = setup({ html: peak.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, ''), lazy: true });
     try {
         assert.ok(env.doc.getElementById('bpb-peak-weather')); assert.equal(env.requests.length, 0);
-        assert.equal(env.doc.getElementById('bpb-peak-weather').closest('table').getAttribute('align'), 'right');
+        assert.equal(env.doc.getElementById('bpb-peak-weather').closest('table')!.getAttribute('align'), 'right');
         await waitFor(() => env.observers.length === 1);
         env.observers[0].callback([{ isIntersecting: true }]);
         await settled(env); assert.equal(env.requests.length, 1);
@@ -1283,7 +1294,7 @@ test('missing map retains right-column card; lazy loading never starts before vi
 });
 
 test('missing map with multiple right tables fails closed, and empty weather leaves no false day controls', async () => {
-    const noMap = new JSDOM(peak.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '')).window.document;
+    const noMap = fixtureDom(peak.replace(/<iframe id="Gmap"[\s\S]*?<\/iframe>/, '')).window.document;
     const table = noMap.querySelector('table.gray[align="right"]'); table.after(table.cloneNode(true));
     assert.equal(readPeakWeatherSubject(noMap, 'https://www.peakbagger.com/Peak.aspx?pid=2296'), null);
     const env = setup({ fetchFn: url => {
@@ -1415,7 +1426,7 @@ test('forecast and history both show sixteen days and share one response, retain
         await settled(env, { past: false });
         const dates = () => [...env.doc.querySelectorAll('.bpb-week-day')].map(day => day.dataset.date);
         assert.equal(dates().length, 16); assert.equal(dates()[0], '2024-11-05'); assert.equal(dates().at(-1), '2024-11-20');
-        assert.ok(dates().every((date, index) => !index || date > dates()[index - 1]));
+        assert.ok(dates().every((date, index) => !index || date! > dates()[index - 1]!));
         assert.equal(env.doc.querySelector('[data-period="forecast"]').textContent, '16-day forecast');
         assert.equal(new URL(env.requests[0].url).searchParams.get('end_date'), '2024-11-20');
         assert.equal(new URL(env.requests[0].url).searchParams.get('start_date'), '2024-10-20');
@@ -1462,10 +1473,10 @@ test('source details distinguish the clicked location from the returned weather 
         await waitFor(() => env.doc.querySelector('.bpb-week-location-name').textContent === '46.4947, -121.4636');
         const day = env.doc.querySelector('.bpb-week-day'); day.open = true;
         await waitFor(() => day.querySelector('.bpb-week-conditions'));
-        assert.match(day.querySelector('.bpb-week-conditions').getAttribute('aria-label'), /local time at selected point/i);
+        assert.match(day.querySelector('.bpb-week-conditions').getAttribute('aria-label')!, /local time at selected point/i);
         assert.match(day.querySelector('.bpb-week-sub').textContent, /Local time at selected point/);
         day.querySelector('[data-metric="temperature"]').click();
-        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label'), /local time at selected point/i);
+        assert.match(day.querySelector('.bpb-week-chart svg').getAttribute('aria-label')!, /local time at selected point/i);
         const request = new URL(env.requests.at(-1)!.url);
         assert.equal(request.searchParams.get('latitude'), '46.4947');
         assert.equal(request.searchParams.get('longitude'), '-121.4636');
@@ -1844,16 +1855,16 @@ test('air quality uses two aligned hourly rows with a complete category key', as
     try {
         await settled(env, { past: false }); env.doc.querySelector('[data-period="aqi"]').click();
         await waitFor(() => env.doc.querySelectorAll('.bpb-air-table tbody tr').length > 0);
-        const table = env.doc.querySelector('.bpb-air-table');
+        const table = env.doc.querySelector<HTMLTableElement>('.bpb-air-table');
         assert.equal(table.tBodies[0].rows.length, 2);
         assert.deepEqual([...table.tBodies[0].rows].map(row => row.dataset.airRow), ['aqi', 'pm']);
-        const hours = table.tHead.querySelectorAll('[data-air-time]');
+        const hours = table.tHead!.querySelectorAll('[data-air-time]');
         assert.equal(hours.length, 108);
         assert.equal(table.tBodies[0].rows[0].cells.length, hours.length + 1);
         assert.equal(table.tBodies[0].rows[1].cells.length, hours.length + 1);
         assert.equal(env.doc.querySelectorAll('.bpb-air-scale li').length, 6);
-        assert.match(env.doc.querySelector('.bpb-air-scale').getAttribute('aria-label'), /US AQI/);
-        assert.equal(table.querySelector('[aria-current="time"]').dataset.airTime, hours[0].dataset.airTime);
+        assert.match(env.doc.querySelector('.bpb-air-scale').getAttribute('aria-label')!, /US AQI/);
+        assert.equal(table.querySelector<HTMLElement>('[aria-current="time"]')!.dataset.airTime, (hours[0] as HTMLElement).dataset.airTime);
     } finally { env.close(); }
 });
 
@@ -1923,7 +1934,7 @@ test('AQI keyboard time remains inside the atomic live reading when consecutive 
 test('AQI expiry erases readings and retains the noninteractive grid until retry', async () => {
     const env = setup(); let expire: (() => void) | undefined;
     const originalTimeout = env.win.setTimeout;
-    env.win.setTimeout = (callback: () => void, delay: number) => {
+    (env.win as { setTimeout: unknown }).setTimeout = (callback: () => void, delay: number) => {
         if (delay >= 1700000 && delay <= 1800000) { expire = callback; return -1; }
         return originalTimeout(callback, delay);
     };

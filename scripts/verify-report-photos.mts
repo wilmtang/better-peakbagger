@@ -7,31 +7,24 @@
 // Hidden packaged-extension coverage. ImgBB responses and its optional
 // permission check are fixture-owned; no real upload or permission prompt.
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, mkdir } from 'node:fs/promises';
-import os from 'node:os';
+import { readFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
 import { createResourceStack } from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const resources = createResourceStack();
 const root = process.cwd();
 const rateLimit = process.argv.includes('--rate-limit');
 let failure: unknown = null;
 try {
-    const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-report-photos-'));
-    resources.defer('report photo profile', () => rm(profile, { recursive: true, force: true }));
+    const profile = await createVerificationRoot(resources, 'bpb-report-photos-', 'report photo profile');
     const fixture = await createBrowserFixtureServer({ temporaryRoot: profile } as unknown as Parameters<typeof createBrowserFixtureServer>[0]);
     resources.defer('report photo HTTPS fixture', () => fixture.close());
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true,
-        viewport: { width: 1280, height: 900 },
-        args: [...fixture.chromeTrustArgs, `--disable-extensions-except=${path.join(root, 'dist')}`, `--load-extension=${path.join(root, 'dist')}`,
-            '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+    const context = await launchVerificationChrome(resources, 'report photo browser', profile, {
+        viewport: { width: 1280, height: 900 }, trustArgs: fixture.chromeTrustArgs,
+        extension: path.join(root, 'dist'), hosts: [PEAKBAGGER_HOST_RULE],
     });
-    resources.defer('report photo browser', () => context.close());
     const registry = await context.newPage();
     await registry.goto('chrome://extensions-internals/');
     const record = await registry.waitForFunction(() => {

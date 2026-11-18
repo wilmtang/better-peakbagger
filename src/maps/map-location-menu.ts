@@ -3,7 +3,7 @@
 
 import { createElevationClient } from './map-elevation.js';
 import { units } from '../ui/units.js';
-import { readPeakUnitSystem } from '../peakbagger/peak-units.js';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { createStableText } from '../ui/stable-text.js';
 

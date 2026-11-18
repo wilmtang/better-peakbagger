@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES } from './load-page.mjs';
+import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES } from './load-page.mts';
 
 const FIXTURE = 'climber-ascentedit.html';
 const EDITOR_URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=900001';

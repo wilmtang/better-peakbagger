@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, waitFor } from '../helpers/load-page.mts';
 
 async function newEditor(t, fetcher) {
     const origin = 'https://extension.example', token = 'auto-editor', saved = [];

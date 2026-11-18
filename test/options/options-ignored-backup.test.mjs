@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadOptions, el, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
 import { createGithubRoutes } from '../../src/background/github-routes.js';
 import * as I from '../../src/favorites/ignored-climbers.js';

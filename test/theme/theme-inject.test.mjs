@@ -13,7 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, evalBundle } from '../helpers/load-page.mjs';
+import { makeChromeStub, evalBundle } from '../helpers/load-page.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const earlyThemeBundle = await readFile(path.join(root, 'dist', 'content', 'theme-early.js'), 'utf8');

@@ -46,9 +46,10 @@ subsystem changes.
 
 - [Active plans](plans/) are for approved work that has not shipped. A plan is
   not a source of truth for runtime behavior.
-- [Archived notes](archive/) preserve completed plans, audits, experiments, and
-  point-in-time research. They may contain stale file names, commands, or
-  assumptions.
+- Completed plans, audits, experiments and point-in-time research are removed
+  from the tree; the [archived records](plans/README.md#archived-records) index
+  links each final version by GitHub permalink. They may contain stale file
+  names, commands, or assumptions.
 - Shipped behavior must be reflected in the architecture guide and, where the
   subject warrants it, one focused design note. Do not leave the only accurate
   description inside a completed plan.

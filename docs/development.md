@@ -71,8 +71,30 @@ generated `.js` filenames consumed by the manifest and pages. New Node tests use
 `.test.mts`; run converted scale tests explicitly until their owning runner is
 updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
 conversion must also update the relevant source guards and watch coverage from
-[the adoption plan](plans/modern-stack-adoption.md). This setup does not install
-Svelte or replace existing runtime owners.
+[the adoption plan](plans/modern-stack-adoption.md). Svelte is installed and
+compiles, but no shipped bundle imports a component yet (M6).
+
+Svelte components (`.svelte`) and rune modules (`.svelte.ts`) compile through
+[svelte-build.mts](../scripts/svelte-build.mts), which every bundle in
+`scripts/build.mts` receives: runes mode, production client output in every
+build including watch, and styles injected by the component so a bundle keeps
+one output file. `npm run typecheck` runs
+`svelte-check --tsconfig ./tsconfig.check.json` over the browser project, and
+ESLint lints components and rune modules in the runtime roots with the
+TypeScript rules, requiring `<script lang="ts">`. Mount a component beside
+legacy DOM through [svelte-island.ts](../src/ui/svelte-island.ts), which owns
+mount, prop updates and BFCache-aware disposal, and removes a half-mounted
+component if its first update throws. ESLint forbids other runtime TypeScript
+from importing components or rune modules. Svelte resolves to its server build
+in Node and rune modules only run compiled, so test an island's owner through
+its built bundle or the browser DOM tier, not unbundled jsdom imports. Scoped
+style names hash the CSS, so builds are identical from any working directory,
+and the runtime's development flag is pinned off. Test-only components live in `test/fixtures/svelte/`, with
+`valid.check.json` and `invalid.check.json` as their explicitly selected checking
+projects; [svelte-tooling.test.mts](../test/project/svelte-tooling.test.mts)
+compiles, checks, lints and watches them, and
+[svelte-island.dom.mts](../test/dom/svelte-island.dom.mts) mounts one in the
+browser DOM tier.
 
 Repository-wide runtime policy checks use
 [test/helpers/runtime-sources.mts](../test/helpers/runtime-sources.mts), which
@@ -85,9 +107,19 @@ while template handlers remain visible in the raw scan. The actual policy
 functions live in [source-policies.mts](../test/helpers/source-policies.mts),
 shared by the repository checks and failing fixture tests. Reviewed settings
 read counts and module-specific exceptions must be updated explicitly when an
-owner changes. Svelte compilation and the build-watcher work remain separate.
+owner changes.
 
 `npm run typecheck` checks separate browser/Node projects without emitting files.
+[typecheck-node.mts](../scripts/typecheck-node.mts) splits the Node project by
+import closure: a script or test that imports `jsdom` or extension source, or
+declares `/// <reference lib="dom" />` for browser callbacks, is checked with the
+DOM library through `tsconfig.dom.check.json`; every other Node file is checked
+without DOM globals. jsdom tests use the published `@types/jsdom` declarations;
+[page-dom.mts](../test/helpers/page-dom.mts) and
+[page-types.mts](../test/helpers/page-types.mts) type fixture pages as known
+markup, and [load-page.mts](../test/helpers/load-page.mts) keeps its
+trusted-event internals behind one local declaration pinned to jsdom's major.
+Do not suppress a jsdom import or hand-type its constructor.
 The current Chrome definitions include the cross-browser `browser` alias; do not
 install conflicting global definitions or assume these types prove Firefox API
 support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
@@ -351,7 +383,7 @@ script is added or removed without updating it.
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
 | `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
-| `npm run typecheck` | Strict, no-emit TypeScript checks using separate browser and Node checking projects; runs in Test CI and release verification. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
 | `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library; discovers JavaScript and TypeScript scale tests separately from the fast default suite. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
@@ -361,7 +393,7 @@ script is added or removed without updating it.
 | `node scripts/verify-layout-stability.mts --surface=ascent-columns` | After a build, checks content-sized native summary labels/values containing the route map, with a saved 900px map preference, against the shipped layout/analyzer/weather bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, and simulated 150% zoom at 260×600 and 853×600. Asserts unequal metadata widths, aligned table/GPS/weather edges, no horizontal overflow, keyboard divider extremes, and stable geometry/scroll during held weather refresh and retry; error details may deliberately expand. Only the full-width map host is contained. Storage, Leaflet and provider responses are stubbed; no manifest/worker or native window-focus proof. `BPB_JITTER_ARTIFACTS` retains screenshots. The width assertion failed on the former fixed-layout summary. |
 | `node scripts/verify-layout-stability.mts --surface=ascent-filters` | After a build, checks repeated climber/GPS/link/beta toggles, Clear filters and ignored-ascent disclosure against the native full-column list and shipped filter/theme bundles. Hidden Chrome/Firefox cover 390×900 and 1280×900, light/dark, simulated 150% zoom at 260×600 and 853×600, plus pointer toggles at 2048×900. Asserts stable toolbar/chips/header columns, keyboard focus and scroll, with and without ignored ascents. Following content may move only by the deliberate change in list height. Storage and image bytes are stubbed; no live account, manifest/worker or native window-focus proof. Trip-report threshold disclosure and remote Buddy List recovery are outside this check. `BPB_JITTER_ARTIFACTS` retains screenshots. The unfixed toolbar failed with a 40px height jump when favorites were enabled. |
 | `node scripts/verify-layout-stability.mts --surface=peak-columns` | After a build, checks both native peak metadata tables against shipped column/map owners with a saved 900px map preference. Same hidden Chrome/Firefox themes, widths and zoom matrix as `ascent-columns`; asserts unequal label/value widths, table/map containment and keyboard divider extremes. Storage, frame content and unrelated external images are stubbed; BPB-created data tables are outside this check. `BPB_JITTER_ARTIFACTS` retains screenshots. Historical fixed-layout CSS fails the new metadata-width assertion. |
-| `node scripts/verify-report-draft-ownership.mjs` | After a build, exercises two editors against one real worker in hidden Chrome: untouched exits and conflicting edits preserve the newest draft. `BPB_DRAFT_OUTPUT` retains desktop/light and narrow/dark conflict screenshots. |
+| `node scripts/verify-report-draft-ownership.mts` | After a build, exercises two editors against one real worker in hidden Chrome: untouched exits and conflicting edits preserve the newest draft. `BPB_DRAFT_OUTPUT` retains desktop/light and narrow/dark conflict screenshots. |
 | `node scripts/verify-report-photos.mts` | After a build, checks paste, local editing, fixture-owned ImgBB upload, native form resumption, and the acknowledged In report library badge in hidden Chrome. No live upload or server Save proof. |
 | `node scripts/verify-layout-stability.mts --surface=captions` | After a build, checks caption entry, typing, acknowledged autosave, repeated clicks, clearing and keyboard entry against the shipped editor bundles and masked native form in hidden Chrome/Firefox at 390×900 and 1280×900, light/dark, with normal and 150% editor text. Samples viewport, editor scroll, photo, caption, surrounding panel and native form geometry through each transition (1px rounding tolerance), including compact reports and a final image. Storage, worker write acknowledgements, and image bytes are stubbed; no live Save or native window-focus proof. `BPB_JITTER_ARTIFACTS` retains screenshots. |
 | `node scripts/verify.mts map-layers` | Compact collapse/row geometry in hidden Chrome at 736/320 pixels, light/dark; then the real extension and pinned Leaflet on ascent, peak, Full Screen and standalone maps. Checks independent rasters, overlap pixels at 0/50/100% with a failing naive-alpha negative control, one-use Full Screen state/pass handoff, SNOTEL, and hardware MapLibre capture selection/suspend/resume. The component verifier also checks native basemap dark/light updates, keyboard focus and stable geometry at 1280/375 × 800 and desktop 200% CSS zoom; `node scripts/verify-map-layer-control.mts --firefox` runs it in Firefox. Its storage and native map are stubbed; OS dropdown rendering is not proven. `BPB_LAYER_SCREENSHOT_DIR` retains component renders and `BPB_VERIFY_LAYERS_SCREENSHOT_DIR` retains integration renders. |
@@ -381,6 +413,18 @@ script is added or removed without updating it.
 | `npm run store:description:chrome` | Regenerates Chrome's checked-in plain-text listing from the canonical Markdown description. |
 
 ### Verification targets
+
+`npm run verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]` runs the
+browser DOM tier: the suites in `test/dom/`, each case in a fresh context of one
+hidden browser per engine (Chrome for Testing in new headless mode, and
+Playwright's Firefox). Pages load at their real HTTPS Peakbagger URL entirely
+through request routing; any other request is aborted, a `chrome`/`browser` stub
+is installed by init script, and built bundles come from `dist/` or `--dist`, a
+disposable copy for proving a case fails. Retries are off, unknown arguments and
+an empty selection are rejected, and `BPB_VERIFY_ARTIFACTS` retains failure
+evidence. CI runs it in the required `dom-tier` job. It does not load the
+extension, Playwright's Firefox is a patched build, and hidden runs do not
+establish native focus or window placement.
 
 Pass one target after `npm run verify --`. Arguments after the target go to each
 selected verifier; there is no second npm `--` separator. For example:
@@ -416,7 +460,7 @@ still available for evidence.
 `report-security` checks hostile saved-ascent documents against the real Chrome
 response rules and Firefox header listener, including native map and Quick Search
 compatibility, ordinary list pages and Cloudflare exceptions. After building,
-`node scripts/verify-report-security.mjs chrome --baseline` removes protection
+`node scripts/verify-report-security.mts chrome --baseline` removes protection
 from a disposable copy and must fail on observed execution.
 
 `instagram` uses real packaged extension frames with a local HTTPS provider
@@ -452,14 +496,17 @@ retain their existing additional zoom cases. Unknown, duplicate, conflicting or
 empty selections fail before launch. Every result includes its duration and each
 shard checks the executed count against its complete plan.
 
-Snow, card disclosure, card placement and weather interactions run independently
-on macOS, rather than waiting behind the layout suite. At most four surface jobs
-run concurrently, leaving capacity for the real-manifest, toolbar and GPU jobs.
-Fixture-only shards install only their chosen Playwright engine. Real extensions
-and hardware GPU checks retain their existing browser/runner contracts. The
-required aggregate rejects failed or skipped preflight, shards, backup layout
-and surface jobs. Linux qualification exposed existing backup font-metric defects;
-retaining macOS coverage does not establish Linux backup geometry.
+Snow, card disclosure, card placement and weather interactions for both Chrome
+and Firefox, as well as the current-Chrome package/capture smoke, run on Linux
+(`ubuntu-24.04`), rather than waiting behind the layout suite. Only native-font
+backup layout (`macos-15-intel`, 2 cells) and hardware WebGL checks (`snow-map`,
+`chrome-terrain`, `firefox-terrain` on `macos-15`) remain on macOS, because
+standard free Linux runners lack a GPU. Fixture-only shards install only their
+chosen Playwright engine. Real extensions and hardware GPU checks retain their
+existing browser/runner contracts. The required aggregate rejects failed or
+skipped preflight, shards, backup layout and surface jobs. Linux qualification
+exposed existing backup font-metric defects; retaining macOS coverage does not
+establish Linux backup geometry.
 
 CI uses `BPB_VERIFY_SCREENSHOTS=references` for layout and peak surfaces, preserving
 selected reference states and all geometry assertions. Failures retain the failed
@@ -489,7 +536,7 @@ uses them.
 | `multi-summit` | Verifies sequential Preview and simulated manual Save for multiple summit drafts in hidden Chrome, with isolated HTTPS Peakbagger fixtures. Checks complete GPX retention, shared trip identity, and session payload cleanup. |
 | `draft-recovery` | Checks slow preparation, rollback, repeated errors, keyboard reload and Preview recovery in hidden Chrome and Firefox at 390 and 1000 by 760, light/dark and 100%/200% CSS zoom. Compares Save, heading, following content, scroll and recovery-action geometry. Uses the native HTTPS form fixture and shipped bundle; worker replies and the native Preview postback are stubbed. `BPB_DRAFT_RECOVERY_ARTIFACTS` retains screenshots. |
 | `profile-units` | Hidden Chrome for Testing with the real unpacked extension and Firefox with shipped bundles and stubbed settings APIs. Checks native metric/imperial profile tables, default and elevation-specific preferences, native-format restoration and stable panel/scroll geometry at 1280/720 pixels, light/dark, and 200% zoom reflow. Set `BPB_PROFILE_UNITS_OUTPUT` for screenshots. No live profile is fetched or changed. |
-| `inline-buddies` | Builds and runs the real extension in hidden Chrome for Testing and Firefox against the masked HTTPS Buddy form. Each browser verifies six inline/native Add/Remove POSTs, cross-tab Buddy/Ignore protection, custom-favorite reconciliation, and card containment at 1000×760 light and 320×760 dark. Set `BPB_BUDDY_SCREENSHOTS` to retain screenshots; add `--firefox` to `node scripts/verify-inline-buddies.mjs` for Firefox alone. No live account is changed. |
+| `inline-buddies` | Builds and runs the real extension in hidden Chrome for Testing and Firefox against the masked HTTPS Buddy form. Each browser verifies six inline/native Add/Remove POSTs, cross-tab Buddy/Ignore protection, custom-favorite reconciliation, and card containment at 1000×760 light and 320×760 dark. Set `BPB_BUDDY_SCREENSHOTS` to retain screenshots; add `--firefox` to `node scripts/verify-inline-buddies.mts` for Firefox alone. No live account is changed. |
 | `signed-out` | Builds and checks peak/full-list Buddy recovery and transient retry in hidden Chrome/Firefox at 375/1000×900, light/dark, CSS zoom 1/2. Covers held reads, repeated errors, success, duplicate Enter/Space, focus and action/heading/scroll geometry. Uses native HTTPS fixtures and shipped bundles with explicit storage/network stubs; `browsers` separately checks real-manifest signed-out Buddy recovery and local Favorite persistence through the actual worker. Add `--browser=chrome` or `--browser=firefox` for one renderer; `BPB_SIGNED_OUT_SCREENSHOTS` retains screenshots. CSS zoom does not prove native browser zoom. |
 | `capture-flow` | Exercises the unmodified extension in current hidden Chrome through its actual toolbar action: temporary provider access, Garmin/Strava exports, summit lookup, results, draft Preview, privacy gates, outage retry, cancellation/restart, popup reopening, and track deletion. All sites are isolated HTTPS fixtures; no live provider compatibility or native focus is established. |
 | `capture-readiness` | Builds and runs the real capture worker and Peakbagger helper in hidden Chrome and Firefox with a permanently pending page image and delayed helper navigation. Verifies that login can complete and that signed-out sessions still block GPS export. Uses a fixture provider adapter and isolated HTTPS origins; pass `chrome` or `firefox` after the target for one browser. |
@@ -502,15 +549,15 @@ uses them.
 | `weather-intervals` | Hidden Chrome with intercepted weather responses at 1440×1000. Nepal's 45-minute civil-day boundaries must produce 25 displayed intervals summing to exactly 24 mm, with truthful boundary labels and keyboard reading. `BPB_WEATHER_INTERVALS_OUTPUT` retains the render. Other weather cases stay in `weather`/`peak-weather`. |
 | `custom-overlays` | Real unpacked Chrome and Firefox, direct HTTPS/CORS provider fixtures, raster/GeoJSON/MVT pixels and packaged workers, native/terrain renderers, URL/CORS recovery, keyboard Retry, compact light/dark editor, field-help placement, name/URL-only source detection, TileJSON zoom/manual overrides and stable Save/detection pending/error/retry status. Chrome additionally exercises all 15 map-type fixtures, multiple instances, one-use Full Screen and focused help at 200% browser zoom. Set `BPB_CUSTOM_SCREENSHOTS` to retain screenshots. Firefox's privileged Options window has a minimum size; actual editor frame dimensions are reported. No live provider or host-layout survey is implied. |
 | `settings-navigation` | Real packaged Chrome/Firefox Settings pages: fresh anchor URLs, refresh from anchored and manually scrolled positions, Back/Forward, keyboard links and later preference updates. Covers chart/map/custom-layer groups, nested backup anchors and a clamped final section, light/dark and expanded/compact settings at desktop/narrow sizes. Reports actual viewports; Firefox enforces a minimum privileged-window width. Set `BPB_SETTINGS_FRAGMENT_SCREENSHOTS` to retain screenshots. Hidden page checks do not establish native OS focus behavior. |
-| `weather` | Builds and checks the real weather bundle in hidden Chrome and Firefox at 375, 681, 768 and 1440 pixels, with HTTPS ascent fixtures, saved column and within-column placement, pointer/keyboard moves and move menus, preview geometry, GPX/no-GPX/no-map, long reports, divider resizing, light/dark, loading, model selection, partial data and errors. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain card and page screenshots. For one optional public-summit live CORS probe, run `node scripts/verify-ascent-weather.mjs --live` (add `--firefox` for Firefox). |
-| `peak-weather` | Builds and checks the real peak weather bundle in hidden Chrome and Firefox at 375, 768 and 1440 pixels: right-column placement, forecast/past period switching from one response, full-day forecasts, responsive hourly graphs, data tabs, keyboard disclosure/sampling, click cursor, conditions timeline, no map, light/dark, loading, partial/empty data and failed refresh. The native fixture retains its existing minimum page width; the 375-pixel check verifies the card and charts fit without widening that layout. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain screenshots. One optional public-summit live CORS probe: `node scripts/verify-ascent-weather.mjs --peak --live`. |
+| `weather` | Builds and checks the real weather bundle in hidden Chrome and Firefox at 375, 681, 768 and 1440 pixels, with HTTPS ascent fixtures, saved column and within-column placement, pointer/keyboard moves and move menus, preview geometry, GPX/no-GPX/no-map, long reports, divider resizing, light/dark, loading, model selection, partial data and errors. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain card and page screenshots. For one optional public-summit live CORS probe, run `node scripts/verify-ascent-weather.mts --live` (add `--firefox` for Firefox). |
+| `peak-weather` | Builds and checks the real peak weather bundle in hidden Chrome and Firefox at 375, 768 and 1440 pixels: right-column placement, forecast/past period switching from one response, full-day forecasts, responsive hourly graphs, data tabs, keyboard disclosure/sampling, click cursor, conditions timeline, no map, light/dark, loading, partial/empty data and failed refresh. The native fixture retains its existing minimum page width; the 375-pixel check verifies the card and charts fit without widening that layout. Set `BPB_VERIFY_WEATHER_SCREENSHOT_DIR` to retain screenshots. One optional public-summit live CORS probe: `node scripts/verify-ascent-weather.mts --peak --live`. |
 | `snow` | Real unpacked extension in hidden Chrome and Firefox, HTTPS Peakbagger fixtures and intercepted NRCS responses. Checks initial/pending/error/retry geometry, keyboard station selection and Refresh, missing data, rate limits, mapless/long-name layout, settings and 200% browser zoom at 375/681/1440 pixels in light/dark. Set `BPB_VERIFY_SNOW_SCREENSHOT_DIR` for screenshots. See [nearby-snow.md](nearby-snow.md) for proof limits. |
 | `snow-depth` | Real extension in hidden Chrome and Firefox at 1440/375 pixels, light/dark and 200% text, with controlled NOAA HTTPS responses and synthetic DEM. Requires hardware WebGL. Checks keyboard retry/focus, geometry, valid-time/legend, painted 2D/3D opacity and off/on. Set `BPB_VERIFY_SNOW_DEPTH_SCREENSHOT_DIR` for screenshots. See [map layers](map-layers.md#snow-depth). |
 | `snow-map` | Real unpacked extension in hidden Chrome and Firefox with pinned Leaflet, intercepted NRCS JSON and synthetic non-flat DEM. Checks compact toggle stability at 375/1440 pixels, light/dark, 200% zoom, pending/cancel/retry, keyboard popups, frame reload, 2D/3D switching, parked-frame reuse and settings. Requires hardware WebGL. Set `BPB_VERIFY_SNOW_MAP_SCREENSHOT_DIR` for screenshots. See [nearby-snow.md](nearby-snow.md). |
 | `peak-cards` | Real unpacked extension in hidden Chrome and Firefox at 375/1440 pixels, both themes and 200% zoom. Requires the BPB map links after column initialization and navigation; checks wrapping and stable keyboard focus. Exercises automatic weather/snow units, card collapse, column resizing, cross-column and within-column keyboard/pointer movement, move menus, Escape, drag preview stability, edge autoscroll, saved order/disclosures on navigation, closed pending/error states and feature off/on. Provider responses are intercepted. Set `BPB_VERIFY_PEAK_CARDS_SCREENSHOT_DIR` for screenshots. |
 | `peak-card-placement` | Real unpacked extension in hidden Chrome and Firefox at 375/1440 pixels, both themes and 200% zoom. Checks moving above/below native peak details by keyboard, move menu and pointer; retained focus, cancellation, stable previews, expanded cards and restored placement. Runs separately from `peak-cards` to stay within browser sync-write quotas. Uses the same intercepted providers and screenshot variable. |
 | `weather-interactions` | Real unpacked extension in hidden Chrome and Firefox at 375/1440 pixels, both themes, 100/200% tab zoom. Holds Refresh and individual model metadata responses, checks Enter/Space and immediate pointer activation, request counts, focus through failure/retry/success and model cooldown, deliberate focus changes, delayed/unavailable metadata, action/panel/following-card geometry and reading position (1 CSS px rounding tolerance). Providers are intercepted. `BPB_VERIFY_WEATHER_LOCALE=de-DE` checks German Intl formatting (Firefox uses its isolated test locale service; browser chrome translation is not tested). Set `BPB_VERIFY_WEATHER_INTERACTIONS_SCREENSHOT_DIR` for screenshots. |
-| `map-controls` | Hidden Chrome and Firefox on HTTPS showcase fixtures with shipped map bundles and hardware MapLibre rendering. Checks mode-button bounds and surrounding map/scroll through loading, cancel, active, return, renderer failure and retry on Peak, Ascent and both route/peak Big Maps at 1280/375 × 1000, light/dark. Storage, activation and provider data are stubbed; this does not prove native browser focus or window placement. The Ascent panel's existing error detail may deliberately expand once; the button and map must stay fixed and retry restores the panel. Set `BPB_VERIFY_MAP_CONTROLS_ARTIFACTS` for screenshots; use `node scripts/verify-map-controls.mjs --firefox` for Firefox alone. |
+| `map-controls` | Hidden Chrome and Firefox on HTTPS showcase fixtures with shipped map bundles and hardware MapLibre rendering. Checks mode-button bounds and surrounding map/scroll through loading, cancel, active, return, renderer failure and retry on Peak, Ascent and both route/peak Big Maps at 1280/375 × 1000, light/dark. Storage, activation and provider data are stubbed; this does not prove native browser focus or window placement. The Ascent panel's existing error detail may deliberately expand once; the button and map must stay fixed and retry restores the panel. Set `BPB_VERIFY_MAP_CONTROLS_ARTIFACTS` for screenshots; use `node scripts/verify-map-controls.mts --firefox` for Firefox alone. |
 | `chrome` | Builds and loads the real unpacked `dist/` in hidden Chrome for Testing, including trusted GPX selection, draft handoff, 1,500-row favorite management, long settings navigation, and native Buddy synchronization. |
 | `firefox` | Builds the derived Firefox source, temporarily installs it in hidden Firefox, and runs the same manifest-surface and feature smoke. |
 | `browsers` | Builds once, then runs the Chrome and Firefox extension gates. |
@@ -575,7 +622,7 @@ unchecked during an ordinary-use capture. Cache bypass reproduced the reported
 block, and disabling that option restored the user's 3D map. The raster path
 leaves HTTP caching and request identity with the browser; changing the tile
 transport or spoofing headers is not an established fix. See the
-[policy/recovery closure ledger](archive/2026-10-24-osm-terrain-policy.md).
+[policy/recovery closure ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/2026-10-24-osm-terrain-policy.md).
 
 Ordinary Test CI runs `snow`, `peak-cards`, `peak-card-placement` and `weather-interactions` per browser after the generic
 layout matrix, reusing its completed `dist/` build. A separate always-run
@@ -707,10 +754,19 @@ build config does not ship.
   `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
   module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
 - **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
-  with `evalBundle` from `test/helpers/load-page.mjs`. This runs exactly what
+  with `evalBundle` from `test/helpers/load-page.mts`. This runs exactly what
   ships and needs no Better Peakbagger module globals. Feed settings through a
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.
+- **Behaviour that depends on layout, scrolling, trusted input, focus or
+  browser-specific DOM**: write a new test for the browser DOM tier in
+  `test/dom/*.dom.mts` (a default-exported `defineDomSuite` from
+  [dom-tier.mts](../scripts/dom-tier.mts)), not in jsdom. It runs in hidden
+  Chromium and Firefox through `npm run verify -- dom`, never in `npm test`.
+
+Routing rule: pure logic stays in `node:test` with no DOM; new DOM-behaviour
+tests use the browser tier; legacy jsdom tests stay on typed jsdom until M7.5
+of the [stack adoption plan](plans/modern-stack-adoption.md) moves them.
 
 Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals
@@ -719,7 +775,7 @@ as test seams.
 ### Peak planning link order
 
 The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
-`src/maps/peak-links.js`; `src/maps/peak-link-order.js` owns grip dragging,
+`src/maps/peak-links.ts`; `src/maps/peak-link-order.js` owns grip dragging,
 keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
 contains link IDs only, with its allowed IDs and default order defined by
 `PEAK_LINK_ORDER` in `src/settings/settings-schema.ts`.
@@ -735,7 +791,7 @@ order in browser sync does not by itself establish a GitHub backup.
 When adding or changing a planning link:
 
 1. Give the link a unique, stable key in the `addLink(key, label, description,
-   href)` call in `src/maps/peak-links.js`, and register that same key in
+   href)` call in `src/maps/peak-links.ts`, and register that same key in
    `PEAK_LINK_ORDER`. Adding markup alone does not make its order persist.
 2. Keep existing keys unchanged when editing labels or destinations. A renamed
    key is treated as a removed link followed by a new link, losing its saved
@@ -760,7 +816,7 @@ settings, so newer links can lose their custom positions.
 
 After changes, build and run the planning-link, settings-schema, and
 settings-transfer tests. For interaction or styling changes, also run
-`node scripts/verify-peak-link-order.mjs` and its `--firefox` variant after the
+`node scripts/verify-peak-link-order.mts` and its `--firefox` variant after the
 build. These use hidden HTTPS fixtures; Chrome loads the real extension, while
 Firefox checks shipped assets with controlled settings. Use
 `npm run verify -- browsers` separately for both browsers' real manifest and worker
@@ -810,7 +866,7 @@ Dependency updates arrive automatically; see
 
 ### The intentional page APIs
 
-`src/capture/provider-page.js` publishes `globalThis.BPBProviderPage`. That is a narrow,
+`src/capture/provider-page.ts` publishes `globalThis.BPBProviderPage`. That is a narrow,
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach.
@@ -866,15 +922,14 @@ member against an unchanged sibling is exactly the breakage grouping prevents.
 The npm updater also uses `versioning-strategy: increase`: Dependabot raises the
 minimum in every matching manifest range even when an older caret already
 admits the release. That makes already-satisfied TipTap siblings visible to the
-group. This alone did not prevent PR #19 from mixing 3.30.6 with 3.31.3 during
-lockfile resolution. Direct TipTap requirements therefore use one exact version,
+group. That alone does not stop lockfile resolution from mixing TipTap
+versions. Direct TipTap requirements therefore use one exact version,
 and the policy check requires every top-level and nested TipTap installation to
 match it. Keep the family grouped and update its exact pins together; do not use
 `--legacy-peer-deps` to accept an inconsistent update.
 
-Existing Dependabot PRs can retain an older updater job definition: the
-2026-09-06 recreation of #19 still used the former `editor`/`vendored` groups and
-`requirements-update-strategy: null`, despite the current default-branch config.
+An existing Dependabot PR can retain an older updater job definition, including
+groups and a requirements strategy the default-branch config no longer has.
 When diagnosing recurrence, inspect the **Dependabot Updates** job definition as
 well as the PR test logs. Recreating an old PR is not evidence that the new
 configuration ran; verify a fresh scheduled update uses the current groups and
@@ -890,6 +945,8 @@ attributed:
 | `bundled-runtime` | bundled by esbuild | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | nothing; build and test only | no |
+| `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
+| `svelte` | the `svelte` runtime once a bundle imports a component; the compiler, checker and lint tools never | not yet (M6) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 
@@ -909,11 +966,11 @@ counts. Counts cannot detect a replacement warning of the same type in the same
 file, so dependency source review remains necessary.
 
 Every package is declared under `devDependencies`, so that field says nothing
-about whether a package ships. The three named release-path groups do; updates
+about whether a package ships. The named groups do; updates
 in either catch-all require tracing the package through its parent dependency.
 
 Dependabot assigns a version update to the first matching group. The
-`remaining-npm` wildcard therefore stays after the three release-path groups
+`remaining-npm` wildcard therefore stays after the named groups
 and combines only otherwise unmatched direct and transitive updates. This
 prevents separate incomplete lockfile repairs from deadlocking the
 shipped-code advisory check. `security-fixes` applies the same all-npm grouping to
@@ -1003,10 +1060,8 @@ it is the place to look rather than the green auto-merge job. The sweep holds no
 merge authority and does not bypass the required checks.
 
 GitHub's **Automatically delete head branches** setting is enabled, but a missed
-deletion otherwise has no retry: PR #69 merged with native auto-merge while its
-unchanged tooling branch remained. The API exposed no reason for the omission;
-the branch was unprotected and the active branch rules targeted only `main`.
-A separate `cleanup-branches` job in the same scheduled workflow retries cleanup
+deletion otherwise has no retry, and GitHub can skip it without reporting why
+even for an unprotected branch. A separate `cleanup-branches` job in the same scheduled workflow retries cleanup
 with its own contents-write token; the queue job keeps contents-read access.
 It considers only same-repository Dependabot PRs merged into `main`, paginates
 all branches and PRs, and leaves branches used by any open PR alone. A branch
@@ -1214,7 +1269,7 @@ toolbar click that grants `activeTab`. Those remain explicit release checks.
 ### Climber-list verification
 
 The [climber lists guide](climber-lists.md) describes behavior; the
-[archived ledger](archive/ignored-climbers.md) records proof and release gaps.
+[archived ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md) records proof and release gaps.
 Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
 `test/ascent/ascent-report-visibility.test.mjs`,
 `test/background/climber-list-sync.test.mjs` and
@@ -1234,7 +1289,7 @@ GitHub Git Data endpoint, including an external ref race and unrelated root file
 No real backup repository is test scratch space.
 
 Set `BPB_VERIFY_IGNORED_SCREENSHOT_DIR` to an existing output directory for light/
-dark site and manager screenshots. `node scripts/verify-climber-list-ui.mjs`
+dark site and manager screenshots. `node scripts/verify-climber-list-ui.mts`
 checks the real Settings bundle with synthetic worker replies, long names,
 1,500-entry counts and a 200% equivalent reduced CSS viewport at DPR 2. It proves
 layout, not live GitHub. Firefox logs measured CSS viewport dimensions; native
@@ -1308,7 +1363,7 @@ bundles/vendor licenses. See [Browser store releases](releasing.md) for version,
 tag, credential, and live-verification requirements.
 
 Private custom-source verification: `npm run verify -- private-layers` runs both
-hidden browsers. `node scripts/verify-private-layers.mjs chrome --screenshots=PATH`
+hidden browsers. `node scripts/verify-private-layers.mts chrome --screenshots=PATH`
 (or `firefox`) checks the actual Settings editor, masked editing, no private
 values in public storage/backups, no requests before approval, forged
 destination rejection, worker GETs to an HTTPS provider without CORS, and

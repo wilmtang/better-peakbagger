@@ -9,13 +9,12 @@
 /// <reference lib="dom.iterable" />
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
-import type { BrowserContext, Page } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import type { Page } from 'playwright';
+import { createResourceStack } from './resource-stack.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 // Report service-worker traffic too, so "no network" covers the worker.
 process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
@@ -23,8 +22,9 @@ process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const screenshots = process.env.BPB_PHOTO_OUTPUT_SCREENSHOTS;
-const profile = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-output-'));
-const downloads = await mkdtemp(path.join(os.tmpdir(), 'bpb-photo-output-downloads-'));
+const resources = createResourceStack();
+const profile = await createVerificationRoot(resources, 'bpb-photo-output-', 'photo output profile');
+const downloads = await createVerificationRoot(resources, 'bpb-photo-output-downloads-', 'photo output downloads');
 
 type Box = { x: number; y: number; width: number; height: number };
 const box = async (page: Page, selector: string): Promise<Box> => {
@@ -62,15 +62,14 @@ const jpegHasApp1 = (bytes: Buffer) => {
     return false;
 };
 
-let context: BrowserContext | undefined;
 const external: string[] = [];
+let failure: unknown = null;
 try {
-    assertChromeLaunchAllowed();
-    context = await chromium.launchPersistentContext(profile, {
-        channel: 'chromium', headless: true, acceptDownloads: true, downloadsPath: downloads,
+    const context = await launchVerificationChrome(resources, 'photo output browser', profile, {
+        acceptDownloads: true, downloadsPath: downloads,
         viewport: { width: 1440, height: 790 },
         ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
+        extension: dist,
     });
     // Origin-scoped grants are refused for extension origins; the context-wide
     // grant is what reaches the packaged page.
@@ -290,8 +289,5 @@ try {
         browser: context.browser()?.version(), hidden: true, viewports: ['1440×790', '1280×680', '900×800', '600×800', '360×800', '1440×800 at 200%'],
         offline: true, clipboard: 'round trip in headless Chrome; the OS pasteboard is not exercised', passed: true,
     }));
-} finally {
-    await context?.close();
-    await rm(profile, { recursive: true, force: true });
-    await rm(downloads, { recursive: true, force: true });
-}
+} catch (error) { failure = error; }
+await resources.dispose(failure as null);

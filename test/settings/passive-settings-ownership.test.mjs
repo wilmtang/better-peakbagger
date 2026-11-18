@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { makeChromeStub, evalBundle, waitFor } from '../helpers/load-page.mjs';
+import { makeChromeStub, evalBundle, waitFor } from '../helpers/load-page.mts';
 
 const load = async bundle => {
     const dom = new JSDOM('<!doctype html><html><body></body></html>', {

@@ -53,7 +53,7 @@ test('the classification list covers every value capture-core assigns', async ()
 // Both surfaces resolve through this module rather than re-deriving the name,
 // which is how the picker and the banner disagreed about the same peak.
 test('the draft banner and summit picker resolve names through this module', async () => {
-    for (const file of ['../../src/ascent/ascent-draft.js', '../../src/ascent/ascent-upload.js']) {
+    for (const file of ['../../src/ascent/ascent-draft.js', '../../src/ascent/ascent-upload.ts']) {
         const source = await readFile(new URL(file, import.meta.url), 'utf8');
         assert.match(source, /matchLabel\(/, `${file} must name matches through matchLabel()`);
         assert.match(source, /matchTone\(/, `${file} must tone matches through matchTone()`);

@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// @ts-expect-error jsdom ships no declarations.
-import { JSDOM } from 'jsdom';
+import { fixtureDom } from '../helpers/page-dom.mts';
 import { createCardReadGate } from '../../src/ui/card-read-gate.ts';
 
 test('read eligibility combines settings, lifecycle, visibility and optional collapse without mutation churn', async () => {
-    const dom = new JSDOM('<section hidden></section>', { pretendToBeVisual: true });
+    const dom = fixtureDom('<section hidden></section>', { pretendToBeVisual: true });
     const doc = dom.window.document, card = doc.querySelector('section'), changes: boolean[] = [];
     let enabled = false, active = true, collapsed = false;
     const gate = createCardReadGate({ card, enabled: () => enabled, active: () => active, collapsed: () => collapsed, onChange: value => changes.push(value) });
@@ -27,7 +26,7 @@ test('read eligibility combines settings, lifecycle, visibility and optional col
 });
 
 test('the applied card state wins while a saved collapse preference is still arriving', () => {
-    const dom = new JSDOM('<section></section>', { pretendToBeVisual: true });
+    const dom = fixtureDom('<section></section>', { pretendToBeVisual: true });
     const card = dom.window.document.querySelector('section');
     let collapsed = true;
     const gate = createCardReadGate({ card, enabled: () => true, active: () => true, collapsed: () => collapsed });
@@ -41,9 +40,9 @@ test('the applied card state wins while a saved collapse preference is still arr
 });
 
 test('one viewport wait is cancellable and stale observer callbacks cannot start reads', () => {
-    const dom = new JSDOM('<section></section>', { pretendToBeVisual: true });
+    const dom = fixtureDom('<section></section>', { pretendToBeVisual: true });
     const card = dom.window.document.querySelector('section'), observers: { callback: (entries: { isIntersecting: boolean }[]) => void }[] = []; let reads = 0;
-    dom.window.IntersectionObserver = class {
+    (dom.window as { IntersectionObserver: unknown }).IntersectionObserver = class {
         callback: (entries: { isIntersecting: boolean }[]) => void;
         disconnected = false;
         constructor(callback: (entries: { isIntersecting: boolean }[]) => void, options: { rootMargin: string }) { this.callback = callback; observers.push(this); assert.equal(options.rootMargin, '200px'); }

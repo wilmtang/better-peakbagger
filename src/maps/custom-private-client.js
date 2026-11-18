@@ -1,6 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { RELAY_HOST, readRelayResource } from './custom-overlay-private.js';
+import { RELAY_HOST, readRelayResource } from './custom-overlay-private.ts';
 export function createPrivateLayerFetch({ send, fallback = globalThis.fetch }) {
     return async (url, options = {}) => {
         if (new URL(url).hostname !== RELAY_HOST) return fallback(url, options);

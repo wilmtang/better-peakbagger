@@ -16,7 +16,7 @@ import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
 import { mountainTime } from '../time/mountain-time.js';
 import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
 import { peakbaggerCloudflare } from '../peakbagger/peakbagger-cloudflare.js';
-import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.js';
+import { readWeatherSubject, readWeatherSummit } from './ascent-weather-subject.ts';
 import { ascentPage } from './ascent-page.js';
 import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition } from '../weather/weather-day.js';
 import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../weather/weather-models.js';

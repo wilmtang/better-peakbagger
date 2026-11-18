@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 registerCleanup();
 const byId = (dom, id) => dom.window.document.getElementById(id);
 

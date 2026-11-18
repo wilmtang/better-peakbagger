@@ -8,19 +8,17 @@
 // the shipped manifest, seeding jobs, or replacing any extension runtime code.
 /* global chrome */
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import https from 'node:https';
-import os from 'node:os';
 import path from 'node:path';
 import type { Page } from 'playwright';
 import type { AddressInfo } from 'node:net';
 import { captureProfileCount, installPreviewProbe, sanitizePreviewEvent, type PreviewEvent } from './capture-preview-diagnostics.mts';
-import { chromium } from 'playwright';
 import { activateToolbarTarget, createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mjs';
 import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
 import { runChildProcess } from './resource-stack.mjs';
 import { fileURLToPath } from 'node:url';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 const waitForCondition = <T,>(read: () => T | Promise<T>, ready: (value: T) => unknown, { timeoutMs = 10_000, message = 'capture condition' } = {}) => waitFor(async () => {
     const value = await read();
@@ -61,8 +59,7 @@ let providerPageSerial = 0;
 const network = { browserStarted: 0, browserFinished: 0, postStarted: 0, bodyRead: 0, formParsed: 0, fileRead: 0, failed: 0, serverFailed: 0 };
 const nativeEvents: PreviewEvent[] = [];
 try {
-    const root = await mkdtemp(path.join(os.tmpdir(), 'bpb-capture-flow-'));
-    resources.defer('capture flow root', () => rm(root, { recursive: true, force: true }));
+    const root = await createVerificationRoot(resources, 'bpb-capture-flow-', 'capture flow root');
     const cert = await createFixtureCertificate({ directory: root as never });
     assert.ok(cert);
     resources.defer('capture flow certificate', cert.remove);
@@ -123,15 +120,11 @@ try {
     await listenServer(server, 0, '127.0.0.1');
     const port = (server.address() as AddressInfo).port;
     const extensionSource = path.resolve(process.env.BPB_VERIFY_EXTENSION_SOURCE || 'dist');
-    assertChromeLaunchAllowed();
-    const context = await chromium.launchPersistentContext(path.join(root, 'profile'), {
-        ...(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : { channel: 'chromium' }),
-        headless: true, viewport: { width: 1000, height: 760 },
-        ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-        args: [...cert.chromeTrustArgs, '--enable-unsafe-extension-debugging', `--load-extension=${extensionSource}`, `--disable-extensions-except=${extensionSource}`,
-            `--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1:${port},MAP connect.garmin.com 127.0.0.1:${port},MAP www.strava.com 127.0.0.1:${port}`],
+    const context = await launchVerificationChrome(resources, 'capture browser', path.join(root, 'profile'), {
+        chromeBinary: process.env.CHROME_BIN, viewport: { width: 1000, height: 760 }, ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+        trustArgs: cert.chromeTrustArgs, args: ['--enable-unsafe-extension-debugging'], extension: extensionSource,
+        hosts: ['www.peakbagger.com', 'connect.garmin.com', 'www.strava.com'].map(host => `${host} 127.0.0.1:${port}`),
     });
-    resources.defer('capture browser', () => context.close());
     resources.defer('held export responses', () => state.releases.splice(0).forEach(release => release()));
     await context.route('**/*', route => {
         const url = new URL(route.request().url());

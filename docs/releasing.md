@@ -63,8 +63,8 @@ hash identity in `ci-packages-SHA-ATTEMPT` for seven days. Its other required
 jobs supply Node, scale, lint, layout and cross-platform coverage.
 
 Rehearsal acquires that artifact by immutable ID, hard-checks GitHub's archive
-SHA-256 and inner package hashes, then fans out current Chrome/current Firefox
-on separate Intel macOS runners and Chrome 128/Firefox 152 on separate Ubuntu
+SHA-256 and inner package hashes, then fans out current Chrome, current
+Firefox, Chrome 128, and Firefox 152 across separate Ubuntu (`ubuntu-24.04`)
 runners. Every browser requires three consecutive passes with fresh profiles
 and teardown by default. `-f repetitions=1` is diagnostic only; five is also
 supported. Each Chrome pass extracts a new copy; both canonical ZIP hashes are
@@ -551,5 +551,5 @@ long service-name disclaimer after Chrome rejected it for excessive keywords.
 Use the canonical short independence statement instead of recreating that list.
 Generator tests prove the text is current; store review determines acceptance.
 
-The [3.8 hardening ledger](archive/release-hardening-2026-09-30.md) records the
+The [3.8 hardening ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/release-hardening-2026-09-30.md) records the
 original failures, preserved package identities, and Chrome-only recovery.

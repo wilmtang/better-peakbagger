@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { waitFor } from '../helpers/load-page.mjs';
+import { waitFor } from '../helpers/load-page.mts';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, videoMarkup } from '../helpers/report-editor-helpers.mjs';
 
 test('markdown mode converts to bracket markup and the live preview shows the final rendering', async () => {

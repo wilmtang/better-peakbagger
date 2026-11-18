@@ -11,7 +11,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mjs';
+import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mts';
 import { favoriteClimbers as F } from '../../../src/favorites/favorite-climbers.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');

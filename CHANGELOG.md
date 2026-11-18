@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Use peak cards on Provisional Peaks.** Weather, Summit Cloud Cover, Nearby
+  snow and the extra planning and map links now also appear on user-submitted
+  Provisional Peak pages. They use that page's own summit coordinates,
+  elevation and country. Saved ascents of these peaks also get the weather
+  archive.
+
 ## 4.1.0 — 2026-11-08
 
 - **Prepare drafts from the Garmin activity inbox.** Connect with your Garmin

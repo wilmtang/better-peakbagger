@@ -9,7 +9,7 @@ import { setTimeout as nextTask } from 'node:timers/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { accelerateTimeout, makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mjs';
+import { accelerateTimeout, makeChromeStub, waitFor, evalBundle } from '../helpers/load-page.mts';
 
 export const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const optionsCss = await readFile(path.join(root, 'options', 'options.css'), 'utf8');

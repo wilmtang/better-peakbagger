@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// @ts-expect-error jsdom ships no declarations.
 import { JSDOM } from 'jsdom';
 import { compactWeatherHours, createWeatherHourlyTable, weatherWindColor } from '../../src/weather/weather-hourly-table.ts';
 import type { WeatherMetric, WeatherSample, WeatherWindow } from '../../src/weather/weather-hourly-table.ts';

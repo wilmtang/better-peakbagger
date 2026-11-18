@@ -24,7 +24,7 @@ test('ordinary and release package gates share setup, browsers, and their execut
         assert.equal(setup.with['firefox-version'], 'latest');
         assert.equal(setup.with['popup-firefox'], 'true');
         assert.equal(job.steps.filter((step: WorkflowStep) => step.uses === './.github/actions/verify-package').length, 1);
-        assert.equal(job['runs-on'], 'macos-15-intel');
+        assert.equal(job['runs-on'], 'ubuntu-24.04');
     }
     for (const job of [ordinary.jobs.node, ordinary.jobs.scale, release.jobs.prepare]) {
         assert.ok(job.steps.some((step: WorkflowStep) => step.uses === './.github/actions/setup-verification'));
@@ -107,9 +107,10 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     const ordinary = await load('workflows/test.yml');
     const surfaceJob = ordinary.jobs['peak-surfaces'];
     assert.equal(surfaceJob.needs, undefined, 'surface failures must not wait behind layout or preflight installation');
+    assert.equal(surfaceJob['runs-on'], 'ubuntu-24.04');
     assert.deepEqual(surfaceJob.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.deepEqual(surfaceJob.strategy.matrix.surface, ['snow', 'cards', 'cards-placement', 'interactions']);
-    assert.equal(surfaceJob.strategy['max-parallel'], 4);
+    assert.equal(surfaceJob.strategy['max-parallel'], undefined, 'Linux surfaces must not wait behind a macOS slot cap');
     assert.equal(surfaceJob.strategy['fail-fast'], false);
     assert.ok(ordinary.jobs['chrome-required'].needs.includes('peak-surfaces'));
     assert.match(ordinary.jobs['chrome-required'].steps[0].run, /test "\$SURFACE_RESULT" = success/);
@@ -117,7 +118,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.ok(surfaces, 'the required layout path must execute the newer surface matrices');
     assert.equal(surfaces.if, undefined);
     assert.equal(surfaces['continue-on-error'], undefined);
-    assert.match(surfaces.run, /verify-ascent-weather\.mjs --"\$SURFACE"/);
+    assert.match(surfaces.run, /verify-ascent-weather\.mts --"\$SURFACE"/);
     assert.equal(surfaces.env.BROWSER, '${{ matrix.browser }}');
     assert.match(surfaces.run, /firefox\) browser_args=\(--firefox\)/);
     assert.match(surfaces.run, /Unknown browser/);
@@ -126,7 +127,7 @@ test('ordinary CI requires snow/cards on both browsers and a separate hardware s
     assert.equal(gpu.if, undefined, 'snow-map coverage must not wait for a dependency change');
     assert.deepEqual(gpu.strategy.matrix.browser, ['chrome', 'firefox']);
     assert.equal(gpu.strategy['fail-fast'], false);
-    assert.ok(gpu.steps.some((step: WorkflowStep) => /verify-ascent-weather\.mjs --snow-map /.test(step.run || '')));
+    assert.ok(gpu.steps.some((step: WorkflowStep) => /verify-ascent-weather\.mts --snow-map /.test(step.run || '')));
     const setup = gpu.steps.find((step: WorkflowStep) => step.uses === './.github/actions/setup-verification');
     assert.equal(setup.with['chrome-version'], 'current');
     assert.equal(setup.with['firefox-version'], 'latest');
@@ -154,7 +155,7 @@ test('the CI surface step selects the requested engine and preserves each verifi
             const calls = (await readFile(commands, 'utf8').catch(() => '')).trim().split('\n').filter(Boolean);
             const valid = browser !== 'missing' && surface !== 'missing';
             assert.equal(result.status === 0, valid && !fail, result.stderr);
-            assert.deepEqual(calls, valid ? [`scripts/verify-ascent-weather.mjs --${surface}${browser === 'firefox' ? ' --firefox' : ''}`] : []);
+            assert.deepEqual(calls, valid ? [`scripts/verify-ascent-weather.mts --${surface}${browser === 'firefox' ? ' --firefox' : ''}`] : []);
         }
     } finally { await rm(directory, { recursive: true, force: true }); }
 });
@@ -176,6 +177,49 @@ test('shared setup exports the installed paths and versions and keeps exact tool
     }
     assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
     assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses!)));
+
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-setup-contract-'));
+    try {
+        const emptyEnv = path.join(directory, 'empty.env');
+        await writeFile(emptyEnv, '');
+        const emptyRun = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', contract.run], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_ENV: emptyEnv,
+                CHROME_PATH: '',
+                CHROME_VERSION: '',
+                FIREFOX_PATH: '',
+                FIREFOX_VERSION: '',
+                CHROME_BIN: '/usr/bin/google-chrome',
+                FIREFOX_BIN: '/usr/bin/firefox',
+            },
+        });
+        assert.equal(emptyRun.status, 0, emptyRun.stderr);
+        assert.equal(await readFile(emptyEnv, 'utf8'), 'CHROME_BIN=\nFIREFOX_BIN=\n');
+
+        const floorEnv = path.join(directory, 'floor.env');
+        await writeFile(floorEnv, '');
+        const floorRun = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', contract.run], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                GITHUB_ENV: floorEnv,
+                CHROME_PATH: '/opt/chrome-128',
+                CHROME_VERSION: '128.0.6613.18',
+                FIREFOX_PATH: '/opt/firefox',
+                FIREFOX_VERSION: '152.0',
+            },
+        });
+        assert.equal(floorRun.status, 0, floorRun.stderr);
+        assert.equal(
+            await readFile(floorEnv, 'utf8'),
+            'CHROME_BIN=/opt/chrome-128\nBPB_EXPECT_CHROME_VERSION=128.0.6613.18\n'
+                + 'FIREFOX_BIN=/opt/firefox\nBPB_EXPECT_FIREFOX_VERSION=152.0\n',
+        );
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
 });
 
 test('fast fixture preflight is independently required and installs only its selected engine', async () => {

@@ -23,9 +23,8 @@ const FAIL_SOFT = Object.freeze({
     ],
     'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.js': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
-    'src/maps/big-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
+    'src/maps/map-settings-bridge.ts': [{ count: 1, kind: 'display', reason: 'publish validated map settings for the BigMap and Peak-page bridges' }],
     'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
-    'src/maps/peak-map-bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated map settings' }],
     'src/profile/profile-units.js': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],
     'src/reports/report-editor.ts': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
     'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
@@ -33,12 +32,12 @@ const FAIL_SOFT = Object.freeze({
 });
 
 const AUTHORITATIVE = Object.freeze({
-    'options/inbox.js': [{ count: 1, kind: 'privacy', reason: 'hide the inbox until the master switch is read authoritatively' }],
+    'options/inbox.ts': [{ count: 1, kind: 'privacy', reason: 'hide the inbox until the master switch is read authoritatively' }],
     'popup/popup.ts': [{ count: 1, kind: 'privacy', reason: 'hide the inbox entry until the master switch is read authoritatively' }],
-    'options/garmin.js': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
+    'options/garmin.ts': [{ count: 1, kind: 'preservation', reason: 'populate import range controls without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-badge.ts': [{ count: 1, kind: 'privacy', reason: 'keep the last accurate badge instead of drawing the queue from default settings' }],
     'options/inbox-toolbar-setting.ts': [{ count: 1, kind: 'preservation', reason: 'populate the toolbar count control without replacing unreadable settings with defaults' }],
-    'src/garmin/garmin-imports.ts': [{ count: 7, kind: 'privacy', reason: 'read schedule, discovery scope and retention preferences authoritatively' }],
+    'src/garmin/garmin-imports.ts': [{ count: 9, kind: 'privacy', reason: 'read schedule, discovery scope, retention preferences and whether import history applies to toolbar captures authoritatively' }],
     'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
     'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/weather/summit-cloud.ts': [{ count: 1, kind: 'privacy', reason: 'respect summit-cloud visibility and the saved model before profile requests' }],
@@ -48,9 +47,10 @@ const AUTHORITATIVE = Object.freeze({
     'src/favorites/climber-hover-card.ts': [{ count: 1, kind: 'preservation', reason: 'enable favorite actions only after resolving the selected source authoritatively' }],
     'src/ascent/ascent-filter.ts': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],
     'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
-    'src/ascent/ascent-upload.js': [{ count: 2, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields' }],
-    'src/background/background.js': [
+    'src/ascent/ascent-upload.ts': [{ count: 3, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields, and know whether timestamp removal turned on' }],
+    'src/background/background.ts': [
         { count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' },
+        { count: 1, kind: 'privacy', reason: 'refuse a timed capture once GPX timestamp removal is on' },
         { count: 1, kind: 'preservation', reason: 'reconcile favorites after a confirmed Buddy change using the current source and removal preference' },
     ],
     'src/background/github-routes.js': [

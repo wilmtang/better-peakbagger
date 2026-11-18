@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { evalBundle, fireTrustedEvent, waitFor, makeChromeStub } from '../helpers/load-page.mjs';
+import { evalBundle, fireTrustedEvent, waitFor, makeChromeStub } from '../helpers/load-page.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';

@@ -3,11 +3,11 @@
 Maintained report, updated **2026-11-08** for the implementation following the
 storage audit (package version **4.0.2**, unreleased changes). This describes the
 repository, not necessarily the extension installed in a particular browser.
-The [remediation ledger](archive/settings-portability-remediation.md) records
+The [remediation ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/settings-portability-remediation.md) records
 commits, verification, intentional boundaries and remaining live checks.
-The [custom-layer follow-up](archive/custom-layer-settings-audit-2026-10-25.md)
+The [custom-layer follow-up](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-layer-settings-audit-2026-10-25.md)
 records the centralized manager and version 6 backup/restore audit.
-The [custom-layer private relay](archive/custom-layer-private-relay-2026-10-26.md)
+The [custom-layer private relay](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/custom-layer-private-relay-2026-10-26.md)
 records the schema 7 private parameter transfer and validation audit.
 
 ## Current policy
@@ -298,7 +298,7 @@ policy and paints its own root. Dark Peakbagger pages apply the policy in both
 the first-paint fallback and the full theme. Wheel, keyboard and ordinary
 in-range scrolling remain available; no JavaScript wheel interception is used.
 
-The [closure ledger](archive/settings-portability-remediation.md) records unit,
+The [closure ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/settings-portability-remediation.md) records unit,
 full-suite and browser evidence. The overwrite regression was reproduced against
 the prior worker. Deterministic tests cover remote conflicts, snapshot-bound
 review, migration, old-file exclusions and guarded list imports. Hidden Chrome

@@ -7,13 +7,14 @@
 // exercised the way a user performs them rather than asserted from source.
 
 import test from 'node:test';
+import { browserWindow } from '../helpers/page-dom.mts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mts';
 import { photoArchive as Archive } from '../../src/photos/photo-archive.js';
 import { photoLibrary as Library } from '../../src/photos/photo-library.js';
 import { photoProject as Project } from '../../src/photos/photo-project.js';
@@ -114,7 +115,7 @@ const loadEditor = async ({
         runScripts: 'outside-only',
         pretendToBeVisual: true,
     });
-    const win = dom.window as EditorWindow;
+    const win = browserWindow<EditorWindow>(dom.window);
     if (nativeBlobs) win.Blob = Blob as typeof win.Blob;
     const doc = win.document as unknown as PageDocument;
     if (fixedNow) {
@@ -2256,27 +2257,23 @@ test('Recently Deleted discloses the asset deadline and restores exact-expiry re
     assert.deepEqual(page.errors, []);
 });
 
-test('removing a photo states the 30-day editing-data window before and after confirmation', async t => {
-    let confirmation = '';
+test('removing a photo needs no confirmation and states the 30-day editing-data window with Undo', async t => {
+    let confirmations = 0;
     const page = await loadEditor({
-        confirmImpl: (message?: string) => {
-            confirmation = message ?? '';
-            return true;
-        },
+        confirmImpl: () => { confirmations++; return false; },
     });
     t.after(() => page.dom.window.close());
     await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
         === 'Saved on this device');
     page.click(page.doc.getElementById('show-library'));
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
-        .some(button => button.textContent === 'Remove…'));
+        .some(button => button.textContent === 'Remove'));
     page.click([...page.doc.querySelectorAll('.photo-card button')]
-        .find(button => button.textContent === 'Remove…')!);
+        .find(button => button.textContent === 'Remove')!);
     await waitFor(page.dom, () => /Moved to Recently Deleted/.test(
         page.doc.getElementById('toast-message').textContent));
 
-    assert.match(confirmation, /restorable with editing data for 30 days/i);
-    assert.match(confirmation, /ImgBB image and report URLs will not change/i);
+    assert.equal(confirmations, 0, 'a reversible removal asks nothing');
     assert.match(page.doc.getElementById('toast-message').textContent,
         /Restorable with editing data for 30 days/i);
     assert.deepEqual(page.errors, []);
@@ -4091,7 +4088,7 @@ const libraryButton = (page: EditorPage, label: string) => [...page.doc.querySel
     .find(button => button.textContent === label)!;
 
 for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError']) {
-    for (const action of ['Remove…', 'Restore with editing data', 'Undo', 'Download project']) {
+    for (const action of ['Remove', 'Restore with editing data', 'Undo', 'Download project']) {
         test(`library ${action} reports ${errorName} and remains retryable`, async t => {
             const indexedDB = new IDBFactory();
             const photo = await seedUploadedLibraryPhoto(indexedDB);
@@ -4107,7 +4104,7 @@ for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError'
                 await waitFor(page.dom, () => !!libraryButton(page, action));
             }
             if (action === 'Undo') {
-                libraryButton(page, 'Remove…').click();
+                libraryButton(page, 'Remove').click();
                 await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 0);
             }
             const before = await readPhotoStore(page.win, 'photos');
@@ -4133,7 +4130,7 @@ for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError'
                 control.click();
                 await waitFor(page.dom, () => !control.isConnected);
                 const after = (await readPhotoStore(page.win, 'photos'))[0];
-                assert.equal(!!after.deletedAt, action === 'Remove…');
+                assert.equal(!!after.deletedAt, action === 'Remove');
             }
         });
     }
@@ -4169,8 +4166,8 @@ test('a pending library action keeps focus and rejects repeated activation', asy
     const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library',
         confirmImpl: () => { confirmations++; return true; },
     }); t.after(() => page.dom.window.close());
-    const remove = libraryButton(page, 'Remove…'); remove.focus(); remove.click(); remove.click();
-    assert.equal(confirmations, 1);
+    const remove = libraryButton(page, 'Remove'); remove.focus(); remove.click(); remove.click();
+    assert.equal(confirmations, 0);
     assert.equal(remove.getAttribute('aria-busy'), 'true');
     assert.equal(remove.getAttribute('aria-disabled'), 'true');
     assert.equal(page.doc.activeElement, remove);
@@ -4354,4 +4351,26 @@ test('report-photo editing keeps its accepted image and does not dirty an unchan
     page.doc.querySelector(`[data-local-id="${localId}"] [data-action=edit]`).click();
     await waitFor(page.dom, () => !page.doc.getElementById('editor-view').hidden && !page.doc.getElementById('upload-insert').disabled);
     assert.match(page.doc.getElementById('editor-status').textContent, /Edits stay on this device/);
+});
+
+test('Remove all annotations asks nothing and offers Undo', async () => {
+    let confirmations = 0;
+    const page = await loadEditor({ confirmImpl: () => { confirmations++; return false; } });
+    const { doc } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointerdown', 200, 200);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.markCount(), 2);
+    page.click(doc.getElementById('clear-annotations'));
+    await page.settle();
+    assert.equal(confirmations, 0, 'a reversible removal asks nothing');
+    assert.equal(page.markCount(), 0);
+    assert.equal(doc.getElementById('toast-message').textContent, '2 annotations removed.');
+    page.click(doc.getElementById('toast-action'));
+    await page.settle();
+    assert.equal(page.markCount(), 2, 'Undo restores every removed annotation');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
 });

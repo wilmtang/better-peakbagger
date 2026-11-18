@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { loadEditor, editorReady, editors, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 const localId = '00000000-0000-4000-8000-000000000001';
 const src = `https://bpb-photo.invalid/${localId}`;
 const hosted = 'https://i.ibb.co/fixture/photo.png';

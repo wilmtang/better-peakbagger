@@ -37,7 +37,7 @@ const open = async (report: string) => {
     const key = (init: KeyboardEventInit) => editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
     const saved = () => {
         modeButton(dom.window.document, 'Plain').click();
-        return (dom.window.document.getElementById('JournalText') as HTMLTextAreaElement).value;
+        return dom.window.document.getElementById('JournalText').value;
     };
     return { dom, ui, editor, painter, box, select, click, drag, key, saved };
 };

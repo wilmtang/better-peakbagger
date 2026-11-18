@@ -1,19 +1,18 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
-import { readFile, writeFile, mkdtemp, mkdir, rm } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:https';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ReportRule } from './generate-report-protection.mts';
-import { tmpdir } from 'node:os';
-import { chromium } from 'playwright';
 import { Builder } from 'selenium-webdriver';
 import { By, Key } from 'selenium-webdriver';
 import firefox from 'selenium-webdriver/firefox.js';
 import { createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
 import { assertVerificationBrowser } from './verification-browser-identity.mjs';
@@ -22,8 +21,7 @@ const kind = process.argv[2] || '';
 assert.ok(['chrome', 'firefox'].includes(kind) && process.argv.length === 3, 'Choose chrome or firefox');
 const root = fileURLToPath(new URL('../', import.meta.url));
 const owned = createResourceStack();
-const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-report-policy-audit-'));
-owned.defer('audit profile/certificate', () => rm(temporaryRoot, { recursive: true, force: true }));
+const temporaryRoot = await createVerificationRoot(owned, 'bpb-report-policy-audit-', 'audit profile/certificate');
 const wait = waitForCondition as <T>(read: () => Promise<T>, options: { description: string; isReady: (value: T) => boolean; timeoutMs?: number }) => Promise<T>;
 try {
     const certificate = await createFixtureCertificate();
@@ -84,14 +82,12 @@ try {
   let selectSecond: () => Promise<unknown>;
   let version: string;
   if (kind === 'chrome') {
-      assertChromeLaunchAllowed();
       const source = path.join(root, 'dist');
-      const context = await chromium.launchPersistentContext(path.join(temporaryRoot, 'profile'), {
-          ...(process.env.CHROME_BIN ? {executablePath:path.resolve(process.env.CHROME_BIN)} : {channel:'chromium'}),
-          headless: true, viewport: { width: 1000, height: 760 }, ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
-          args: [...certificate.chromeTrustArgs, `--disable-extensions-except=${source}`, `--load-extension=${source}`, '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1'],
+      const context = await launchVerificationChrome(owned, 'audit Chrome', path.join(temporaryRoot, 'profile'), {
+          chromeBinary: process.env.CHROME_BIN && path.resolve(process.env.CHROME_BIN),
+          viewport: { width: 1000, height: 760 }, ignoreDefaultArgs: ['--enable-unsafe-swiftshader'],
+          trustArgs: certificate.chromeTrustArgs, extension: source, hosts: [PEAKBAGGER_HOST_RULE],
       });
-      owned.defer('audit Chrome', () => context.close());
       const registry = await context.newPage(); await registry.goto('chrome://extensions-internals/');
       await registry.waitForFunction(() => { try { return JSON.parse(document.body.innerText).some((entry: { name: string }) => entry.name === 'Better Peakbagger'); } catch { return false; } });
       const page = await context.newPage();

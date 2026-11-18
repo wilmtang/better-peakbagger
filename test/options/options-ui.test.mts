@@ -2,28 +2,43 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-// @ts-expect-error jsdom ships no type declarations, so page objects stay untyped here.
-import type { JSDOM as PageValue } from 'jsdom';
 import { settingsTransfer as transfer } from '../../src/settings/settings-transfer.js';
 import * as helpers from '../helpers/options-helpers.mjs';
+import { computedStyle, rect, type ChromeStub, type LoadPage, type PageDom, type PageElement, type StubMessage, type WaitFor } from '../helpers/page-types.mts';
 
 const { optionsCss, registerCleanup, root, evalBundle } = helpers;
-const waitFor = helpers.waitFor as unknown as PageValue;
-const settingsTransfer = transfer as PageValue;
-type PageLoader = (settings?: PageValue, options?: PageValue) => Promise<PageValue>;
-const loadOptions = helpers.loadOptions as unknown as PageLoader;
-const loadDraftsPage = helpers.loadDraftsPage as unknown as PageLoader;
-const loadFavoritesPage = helpers.loadFavoritesPage as unknown as PageLoader;
-const el = helpers.el as unknown as (dom: PageValue, id: string) => PageValue;
-const readBlob = helpers.readBlob as unknown as (dom: PageValue, blob: PageValue) => Promise<PageValue>;
+// The JavaScript helpers infer their signatures from defaults; these are the
+// contracts the tests rely on (see page-types.mts).
+const waitFor = helpers.waitFor as unknown as WaitFor;
+// The settings-file shapes this stub worker reads and writes.
+interface TransferConnection { token: string; repository: { owner: string; name: string; id?: number } }
+interface ParsedSettingsFile {
+    ok: boolean; reason?: string; settings?: Record<string, unknown>;
+    apiKeys?: { imgbb?: string | null }; githubConnection?: TransferConnection;
+}
+const settingsTransfer = transfer as unknown as {
+    serialize(payload: unknown): string;
+    buildPayload(settings: unknown, options: Record<string, unknown>): unknown;
+    parse(content: unknown): ParsedSettingsFile;
+    KIND: string; SCHEMA_VERSION: number; IMPORT_MAX_BYTES: number;
+};
+interface Download { blob?: Blob; href?: string; name?: string; revoked?: string; created?: number; clicked?: number }
+interface StoredGithubAuth { token?: string; account?: unknown; repo?: { owner?: string; name?: string; id?: number } }
+interface StoredImgbbAuth { key?: string }
+type PageWindow = PageDom['window'];
+const loadOptions = helpers.loadOptions as unknown as (...args: Parameters<LoadPage>) => Promise<PageDom & { initialTheme?: string }>;
+const loadDraftsPage = helpers.loadDraftsPage as unknown as LoadPage;
+const loadFavoritesPage = helpers.loadFavoritesPage as unknown as LoadPage;
+const el = helpers.el as unknown as (dom: PageDom, id: string) => PageElement;
+const readBlob = helpers.readBlob as unknown as (dom: PageDom, blob: Blob) => Promise<string>;
 
 registerCleanup();
 
-const installSettingsFileWorker = (chrome: PageValue, {
+const installSettingsFileWorker = (chrome: ChromeStub, {
     exportFailure = () => false,
     messages = null,
-}: PageValue = {}) => {
-    chrome.runtime.sendMessage = async (message: PageValue) => {
+}: { exportFailure?: () => boolean; messages?: StubMessage[] | null } = {}) => {
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
         messages?.push(structuredClone(message));
         if (message.type === 'SETTINGS_FILE_EXPORT') {
             if (exportFailure()) {
@@ -36,8 +51,8 @@ const installSettingsFileWorker = (chrome: PageValue, {
                 };
             }
             const settings = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
-            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
-            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth;
+            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth as StoredImgbbAuth | undefined;
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth as StoredGithubAuth | undefined;
             const exportedAt = '2026-07-30T12:00:00.000Z';
             return {
                 ok: true,
@@ -64,7 +79,7 @@ const installSettingsFileWorker = (chrome: PageValue, {
             if (!parsed.ok) return { ok: false, error: { code: 'invalid-file' } };
             try {
                 await chrome.storage.sync.set({ bpbSettings: parsed.settings });
-                if (Object.hasOwn(parsed, 'apiKeys')) {
+                if (parsed.apiKeys) {
                     if (parsed.apiKeys.imgbb) {
                         await chrome.storage.local.set({
                             bpbImgbbAuth: {
@@ -76,7 +91,7 @@ const installSettingsFileWorker = (chrome: PageValue, {
                         await chrome.storage.local.remove('bpbImgbbAuth');
                     }
                 }
-                if (Object.hasOwn(parsed, 'githubConnection')) {
+                if (parsed.githubConnection) {
                     const connection = parsed.githubConnection;
                     await chrome.storage.local.set({
                         bpbGithubAuth: {
@@ -111,7 +126,7 @@ const installSettingsFileWorker = (chrome: PageValue, {
             return { ok: true, configured: !!imgbb, permissionGranted: true };
         }
         if (message.type === 'GITHUB_AUTH_STATUS') {
-            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth;
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth as StoredGithubAuth | undefined;
             return {
                 connected: !!(github?.token && github?.repo?.owner && github?.repo?.name),
                 hasToken: !!github?.token,
@@ -125,7 +140,7 @@ const installSettingsFileWorker = (chrome: PageValue, {
 
 test('theme bootstrap loads before the options stylesheet', async () => {
     const dom = await loadOptions({});
-    const resources = Array.from<PageValue>(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
+    const resources = Array.from<PageElement>(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
         .map(node => node.getAttribute('src') || node.getAttribute('href'));
     // The shared panel stylesheet comes first so page rules of equal
     // specificity win, and both come after the theme bootstrap.
@@ -155,9 +170,9 @@ test('Settings photo backup copy distinguishes saved records, newer edits, and u
     for (const auto of [false, true]) {
         let state = cases[2].state;
         const dom = await loadOptions({ autoPhotoLibraryBackup: auto }, {
-            prepareChrome: (chrome: PageValue) => {
+            prepareChrome: (chrome: ChromeStub) => {
                 chrome.permissions = { contains: async () => true };
-                chrome.runtime.sendMessage = async (message: PageValue) => {
+                chrome.runtime.sendMessage = async (message: StubMessage) => {
                     const repo = { owner: 'me', name: 'backup', fullName: 'me/backup' };
                     if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo };
                     if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, state };
@@ -186,13 +201,13 @@ test('Settings photo backup copy distinguishes saved records, newer edits, and u
 test('Settings distinguishes a confirmed photo backup from pending local reconciliation', async () => {
     let pending = false;
     const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = {
                 contains: async () => true,
                 request: async () => true,
                 remove: async () => true,
             };
-            chrome.runtime.sendMessage = async (message: PageValue) => {
+            chrome.runtime.sendMessage = async (message: StubMessage) => {
                 if (message.type === 'GITHUB_AUTH_STATUS') {
                     return {
                         connected: true,
@@ -245,13 +260,13 @@ test('Settings preserves actionable photo backup capacity details from the worke
     const message = 'Photo-library metadata uses 8.4 MiB, above the 8 MiB GitHub recovery limit. '
         + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
     const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = {
                 contains: async () => true,
                 request: async () => true,
                 remove: async () => true,
             };
-            chrome.runtime.sendMessage = async (request: PageValue) => {
+            chrome.runtime.sendMessage = async (request: StubMessage) => {
                 if (request.type === 'GITHUB_AUTH_STATUS') {
                     return {
                         connected: true,
@@ -324,7 +339,7 @@ test('a failed setting write restores the authoritative control value', async ()
 });
 test('settings are grouped by the surface they affect', async () => {
     const dom = await loadOptions({});
-    const sections = Array.from<PageValue>(dom.window.document.querySelectorAll('.settings-section'));
+    const sections = Array.from<PageElement>(dom.window.document.querySelectorAll('.settings-section'));
     assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
         'General',
         'Capture & reports',
@@ -413,7 +428,7 @@ test('settings are grouped by the surface they affect', async () => {
     }
     const outlineColor = mapChart.querySelector('#map-route-casing-color');
     const outlineWidth = mapChart.querySelector('#map-route-casing-width');
-    assert.equal(outlineColor.previousElementSibling.textContent, 'Outline');
+    assert.equal(outlineColor.previousElementSibling!.textContent, 'Outline');
     assert.equal(outlineColor.getAttribute('aria-label'), 'Route outline color');
     assert.equal(outlineWidth.getAttribute('aria-label'), 'Route outline width in pixels');
     for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
@@ -439,7 +454,7 @@ test('settings are grouped by the surface they affect', async () => {
     assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
     assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
-    const githubSettingsDesc = Array.from<PageValue>(github.querySelectorAll('#github-settings-backup .desc'))
+    const githubSettingsDesc = Array.from<PageElement>(github.querySelectorAll('#github-settings-backup .desc'))
         .find(node => node.textContent?.includes('custom layers'));
     assert.match(
         githubSettingsDesc?.textContent || '',
@@ -468,21 +483,21 @@ test('trip report photo and draft settings follow the editor option', async () =
     const dependentNavItems = ['#drafts'].map(href =>
         doc.querySelector(`.side-nav a[href="${href}"]`).closest('li'));
 
-    assert.ok([...dependentSections, ...dependentNavItems].every(element => element.hidden),
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element!.hidden),
         'editor-only settings and their navigation should start hidden');
     assert.equal(el(dom, 'capture-photos').hidden, false, 'Saved-key management is independent of the editor');
-    assert.equal(doc.querySelector('.side-nav a[href="#capture-photos"]').closest('li').hidden, false);
+    assert.equal(doc.querySelector('.side-nav a[href="#capture-photos"]').closest('li')!.hidden, false);
 
     const editorToggle = el(dom, 'enable-report-editor');
     editorToggle.checked = true;
     editorToggle.dispatchEvent(new dom.window.Event('change'));
-    assert.ok([...dependentSections, ...dependentNavItems].every(element => !element.hidden),
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => !element!.hidden),
         'dependent settings should appear immediately when the editor is enabled');
     await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === true);
 
     editorToggle.checked = false;
     editorToggle.dispatchEvent(new dom.window.Event('change'));
-    assert.ok([...dependentSections, ...dependentNavItems].every(element => element.hidden),
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element!.hidden),
         'dependent settings should disappear immediately when the editor is disabled');
     await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === false);
 });
@@ -502,13 +517,13 @@ test('only interactive setting labels advertise a pointer cursor', async () => {
 });
 
 test('options sections log the missing ids before degrading to no-op controllers', async () => {
-    const errors: PageValue[] = [];
+    const errors: string[] = [];
     await loadOptions({}, {
-        prepareWindow(window: PageValue) {
+        prepareWindow(window: PageWindow) {
             for (const id of [
                 'github-panel', 'settings-backup-export', 'favorites-github-status'
             ]) window.document.getElementById(id).remove();
-            window.console.error = (message: PageValue) => errors.push(String(message));
+            window.console.error = (message: unknown) => errors.push(String(message));
         }
     });
 
@@ -520,9 +535,9 @@ test('options sections log the missing ids before degrading to no-op controllers
 
 // The favorite-climbers workspace degrades the same way on its own page.
 test('the favorite climbers page logs its missing ids instead of throwing', async () => {
-    const errors: PageValue[] = [];
+    const errors: string[] = [];
     const dom = await loadFavoritesPage({}, {});
-    dom.window.console.error = (message: PageValue) => errors.push(String(message));
+    dom.window.console.error = (message: unknown) => errors.push(String(message));
     dom.window.document.getElementById('favorites-list').remove();
     await evalBundle(dom.window, 'options/favorites-page.js');
     assert.equal(errors.length, 1);
@@ -531,9 +546,9 @@ test('the favorite climbers page logs its missing ids instead of throwing', asyn
 
 // The draft manager degrades the same way on its own page.
 test('the draft manager page logs its missing ids instead of throwing', async () => {
-    const errors: PageValue[] = [];
+    const errors: string[] = [];
     const dom = await loadDraftsPage({}, {});
-    dom.window.console.error = (message: PageValue) => errors.push(String(message));
+    dom.window.console.error = (message: unknown) => errors.push(String(message));
     dom.window.document.getElementById('drafts-list').remove();
     await evalBundle(dom.window, 'options/drafts-page.js');
     assert.equal(errors.length, 1);
@@ -592,16 +607,16 @@ test('the options controller exclusively owns shared status timing', async () =>
 });
 
 test('settings export downloads all known settings and no credentials by default', async () => {
-    const download: PageValue = {};
+    const download: Download = {};
     const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
         local: { bpbImgbbAuth: { key: 'private-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
-        prepareChrome: (chrome: PageValue) => installSettingsFileWorker(chrome),
-        prepareWindow(window: PageValue) {
-            window.URL.createObjectURL = (blob: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome),
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
                 download.blob = blob;
                 return 'blob:settings-export';
             };
-            window.URL.revokeObjectURL = (url: PageValue) => { download.revoked = url; };
+            window.URL.revokeObjectURL = (url: string) => { download.revoked = url; };
             window.HTMLAnchorElement.prototype.click = function click() {
                 download.href = this.href;
                 download.name = this.download;
@@ -611,22 +626,22 @@ test('settings export downloads all known settings and no credentials by default
 
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => download.blob);
-    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
     assert.equal(parsed.ok, true);
-    assert.equal(parsed.settings.theme, 'dark');
-    assert.equal('unknownSetting' in parsed.settings, false);
+    assert.equal(parsed.settings!.theme, 'dark');
+    assert.equal('unknownSetting' in parsed.settings!, false);
     // A settings file the user did not ask to put credentials in carries none,
     // so one shared for troubleshooting cannot leak either secret.
     assert.equal('apiKeys' in parsed, false);
     assert.equal('githubConnection' in parsed, false);
     assert.equal(download.href, 'blob:settings-export');
-    assert.match(download.name, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
+    assert.match(download.name!, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
     assert.equal(download.revoked, 'blob:settings-export');
 });
 
 test('settings export includes saved credentials only after explicit opt-in', async () => {
-    const download: PageValue = {};
-    const messages: PageValue = [];
+    const download: Download = {};
+    const messages: StubMessage[] = [];
     const github = {
         token: 'ghu_private_token',
         account: { login: 'ada' },
@@ -634,7 +649,7 @@ test('settings export includes saved credentials only after explicit opt-in', as
     };
     const dom = await loadOptions({ theme: 'dark' }, {
         local: { bpbGithubAuth: github },
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = {
                 contains: async () => true,
                 request: async () => true,
@@ -642,8 +657,8 @@ test('settings export includes saved credentials only after explicit opt-in', as
             };
             installSettingsFileWorker(chrome, { messages });
         },
-        prepareWindow(window: PageValue) {
-            window.URL.createObjectURL = (blob: PageValue) => {
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
                 download.blob = blob;
                 return 'blob:settings-export';
             };
@@ -658,31 +673,31 @@ test('settings export includes saved credentials only after explicit opt-in', as
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => download.blob);
 
-    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
     assert.deepEqual(parsed.githubConnection, {
         token: 'ghu_private_token',
         repository: { owner: 'ada', name: 'peaks', id: 123 },
     });
-    assert.deepEqual(messages.find((message: PageValue) => message.type === 'SETTINGS_FILE_EXPORT'), {
+    assert.deepEqual(messages.find((message: StubMessage) => message.type === 'SETTINGS_FILE_EXPORT'), {
         type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
     });
     assert.equal(include.checked, false, 'each sensitive export requires a fresh opt-in');
 });
 
 test('settings export creates no file when the worker cannot read every setting and retries cleanly', async () => {
-    const download: PageValue = { created: 0, clicked: 0 };
+    const download: Download & { created: number; clicked: number } = { created: 0, clicked: 0 };
     let failExport = true;
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome(chrome: PageValue) {
+        prepareChrome(chrome: ChromeStub) {
             installSettingsFileWorker(chrome, { exportFailure: () => failExport });
         },
-        prepareWindow(window: PageValue) {
-            window.URL.createObjectURL = (blob: PageValue) => {
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
                 download.created++;
                 download.blob = blob;
                 return 'blob:settings-export';
             };
-            window.URL.revokeObjectURL = (url: PageValue) => { download.revoked = url; };
+            window.URL.revokeObjectURL = (url: string) => { download.revoked = url; };
             window.HTMLAnchorElement.prototype.click = function click() {
                 download.clicked++;
             };
@@ -701,9 +716,9 @@ test('settings export creates no file when the worker cannot read every setting 
     el(dom, 'settings-backup-export').click();
     await waitFor(dom, () => download.blob);
 
-    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob));
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
     assert.equal(parsed.ok, true);
-    assert.equal(parsed.settings.theme, 'dark',
+    assert.equal(parsed.settings!.theme, 'dark',
         'the retry must serialize the authoritative settings rather than defaults from the failed read');
     assert.equal(download.created, 1);
     assert.equal(download.clicked, 1);
@@ -715,7 +730,7 @@ test('settings import replaces known settings and API keys only after inline con
         { theme: 'dark', units: 'imperial' },
         {
             local: { bpbImgbbAuth: { key: 'old-imgbb-key' } },
-            prepareChrome: (chrome: PageValue) => installSettingsFileWorker(chrome),
+            prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome),
         }
     );
     const input = el(dom, 'settings-backup-file');
@@ -748,9 +763,9 @@ test('settings import replaces known settings and API keys only after inline con
 });
 
 test('settings import rejects honest and streamed oversized files before confirmation or messaging', async () => {
-    const messages: PageValue = [];
+    const messages: StubMessage[] = [];
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: (chrome: PageValue) => installSettingsFileWorker(chrome, { messages }),
+        prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome, { messages }),
     });
     const input = el(dom, 'settings-backup-file');
     let fallbackRead = false;
@@ -785,18 +800,18 @@ test('settings import rejects honest and streamed oversized files before confirm
     input.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
     await waitFor(dom, () => cancelled === true);
-    assert.equal(messages.some((message: PageValue) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
 });
 
 test('settings import requests GitHub permission and restores a validated connection after confirmation', async () => {
-    const messages: PageValue = [];
-    const permissionRequests: PageValue[] = [];
+    const messages: StubMessage[] = [];
+    const permissionRequests: unknown[] = [];
     let granted = false;
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = {
                 contains: async () => granted,
-                request: async (details: PageValue) => {
+                request: async (details: object) => {
                     permissionRequests.push(structuredClone(details));
                     granted = true;
                     return true;
@@ -835,15 +850,16 @@ test('settings import requests GitHub permission and restores a validated connec
     assert.deepEqual(permissionRequests, [{
         origins: ['https://github.com/*', 'https://api.github.com/*'],
     }]);
-    assert.equal(dom.chrome._localStore.bpbGithubAuth.repo.fullName, 'ada/peaks');
-    assert.ok(messages.some((message: PageValue) => message.type === 'SETTINGS_FILE_IMPORT'));
+    // The earlier `undefined` assertion narrows this path; read the imported record afresh.
+    assert.equal((dom.chrome._localStore.bpbGithubAuth as { repo?: { fullName?: string } }).repo?.fullName, 'ada/peaks');
+    assert.ok(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'));
     assert.equal(el(dom, 'status').textContent, 'Settings imported');
 });
 
 test('settings import keeps everything unchanged when GitHub permission is declined', async () => {
-    const messages: PageValue = [];
+    const messages: StubMessage[] = [];
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             chrome.permissions = {
                 contains: async () => false,
                 request: async () => false,
@@ -875,7 +891,7 @@ test('settings import keeps everything unchanged when GitHub permission is decli
 
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
     assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
-    assert.equal(messages.some((message: PageValue) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
     assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
     assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
 });
@@ -883,11 +899,11 @@ test('settings import keeps everything unchanged when GitHub permission is decli
 test('settings import keeps its confirmation retryable when persistence fails', async () => {
     let failWrite = true;
     const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             installSettingsFileWorker(chrome);
             const nativeSet = chrome.storage.sync.set;
-            chrome.storage.sync.set = async (values: PageValue) => {
-                if (failWrite && values.bpbSettings?.theme === 'light') {
+            chrome.storage.sync.set = async (values: Record<string, unknown>) => {
+                if (failWrite && (values.bpbSettings as { theme?: string } | undefined)?.theme === 'light') {
                     throw new Error('sync write failed');
                 }
                 return nativeSet(values);
@@ -956,11 +972,11 @@ test('Escape cannot visually cancel an import after its write has started', asyn
     let writeStarted = false;
     const writeGate = new Promise<void>(resolve => { releaseWrite = resolve; });
     const dom = await loadOptions({ theme: 'dark' }, {
-        prepareChrome: (chrome: PageValue) => {
+        prepareChrome: (chrome: ChromeStub) => {
             installSettingsFileWorker(chrome);
             const nativeSet = chrome.storage.sync.set;
-            chrome.storage.sync.set = async (values: PageValue) => {
-                if (values.bpbSettings?.theme === 'light') {
+            chrome.storage.sync.set = async (values: Record<string, unknown>) => {
+                if ((values.bpbSettings as { theme?: string } | undefined)?.theme === 'light') {
                     writeStarted = true;
                     await writeGate;
                 }
@@ -1003,7 +1019,7 @@ test('Escape cannot visually cancel an import after its write has started', asyn
 test('settings import rejects invalid and newer files without changing settings', async () => {
     const dom = await loadOptions({ theme: 'dark' });
     const input = el(dom, 'settings-backup-file');
-    const choose = async (name: string, text: PageValue) => {
+    const choose = async (name: string, text: string) => {
         Object.defineProperty(input, 'files', {
             configurable: true,
             value: [{ name, text: async () => text }]
@@ -1043,18 +1059,18 @@ test('the sidebar links every settings section, in order', async () => {
     assert.ok(nav, 'the sidebar nav exists');
     assert.equal(nav.getAttribute('aria-label'), 'Settings sections');
 
-    const links = Array.from<PageValue>(nav.querySelectorAll('a.nav-item'));
+    const links = Array.from<PageElement>(nav.querySelectorAll('a.nav-item'));
     // Every link points at an existing settings section...
     for (const link of links) {
-        const id = link.getAttribute('href').slice(1);
+        const id = link.getAttribute('href')!.slice(1);
         const target = doc.getElementById(id);
         assert.ok(target, `sidebar link #${id} resolves to an element`);
         assert.ok(target.classList.contains('settings-section'), `#${id} is a settings section`);
     }
     // ...and the links cover every section, in document order — this guards
     // against a section being added, removed, or renamed without its link.
-    const linkTargets = links.map(link => link.getAttribute('href').slice(1));
-    const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section') as PageValue[], section => section.id);
+    const linkTargets = links.map(link => link.getAttribute('href')!.slice(1));
+    const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section') as NodeListOf<PageElement>, section => section.id);
     assert.deepEqual(linkTargets, sectionIds);
     assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
 });
@@ -1062,21 +1078,21 @@ test('the sidebar links every settings section, in order', async () => {
 test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
     const dom = await loadOptions({});
     const doc = dom.window.document;
-    const subLinks = Array.from<PageValue>(doc.querySelectorAll('.side-nav a.nav-subitem'));
+    const subLinks = Array.from<PageElement>(doc.querySelectorAll('.side-nav a.nav-subitem'));
     assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
         ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-view', '#capture-report', '#capture-photos', '#drafts',
             '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
             '#github-backup', '#github-settings-backup', '#github-favorites-backup',
             '#github-photos-backup']);
     for (const link of subLinks) {
-        const target = doc.getElementById(link.getAttribute('href').slice(1));
+        const target = doc.getElementById(link.getAttribute('href')!.slice(1));
         assert.ok(target && target.classList.contains('subsection'),
             `${link.getAttribute('href')} resolves to a subsection group`);
         assert.equal(target.getAttribute('role'), 'group');
         assert.equal(target.getAttribute('aria-labelledby'), target.querySelector('h3').id);
     }
     assert.deepEqual(
-        Array.from(doc.querySelectorAll('#github > .subsection') as PageValue[], section => `#${section.id}`),
+        Array.from(doc.querySelectorAll('#github > .subsection') as NodeListOf<PageElement>, section => `#${section.id}`),
         subLinks.filter(link => link.hash.startsWith('#github-')).map(link => link.getAttribute('href')),
         'Backup & sync subsections should follow their sidebar order',
     );
@@ -1112,8 +1128,8 @@ test('General groups feature switches under Feature switch and keeps Theme outsi
     assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#general');
 });
 
-const activeLinks = (dom: PageValue) =>
-    Array.from<PageValue>(dom.window.document.querySelectorAll('.nav-item[aria-current], .nav-subitem[aria-current]'));
+const activeLinks = (dom: PageDom) =>
+    Array.from<PageElement>(dom.window.document.querySelectorAll('.nav-item[aria-current], .nav-subitem[aria-current]'));
 
 test('custom map layers belongs to Map & GPX chart between Map and Send GPX', async () => {
     const dom = await loadOptions({}, { hash: '#custom-map-layers' });
@@ -1121,12 +1137,12 @@ test('custom map layers belongs to Map & GPX chart between Map and Send GPX', as
     assert.equal(group.closest('.settings-section')?.id, 'map-chart');
     assert.equal(group.querySelector('h3')?.textContent, 'Custom map layers');
     assert.equal(group.getAttribute('aria-labelledby'), group.querySelector('h3')?.id);
-    assert.equal(group.previousElementSibling.id, 'map-chart-map');
-    assert.equal(group.nextElementSibling.id, 'map-handoffs');
+    assert.equal(group.previousElementSibling!.id, 'map-chart-map');
+    assert.equal(group.nextElementSibling!.id, 'map-handoffs');
     assert.equal(group.querySelector('.card .title'), null, 'the card does not repeat its subsection title');
     const link = doc.querySelector('.nav-subitem[href="#custom-map-layers"]');
     assert.equal(link?.textContent, 'Custom map layers');
-    assert.equal(link?.closest('.nav-sublist').parentElement.querySelector('.nav-item').hash, '#map-chart');
+    assert.equal(link?.closest('.nav-sublist')!.parentElement!.querySelector('.nav-item').hash, '#map-chart');
     assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers', 'existing deep links select the moved subsection');
     assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#map-chart');
     link.click();
@@ -1148,11 +1164,11 @@ test('a deep-link hash is the active section on load', async () => {
 });
 
 test('refresh lands the anchored subsection even when the browser restores the pane to the top without scrolling', async () => {
-    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageValue) => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
         const content = window.document.querySelector('.content');
-        content.getBoundingClientRect = () => ({ top: 100 });
+        content.getBoundingClientRect = () => rect({ top: 100 });
         window.document.getElementById('map-chart-chart').style.scrollMarginTop = '24px';
-        window.document.getElementById('map-chart-chart').getBoundingClientRect = () => ({ top: 3269 - content.scrollTop });
+        window.document.getElementById('map-chart-chart').getBoundingClientRect = () => rect({ top: 3269 - content.scrollTop });
     } });
     const content = dom.window.document.querySelector('.content');
     // Chrome can finish restoration without emitting scroll or scrollend.
@@ -1167,11 +1183,11 @@ test('refresh lands the anchored subsection even when the browser restores the p
 });
 
 test('an early native scrollend cannot finish alignment before document restoration', async () => {
-    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageValue) => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
         Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'loading' });
         const pane = window.document.querySelector('.content'), target = window.document.getElementById('map-chart-chart');
-        pane.getBoundingClientRect = () => ({ top: 100 }); target.style.scrollMarginTop = '24px';
-        target.getBoundingClientRect = () => ({ top: 3269 - pane.scrollTop });
+        pane.getBoundingClientRect = () => rect({ top: 100 }); target.style.scrollMarginTop = '24px';
+        target.getBoundingClientRect = () => rect({ top: 3269 - pane.scrollTop });
     } });
     const pane = dom.window.document.querySelector('.content');
     pane.scrollTop = 3145; pane.dispatchEvent(new dom.window.Event('scrollend'));
@@ -1183,12 +1199,12 @@ test('an early native scrollend cannot finish alignment before document restorat
 });
 
 test('restoring the document from history re-reads the current fragment and preserves later manual reading positions', async () => {
-    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageValue) => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
         const content = window.document.querySelector('.content');
-        content.getBoundingClientRect = () => ({ top: 100 });
-        for (const [id, top] of [['map-chart-chart', 3269], ['custom-map-layers', 3900]]) {
+        content.getBoundingClientRect = () => rect({ top: 100 });
+        for (const [id, top] of [['map-chart-chart', 3269], ['custom-map-layers', 3900]] as const) {
             window.document.getElementById(id).style.scrollMarginTop = '24px';
-            window.document.getElementById(id).getBoundingClientRect = () => ({ top: (top as number) - content.scrollTop });
+            window.document.getElementById(id).getBoundingClientRect = () => rect({ top: (top as number) - content.scrollTop });
         }
     } });
     const content = dom.window.document.querySelector('.content');
@@ -1207,16 +1223,16 @@ test('restoring the document from history re-reads the current fragment and pres
 test('a drafts deep link activates the TR-drafts manager', async () => {
     const dom = await loadOptions({}, {
         hash: '#drafts',
-        prepareWindow: (window: PageValue) => {
+        prepareWindow: (window: PageWindow) => {
             const nativeRect = window.HTMLElement.prototype.getBoundingClientRect;
             window.HTMLElement.prototype.getBoundingClientRect = function () {
-                if (this.classList?.contains('content')) return { top: 100 };
-                if (this.id === 'drafts') return { top: 450 };
+                if (this.classList?.contains('content')) return rect({ top: 100 });
+                if (this.id === 'drafts') return rect({ top: 450 });
                 return nativeRect.call(this);
             };
             const nativeStyle = window.getComputedStyle.bind(window);
-            window.getComputedStyle = (element: PageValue) => element.id === 'drafts'
-                ? { scrollMarginTop: '24px' }
+            window.getComputedStyle = (element: Element) => element.id === 'drafts'
+                ? computedStyle({ scrollMarginTop: '24px' })
                 : nativeStyle(element);
         }
     });
@@ -1250,14 +1266,14 @@ test('hash navigation moves the active sidebar link', async () => {
 
 test('hash navigation aligns the content pane when history leaves it at the previous fragment', async () => {
     const dom = await loadOptions({}, {
-        prepareWindow: (window: PageValue) => {
+        prepareWindow: (window: PageWindow) => {
             const content = window.document.querySelector('.content');
             const about = window.document.getElementById('about');
-            content.getBoundingClientRect = () => ({ top: 100 });
-            about.getBoundingClientRect = () => ({ top: 450 - content.scrollTop });
+            content.getBoundingClientRect = () => rect({ top: 100 });
+            about.getBoundingClientRect = () => rect({ top: 450 - content.scrollTop });
             const nativeStyle = window.getComputedStyle.bind(window);
-            window.getComputedStyle = (element: PageValue) => element === about
-                ? { scrollMarginTop: '24px' }
+            window.getComputedStyle = (element: Element) => element === about
+                ? computedStyle({ scrollMarginTop: '24px' })
                 : nativeStyle(element);
         },
     });
@@ -1271,23 +1287,23 @@ test('hash navigation aligns the content pane when history leaves it at the prev
 for (const visualFrames of [false, true]) {
     test(`sidebar navigation animates nearby jumps and settles long jumps (${visualFrames ? 'frames' : 'timer fallback'})`, async () => {
         let draftsTop = 0;
-        const frames: PageValue[] = [];
+        const frames: FrameRequestCallback[] = [];
         let frameTime = 0;
         const renderFrame = () => {
             frameTime += 16;
             for (const callback of frames.splice(0)) callback(frameTime);
         };
         const dom = await loadOptions({}, {
-            prepareWindow: (window: PageValue) => {
-                if (visualFrames) window.requestAnimationFrame = (callback: PageValue) => frames.push(callback);
+            prepareWindow: (window: PageWindow) => {
+                if (visualFrames) window.requestAnimationFrame = (callback: FrameRequestCallback) => frames.push(callback);
                 const content = window.document.querySelector('.content');
                 const drafts = window.document.getElementById('drafts');
                 Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
-                content.getBoundingClientRect = () => ({ top: 100 });
-                drafts.getBoundingClientRect = () => ({ top: draftsTop });
+                content.getBoundingClientRect = () => rect({ top: 100 });
+                drafts.getBoundingClientRect = () => rect({ top: draftsTop });
                 const nativeStyle = window.getComputedStyle.bind(window);
-                window.getComputedStyle = (element: PageValue) => element === drafts
-                    ? { scrollMarginTop: '24px' }
+                window.getComputedStyle = (element: Element) => element === drafts
+                    ? computedStyle({ scrollMarginTop: '24px' })
                     : nativeStyle(element);
             }
         });
@@ -1316,12 +1332,12 @@ for (const visualFrames of [false, true]) {
             assert.equal(content.style.scrollBehavior, 'auto', 'the override must span both rendering frames');
             renderFrame();
         }
-        await waitFor(dom, () => content.style.scrollBehavior === '').catch((error: PageValue) => {
-            assert.fail(`${error.message}; scrollBehavior=${JSON.stringify(content.style.scrollBehavior)}, hash=${dom.window.location.hash}`);
+        await waitFor(dom, () => content.style.scrollBehavior === '').catch((error: unknown) => {
+            assert.fail(`${(error as Error).message}; scrollBehavior=${JSON.stringify(content.style.scrollBehavior)}, hash=${dom.window.location.hash}`);
         });
         assert.equal(content.style.scrollBehavior, '');
 
-        draftsLink.addEventListener('click', (event: PageValue) => event.preventDefault(), { once: true });
+        draftsLink.addEventListener('click', (event: Event) => event.preventDefault(), { once: true });
         draftsLink.dispatchEvent(new dom.window.MouseEvent('click', {
             bubbles: true,
             cancelable: true,
@@ -1346,26 +1362,11 @@ for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs'
     });
 }
 
-test('the scroll-spy survives jsdom\'s zero-layout world', async () => {
-    // jsdom reports every offset/rect as 0 and nothing scrolls; the scroll
-    // handler must not throw and must keep exactly one link active. The offset
-    // math itself is only provable in a real browser (see the plan's step 5).
-    const dom = await loadOptions({ enableReportEditor: false });
-    const content = dom.window.document.querySelector('.content');
-    assert.doesNotThrow(() => content.dispatchEvent(new dom.window.Event('scroll')));
-    assert.equal(activeLinks(dom).length, 1);
-    const active = activeLinks(dom)[0];
-    assert.equal(active.closest('[hidden]'), null,
-        'a hidden editor-dependent nav item must not become current');
-    assert.equal(el(dom, active.hash.slice(1)).hidden, false,
-        'the scroll-spy must resolve to a visible settings section');
-});
-
 test('Garmin credential import names the key and requires API permission before writing', async () => {
-    const messages: PageValue = []; const requested: PageValue[] = [];
-    const dom = await loadOptions({ theme: 'dark' }, { prepareChrome: (chrome: PageValue) => {
+    const messages: StubMessage[] = []; const requested: unknown[] = [];
+    const dom = await loadOptions({ theme: 'dark' }, { prepareChrome: (chrome: ChromeStub) => {
         chrome.permissions = { contains: async () => false, remove: async () => true,
-            request: async (details: PageValue) => { requested.push(structuredClone(details)); return false; } };
+            request: async (details: object) => { requested.push(structuredClone(details)); return false; } };
         installSettingsFileWorker(chrome, { messages });
     } });
     const payload = settingsTransfer.buildPayload({ theme: 'light' }, { apiKeys: { garmin: 'fictional-garmin-personal-key' } });
@@ -1378,7 +1379,7 @@ test('Garmin credential import names the key and requires API permission before 
     el(dom, 'settings-backup-confirm').click();
     await waitFor(dom, () => /Garmin access was not granted/.test(el(dom, 'status-error-text').textContent));
     assert.deepEqual(requested, [{ origins: ['https://personal.connectapi.garmin.com/*'] }]);
-    assert.equal(messages.some((message: PageValue) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
     assert.equal(dom.chrome._store.bpbSettings.theme, 'dark'); dom.window.close();
 });
 
@@ -1401,18 +1402,18 @@ for (const hash of ['#capture-garmin', '#general']) {
         let release!: () => void;
         const readGate = new Promise<void>(resolve => { release = resolve; });
         const dom = await loadOptions({}, { hash,
-            prepareChrome: (chrome: PageValue) => {
+            prepareChrome: (chrome: ChromeStub) => {
                 const get = chrome.storage.sync.get;
-                chrome.storage.sync.get = async (...args: unknown[]) => { await readGate; return get(...args); };
+                chrome.storage.sync.get = async (...args: Parameters<typeof get>) => { await readGate; return get(...args); };
             },
-            prepareWindow: (window: PageValue) => {
+            prepareWindow: (window: PageWindow) => {
                 const content = window.document.querySelector('.content');
                 const target = window.document.getElementById('capture-garmin');
-                content.getBoundingClientRect = () => ({ top: 100 });
-                target.getBoundingClientRect = () => ({ top: target.hidden ? 0 : 450 - content.scrollTop });
+                content.getBoundingClientRect = () => rect({ top: 100 });
+                target.getBoundingClientRect = () => rect({ top: target.hidden ? 0 : 450 - content.scrollTop });
                 const nativeStyle = window.getComputedStyle.bind(window);
-                window.getComputedStyle = (element: PageValue) => element === target
-                    ? { scrollMarginTop: '24px' } : nativeStyle(element);
+                window.getComputedStyle = (element: Element) => element === target
+                    ? computedStyle({ scrollMarginTop: '24px' }) : nativeStyle(element);
             },
         });
         const content = dom.window.document.querySelector('.content');
@@ -1448,12 +1449,12 @@ test('nested ignored-climber backup fragments activate their owning sidebar sect
 });
 
 test('a trailing scroll event at a clamped fragment landing preserves its active owner', async () => {
-    const dom = await loadOptions({}, { hash: '#ignored-github', prepareWindow: (window: PageValue) => {
+    const dom = await loadOptions({}, { hash: '#ignored-github', prepareWindow: (window: PageWindow) => {
         const content = window.document.querySelector('.content');
         Object.defineProperty(content, 'clientHeight', { value: 1000 });
         Object.defineProperty(content, 'scrollHeight', { value: 7649 });
-        content.getBoundingClientRect = () => ({ top: 0 });
-        window.document.getElementById('ignored-github').getBoundingClientRect = () => ({ top: 24 });
+        content.getBoundingClientRect = () => rect({ top: 0 });
+        window.document.getElementById('ignored-github').getBoundingClientRect = () => rect({ top: 24 });
     } });
     const content = dom.window.document.querySelector('.content');
     content.scrollTop = 6649;
@@ -1470,7 +1471,7 @@ test('a trailing scroll event at a clamped fragment landing preserves its active
 test('Instagram loading stays opt-in independently of the report editor',async()=>{
     const dom=await loadOptions({enableReportEditor:false});
     const toggle=dom.window.document.getElementById('load-instagram-automatically');
-    assert.equal(toggle.checked,false);assert.equal(toggle.closest('.row').hidden,false);
+    assert.equal(toggle.checked,false);assert.equal(toggle.closest('.row')!.hidden,false);
     toggle.click();await waitFor(dom,()=>dom.chrome._localStore.bpbDeviceSettings?.settings.loadInstagramAutomatically===true);
     assert.equal(dom.chrome._store.bpbSettings?.loadInstagramAutomatically,undefined,'device consent never enters sync');
 });

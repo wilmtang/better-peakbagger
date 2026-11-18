@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createGarminBadge } from './garmin-badge.ts';
 import { createGarminStore, garminPublicSummary } from './garmin-store.js';
-import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.js';
+import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.ts';
 import { decodeGarminRecording } from './fit-activity.js';
 import { createPackagedPageMatcher } from '../background/sender-policy.js';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
@@ -14,20 +14,27 @@ interface GarminSettings { requireCurrent(): Promise<GarminPreferences> }
 interface RouteAnalysis {
     matches: { id: number; name: string; classification: string; confidence?: number; evidence?: unknown }[];
     route?: { lat: number; lon: number; ele?: number; time: unknown }[][]; waypoints?: unknown[];
+    tripName?: string; nightsOut?: number | null; dayStats?: unknown[]; trackSummary?: Record<string, unknown>;
 }
 interface GarminItem {
     id: string; owner?: string | null; cid?: string | null; phase: string; createdAt?: number; saved: string[];
     summary: { id?: string; date?: string; type?: string; owner?: string | null; localStart?: string; utcStart?: string };
-    analysis?: RouteAnalysis | null; error?: string | null; handoff?: { jobId?: string } | null;
+    analysis?: RouteAnalysis | null; error?: string | null; handoff?: { jobId?: string; tabId?: number; phase?: string } | null;
     revision?: number; retryAt?: number; undoUntil?: number; previousPhase?: string;
 }
 interface GarminReceipt {
     owner?: string | null; cid?: string | null; date?: string; dismissed?: boolean; complete?: boolean;
     fromToolbar?: boolean; jobId?: string; peaks?: Record<string, string>;
+    // When the receipt was last written. Older receipts have none.
+    at?: number;
+    // Earlier toolbar jobs whose surviving draft tabs may still be saved.
+    previousJobIds?: string[];
 }
 interface GarminConnection { key: string | null; subject?: string; owner?: string | null; cid?: string | null; connectedDate?: string; enabled?: boolean }
 interface GarminScan { from: string; to: string; scope: string; signature: string; offset: number; full: boolean; head: string | null }
-interface GarminFailure { code: string; message?: string }
+// `storage` marks the byte limit: unlike the 200-item limit, no further preparation
+// can succeed until an item is removed.
+interface GarminFailure { code: string; message?: string; storage?: boolean }
 interface GarminState {
     epoch: number; credentialEpoch?: number; revision?: number; connection: GarminConnection | null;
     items: Record<string, GarminItem>; receipts: Record<string, GarminReceipt>; scan: GarminScan | null;
@@ -48,7 +55,7 @@ interface GarminService {
 }
 interface BindingContext { cid: string; [key: string]: unknown }
 interface CheckOptions { prepareOnly?: boolean; resume?: boolean; tabId?: number | null }
-interface GarminMessage { type: string; id: string; key: string; full?: boolean; deleteData?: boolean }
+interface GarminMessage { type: string; id: string; key: string; full?: boolean; deleteData?: boolean; tabId?: number; selectedIds?: unknown[]; includeTimestampsOnce?: boolean }
 interface CaptureJob { id: string; activityId: string; cid: string; selectedIds: (string | number)[] }
 interface GarminImportDependencies {
     ext: GarminExt; settings: GarminSettings; store?: GarminStore;
@@ -66,7 +73,6 @@ export const GARMIN_ALARM = 'bpb-garmin-check';
 const MOUNTAIN_ACTIVITY_TYPES = ['hiking', 'walking', 'trail_running', 'mountaineering', 'rock_climbing', 'backcountry_skiing_snowboarding'];
 const DAY = 86400000;
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-export const validImportDate = Schema.validCalendarDate;
 export function importRange(settings: GarminPreferences, connectionDate: string | undefined, lastCheck: number, full: boolean, date = today()) {
     const start = (settings.garminHistoryStart || connectionDate) as string;
     const scope = start === 'all' ? '1970-01-01' : start;
@@ -173,17 +179,51 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         ]);
         return { configured: false, accessRemoved: cleanup[1].status === 'fulfilled' && cleanup[1].value !== false };
     };
+    // Removing an item may make room: clear the capacity error and resume any
+    // activity that a full inbox left waiting.
+    const releaseCapacity = (state: GarminState) => {
+        if (state.error?.code !== 'capacity' || Object.keys(state.items).length >= 200) return;
+        state.error = null;
+        if (Object.values(state.items).some(item => item.phase === 'waiting')) state.preparePending = true;
+    };
+    // A dismissed item without a finite Undo deadline (left by an earlier repeated
+    // Dismiss) counts as expired, so it cannot stay hidden in the inbox forever.
+    const savedPeaks = (receipt: GarminReceipt) => Object.keys(receipt.peaks || {}).length;
+    const undoExpired = (item: GarminItem) => item.phase === 'dismissed' && !((item.undoUntil as number) > clock());
     const pruneDismissed = (state: GarminState) => {
+        let removed = false;
         for (const [id, item] of Object.entries(state.items)) {
-            if (item.phase === 'dismissed' && (item.undoUntil as number) <= clock()) delete state.items[id];
+            if (!undoExpired(item)) continue;
+            // An item stranded by the old repeated-Dismiss bug was last acted on
+            // by Undo, which deleted its dismissal receipt. Restore it rather than
+            // dropping it, which would re-import and re-analyze it later.
+            if (!Number.isFinite(item.undoUntil) && !state.receipts[id]?.dismissed) {
+                item.revision = (item.revision || 0) + 1;
+                item.phase = item.analysis ? 'ready' : 'waiting';
+                if (item.phase === 'waiting') state.preparePending = true;
+                delete item.undoUntil; delete item.previousPhase;
+                continue;
+            }
+            delete state.items[id]; removed = true;
         }
-        if (state.error?.code === 'capacity' && Object.keys(state.items).length < 200) state.error = null;
+        if (removed) releaseCapacity(state);
+    };
+    // Publish the newest 200 receipts by write time, not by object key order:
+    // integer-like activity IDs would otherwise always sort small IDs first.
+    // Unstamped receipts keep their order and count as oldest. A receipt whose
+    // dismissal can still be undone is always included.
+    const recentReceipts = (state: GarminState) => {
+        const entries = Object.entries(state.receipts).map((entry, order) => ({ entry, order }))
+            .sort((a, b) => (a.entry[1].at || 0) - (b.entry[1].at || 0) || a.order - b.order);
+        const recent = entries.slice(-200);
+        const undoable = entries.slice(0, -200).filter(({ entry: [id] }) => (state.items[id]?.undoUntil || 0) > clock());
+        return [...undoable, ...recent].map(({ entry }) => entry);
     };
     const snapshot = async (includeItems = true) => {
         const [initialMeta, prefs] = await Promise.all([store.summary(), settings.requireCurrent()]);
         if (!prefs.enableGarminInbox) return { featureEnabled: false, enabled: false, configured: false, pending: 0, queued: 0, items: [], history: [] };
         let meta = initialMeta;
-        if (meta.undoDue <= clock()) {
+        if (!(meta.undoDue > clock())) {
             await store.mutate(pruneDismissed);
             await reconcile();
             meta = await store.summary();
@@ -196,7 +236,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 analysis: item.analysis ? { matches: item.analysis.matches.map(match => ({ id: match.id, name: match.name,
                     classification: match.classification, confidence: match.confidence, evidence: match.evidence })),
                 hasTimestamps: item.analysis.route?.some(segment => segment.some(point => point.time !== null)) } : null,
-            })), history: Object.entries(state.receipts).slice(-200).map(([id, receipt]) => ({ id, complete: !!receipt.complete,
+            })), history: recentReceipts(state).map(([id, receipt]) => ({ id, complete: !!receipt.complete,
                 dismissed: !!receipt.dismissed, date: receipt.date || '', undoUntil: state.items[id]?.undoUntil || 0 })) };
         }
         return { ...meta, featureEnabled: true, connectedDate: meta.connectedDate || date(), checking: !!running,
@@ -206,7 +246,7 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
     const runCheck = async (full: boolean, continuation = false, { prepareOnly = false, resume = false, tabId = null }: CheckOptions = {}) => {
         controller = new AbortController(); clientEpoch = -1;
         let state = await store.read();
-        if (Object.values(state.items).some(item => item.phase === 'dismissed' && item.undoUntil! <= clock())) {
+        if (Object.values(state.items).some(undoExpired)) {
             await store.mutate(pruneDismissed); state = await store.read();
         }
         const connection = state.connection;
@@ -240,7 +280,8 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                     if (Object.keys(current.items).length >= 200) throw new GarminError('capacity');
                     current.items[row.id] = { id: row.id, owner: connection.owner, cid: connection.cid, summary: row, phase: 'waiting', createdAt: clock(), saved: [] };
                 }
-                current.error = null;
+                // Listing frees no storage; only a removal clears the byte limit.
+                if (!current.error?.storage) current.error = null;
             }); } catch (error) {
                 if (failureCode(error) !== 'capacity') throw error;
                 await mutateEpoch(epoch, current => { current.error = { code: 'capacity', message: (error as Error).message }; current.scan = scan; });
@@ -262,6 +303,9 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         }
         const queuedState = await store.read();
         if (queuedState.peakbaggerBlocked && (!resume || queuedState.peakbaggerBlocked.retryAt > clock())) return;
+        if (queuedState.error?.code === 'capacity' && queuedState.error.storage) {
+            await mutateEpoch(epoch, next => { next.preparePending = false; }); return;
+        }
         const items = Object.values(queuedState.items).filter(item => !item.handoff && ['waiting', 'error'].includes(item.phase) && !(item.retryAt! > clock())).slice(0, 3);
         if (!items.length) { await mutateEpoch(epoch, next => { next.preparePending = false; }); return; }
         const pausePeaks = async (error: unknown) => {
@@ -296,15 +340,24 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 const route = await decode(bytes, { signal: controller.signal, retainWaypoints: prefs.retainWaypoints });
                 stage = 'prepare';
                 const result = await prepare(item, route, context, controller.signal);
+                let storageFull = false;
                 await mutateEpoch(epoch, current => {
                     if (!current.items[item.id] || current.items[item.id].handoff
                         || current.items[item.id].phase === 'dismissed'
                         || (current.items[item.id].revision || 0) !== (item.revision || 0)) return;
                     const next = { ...current.items[item.id], ...result, phase: result.phase || 'ready', error: null };
                     const size = new TextEncoder().encode(JSON.stringify({ ...current.items, [item.id]: next })).length;
-                    if (size > 20 * 1024 * 1024) throw new GarminError('capacity');
+                    if (size > 20 * 1024 * 1024) {
+                        // Record the stop in this write: a thrown error would leave
+                        // preparation pending and retry this activity every minute.
+                        storageFull = true;
+                        current.error = { code: 'capacity', message: new GarminError('capacity').message, storage: true };
+                        current.preparePending = false;
+                        return;
+                    }
                     current.items[item.id] = next;
                 });
+                if (storageFull) return;
             } catch (error) {
                 if (controller.signal.aborted || ['key-rejected', 'rate', 'identity', 'capacity'].includes(failureCode(error) as string)) throw error;
                 if (stage === 'prepare' && (['cloudflare', 'rate-limit', 'network', 'server'].includes(failureCode(error) as string) || failureCode(error)?.startsWith('peakbagger-'))) {
@@ -385,11 +438,11 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         },
         GARMIN_CHECK: async message => { void check(message.full === true, false, { resume: true }); return { ok: true }; },
         GARMIN_DISMISS: async message => {
-            await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
+            await store.mutate(state => { const item = state.items[message.id]; if (!item || item.phase === 'dismissed') return;
                 if (item.handoff) throw new GarminError('handoff');
                 item.revision = (item.revision || 0) + 1;
                 item.previousPhase = item.phase; item.phase = 'dismissed'; item.undoUntil = clock() + 60000;
-                state.receipts[message.id] = { owner: item.owner, cid: item.cid, dismissed: true, date: item.summary?.date || '' }; });
+                state.receipts[message.id] = { owner: item.owner, cid: item.cid, dismissed: true, date: item.summary?.date || '', at: clock() }; });
             await reconcile(); return { ok: true };
         },
         GARMIN_UNDO: async message => {
@@ -404,8 +457,8 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
         },
         GARMIN_DONE: async message => {
             await store.mutate(state => { const item = state.items[message.id]; if (!item) return;
-                state.receipts[message.id] = { ...state.receipts[message.id], owner: item.owner, cid: item.cid, complete: true, date: item.summary?.date || '' }; delete state.items[message.id]; });
-            await store.mutate(state => { if (state.error?.code === 'capacity') state.error = null; });
+                state.receipts[message.id] = { ...state.receipts[message.id], owner: item.owner, cid: item.cid, complete: true, date: item.summary?.date || '', at: clock() }; delete state.items[message.id]; });
+            await store.mutate(releaseCapacity);
             await reconcile(); return { ok: true };
         },
         GARMIN_RETRY: async message => {
@@ -442,17 +495,47 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
             if (result.replaced) { controller?.abort(); clientEpoch = -1; client = null; await reconcile(); }
             return result;
         },
-        async reserveCapture(job: CaptureJob) {
-            await store.mutate(state => {
+        // Whether a toolbar capture of this activity belongs in the inbox instead.
+        // With the inbox off, import history is not consulted at all.
+        async captureBlocked(activityId: string, currentJobId?: string) {
+            if (!(await settings.requireCurrent()).enableGarminInbox) return false;
+            const state = await store.read();
+            if (state.items[activityId]) return true;
+            const receipt = state.receipts[activityId];
+            return !!receipt && receipt.jobId !== currentJobId && !(receipt.fromToolbar && !savedPeaks(receipt));
+        },
+        // A new toolbar job takes over a toolbar receipt that recorded no saved
+        // peak (an abandoned, expired or rolled-back capture). With the inbox
+        // off it also takes over one that did, for the same climber, keeping
+        // those saves. Earlier job ids are kept so a surviving draft tab of an
+        // earlier capture can still record its Save.
+        // Returns the peak ids the receipt already records as saved.
+        async reserveCapture(job: CaptureJob): Promise<number[]> {
+            const enforce = (await settings.requireCurrent()).enableGarminInbox;
+            return store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
-                if (state.items[job.activityId] || (receipt && receipt.jobId !== job.id)) throw new GarminError('duplicate');
-                state.receipts[job.activityId] ||= { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {} };
+                const saved = () => Object.keys(receipt?.peaks || {}).map(Number);
+                if (receipt?.jobId === job.id) return saved();
+                const adoptable = !!receipt?.fromToolbar && (!savedPeaks(receipt)
+                    || (!enforce && String(receipt.cid) === String(job.cid)));
+                if (state.items[job.activityId] || (receipt && !adoptable)) {
+                    if (enforce) throw new GarminError('duplicate');
+                    return [];
+                }
+                if (receipt) {
+                    receipt.previousJobIds = [...(receipt.previousJobIds || []), receipt.jobId as string].filter(Boolean).slice(-8);
+                    receipt.jobId = job.id; receipt.cid = job.cid; receipt.at = clock();
+                    return saved();
+                }
+                state.receipts[job.activityId] = { fromToolbar: true, jobId: job.id, cid: job.cid, peaks: {}, at: clock() };
+                return [];
             });
         },
         async captureSaved(job: CaptureJob, peakId: string, aid: string) {
             await store.mutate(state => {
                 const receipt = state.receipts[job.activityId];
-                if (receipt?.jobId !== job.id || String(receipt.cid) !== String(job.cid)) return;
+                if (!receipt || (receipt.jobId !== job.id && !receipt.previousJobIds?.includes(job.id))
+                    || String(receipt.cid) !== String(job.cid)) return;
                 receipt.peaks![peakId] = aid;
                 receipt.complete = job.selectedIds.every(id => receipt.peaks![String(id)]);
             });
@@ -476,9 +559,10 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 if (jobId && (item.handoff?.jobId !== jobId || String(item.cid) !== cid)) return;
                 item.saved = [...new Set([...item.saved, peakId])];
                 const receipt = state.receipts[activityId] ||= { owner: item.owner, cid: item.cid, peaks: {}, date: item.summary?.date || '' };
-                receipt.peaks![peakId] = aid;
-                if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) { delete state.items[activityId]; receipt.complete = true; }
-                if (state.error?.code === 'capacity' && Object.keys(state.items).length < 200) state.error = null;
+                receipt.peaks![peakId] = aid; receipt.at = clock();
+                if (item.analysis?.matches.every(match => item.saved.includes(String(match.id)))) {
+                    delete state.items[activityId]; receipt.complete = true; releaseCapacity(state);
+                }
             });
             await reconcile();
         },

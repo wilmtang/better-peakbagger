@@ -8,7 +8,7 @@ import { createFirefoxManifest } from '../../scripts/build-firefox-package.mjs';
 import { REPORT_CSP, protectedReportDocument, protectReportHeaders } from '../../src/reports/report-security-policy.ts';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from '../helpers/test-dom.mts';
-import { evalBundle } from '../helpers/load-page.mjs';
+import { evalBundle } from '../helpers/load-page.mts';
 
 test('report response policy covers route variants and nested documents without weakening site CSP', () => {
     for (const path of ['/climber/ascent.aspx?aid=1', '/climber/AsCeNt.aspx', '//climber//ascent.aspx/extra', '/climber/%61scent.aspx']) {

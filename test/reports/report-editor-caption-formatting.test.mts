@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EDITOR_URL, loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-helpers.mjs';
+import type { LoadedPage } from '../helpers/load-page.mts';
 import { reportPhoto as Pending } from '../../src/photos/report-photo.js';
 
 const image = '[img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320" height="200"]';
@@ -23,9 +24,9 @@ const selectCaption = (editor: EditorLike, from = 0, to = 'North'.length) => {
     editor.commands.setTextSelection({ from: start + from, to: start + to });
 };
 const control = (ui: Element, label: string) => ui.querySelector<HTMLButtonElement>(`.bpb-re-tools [aria-label^="${label}"]`)!;
-const saved = (dom: { window: Window }) => {
+const saved = (dom: LoadedPage) => {
     modeButton(dom.window.document, 'Plain').click();
-    return (dom.window.document.getElementById('JournalText') as HTMLTextAreaElement).value;
+    return dom.window.document.getElementById('JournalText').value;
 };
 
 test('toolbar formatting applies to selected caption text and saves as nested markup', async () => {

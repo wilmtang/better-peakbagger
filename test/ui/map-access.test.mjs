@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
-import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mjs';
+import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 
 for (const [id, name, origin] of [
     ['gaia', 'Gaia', 'https://www.gaiagps.com/*'],

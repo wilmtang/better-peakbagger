@@ -4,16 +4,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /* global document, window, chrome, scrollY, innerWidth, getComputedStyle, location, requestAnimationFrame */
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { chromium, type Locator, type Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition, patchVerificationSettings } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
 import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
@@ -46,8 +45,7 @@ const selections = process.argv.slice(2), firefoxMode = selections.includes('--f
 assert.ok(new Set(selections).size === selections.length && selections.every(value => ['--firefox', '--loading-only'].includes(value)), 'Usage: node scripts/verify-custom-overlays.mts [--firefox] [--loading-only]');
 const resources = createResourceStack(); let failure: unknown, failurePage: Page | undefined, diagnostics: (() => Record<string, unknown>) | undefined;
 try {
-    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-custom-verify-'));
-    resources.defer('custom temporary profile', () => rm(temporaryRoot, { recursive: true, force: true }));
+    const temporaryRoot = await createVerificationRoot(resources, 'bpb-custom-verify-', 'custom temporary profile');
     const nativeHtml = (await snowMapDocument()).replace('</script></body>', "mapsPlaceholder.eachLayer(layer=>{if(layer instanceof L.Polyline && !(layer instanceof L.Polygon))layer.on('mouseover',()=>{}).on('click',()=>{}).bindPopup('Native route');});</script></body>");
     // Preserve the required helper option despite its incomplete JS-inferred signature.
     const fixtureOptions = { temporaryRoot, masterMapDocument: nativeHtml, peakMapDocument: nativeHtml };
@@ -81,10 +79,9 @@ try {
         await verifyFirefox({ temporaryRoot, origin, providerOrigin, setPng: (value: Buffer) => { png = value; }, deny: (value: boolean) => { denied = value; }, requests, origins, holdSource, pendingSource: () => releases.length > 0 });
     } else {
         const trust = '--ignore-certificate-errors-spki-list=' + [fixture, certificate].flatMap(item => item.chromeTrustArgs.map((argument: string) => argument.split('=').slice(1).join('='))).join(',');
-        assertChromeLaunchAllowed();
-        const browser = await chromium.launchPersistentContext(temporaryRoot, { channel: 'chromium', headless: true, viewport: { width: 1000, height: 760 },
-            ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], args: [trust, '--no-proxy-server', '--host-resolver-rules=MAP www.peakbagger.com 127.0.0.1,MAP tiles.example.com 127.0.0.1', `--load-extension=${dist}`, `--disable-extensions-except=${dist}`] });
-        resources.defer('custom Chromium', () => browser.close());
+        const browser = await launchVerificationChrome(resources, 'custom Chromium', temporaryRoot, { viewport: { width: 1000, height: 760 },
+            ignoreDefaultArgs: ['--enable-unsafe-swiftshader'], trustArgs: [trust], args: ['--no-proxy-server'],
+            hosts: [PEAKBAGGER_HOST_RULE, 'tiles.example.com 127.0.0.1'], extension: dist });
         const page = failurePage = await browser.newPage(), errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
         page.on('requestfailed', request => { if (request.url().includes('tiles.example.com')) networkErrors.push({ url: request.url(), error: request.failure() }); });
         page.on('console', message => { if (message.type() === 'error' && message.text().includes('tiles.example.com')) networkErrors.push(message.text()); });

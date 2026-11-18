@@ -9,7 +9,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mjs';
+import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
 import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.js';
 
 const FIXTURE = 'climber-ascentedit.html';

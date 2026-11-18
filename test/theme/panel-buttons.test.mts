@@ -3,7 +3,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-// @ts-expect-error jsdom ships no type declarations.
 import { JSDOM } from 'jsdom';
 import { loadOptions } from '../helpers/options-helpers.mjs';
 
