@@ -4,10 +4,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { createSnotelMapSource } from '../../src/snow/snotel-map-source.js';
-import { readSnotelMapStations, readSnotelMapOcclusion, readSnotelMapOcclusions } from '../../src/snow/snotel-map-data.js';
-import { createTerrainSnotelMarkers } from '../../src/snow/snotel-map-marker.js';
-import { validateSnotelStations, nearbySnotelStations } from '../../src/snow/snotel-data.js';
+import { createSnotelMapSource } from '../../src/snow/snotel-map-source.ts';
+import { readSnotelMapStations, readSnotelMapOcclusion, readSnotelMapOcclusions } from '../../src/snow/snotel-map-data.ts';
+import { createTerrainSnotelMarkers } from '../../src/snow/snotel-map-marker.ts';
+import { validateSnotelStations, nearbySnotelStations } from '../../src/snow/snotel-data.ts';
 import { snotelStations } from '../helpers/snotel-fixture.mjs';
 
 const stations = readSnotelMapStations(validateSnotelStations(snotelStations()));

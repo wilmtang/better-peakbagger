@@ -32,7 +32,7 @@ import { mapViewport as MapViewport } from './map-viewport.ts';
 import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.ts';
 import { mapOverlay as MapOverlay } from './map-overlay.ts';
 import { gpxPanelCss } from './gpx-panel-css.ts';
-import { ascentPage as AscentPage } from '../ascent/ascent-page.js';
+import { ascentPage as AscentPage } from '../ascent/ascent-page.ts';
 import { sunState as SunState } from '../sun/sun-state.ts';
 import { sunCalculator as SunCalculator } from '../sun/sun-calculator.ts';
 import { createGpxTimeCursorPublisher } from './gpx-time-cursor.ts';

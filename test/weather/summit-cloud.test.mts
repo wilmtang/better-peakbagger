@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { cloudAtElevation, predictModelCloud, predictSummitCloud, type CloudDataset } from '../../src/weather/summit-cloud-core.ts';
 import { SUMMIT_CLOUD_MODELS, summitCloudModel, resolveSummitCloudModels } from '../../src/weather/summit-cloud-models.ts';
-import { summitCloudRequest, readSummitCloudResponse, createSummitCloudClient } from '../../src/weather/summit-cloud-client.js';
+import { summitCloudRequest, readSummitCloudResponse, createSummitCloudClient } from '../../src/weather/summit-cloud-client.ts';
 import { cloudSubject as subject, cloudTime as time, cloudDataset, cloudResponse } from '../helpers/summit-cloud-fixture.mjs';
 
 const model = summitCloudModel('gfs_global'), day = { start: time, end: time + 24 * 3600000 };
@@ -225,7 +225,7 @@ test('bounded multi-point requests preserve 23/25 hour UTC identities and missin
         const body = cloudResponse(request); const result = readSummitCloudResponse(body, request);
         assert.equal(result.points[0].samples.length, hours);
         body[0].hourly_units.cloud_cover_850hPa = 'wrong';
-        assert.equal(readSummitCloudResponse(body, request).points[0].samples[0].levels.find((l: { pressure: number }) => l.pressure === 850).cloud, null);
+        assert.equal(readSummitCloudResponse(body, request).points[0].samples[0].levels.find((l: { pressure: number }) => l.pressure === 850)?.cloud, null);
         body[0].hourly.time[1] = body[0].hourly.time[0]; assert.throws(() => readSummitCloudResponse(body, request));
     }
     assert.throws(() => summitCloudRequest(null, day, model));

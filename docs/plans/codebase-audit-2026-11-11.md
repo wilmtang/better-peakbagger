@@ -26,11 +26,11 @@ Files read, in full or in the part relevant to a finding:
 - Report protection inspector and format painter:
   `src/reports/report-script-source.ts`, `report-script-notice.ts`,
   `report-format-painter.ts`
-- Ignored-report surfaces: `src/ascent/ascent-report-visibility.js`,
+- Ignored-report surfaces: `src/ascent/ascent-report-visibility.ts`,
   `src/favorites/peak-report-filter.ts`
-- Network helpers: `src/weather/open-meteo-client.js`, `src/net/*`,
+- Network helpers: `src/weather/open-meteo-client.ts`, `src/net/*`,
   `src/background/peakbagger-request-scheduler.js`
-- Weather day/week windows: `src/weather/weather-day.js`, `weather-week.js`
+- Weather day/week windows: `src/weather/weather-day.ts`, `weather-week.js`
 - Export helpers: `options/settings-backup.js`, `options/climber-files.js`
 
 Not audited: capture core and provider adapters, the rest of the background
@@ -411,7 +411,7 @@ still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 | `photos/photos.ts` 3322 | `confirm` — bundle includes original metadata | |
 | `photos/photos.ts` 3347 | `confirm` — move to Recently Deleted | Followed by a toast with Undo (lines 3363–3366) |
 | `photos/photos.ts` 4011 | `confirm` — remove all annotations | Followed by a toast with Undo (lines 4017–4020) |
-| `src/ascent/ascent-delete.js` 64, 84, 96 | `confirm` + two `alert`s | Runs on Peakbagger's own page, after an awaited settings read |
+| `src/ascent/ascent-delete.ts` 64, 84, 96 | `confirm` + two `alert`s | Runs on Peakbagger's own page, after an awaited settings read |
 
 No earlier audit explicitly declined replacing them. A suppressed `confirm()`
 returns `false`, so on a page where the user ticked "prevent additional
@@ -582,7 +582,7 @@ and `npm run verify -- chrome` passed.
   other tab stays refused until the earlier job expires, up to 30 minutes,
   although the copy says to finish or close those drafts.
 
-- F5 step 3, `src/ascent/ascent-delete.js` dialogs: an in-page replacement on
+- F5 step 3, `src/ascent/ascent-delete.ts` dialogs: an in-page replacement on
   Peakbagger's own page carries more layout and focus risk than it removes.
 - F4 receipt pruning: receipts are the de-duplication record and are tiny.
 - From review, accepted as narrow: hitting the 200-item and 20 MiB limits at
@@ -815,7 +815,7 @@ one verified binding for the items of a single pass.
 ### F18 — Field-by-field yielding may outlast the apply lease
 
 `setField` awaits `setTimeout(0)` after every numeric field
-(`src/ascent/ascent-draft.js` lines 248–259). `fillForm` awaits it for each
+(`src/ascent/ascent-draft.ts` lines 248–259). `fillForm` awaits it for each
 elevation, distance, duration and gain field (lines 413–439) and `fillDayStats`
 for ten fields per day (lines 345–358), so a full fill is a few dozen
 sequential timer yields. Browsers clamp chained timers in hidden tabs

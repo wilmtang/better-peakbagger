@@ -7,7 +7,7 @@ import { createPageBCTileFetch } from './bc-land-client.js';
 import { OVERLAY_ATTRIBUTION, OVERLAY_MIN_ZOOM } from './map-overlay-providers.ts';
 import { SNOW_DEPTH_MAX_ZOOM } from './snow-depth.js';
 import { SENTINEL_ATTRIBUTION } from './sentinel-core.js';
-import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.js';
+import { snotelSymbol, snotelPopup, updateSnotelPopupAction } from '../snow/snotel-map-marker.ts';
 
 export function createLeafletOverlays({ win, map, onError, onActivity, bridgeWindow = win, onWildfireStatus = () => {} }) {
     const L = win.L, layers = new Map(), controllers = new Map(), records = new Map(), states = new Map();

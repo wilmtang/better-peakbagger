@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { hourlyWeatherSeries as peakHourlySeries, hourlyWeatherColumns as peakHourlyConditions, hourlyWeatherColumns } from '../../src/weather/weather-hourly-table.ts';
-import { weatherDayWindow } from '../../src/weather/weather-day.js';
+import { weatherDayWindow } from '../../src/weather/weather-day.ts';
 import { mountainTime } from '../../src/time/mountain-time.ts';
 
 const HOUR = 3600_000;

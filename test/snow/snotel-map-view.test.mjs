@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSnotelMapReveal } from '../../src/snow/snotel-map-view.js';
+import { createSnotelMapReveal } from '../../src/snow/snotel-map-view.ts';
 
 const stations = [
     { latitude: 46.78, longitude: -121.75 },

@@ -5,7 +5,7 @@ import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-d
 import { rect } from '../helpers/page-types.mts';
 import type * as MapLocationMenu from '../../src/maps/map-location-menu.ts';
 import { build } from 'esbuild';
-import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
+import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
 import { weatherFixture as untypedWeatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';

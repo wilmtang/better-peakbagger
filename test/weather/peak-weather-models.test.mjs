@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.ts';
-import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
-import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.js';
-import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.js';
-import { weatherRequestUrl, peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.js';
+import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.ts';
+import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.ts';
+import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.ts';
+import { weatherRequestUrl, peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.ts';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
 
 const summit = { latitude: 46.85, longitude: -121.76, elevation: 4391, nation: 'united states' };

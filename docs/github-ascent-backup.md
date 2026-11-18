@@ -47,7 +47,7 @@ record merge before writing or restoring.
 | --- | --- | --- | --- |
 | User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Ascent backup enabled; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
 | Raw fields | Fetch each owner-only `AscentEdit.aspx?aid=…`; shared persisted-form reader | Fetch that ascent's owner-only edit URL; shared persisted-form reader | Same as automatic; the same `runBackup()` function |
-| Raw-field mapper | `src/ascent/ascent-snapshot.ts` via `src/ascent/ascent-backup-source.js` | Same | Same |
+| Raw-field mapper | `src/ascent/ascent-snapshot.ts` via `src/ascent/ascent-backup-source.ts` | Same | Same |
 | Report body | Persisted `JournalText`, bracket markup converted to Markdown | Fresh save-time exact Markdown sidecar when present; otherwise persisted `JournalText` conversion | Fresh sidecar if a matching save transaction still exists; otherwise persisted conversion |
 | GPX existence | Owner-list GPS marker | Actual GPX link on `ascent.aspx` | Actual GPX link on `ascent.aspx` |
 | GPX URL | Shared canonical `GPXFile.aspx?aid=<aid>&sep=1` builder | The exact display-page link | The exact display-page link |
@@ -112,11 +112,11 @@ link, which automatically tracks endpoint query changes.
 | --- | --- | --- |
 | `src/reports/report-editor.ts` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
 | `src/ascent/ascent-snapshot.ts` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
-| `src/ascent/ascent-saved.js` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
-| `src/ascent/ascent-delete.js` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
-| `src/ascent/ascent-page.js` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
-| `src/ascent/ascent-backup-source.js` | Authenticated Peakbagger reads, response classification, edit-form completeness, identity checks, persisted snapshot construction, profile GPX URL | UI, queue policy, GitHub access |
-| `src/ascent/ascent-backup.js` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
+| `src/ascent/ascent-saved.ts` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
+| `src/ascent/ascent-delete.ts` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
+| `src/ascent/ascent-page.ts` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
+| `src/ascent/ascent-backup-source.ts` | Authenticated Peakbagger reads, response classification, edit-form completeness, identity checks, persisted snapshot construction, profile GPX URL | UI, queue policy, GitHub access |
+| `src/ascent/ascent-backup.ts` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
 | `src/profile/profile-backup-core.ts` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
 | `src/profile/profile-backup.ts` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
 | `src/favorites/favorite-climbers.ts` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
@@ -289,7 +289,7 @@ confirmed Markdown sidecar, before conditionally consuming it.
 
 Peakbagger does not reliably navigate to `ascent.aspx`. Add and Edit can both
 finish on the same `ascentedit.aspx` URL in an ASP.NET UpdatePanel success view.
-`src/ascent/ascent-saved.js` therefore:
+`src/ascent/ascent-saved.ts` therefore:
 
 1. recognizes the observed success variants `Ascent Added/Saved Successfully`,
    `Ascent Added Successfully`, and `Ascent Saved Successfully`;
@@ -306,7 +306,7 @@ The link is useful even when backup is disabled. No extension code clicks
 
 ## Individual backup: manual and automatic are one path
 
-On `ascent.aspx`, `src/ascent/ascent-page.js` reads only stable routing facts:
+On `ascent.aspx`, `src/ascent/ascent-page.ts` reads only stable routing facts:
 
 - `aid` from the page URL;
 - ownership from an `AscentEdit.aspx?aid=<same aid>` link;
@@ -395,7 +395,7 @@ forced off when the parent ascent and TR backup gate is disabled.
 
 The transaction deliberately has two phases:
 
-1. `src/ascent/ascent-delete.js` recognizes only `DeleteButton` and
+1. `src/ascent/ascent-delete.ts` recognizes only `DeleteButton` and
    `DeleteButton2` on an existing positive-`aid` owner form. It pauses the
    native POST, asks for one combined confirmation, and records a 30-minute,
    source-tab-scoped session intent before resubmitting the original native

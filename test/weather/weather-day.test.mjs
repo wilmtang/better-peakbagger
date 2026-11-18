@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.ts';
-import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode } from '../../src/weather/weather-day.js';
+import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode } from '../../src/weather/weather-day.ts';
 
 const now = Date.parse('2026-10-10T12:00:00Z');
 const zone = mountainTime.resolve(46.85, -121.76);

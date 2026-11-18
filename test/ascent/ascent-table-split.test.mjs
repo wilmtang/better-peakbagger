@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { ascentTableSplit as Split } from '../../src/ascent/ascent-table-split.js';
+import { ascentTableSplit as Split } from '../../src/ascent/ascent-table-split.ts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 
 const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>

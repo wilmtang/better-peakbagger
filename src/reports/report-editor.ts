@@ -32,7 +32,7 @@ import { reportMarkup as Markup } from './report-markup.ts';
 import type { ConversionDiagnostic } from './report-markup.ts';
 import { reportDrafts as ReportDrafts } from './report-drafts.ts';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.ts';
-import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
+import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.ts';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';
 import { createFormatPainter } from './report-format-painter.ts';
 import { createMarkdownEditor } from './report-md-editor.ts';

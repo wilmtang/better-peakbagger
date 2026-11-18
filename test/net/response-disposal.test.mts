@@ -3,10 +3,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWeatherClient } from '../../src/weather/open-meteo-client.js';
-import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
-import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
-import { createSnotelClient } from '../../src/snow/snotel-client.js';
+import { createWeatherClient } from '../../src/weather/open-meteo-client.ts';
+import { WEATHER_MODELS } from '../../src/weather/weather-models.ts';
+import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.ts';
+import { createSnotelClient } from '../../src/snow/snotel-client.ts';
 import { searchSentinel } from '../../src/maps/sentinel-core.js';
 import { drawAlbertaLand } from '../../src/maps/canadian-land.js';
 import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.js';

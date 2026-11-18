@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { airQualityUrl, readAirQuality, airQualityCategory, createAirQualityClient } from '../../src/weather/air-quality-client.js';
+import { airQualityUrl, readAirQuality, airQualityCategory, createAirQualityClient } from '../../src/weather/air-quality-client.ts';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mjs';
 const now = Date.parse('2026-10-24T12:00:00Z'), point = { latitude: 46.85, longitude: -121.76 };
 const fixture = () => airQualityFixture({ now });

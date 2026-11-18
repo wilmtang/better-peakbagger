@@ -12,7 +12,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { ascentPage as AscentPage } from '../../src/ascent/ascent-page.js';
+import { ascentPage as AscentPage } from '../../src/ascent/ascent-page.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 

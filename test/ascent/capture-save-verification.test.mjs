@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
-import { sameSavedTrack, verifyCaptureSave } from '../../src/ascent/capture-save-verification.js';
+import { sameSavedTrack, verifyCaptureSave } from '../../src/ascent/capture-save-verification.ts';
 import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request.ts';
 
 const dom = new JSDOM('');

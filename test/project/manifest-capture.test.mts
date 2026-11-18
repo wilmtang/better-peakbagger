@@ -112,7 +112,7 @@ test('snow catalog and overlay preferences share an isolated map bundle without 
     assert.ok(entry!.matches.some(pattern => /mastermap\.aspx/i.test(pattern)));
     assert.ok(entry!.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
     assert.deepEqual(contentEntry('content/peak-cards.js')!.css, ['css/peak-snow.css', 'css/summit-cloud.css']);
-    assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.js', 'maps/map-layer-bridge.js']);
+    assert.deepEqual(bundleSources('content/peak-snow.js'), ['snow/peak-snow.ts', 'maps/map-layer-bridge.js']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/snow/peak-snow.css' && output === 'css/peak-snow.css'));
     assert.ok(![...manifest.host_permissions, ...manifest.optional_host_permissions].some(pattern => /usda/.test(pattern)));
 });
@@ -236,7 +236,7 @@ test('3D terrain is isolated from Peakbagger globals in an extension-owned frame
     assert.deepEqual(analyzerEntry.js, ['vendor/chart.umd.min.js', 'content/gpx-analyzer.js']);
     assert.deepEqual(analyzerEntry.css, ['css/sun-calculator.css']);
     assert.deepEqual(bundleSources('content/gpx-analyzer.js'),
-        ['ui/units.ts', 'ui/dom.ts', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.ts', 'gpx/gpx-time-cursor.ts', 'gpx/map-route-limits.ts', 'gpx/gpx-metrics.ts', 'gpx/gpx-segment-diagnostics.ts', 'gpx/map-frame-lifecycle.ts', 'gpx/map-viewport.ts', 'gpx/map-overlay.ts', 'gpx/gpx-panel-css.ts', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'settings/settings-schema.ts', 'settings/page-settings-client.ts', 'theme/theme-resolve.ts', 'ascent/ascent-page.js', 'time/mountain-time.ts', 'sun/sun-position.ts', 'sun/sun-state.ts', 'sun/sun-calculator.ts', 'gpx/gpx-analyzer.js']);
+        ['ui/units.ts', 'ui/dom.ts', 'ui/page-lifecycle.ts', 'gpx/gpx-parse.ts', 'gpx/gpx-time-cursor.ts', 'gpx/map-route-limits.ts', 'gpx/gpx-metrics.ts', 'gpx/gpx-segment-diagnostics.ts', 'gpx/map-frame-lifecycle.ts', 'gpx/map-viewport.ts', 'gpx/map-overlay.ts', 'gpx/gpx-panel-css.ts', 'terrain/terrain-basemap.ts', 'terrain/terrain-camera.js', 'terrain/terrain-compass.js', 'terrain/terrain-coordinator.ts', 'terrain/terrain-failure.js', 'maps/peak-markers.js', 'peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'settings/settings-schema.ts', 'settings/page-settings-client.ts', 'theme/theme-resolve.ts', 'ascent/ascent-page.ts', 'time/mountain-time.ts', 'sun/sun-position.ts', 'sun/sun-state.ts', 'sun/sun-calculator.ts', 'gpx/gpx-analyzer.js']);
 
     const terrainEntry = manifest.content_scripts.find(entry =>
         entry.js.includes('content/terrain-map.js') && entry.matches.some(pattern => /ascent\.aspx/i.test(pattern)));
@@ -359,7 +359,7 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
     assert.deepEqual(draftEntry.js, ['vendor/marked.umd.js', 'content/ascent-editor.js']);
     assert.deepEqual(draftEntry.css, ['css/report-editor.css', 'css/ascent-upload.css']);
     assert.deepEqual(bundleSources('content/ascent-editor.js'),
-        ['ui/units.ts', 'ui/page-lifecycle.ts', 'capture/match-confidence.ts', 'capture/upload-limits.ts', 'peakbagger/peakbagger-origin.ts', 'ascent/ascent-draft.js', 'gpx/gpx-parse.ts', 'gpx/map-route-limits.ts', 'gpx/gpx-metrics.ts', 'settings/settings-schema.ts', 'settings/settings.ts', 'gpx/gpx-timestamps.ts', 'ascent/ascent-upload.ts', 'ascent/ascent-saved.js', 'ascent/ascent-delete.js', 'reports/report-markup.ts', 'reports/report-drafts.ts', 'ui/dom.ts', 'ui/runtime-message.ts', 'photos/report-photo.ts', 'photos/photo-project.ts', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
+        ['ui/units.ts', 'ui/page-lifecycle.ts', 'capture/match-confidence.ts', 'capture/upload-limits.ts', 'peakbagger/peakbagger-origin.ts', 'ascent/ascent-draft.ts', 'gpx/gpx-parse.ts', 'gpx/map-route-limits.ts', 'gpx/gpx-metrics.ts', 'settings/settings-schema.ts', 'settings/settings.ts', 'gpx/gpx-timestamps.ts', 'ascent/ascent-upload.ts', 'ascent/ascent-saved.ts', 'ascent/ascent-delete.ts', 'reports/report-markup.ts', 'reports/report-drafts.ts', 'ui/dom.ts', 'ui/runtime-message.ts', 'photos/report-photo.ts', 'photos/photo-project.ts', 'reports/report-local-photos.ts', 'reports/report-editor.ts']);
     const timezoneConsumers = await Promise.all([
         'src/ascent/ascent-upload.ts',
         'src/time/mountain-time.ts'
@@ -369,7 +369,7 @@ test('ascent editor integration is isolated to Peakbagger and capture never auto
         assert.doesNotMatch(source, /globalThis\.tzlookup/);
     }
     const runtimeSource = await Promise.all([
-        'src/ascent/ascent-draft.js',
+        'src/ascent/ascent-draft.ts',
         'src/background/background.ts',
         'src/background/options-tab-routes.ts',
         'popup/popup.ts'
@@ -477,7 +477,7 @@ test('full-profile backup is isolated to ClimbListC with its own bundled surface
     assert.deepEqual(script.css, ['css/profile-backup.css']);
     assert.ok(script.matches.every(match => /climblistc\.aspx/i.test(match)));
     const entry = ENTRIES.find(candidate => candidate.out === 'content/profile-backup.js');
-    assert.deepEqual(entry!.sources, ['peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'profile/profile-backup-core.ts', 'ascent/ascent-snapshot.ts', 'reports/report-markup.ts', 'ascent/ascent-backup-source.js', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'profile/profile-backup.ts']);
+    assert.deepEqual(entry!.sources, ['peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'profile/profile-backup-core.ts', 'ascent/ascent-snapshot.ts', 'reports/report-markup.ts', 'ascent/ascent-backup-source.ts', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'profile/profile-backup.ts']);
 });
 
 test('individual and profile backups bundle the same Peakbagger source reader', () => {
@@ -485,8 +485,8 @@ test('individual and profile backups bundle the same Peakbagger source reader', 
     assert.ok(individual);
     assert.deepEqual(individual.css, ['css/ascent-backup.css']);
     assert.deepEqual(bundleSources('content/ascent-backup.js'),
-        ['peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'profile/profile-backup-core.ts', 'reports/report-markup.ts', 'ascent/ascent-snapshot.ts', 'ascent/ascent-backup-source.js', 'ascent/ascent-page.js', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'ascent/ascent-backup.js']);
-    assert.ok(bundleSources('content/profile-backup.js')!.includes('ascent/ascent-backup-source.js'));
+        ['peakbagger/peakbagger-origin.ts', 'peakbagger/peakbagger-cloudflare.ts', 'peakbagger/peakbagger-response.ts', 'peakbagger/peakbagger-error.ts', 'peakbagger/peakbagger-request.ts', 'profile/profile-backup-core.ts', 'reports/report-markup.ts', 'ascent/ascent-snapshot.ts', 'ascent/ascent-backup-source.ts', 'ascent/ascent-page.ts', 'ui/dom.ts', 'ui/runtime-message.ts', 'ui/trusted-action.ts', 'ascent/ascent-backup.ts']);
+    assert.ok(bundleSources('content/profile-backup.js')!.includes('ascent/ascent-backup-source.ts'));
 });
 
 test('saved map handoffs share one independent isolated-world surface', () => {
@@ -504,7 +504,7 @@ test('saved map handoffs share one independent isolated-world surface', () => {
         'peakbagger/peakbagger-response.ts',
         'peakbagger/peakbagger-error.ts',
         'peakbagger/peakbagger-request.ts',
-        'ascent/ascent-page.js',
+        'ascent/ascent-page.ts',
         'caltopo/caltopo-import.ts',
         'alltrails/alltrails-import.ts',
         'gaia/gaia-import.ts',
@@ -515,7 +515,7 @@ test('saved map handoffs share one independent isolated-world surface', () => {
         'ui/runtime-message.ts',
         'ui/trusted-action.ts',
         'ui/stable-text.ts',
-        'ascent/ascent-gaia.js',
+        'ascent/ascent-gaia.ts',
     ]);
 });
 
@@ -529,8 +529,8 @@ test('saved ascent table resizing has an independent isolated-world surface', ()
     assert.ok(layout.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
     assert.deepEqual(bundleSources('content/ascent-layout.js'), [
         'ui/dom.ts',
-        'ascent/ascent-table-split.js',
-        'ascent/ascent-layout.js',
+        'ascent/ascent-table-split.ts',
+        'ascent/ascent-layout.ts',
     ]);
 });
 
@@ -543,7 +543,7 @@ test('ascent weather has an independent isolated bundle without API permissions'
     assert.deepEqual(weather.css, ['css/card.css', 'css/card-drag.css', 'css/ascent-weather.css', 'css/weather-hourly-table.css']);
     assert.ok(COPY_FILES.some(([source, output]) => source === 'src/ui/card.css' && output === 'css/card.css'));
     assert.ok(weather.matches.every(match => /\/climber\/ascent\.aspx/i.test(match)));
-    assert.deepEqual(bundleSources('content/ascent-weather.js'), ['ascent/ascent-weather.js']);
+    assert.deepEqual(bundleSources('content/ascent-weather.js'), ['ascent/ascent-weather.ts']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));
 });
 
@@ -556,7 +556,7 @@ test('peak weather ships only on peak pages in the isolated world with its scope
     assert.deepEqual(weather.js, ['content/peak-weather.js']);
     assert.deepEqual(weather.css, ['css/card.css', 'css/column-resize.css', 'css/peak-card-layout.css', 'css/peak-weather.css', 'css/weather-hourly-table.css']);
     assert.ok(weather.matches.every(match => /\/peak\.aspx/i.test(match)));
-    assert.deepEqual(bundleSources('content/peak-weather.js'), ['weather/peak-weather.js']);
+    assert.deepEqual(bundleSources('content/peak-weather.js'), ['weather/peak-weather.ts']);
     assert.ok(!JSON.stringify(manifest.host_permissions).includes('open-meteo'));
 });
 

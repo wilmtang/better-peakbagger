@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.ts';
-import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.js';
-import { weatherDayWindow } from '../../src/weather/weather-day.js';
+import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.ts';
+import { weatherDayWindow } from '../../src/weather/weather-day.ts';
 import { createPeakWeatherClient, peakWeatherRequestUrl,
-    validatePeakWeatherResponse, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
-import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
-import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
+    validatePeakWeatherResponse, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.ts';
+import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
+import { WEATHER_MODELS } from '../../src/weather/weather-models.ts';
 
 const models = [PEAK_WEATHER_MODELS.find(model => model.id === 'gfs_global')];
 const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };

@@ -11,7 +11,7 @@ import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition
 import { createResourceStack } from './resource-stack.mjs';
 import { prepareFirefoxSource } from './run-firefox.mjs';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
+import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.ts';
 import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
 import { verifyWeatherClouds } from './verify-weather-clouds.mjs';

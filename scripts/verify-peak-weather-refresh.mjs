@@ -6,7 +6,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { projectRoot, waitForCondition } from './browser-verification-fixtures.mjs';
 import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
-import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.js';
+import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.ts';
 
 // Runs in the layout verifier's hidden browser, with real shipped assets and
 // held provider responses. No live account, map or weather requests are made.

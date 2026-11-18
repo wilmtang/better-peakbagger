@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.js';
-import { peakModelUpdateDomains, validatePeakModelUpdate, createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
+import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
+import { peakModelUpdateDomains, validatePeakModelUpdate, createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.ts';
 
 const now = Date.parse('2026-10-11T12:00:00Z');
 const body = { last_run_initialisation_time: now / 1000 - 7200, last_run_availability_time: now / 1000 - 1800, update_interval_seconds: 21600, temporal_resolution_seconds: 3600 };

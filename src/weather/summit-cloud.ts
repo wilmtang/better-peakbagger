@@ -12,10 +12,10 @@ import { createLatestRead } from '../ui/latest-read.ts';
 import { createRetryCooldown } from '../ui/retry-cooldown.ts';
 import { createStableText } from '../ui/stable-text.ts';
 import { readPeakWeatherSubject } from './peak-weather-subject.ts';
-import { weatherDayWindow } from './weather-day.js';
-import { createWeatherIcon } from './weather-icon.js';
+import { weatherDayWindow } from './weather-day.ts';
+import { createWeatherIcon } from './weather-icon.ts';
 import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels, type SummitCloudModel } from './summit-cloud-models.ts';
-import { createSummitCloudClient } from './summit-cloud-client.js';
+import { createSummitCloudClient } from './summit-cloud-client.ts';
 import { CLOUD_STATES, predictSummitCloud, type CloudDataset, type CloudSubject } from './summit-cloud-core.ts';
 
 const ID = 'bpb-summit-cloud', HOUR = 3600000, DAY = 24 * HOUR, element = dom.element;

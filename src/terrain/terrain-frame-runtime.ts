@@ -21,9 +21,9 @@ import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
 import { createTerrainOverlays } from './terrain-overlays.ts';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
 import { rateLimitMessage, readRetryAt } from '../net/rate-limit.ts';
-import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
-import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
-import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
+import { readSnotelMapStations, readSnotelMapOcclusions, type SnotelMapStation } from '../snow/snotel-map-data.ts';
+import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.ts';
+import { createSnotelMapReveal } from '../snow/snotel-map-view.ts';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -72,7 +72,7 @@ export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = autho
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
         canSelect: ((id: string) => snowConditions.has(id)) as () => boolean,
         onSelect: (stationId: string) => post('snowSelect', { stationId }) });
-    let snowStations: { id: string }[] = [];
+    let snowStations: SnotelMapStation[] = [];
     const snowReveal = createSnotelMapReveal({ window, terrain: true, getMap: () => map });
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';

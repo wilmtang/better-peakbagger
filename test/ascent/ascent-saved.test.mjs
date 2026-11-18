@@ -11,7 +11,7 @@ import fs from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
 import { build } from 'esbuild';
 
-const { outputFiles } = await build({ entryPoints: ['src/ascent/ascent-saved.js'], bundle: true, write: false, format: 'iife' });
+const { outputFiles } = await build({ entryPoints: ['src/ascent/ascent-saved.ts'], bundle: true, write: false, format: 'iife' });
 const source = outputFiles[0].text;
 const editorFixture = await fs.readFile(
     new URL('../fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');

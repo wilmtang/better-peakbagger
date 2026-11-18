@@ -1,0 +1,309 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { dom } from '../ui/dom.ts';
+import { units, type UnitMeasurementKey } from '../ui/units.ts';
+import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { createPageLifecycle, type PageLifecycle } from '../ui/page-lifecycle.ts';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { settings, type SettingsData } from '../settings/settings.ts';
+import { readPeakWeatherSubject } from '../weather/peak-weather-subject.ts';
+import { readPeakNations } from '../avalanche/avalanche-location.ts';
+import { createSnotelClient, type SnotelClient, type SnotelObservations } from './snotel-client.ts';
+import { createSnotelMapSource } from './snotel-map-source.ts';
+import { snotelSymbol } from './snotel-map-marker.ts';
+import { createSnotelChart } from './snotel-chart.ts';
+import {
+    nearbySnotelStations,
+    latestSnotelReading,
+    snotelReportUrl,
+    SNOTEL_RADIUS_METERS,
+    type SnotelElementCode,
+    type SnotelNearbyStation,
+    type SnotelReading,
+} from './snotel-data.ts';
+
+interface SnotelView {
+    station: SnotelNearbyStation;
+    data: SnotelObservations;
+}
+
+const ID = 'bpb-peak-snow', element = dom.element;
+const labels = {
+    idle: 'Snow observations from nearby NRCS stations.',
+    loading: 'Loading NRCS snow observations…',
+    replacing: 'Loading selected station…',
+    refreshing: 'Refreshing NRCS observations… Previous readings shown.',
+    ready: 'Hourly readings are provisional. Route conditions may differ.',
+    error: 'Could not load NRCS observations. Use Refresh to try again.',
+    retained: 'Could not load NRCS observations. Previous readings shown.',
+    timeout: 'NRCS request timed out. Use Refresh to try again.',
+    timeoutRetained: 'NRCS request timed out. Previous readings shown. Try Refresh.',
+    limited: 'NRCS request limit reached. Wait a few minutes, then refresh.',
+};
+const dateLabel = (date: string) => new Date(`${date}T12:00:00Z`).toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const observationTime = (time: number, offset = 0, includeOffset = true) => {
+    const clock = new Date(time + offset * 3600_000).toLocaleString([], {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'UTC' });
+    const zone = `UTC${offset < 0 ? '−' : '+'}${String(Math.abs(offset)).padStart(2, '0')}`;
+    return includeOffset ? `${clock} · ${zone}` : clock;
+};
+
+export function mountPeakSnow({ client: sharedClient }: { client?: SnotelClient } = {}): { card: HTMLElement; lifecycle: PageLifecycle } | undefined {
+    if (document.getElementById(ID)) return;
+    const subject = readPeakWeatherSubject(document, location.href);
+    if (!subject) return;
+    const coordinates = [...document.querySelectorAll('tr')].find(row =>
+        row.cells.length === 2 && row.cells[0].textContent.trim().toLowerCase() === 'latitude/longitude (wgs84)');
+    const coordTable = coordinates?.closest('table');
+    // Do not add an empty regional panel to peaks around the world. Include
+    // Alaska across the date line; precise coverage comes from the catalog.
+    if (!coordinates || !coordTable || !readPeakNations(coordTable).includes('united states')
+        || (subject.longitude > -100 && subject.longitude < 170)) return;
+
+    const refresh = element('button', { type: 'button', class: 'bpb-snow-refresh', text: 'Refresh', 'aria-label': 'Refresh snow observations', 'aria-disabled': 'false' });
+    const snowIcon = snotelSymbol(document); snowIcon.classList.add('bpb-snow-icon');
+    // An explicit empty form owner keeps native selection/Enter behavior while
+    // preventing implicit submission of Peakbagger's surrounding ASP.NET form.
+    const select = element('select', { id: `${ID}-station`, form: '', 'aria-label': 'SNOTEL station', 'aria-describedby': `${ID}-status`, disabled: '' }, [element('option', { text: 'Loading stations…', value: '' })]);
+    // Keep controls outside the readings region so catalog errors can still
+    // be retried and an empty coverage result never hides the focused action.
+    const stationControls = element('div', { class: 'bpb-snow-station-controls' }, [
+        element('label', { for: select.id, class: 'bpb-snow-label', text: 'SNOTEL station' }),
+        element('div', { class: 'bpb-snow-station-row' }, [select, refresh]),
+    ]);
+    const note = element('p', { class: 'bpb-snow-context', text: 'Nearby station observations, not summit measurements.' });
+    const status = element('p', { id: `${ID}-status`, class: 'bpb-snow-status', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
+    const stableStatus = createStableText(status);
+    stableStatus.reserve([...Object.values(labels), 'No SNOTEL station within 50 km of this peak.',
+        'No SNOTEL station within 31.1 mi of this peak.', 'NRCS request limit reached. Try again after Sep 30, 12:59 PM.']);
+    stableStatus.set(labels.idle);
+    const metrics = ['Snow depth', 'Water equivalent (SWE)'].map(label => {
+        const value = element('strong', { text: '—' }), time = element('span', { class: 'bpb-snow-time', text: 'No reading in past 48 hours' });
+        const stableValue = createStableText(value), stableTime = createStableText(time);
+        stableValue.reserve(['3810.0 cm', '1500.0 in', '12700.0 mm', '500.00 in', '—']);
+        stableTime.reserve(['No reading in past 48 hours', 'Older reading · Sep 30, 12:59 PM · UTC−09']);
+        return { value, time, stableValue, stableTime,
+            node: element('div', { class: 'bpb-snow-metric' }, [element('span', { class: 'bpb-snow-label', text: label }), value, time]) };
+    });
+    const graph = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    graph.setAttribute('viewBox', '0 0 320 80'); graph.setAttribute('aria-hidden', 'true'); graph.setAttribute('focusable', 'false');
+    graph.setAttribute('preserveAspectRatio', 'none');
+    const emptyGraph = element('p', { text: 'Hourly snow-depth trend' });
+    const graphMax = element('span', { class: 'bpb-snow-graph-max', 'aria-hidden': 'true', hidden: '' });
+    const graphZero = element('span', { class: 'bpb-snow-graph-zero', 'aria-hidden': 'true', text: '0', hidden: '' });
+    const graphFrame = element('div', { class: 'bpb-snow-graph' }, [graph, emptyGraph, graphMax, graphZero]);
+    const dateTicks = [0, 48].map(index => element('span', { 'data-hour': String(index) }));
+    const graphDates = element('div', { class: 'bpb-snow-dates', 'aria-label': 'Hourly observation times' }, dateTicks);
+    const range = element('p', { class: 'bpb-snow-range', text: 'Past 48 hours · Hourly snow depth' });
+    const stableRange = createStableText(range);
+    const tbody = element('tbody');
+    const dailyRows = Array.from({ length: 8 }, () => {
+        const date = element('th', { scope: 'row' });
+        const readings = Array.from({ length: 2 }, () => {
+            const value = element('span'), flags = element('small');
+            const stableValue = createStableText(value), stableFlags = createStableText(flags);
+            stableValue.reserve(['1500.0 in', '3810.0 cm', '12700.0 mm', '—']);
+            stableFlags.reserve(['QC V · QA P', 'Unavailable']);
+            return { cell: element('td', {}, [value, flags]), stableValue, stableFlags };
+        });
+        tbody.append(element('tr', {}, [date, ...readings.map(reading => reading.cell)]));
+        return { date, readings };
+    });
+
+    const details = element('details', { class: 'bpb-snow-details' }, [element('summary', { text: 'Daily readings and source details' }),
+        element('div', { class: 'bpb-snow-table-wrap' }, [element('table', {}, [element('caption', { text: 'Daily observations · NRCS end-of-day dates' }),
+            element('thead', {}, [element('tr', {}, ['Date', 'Snow depth', 'SWE'].map(text => element('th', { scope: 'col', text })))]), tbody])]),
+        element('p', { text: 'Snow water equivalent (SWE) is the water held in the snowpack. Depth changes include settling and melting; they are not fresh snowfall. Gaps remain unavailable.' }),
+        element('p', { text: 'Nearby stations may be much lower or across a ridge. Hourly readings are provisional; the daily series receives more review. Source quality flags appear with each daily value.' }),
+    ]);
+    const source = element('a', { href: 'https://nwcc-apps.sc.egov.usda.gov/imap/', target: '_blank', rel: 'noopener noreferrer', text: 'NRCS · SNOTEL' });
+    const observations = element('div', { class: 'bpb-snow-observations' }, [
+        note,
+        element('div', { class: 'bpb-snow-metrics' }, metrics.map(metric => metric.node)), range, graphFrame, graphDates,
+    ]);
+    const footerRadius = element('span', { text: 'Observations within 50 km' });
+    const card = element('section', { id: ID, 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false', hidden: '' }, [
+        element('header', {}, [element('h2', { id: `${ID}-heading` }, [snowIcon, document.createTextNode('Nearby snow')])]),
+        stationControls, observations, status, details,
+        element('footer', {}, [footerRadius, source]),
+    ]);
+    const row = element('tr', { id: `${ID}-row`, hidden: '' }, [element('td', { colspan: '2', class: 'bpb-snow-cell' }, [card])]);
+    const weatherRow = document.getElementById('bpb-peak-weather-row');
+    const mapRow = document.getElementById('Gmap')?.closest('tr');
+    if (weatherRow?.closest('table') === subject.table) weatherRow.after(row);
+    else if (mapRow?.closest('table') === subject.table) mapRow.after(row);
+    else subject.table.tBodies[0]?.append(row);
+
+    const client = sharedClient || createSnotelClient({ storage: chrome.storage.local });
+    const mapSource = createSnotelMapSource({ client, subject, onSelect: (station, nearby) => {
+        if (!enabled()) return;
+        card.dispatchEvent(new Event('bpb:reveal-card'));
+        // This explicit map action reveals the card even before its lazy load.
+        // Keep the ordinary three choices plus the chosen nearby map station.
+        if (!cooldown.active()) {
+            observer?.disconnect(); observer = null;
+            noStations = false; observations.hidden = details.hidden = false;
+            candidates = nearby.slice(0, 3);
+            if (!candidates.some(candidate => candidate.id === station.id)) candidates.push(station);
+            if (!pending || requested?.id !== station.id) { requested = station; void load(station); }
+        }
+        card.scrollIntoView({ block: 'start' });
+        select.focus({ preventScroll: true });
+    } });
+    let preference: SettingsData = settings.DEFAULTS, settingsReady = false;
+    let candidates: SnotelNearbyStation[] | null = null, current: SnotelView | null = null, requested: SnotelNearbyStation | null = null;
+    let controller: AbortController | null = null, generation = 0, pending = false, observer: IntersectionObserver | null = null;
+    let notice: unknown = null, noStations = false;
+    let lifecycle: PageLifecycle | undefined;
+    const enabled = () => settingsReady && preference.showSnotel && lifecycle?.state === 'active';
+    const system = (measurement: UnitMeasurementKey) => units.resolveUnits(preference, () => readPeakUnitSystem(document), measurement);
+    const depthText = (mm: number | null) => mm === null ? '—' : system('precipitation') === 'metric' ? `${(mm / 10).toFixed(1)} cm` : `${(mm / 25.4).toFixed(1)} in`;
+    const waterText = (mm: number | null) => units.formatWeather(mm, 'precipitation', system('precipitation'));
+    const chart = createSnotelChart({ frame: graphFrame, graph, empty: emptyGraph, maximum: graphMax, zero: graphZero,
+        ticks: dateTicks, caption: stableRange, timeLabel: observationTime, depthText });
+    const availability = () => {
+        refresh.setAttribute('aria-disabled', String(pending || cooldown.active() || noStations));
+        select.setAttribute('aria-disabled', String(cooldown.active()));
+    };
+    const cooldown = createRetryCooldown(availability);
+    const setStatus = (text: string) => { stableStatus.set(text); };
+    const stationChoices = () => current && !candidates?.some(station => station.id === current?.station.id)
+        ? [...(candidates || []), current.station] : candidates || [];
+    const fillStations = () => {
+        if (!candidates?.length) return;
+        const previous = current?.station.id || requested?.id || candidates[0].id;
+        // A failed map replacement must still name the station whose retained
+        // readings are shown, even when it is outside the default three.
+        select.replaceChildren(...stationChoices().map(station => element('option', { value: station.id,
+            text: `${station.name} · ${units.formatDistance(station.distance, system('distance'))} away · ${units.formatElevation(station.elevation, system('elevation'))}` })));
+        select.value = previous; select.disabled = false;
+    };
+    const readingTime = (reading: SnotelReading | null, station: SnotelNearbyStation | undefined) => {
+        if (!reading || !station) return 'No reading in past 48 hours';
+        return `${Date.now() - reading.time > 6 * 3600_000 ? 'Older reading · ' : ''}${observationTime(reading.time, station.offset)}`;
+    };
+    const render = (view: SnotelView | null = current) => {
+        fillStations();
+        footerRadius.textContent = `Observations within ${units.formatDistance(SNOTEL_RADIUS_METERS, system('distance'))}`;
+        const shownStation = view?.station || requested;
+        if (shownStation) { select.value = shownStation.id; source.href = snotelReportUrl(shownStation); }
+        for (const [index, code] of (['SNWD', 'WTEQ'] as const).entries()) {
+            const reading = latestSnotelReading(view?.data.hourly[code] || []);
+            metrics[index].stableValue.set(index === 0 ? depthText(reading?.value ?? null) : waterText(reading?.value ?? null));
+            metrics[index].stableTime.set(readingTime(reading, view?.station));
+            metrics[index].time.title = reading ? `NRCS quality flags: QC ${reading.qc || 'unavailable'}, QA ${reading.qa || 'unavailable'}` : '';
+        }
+        const today = new Date(Date.now() + (shownStation?.offset || 0) * 3600_000).toISOString().slice(0, 10);
+        const dates = Array.from({ length: 8 }, (_, i) => new Date(Date.parse(today) - (7 - i) * 86400_000).toISOString().slice(0, 10));
+        const data = (code: SnotelElementCode) => new Map((view?.data.daily[code] || []).map(reading => [reading.date, reading]));
+        const snow = data('SNWD'), water = data('WTEQ');
+        dailyRows.forEach((dailyRow, dateIndex) => {
+            const date = dates[dateIndex];
+            const label = dateLabel(date);
+            if (dailyRow.date.textContent !== label) dailyRow.date.textContent = label;
+            [snow.get(date), water.get(date)].forEach((reading, index) => {
+                dailyRow.readings[index].stableValue.set(index === 0 ? depthText(reading?.value ?? null) : waterText(reading?.value ?? null));
+                dailyRow.readings[index].stableFlags.set(reading?.value != null ? `QC ${reading.qc || '—'} · QA ${reading.qa || '—'}` : 'Unavailable');
+            });
+        });
+        // Use the fetched window for retained results, so unit changes and a
+        // pending refresh cannot shift the time axis or the selected hour.
+        const offset = shownStation?.offset || 0, hour = 3600_000;
+        const end = Math.floor(((view?.data.loadedAt ?? Date.now()) + offset * hour) / hour) * hour - offset * hour;
+        const times = Array.from({ length: 49 }, (_, index) => end - (48 - index) * hour);
+        const hourlySnow = new Map((view?.data.hourly.SNWD || []).map(reading => [reading.time, reading.value]));
+        chart.update({ station: shownStation?.id ?? null, times, offset,
+            values: times.map(time => hourlySnow.get(time) ?? null), loaded: Boolean(view) });
+    };
+    const cancel = () => {
+        generation++; controller?.abort(); controller = null; pending = false;
+        card.setAttribute('aria-busy', 'false'); availability();
+    };
+    const load = async (target: SnotelNearbyStation | null = requested, { refresh: force = false }: { refresh?: boolean } = {}) => {
+        if (!enabled() || cooldown.active()) return;
+        cancel(); controller = new AbortController(); const signal = controller.signal, owner = generation;
+        pending = true; notice = null; availability(); card.setAttribute('aria-busy', 'true');
+        setStatus(current ? target?.id && target.id !== current.station.id ? labels.replacing : labels.refreshing : labels.loading);
+        try {
+            if (!candidates) {
+                candidates = nearbySnotelStations(await client.stations({ signal }), subject);
+                if (owner !== generation || !enabled()) return;
+                fillStations();
+            }
+            if (!candidates.length) {
+                noStations = true;
+                if (select.options[0]) select.options[0].textContent = 'No nearby stations';
+                // A first coverage result may compact the panel once. Do not
+                // leave a full empty readings/chart surface with no usable data.
+                if (observations.contains(document.activeElement) || details.contains(document.activeElement)) refresh.focus({ preventScroll: true });
+                observations.hidden = details.hidden = true;
+                setStatus(`No SNOTEL station within ${units.formatDistance(SNOTEL_RADIUS_METERS, system('distance'))} of this peak.`);
+                return;
+            }
+            requested = stationChoices().find(station => station.id === target?.id) || candidates[0];
+            render(current?.station.id === requested.id ? current : null);
+            const data = await client.observations(requested, { signal, refresh: force });
+            if (owner !== generation || !enabled()) return;
+            current = { station: requested, data }; render(); setStatus(labels.ready);
+        } catch (error) {
+            const err = error && typeof error === 'object' ? error as { name?: unknown; code?: unknown; message?: unknown; retryAt?: number | null } : null;
+            if (owner !== generation || !enabled() || err?.name === 'AbortError') return;
+            notice = error;
+            if (!candidates && select.options[0]) select.options[0].textContent = 'Stations unavailable';
+            if (current) { requested = current.station; render(current); }
+            const failure = requestDeadline.isTimeout(error)
+                ? current ? labels.timeoutRetained : labels.timeout
+                : current ? labels.retained : labels.error;
+            setStatus(err?.code === 'rate-limit' && typeof err.message === 'string' ? err.message : failure);
+            if (err?.code === 'rate-limit') cooldown.set(err.retryAt);
+        } finally {
+            if (owner === generation) { pending = false; controller = null; card.setAttribute('aria-busy', 'false'); availability(); }
+        }
+    };
+    select.addEventListener('change', () => {
+        if (cooldown.active()) { select.value = current?.station.id || requested?.id || ''; return; }
+        const target = stationChoices().find(station => station.id === select.value);
+        if (pending && target?.id === requested?.id) return;
+        if (target) { requested = target; void load(target); }
+    });
+    select.addEventListener('pointerdown', event => { if (cooldown.active()) event.preventDefault(); });
+    select.addEventListener('keydown', event => {
+        if (cooldown.active() && !['Tab', 'Escape'].includes(event.key) && !event.ctrlKey && !event.metaKey) event.preventDefault();
+    });
+    refresh.addEventListener('click', () => { if (!pending && !cooldown.active() && !noStations) void load(requested, { refresh: true }); });
+    const beginVisible = () => {
+        observer?.disconnect(); observer = null;
+        if (!enabled()) return;
+        if (typeof IntersectionObserver !== 'function') { void load(); return; }
+        const nextObserver = new IntersectionObserver(entries => {
+            if (observer !== nextObserver) return;
+            if (entries.some(entry => entry.isIntersecting)) { nextObserver.disconnect(); observer = null; void load(); }
+        }, { rootMargin: '200px' });
+        observer = nextObserver;
+        observer.observe(card);
+    };
+    const visibility = () => {
+        if (enabled() && document.visibilityState === 'visible' && !pending && !notice && current && Date.now() - current.data.loadedAt >= 30 * 60_000) beginVisible();
+    };
+    const stop = () => { chart.setEnabled(false); cancel(); mapSource.suspend(); observer?.disconnect(); observer = null; cooldown.suspend(); document.removeEventListener('visibilitychange', visibility); };
+    lifecycle = createPageLifecycle({ onSuspend: stop,
+        onResume: () => { chart.setEnabled(enabled()); mapSource.resume(); document.addEventListener('visibilitychange', visibility); if (enabled()) { cooldown.resume(); beginVisible(); } },
+        onDispose: () => { stop(); chart.dispose(); mapSource.dispose(); cooldown.dispose(); unsubscribe(); if (!sharedClient) client.clear(); },
+    });
+    const applyPreference = (next: SettingsData) => {
+        if (lifecycle?.state === 'disposed') return;
+        const wasEnabled = enabled(); preference = next; settingsReady = true;
+        mapSource.setEnabled(preference.showSnotel);
+        chart.setEnabled(enabled());
+        card.hidden = row.hidden = !preference.showSnotel;
+        if (!enabled()) { cancel(); observer?.disconnect(); observer = null; cooldown.suspend(); }
+        else { cooldown.resume(); render(pending && requested?.id !== current?.station.id ? null : current); if (!wasEnabled) beginVisible(); }
+    };
+    const unsubscribe = settings.subscribe(applyPreference);
+    document.addEventListener('visibilitychange', visibility);
+    settings.requireCurrent().then(next => { if (!settingsReady) applyPreference(next); }).catch(() => {});
+    return { card, lifecycle };
+}

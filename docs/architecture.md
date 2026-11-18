@@ -159,13 +159,13 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Background coordination | `src/background/background.ts`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.ts` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
-| Ascent editor | `src/ascent/ascent-draft.js`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
+| Ascent editor | `src/ascent/ascent-draft.ts`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.js`, `src/photos/photo-project.ts`, `src/photos/photo-renderer.ts`, `src/photos/photo-library.ts`, `src/photos/photo-store.ts`, `src/photos/photo-archive.ts` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
 | Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.ts` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. 3D keeps the last page pixels for an immediate return, and discards them if the camera moved off them. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
-| Historical ascent weather | `src/ascent/ascent-weather.js`, `src/ascent/ascent-weather-subject.ts`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
-| Peak weather | `src/weather/peak-weather.js`, `src/weather/peak-weather-subject.ts`, `src/weather/weather-week.js` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
-| Nearby snow | `src/snow/peak-snow.js`, `src/snow/snotel-client.js`, `src/snow/snotel-data.js`, `src/snow/snotel-map-source.js`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
+| Historical ascent weather | `src/ascent/ascent-weather.ts`, `src/ascent/ascent-weather-subject.ts`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
+| Peak weather | `src/weather/peak-weather.ts`, `src/weather/peak-weather-subject.ts`, `src/weather/weather-week.ts` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
+| Nearby snow | `src/snow/peak-snow.ts`, `src/snow/snotel-client.ts`, `src/snow/snotel-data.ts`, `src/snow/snotel-map-source.ts`, `src/maps/map-layer-bridge.js` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
 | Map Layers menu | `src/maps/map-layers.ts`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.js`, `src/terrain/terrain-overlays.ts`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
 | Custom map overlays | `src/maps/custom-overlay-schema.js`, `src/maps/custom-overlay-control.js`, `src/maps/custom-overlay-bridge.js`, `src/maps/custom-overlay-editor.js`, `src/maps/custom-overlay-client.js`, `src/maps/custom-overlay-render.js`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
 | Wildfire data and rendering | `src/maps/wildfire-core.js`, `src/maps/wildfire-client.js`, `src/maps/wildfire-session.ts`, `src/maps/wildfire-leaflet.ts`, `src/terrain/terrain-wildfires.ts` | Fixed WF-only NIFC queries, validated public identities/geometry and independent component freshness; bounded page-memory viewport transactions owned by the visible renderer. Typed metadata alone crosses the frame bridge, with retry-only actions and no privileged API exposure. Native vectors retain priority. |
@@ -179,8 +179,8 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Favorite climbers | `src/favorites/favorite-climbers.ts`, `src/favorites/climber-favorite.ts`, `options/favorites.js`, `options/favorites-backup.js` | Pure local-data contract, climber-page toggle, standalone list manager, and its Settings backup surface |
 | Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.ts`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.js`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.ts`, `options/drafts.js` | Shared pure draft contract plus device-local list/copy/delete UI |
-| Saved-ascent and TR backup | `src/ascent/ascent-page.js`, `src/ascent/ascent-backup.js` | Owner-only page read and user-facing backup state |
-| Saved-GPX map handoffs | `src/ascent/ascent-gaia.js`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
+| Saved-ascent and TR backup | `src/ascent/ascent-page.ts`, `src/ascent/ascent-backup.ts` | Owner-only page read and user-facing backup state |
+| Saved-GPX map handoffs | `src/ascent/ascent-gaia.ts`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, `src/peakbagger/peakbagger-error.ts`, `src/peakbagger/peakbagger-cloudflare.ts`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
 | GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.ts`, `src/github/github-errors.ts`, `src/github/github-api.ts`, `src/github/github-auth.ts`, `src/github/github-client.ts`, `src/github/github-write-queue.ts`, `src/github/github-backup.ts`, `src/photos/photo-backup.ts`, `options/photos.js` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.ts`, `src/photos/imgbb-client.ts`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
@@ -665,7 +665,7 @@ The newly serialized GPX contains only trackpoint latitude/longitude, available
 elevation/time, segment structure, and—when enabled—waypoint
 latitude/longitude/name. It excludes provider extensions, device and health
 fields, source descriptions, waypoint symbols/elevation/time, and arbitrary
-XML. `src/ascent/ascent-draft.js` validates this private GPX again before attaching it
+XML. `src/ascent/ascent-draft.ts` validates this private GPX again before attaching it
 to Peakbagger's form.
 
 With timestamp removal enabled, the worker serializes both timed and timeless
@@ -734,7 +734,7 @@ drafts reopen. Closing a previewed tab, or reviewing drafts after it navigates
 away before confirmation, stops the remaining queue rather than guessing whether
 it was saved. No Save action is automated.
 
-`src/ascent/ascent-draft.js` may trigger GPS Preview exactly once. A reload or repeated
+`src/ascent/ascent-draft.ts` may trigger GPS Preview exactly once. A reload or repeated
 handshake offers recovery instead of clicking Preview again. No extension path
 clicks either Save control; the user reviews all derived values and saves.
 
@@ -773,7 +773,7 @@ Save, postback, page exit, or feature disablement. Final Save remains native.
 `src/reports/report-drafts.ts` defines bounded, expiring recovery identities.
 The editor and `options/drafts.js` share that contract; restoration is explicit.
 The worker serializes generation-checked mutations and retains recovery data
-until `src/ascent/ascent-saved.js` confirms a matching pending Save intent.
+until `src/ascent/ascent-saved.ts` confirms a matching pending Save intent.
 
 See [trip-report-editor.md](trip-report-editor.md) for conversion paths,
 sanitization, lossy-import protection, media restrictions, and draft lifecycle.
@@ -832,7 +832,7 @@ overwrite each other and leave the cached visible width at zero, enabling an
 extra whole-slide step. Fixing BPB's width removes that trigger without needing
 Instagram permission or changing Instagram's controls.
 
-`src/reports/report-protection.tson` installs Chrome's saved-ascent response CSP
+`src/reports/report-protection.json` installs Chrome's saved-ascent response CSP
 before parsing. Firefox uses the synchronous `report-protection-firefox.js`
 header listener with the shared policy because its DNR implementation lacks the
 Cloudflare response-header exclusion. Existing site CSP is preserved. A separate
@@ -999,7 +999,7 @@ policies remain with their adapters. Peak weather, Summit Cloud Cover and ascent
 weather share `src/ui/card-read-gate.ts` for read eligibility/lazy start and
 `src/ui/latest-read.ts` for cancellation and latest-response ownership. Visibility
 does not choose freshness or erase retained results. Weather charts share
-`src/weather/weather-chart-scale.js` and interval-aware hourly series/table code;
+`src/weather/weather-chart-scale.ts` and interval-aware hourly series/table code;
 the ascent chart retains historical/GPX overlays and the peak chart its additional
 metrics/reference heights. Opt-in `src/ui/card.css` supplies both weather cards'
 palette/shell before feature CSS. See [card conventions](card-conventions.md) for
@@ -1218,7 +1218,7 @@ below remains independent of ignored membership.
 | `src/favorites/buddy-cache.ts`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
 | `src/favorites/report-adapters.ts`, `src/favorites/peak-report-filter.ts` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.ts` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
-| `src/ascent/ascent-report-visibility.js` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
+| `src/ascent/ascent-report-visibility.ts` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
 | `src/background/climber-list-sync.js` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
 | `options/ignored-backup.js` | Settings transfer/sync UI, scoped impact/version preview and guarded whole-list Undo |
 

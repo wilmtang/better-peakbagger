@@ -3,8 +3,8 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validateSnotelStations, nearbySnotelStations, validateSnotelData, snotelTimestamp, latestSnotelReading, snotelReportUrl } from '../../src/snow/snotel-data.js';
-import { createSnotelClient, SNOTEL_CATALOG_KEY } from '../../src/snow/snotel-client.js';
+import { validateSnotelStations, nearbySnotelStations, validateSnotelData, snotelTimestamp, latestSnotelReading, snotelReportUrl } from '../../src/snow/snotel-data.ts';
+import { createSnotelClient, SNOTEL_CATALOG_KEY } from '../../src/snow/snotel-client.ts';
 import { snotelStations, snotelFixture } from '../helpers/snotel-fixture.mjs';
 
 const NOW = Date.parse('2026-10-17T20:00:00Z');

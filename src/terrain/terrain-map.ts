@@ -9,7 +9,7 @@ import { readVectorPaint } from '../maps/vector-basemap.ts';
 import type { VectorPaint } from '../maps/vector-basemap.ts';
 import { settings } from '../settings/settings.ts';
 import { terrainCamera } from './terrain-camera.js';
-import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
+import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.ts';
 import { readLayerSnapshot, readLayerStatus, readBasemapChoices, readAttributionInset } from '../maps/map-layer-protocol.ts';
 import { sentinelTarget } from '../maps/sentinel-core.js';
 import { overlayBounds } from '../maps/map-overlay-providers.ts';

@@ -24,8 +24,8 @@ These shared modules already exist:
 | Read eligibility and lazy start | [`card-read-gate.ts`](../src/ui/card-read-gate.ts) | Feature/date eligibility, optional collapse, freshness, retained results and cancellation |
 | Latest read ownership | [`latest-read.ts`](../src/ui/latest-read.ts) | Request identity, validation, cache/TTL, retained labels and pending UI |
 | Movement | [`card-drag.ts`](../src/ui/card-drag.ts), [`layout-menu.ts`](../src/ui/layout-menu.ts) | Native anchors, valid destinations, order, persistence and preview strategy |
-| Weather transport and time/data math | [`open-meteo-client.js`](../src/weather/open-meteo-client.js), [`weather-day.js`](../src/weather/weather-day.js), [`mountain-time.ts`](../src/time/mountain-time.ts) | Forecast versus historical endpoint, date range, model capabilities and freshness |
-| Weather display | [`weather-hourly-table.ts`](../src/weather/weather-hourly-table.ts), [`weather-chart-scale.js`](../src/weather/weather-chart-scale.js), [`weather-icon.js`](../src/weather/weather-icon.js), [`units.ts`](../src/ui/units.ts) | Supported fields, native-unit inference, selected source and GPX cursor integration |
+| Weather transport and time/data math | [`open-meteo-client.ts`](../src/weather/open-meteo-client.ts), [`weather-day.ts`](../src/weather/weather-day.ts), [`mountain-time.ts`](../src/time/mountain-time.ts) | Forecast versus historical endpoint, date range, model capabilities and freshness |
+| Weather display | [`weather-hourly-table.ts`](../src/weather/weather-hourly-table.ts), [`weather-chart-scale.ts`](../src/weather/weather-chart-scale.ts), [`weather-icon.ts`](../src/weather/weather-icon.ts), [`units.ts`](../src/ui/units.ts) | Supported fields, native-unit inference, selected source and GPX cursor integration |
 
 `card-drag.js` is used by ascent weather. It and the peak layout share
 [`card-pointer-drag.ts`](../src/ui/card-pointer-drag.ts) for pointer ownership,
@@ -168,7 +168,7 @@ layout owns the disclosure. A deliberate feature action can dispatch
 
 ## Saved-ascent cards: columns and explicit docking
 
-[`ascent-table-split.js`](../src/ascent/ascent-table-split.js) owns only the
+[`ascent-table-split.ts`](../src/ascent/ascent-table-split.ts) owns only the
 report/summary column split. It recognizes the adjacent native report and Summary
 Total Data tables, including the supported metadata-only variant without report
 prose. It supplies `#bpb-ascent-report-column` and `#bpb-ascent-summary-column`,
@@ -176,7 +176,7 @@ the shared column resizer and narrow-screen stacking. It is not a card registry.
 Do not register ascent cards in `PEAK_CARD_ORDER` or use peak-only destinations.
 
 The current standalone example is
-[`ascent-weather.js`](../src/ascent/ascent-weather.js). Its labelled section is
+[`ascent-weather.ts`](../src/ascent/ascent-weather.ts). Its labelled section is
 a sibling of the native table within a split column, not a peak-style table row.
 It defaults to the summary column after the dedicated GPS details, where present.
 Placement must tolerate the split or GPX surface mounting later, preserve the
@@ -336,10 +336,10 @@ live regions containing all hidden alternatives.
 6. Record checks actually run, browser/viewports, hidden versus visible execution,
    remaining live-provider or native-UI gaps, and confirm process/profile teardown.
 
-Useful examples: [`peak-weather.js`](../src/weather/peak-weather.js) for retained
-source identity and local dates, [`peak-snow.js`](../src/snow/peak-snow.js) for stable
+Useful examples: [`peak-weather.ts`](../src/weather/peak-weather.ts) for retained
+source identity and local dates, [`peak-snow.ts`](../src/snow/peak-snow.ts) for stable
 feedback and guarded native controls, the peak layout owner for persistent
-collapse/order, [`ascent-weather.js`](../src/ascent/ascent-weather.js) for explicit
-column docking, and [`ascent-backup.js`](../src/ascent/ascent-backup.js) for the
+collapse/order, [`ascent-weather.ts`](../src/ascent/ascent-weather.ts) for explicit
+column docking, and [`ascent-backup.ts`](../src/ascent/ascent-backup.ts) for the
 worker-write lifecycle boundary. These are examples, not authorization to copy
 feature-specific exceptions or unrelated legacy behavior.

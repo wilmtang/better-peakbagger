@@ -5,7 +5,7 @@ import { dom } from '../ui/dom.ts';
 import { createStableText } from '../ui/stable-text.ts';
 import { mountainTime } from '../time/mountain-time.ts';
 import { createWeatherHourlyTable, hourlyWeatherSeries } from './weather-hourly-table.ts';
-import { weatherChartRange, weatherChartTicks } from './weather-chart-scale.js';
+import { weatherChartRange, weatherChartTicks } from './weather-chart-scale.ts';
 
 import type { WeatherFormat, WeatherMetric, WeatherSample, WeatherWindow, WeatherZone, HourlyWeatherReading } from './weather-hourly-table.ts';
 

@@ -16,7 +16,7 @@ import {
     type ProfileBackupRunner,
     type ProfileBackupRunnerState,
 } from './profile-backup-core.ts';
-import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.js';
+import { ascentBackupSource as Source } from '../ascent/ascent-backup-source.ts';
 import { githubError as GithubError } from '../github/github-error-copy.ts';
 import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.ts';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.ts';

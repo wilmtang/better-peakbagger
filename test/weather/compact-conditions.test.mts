@@ -3,7 +3,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { compactWeatherHours, createWeatherHourlyTable, weatherWindColor } from '../../src/weather/weather-hourly-table.ts';
 import type { WeatherMetric, WeatherSample, WeatherWindow } from '../../src/weather/weather-hourly-table.ts';
-import { weatherDayWindow } from '../../src/weather/weather-day.js';
+import { weatherDayWindow } from '../../src/weather/weather-day.ts';
 import { mountainTime } from '../../src/time/mountain-time.ts';
 import { units } from '../../src/ui/units.ts';
 

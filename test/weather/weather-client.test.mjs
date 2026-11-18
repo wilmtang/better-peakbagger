@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../../src/weather/weather-models.js';
-import { createWeatherClient, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.js';
+import { ARCHIVE_BEST_MATCH, WEATHER_MODELS, eligibleWeatherModels } from '../../src/weather/weather-models.ts';
+import { createWeatherClient, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.ts';
 
 const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };
 const window = { startDate: '2024-07-11', endDate: '2024-07-13', partial: false };

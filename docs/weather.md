@@ -538,11 +538,11 @@ Pinned calculation sources, inspected October 24–25, 2026:
 
 | Owner | Responsibility |
 | --- | --- |
-| `src/weather/peak-weather.js`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
-| `src/ascent/ascent-weather.js`, `ascent-weather-subject.ts` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
-| `src/weather/open-meteo-client.js`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
+| `src/weather/peak-weather.ts`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
+| `src/ascent/ascent-weather.ts`, `ascent-weather-subject.ts` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
+| `src/weather/open-meteo-client.ts`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
 | `src/weather/summit-cloud.ts`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
-| `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |
+| `src/weather/peak-weather-updates.ts`, AQI client/view | Separate metadata and AQI ownership/caches |
 | `src/weather/weather-hourly-table.ts`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
 | `src/ui/card-read-gate.ts`, `latest-read.ts`, `page-lifecycle.ts` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
 | `src/ui/card.css`, peak layout, drag helpers | Opt-in palette/shell and surface adapters; see card conventions |

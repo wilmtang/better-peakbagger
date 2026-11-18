@@ -44,7 +44,7 @@ try {
     if (expectRegression) assert.deepEqual(labels, ['0', '1', '1']);
     else assert.equal(new Set(labels).size, 3, `Axis labels must be distinct: ${labels}`);
     console.log(JSON.stringify({ auditedHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-        ascentSourceSha256: createHash('sha256').update(await readFile('src/ascent/ascent-weather.js')).digest('hex'),
+        ascentSourceSha256: createHash('sha256').update(await readFile('src/ascent/ascent-weather.ts')).digest('hex'),
         peakChartSourceSha256: createHash('sha256').update(await readFile('src/weather/peak-weather-hourly.ts')).digest('hex'),
         ascentBundleSha256: createHash('sha256').update(bundle).digest('hex'), inputWindKmh: 0, displayedUnit: 'km/h', axisLabels: labels,
         method: 'Built dist bundle in jsdom, stubbed transport/settings and 620px chart bounds; no real browser or live network',

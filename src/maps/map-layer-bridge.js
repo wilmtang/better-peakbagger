@@ -3,10 +3,10 @@
 
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { settings } from '../settings/settings.ts';
-import { createSnotelClient } from '../snow/snotel-client.js';
-import { readSnotelMapStations } from '../snow/snotel-map-data.js';
-import { nearbySnotelStations } from '../snow/snotel-data.js';
-import { mountPeakSnow } from '../snow/peak-snow.js';
+import { createSnotelClient } from '../snow/snotel-client.ts';
+import { readSnotelMapStations } from '../snow/snotel-map-data.ts';
+import { nearbySnotelStations } from '../snow/snotel-data.ts';
+import { mountPeakSnow } from '../snow/peak-snow.ts';
 import { overlayBounds, viewportStations } from './map-overlay-providers.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { readLayerSnapshot } from './map-layer-protocol.ts';

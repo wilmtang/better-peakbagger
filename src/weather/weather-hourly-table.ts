@@ -3,8 +3,8 @@
 
 import { dom } from '../ui/dom.ts';
 import { mountainTime } from '../time/mountain-time.ts';
-import { hourlyWeatherCondition } from './weather-day.js';
-import { createWeatherIcon } from './weather-icon.js';
+import { hourlyWeatherCondition } from './weather-day.ts';
+import { createWeatherIcon } from './weather-icon.ts';
 import { units } from '../ui/units.ts';
 
 export type WeatherMetric = 'code' | 'cloud' | 'temperature' | 'apparent' | 'precipitation' | 'freezing' | 'wind' | 'gust' | 'direction';
