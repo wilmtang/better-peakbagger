@@ -1047,7 +1047,7 @@ test('settings import rejects invalid and newer files without changing settings'
 
 // ---- Sidebar section navigation -----------------------------------------
 //
-// src/ui/section-nav.js is the controller; options/options.js and
+// src/ui/section-nav.ts is the controller; options/options.js and
 // photos/guide.js only call initSectionNav(). These tests exercise it
 // through the real options page because that is where the tall, dynamically
 // sized sections live.

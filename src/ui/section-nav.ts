@@ -4,24 +4,30 @@
 // Sidebar section navigation. Native anchors already scroll and deep-link;
 // track the active link and reconcile nested-pane scrolling on hash changes.
 // The feature is inert without sidebar markup, so options.js works without it.
-export const initSectionNav = () => {
-    const nav = document.querySelector('.side-nav');
-    const content = document.querySelector('.content');
+
+interface NavEntry {
+    link: HTMLAnchorElement;
+    section: HTMLElement;
+    parentLink: HTMLAnchorElement | null;
+}
+
+export const initSectionNav = (): void => {
+    const nav = document.querySelector<HTMLElement>('.side-nav');
+    const content = document.querySelector<HTMLElement>('.content');
     if (!nav || !content) return;
     // Level-1 links and always-visible level-2 links, in document order. A
     // sub-item's section is its subsection div, which follows its parent
     // section's heading in the DOM, so the last-top-≤-marker scan below
     // activates sub-items with no extra ordering logic. Each sub-item also
     // remembers its parent nav-item so the parent can be highlighted.
-    const entries = Array.from(nav.querySelectorAll('a.nav-item, a.nav-subitem'))
-        .map(link => {
+    const entries: NavEntry[] = Array.from(nav.querySelectorAll<HTMLAnchorElement>('a.nav-item, a.nav-subitem'))
+        .flatMap(link => {
             const section = link.hash ? document.getElementById(link.hash.slice(1)) : null;
-            if (!section) return null;
+            if (!section) return [];
             const sublist = link.closest('.nav-sublist');
-            const parentLink = sublist ? sublist.closest('li').querySelector(':scope > a.nav-item') : null;
-            return { link, section, parentLink };
-        })
-        .filter(Boolean);
+            const parentLink = sublist?.closest('li')?.querySelector<HTMLAnchorElement>(':scope > a.nav-item') ?? null;
+            return [{ link, section, parentLink }];
+        });
     if (!entries.length) return;
     const fragmentTarget = () => {
         const section = document.getElementById(location.hash.slice(1));
@@ -34,21 +40,22 @@ export const initSectionNav = () => {
     // the pane's CSS smooth behavior until that one native landing finishes;
     // otherwise a newly opened deep link visibly travels down the page.
     let initialScrollOverride = false;
-    let initialScrollTarget = null;
+    let initialScrollTarget: HTMLElement | null = null;
     let documentRestored = false;
     let distanceScrollRevision = 0;
-    const finishInitialScroll = alignTarget => {
+    const alignPaneToSection = (section: HTMLElement) => {
+        // Narrow layouts put the content scroller below the horizontal
+        // nav. Chromium's initial fragment landing can account for that
+        // offset twice, so normalize against the actual scroll container.
+        const margin = parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
+        const delta = section.getBoundingClientRect().top
+            - content.getBoundingClientRect().top - margin;
+        if (Math.abs(delta) > 1) content.scrollTop = Math.max(0, content.scrollTop + delta);
+    };
+    const finishInitialScroll = (alignTarget: boolean) => {
         if (!initialScrollOverride) return;
         initialScrollOverride = false;
-        if (alignTarget && initialScrollTarget) {
-            // Narrow layouts put the content scroller below the horizontal
-            // nav. Chromium's initial fragment landing can account for that
-            // offset twice, so normalize against the actual scroll container.
-            const margin = parseFloat(getComputedStyle(initialScrollTarget).scrollMarginTop) || 0;
-            const delta = initialScrollTarget.getBoundingClientRect().top
-                - content.getBoundingClientRect().top - margin;
-            if (Math.abs(delta) > 1) content.scrollTop = Math.max(0, content.scrollTop + delta);
-        }
+        if (alignTarget && initialScrollTarget) alignPaneToSection(initialScrollTarget);
         initialScrollTarget = null;
         content.style.removeProperty('scroll-behavior');
     };
@@ -60,12 +67,12 @@ export const initSectionNav = () => {
     // a nominally "nearby" jump into a lengthy animation.
     const MAX_SMOOTH_SCROLL_VIEWPORTS = 2;
     const MAX_SMOOTH_SCROLL_PX = 1200;
-    const scrollDistanceTo = section => {
+    const scrollDistanceTo = (section: HTMLElement) => {
         const margin = parseFloat(getComputedStyle(section).scrollMarginTop) || 0;
         return Math.abs(section.getBoundingClientRect().top
             - content.getBoundingClientRect().top - margin);
     };
-    const prepareAnchorScroll = section => {
+    const prepareAnchorScroll = (section: HTMLElement) => {
         const revision = ++distanceScrollRevision;
         content.style.removeProperty('scroll-behavior');
 
@@ -73,7 +80,7 @@ export const initSectionNav = () => {
         if (!(viewportHeight > 0)) return;
         const smoothLimit = Math.min(
             viewportHeight * MAX_SMOOTH_SCROLL_VIEWPORTS,
-            MAX_SMOOTH_SCROLL_PX
+            MAX_SMOOTH_SCROLL_PX,
         );
         if (scrollDistanceTo(section) <= smoothLimit) return;
 
@@ -90,15 +97,17 @@ export const initSectionNav = () => {
         } else setTimeout(restore, 0);
     };
 
-    const navList = nav.querySelector('.nav-list');
-    const revealActive = active => {
-        const parent = entries.find(entry => entry.link === active)?.parentLink;
+    const navList = nav.querySelector<HTMLElement>('.nav-list');
+    const revealActive = (active: HTMLAnchorElement | null) => {
+        if (!active) return;
+        const parent = entries.find(entry => entry.link === active)?.parentLink ?? null;
         // Narrow layouts hide subsections; reveal their visible parent chip.
-        const link = active?.getClientRects().length ? active : parent;
+        const link = active.getClientRects().length ? active : parent;
         if (!link?.getClientRects().length) return;
         const scroller = navList && getComputedStyle(navList).overflowX === 'auto' ? navList : nav;
         const row = link.getBoundingClientRect(), frame = scroller.getBoundingClientRect();
-        const nearest = (start, end, min, max) => start < min ? start - min : end > max ? end - max : 0;
+        const nearest = (start: number, end: number, min: number, max: number) =>
+            start < min ? start - min : end > max ? end - max : 0;
         const inset = 8;
         // Scroll only the menu, never an ancestor or the reading pane. Keep
         // visible rows still and leave a little room around newly revealed rows.
@@ -111,11 +120,11 @@ export const initSectionNav = () => {
             scroller.scrollLeft += nearest(row.left, row.right, left + inset, left + scroller.clientWidth - inset);
         }
     };
-    let currentLink = null;
-    const setActive = (active, reveal = false) => {
+    let currentLink: HTMLAnchorElement | null = null;
+    const setActive = (active: HTMLAnchorElement, reveal = false) => {
         if (active === currentLink && !reveal) return;
         currentLink = active;
-        const activeParent = (entries.find(entry => entry.link === active) || {}).parentLink || null;
+        const activeParent = entries.find(entry => entry.link === active)?.parentLink ?? null;
         for (const { link } of entries) {
             if (link === active) link.setAttribute('aria-current', 'true');
             else link.removeAttribute('aria-current');
@@ -156,13 +165,14 @@ export const initSectionNav = () => {
     // Do not recompute on release: a near-bottom target can be fully visible
     // without reaching the marker, but the explicit deep link still wins.
     let navLocked = false;
-    let navLockTimer = null;
+    let navLockTimer: ReturnType<typeof setTimeout> | null = null;
     let lastScrollTop = content.scrollTop;
+    let pendingLinkClick: { hash: string; at: number } | null = null;
     const armIdleRelease = () => {
-        clearTimeout(navLockTimer);
+        if (navLockTimer !== null) clearTimeout(navLockTimer);
         navLockTimer = setTimeout(() => { navLocked = false; }, 250);
     };
-    const lockTo = link => {
+    const lockTo = (link: HTMLAnchorElement) => {
         setActive(link, true);
         navLocked = true;
         armIdleRelease();
@@ -178,7 +188,7 @@ export const initSectionNav = () => {
         else setActive(activeFromScroll());
     }, { passive: true });
     content.addEventListener('scrollend', () => {
-        clearTimeout(navLockTimer);
+        if (navLockTimer !== null) clearTimeout(navLockTimer);
         navLocked = false;
         if (documentRestored) finishInitialScroll(true);
         lastScrollTop = content.scrollTop;
@@ -189,23 +199,51 @@ export const initSectionNav = () => {
             // deep link in a new tab) and must not move this settings page.
             if (event.defaultPrevented || event.button !== 0
                 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            pendingLinkClick = link.hash && link.hash !== location.hash
+                ? { hash: link.hash, at: Date.now() }
+                : null;
             finishInitialScroll(false);
             prepareAnchorScroll(section);
             lockTo(link);
         });
     }
     window.addEventListener('hashchange', () => {
+        const fromLinkClick = !!pendingLinkClick
+            && pendingLinkClick.hash === location.hash
+            && Date.now() - pendingLinkClick.at < 1000;
+        pendingLinkClick = null;
         finishInitialScroll(false);
         const target = fragmentTarget();
-        if (target) {
-            // History can restore only the document's scroll position and
-            // leave a nested pane at the previous fragment. Align this pane
-            // explicitly; the outer app frame must never be scrolled.
-            prepareAnchorScroll(target.section);
+        if (!target) return;
+        if (fromLinkClick) {
+            // Nearby sidebar clicks preserve the smooth scroll started before hashchange.
             const margin = parseFloat(getComputedStyle(target.section).scrollMarginTop) || 0;
             content.scrollTop += target.section.getBoundingClientRect().top
                 - content.getBoundingClientRect().top - margin;
             lockTo(target.link);
+            return;
+        }
+        // Programmatic or URL/history hash jumps must cancel any smooth fragment
+        // scroll started by the browser before hashchange and re-verify landing
+        // on the following frame so short viewports cannot stop mid-scroll.
+        const revision = ++distanceScrollRevision;
+        content.style.scrollBehavior = 'auto';
+        alignPaneToSection(target.section);
+        lastScrollTop = content.scrollTop;
+        lockTo(target.link);
+        const restore = () => {
+            if (revision === distanceScrollRevision) content.style.removeProperty('scroll-behavior');
+        };
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(() => {
+                if (revision === distanceScrollRevision && fragmentTarget()?.section === target.section) {
+                    alignPaneToSection(target.section);
+                    lastScrollTop = content.scrollTop;
+                }
+                requestAnimationFrame(restore);
+            });
+        } else {
+            setTimeout(restore, 0);
         }
     });
 
@@ -216,8 +254,7 @@ export const initSectionNav = () => {
         initialScrollTarget = initial.section;
         content.style.scrollBehavior = 'auto';
         lockTo(initial.link);
-    }
-    else setActive(entries[0].link);
+    } else setActive(entries[0].link);
 
     // Reload/history restoration can put the nested pane at zero without any
     // scroll event. Reconcile after the browser has shown the document instead

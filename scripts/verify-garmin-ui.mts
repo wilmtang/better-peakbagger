@@ -12,7 +12,7 @@ import { chromium, firefox, type Browser } from 'playwright';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
 import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
-import { initSectionNav } from '../src/ui/section-nav.js';
+import { initSectionNav } from '../src/ui/section-nav.ts';
 
 // The packaged pages run against this synthetic runtime; its shape is owned by
 // the init script below and only ever read back by this verifier.

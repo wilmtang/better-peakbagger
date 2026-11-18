@@ -13,7 +13,7 @@ import { defineDomSuite, type DomContext } from '../../scripts/dom-tier.mts';
 type Page = DomContext['page'];
 const OPTIONS = '/dist/options/options.html';
 // The spy's marker: a section is current once its top is at most 40px below
-// the content pane's top edge (src/ui/section-nav.js).
+// the content pane's top edge (src/ui/section-nav.ts).
 const MARKER = 40;
 
 const openOptions = async ({ open, page }: DomContext) => {
@@ -164,6 +164,43 @@ export default defineDomSuite({
                     assert.ok(!hiddenLinks.includes(expected), `the independent expectation chose hidden ${expected}`);
                     await waitForActive(page, expected, `${target} at the pane top`);
                 }
+            },
+        },
+        {
+            name: 'programmatic hashchange aligns deep nested targets deterministically on short viewports',
+            async run(context) {
+                await context.page.setViewportSize({ width: 1000, height: 420 });
+                await openOptions(context);
+                const { page } = context;
+                await page.evaluate(() => { location.hash = '#general'; });
+                await waitForActive(page, '#general', 'starts at #general');
+                await page.evaluate(() => { location.hash = '#ignored-github'; });
+                await page.waitForFunction(() => {
+                    const content = document.querySelector<HTMLElement>('.content')!;
+                    const target = document.getElementById('ignored-github')!;
+                    const pane = content.getBoundingClientRect(), rect = target.getBoundingClientRect();
+                    return document.querySelector('.side-nav [aria-current="true"]')?.getAttribute('href') === '#github-favorites-backup'
+                        && content.style.scrollBehavior === ''
+                        && rect.top >= pane.top - 1
+                        && rect.top < pane.bottom
+                        && rect.bottom > pane.top;
+                }, null, { timeout: 3000 });
+                const settled = await page.evaluate(() => {
+                    const content = document.querySelector<HTMLElement>('.content')!;
+                    const target = document.getElementById('ignored-github')!;
+                    const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
+                    return {
+                        rootScroll: document.scrollingElement!.scrollTop,
+                        delta: target.getBoundingClientRect().top - content.getBoundingClientRect().top - margin,
+                        scrollTop: content.scrollTop,
+                        scrollMax: content.scrollHeight - content.clientHeight,
+                        active: (document.querySelector('.side-nav [aria-current="true"]') as HTMLAnchorElement | null)?.hash,
+                    };
+                });
+                assert.equal(settled.rootScroll, 0, 'outer document never scrolls on hashchange');
+                assert.equal(settled.active, '#github-favorites-backup');
+                assert.ok(Math.abs(settled.delta) <= 2 || settled.scrollTop >= settled.scrollMax - 2,
+                    `#ignored-github must land aligned or at the bottom clamp: ${JSON.stringify(settled)}`);
             },
         },
     ],

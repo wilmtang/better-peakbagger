@@ -141,18 +141,18 @@ together.
   (`26.28px` above its `24px` `scroll-margin-top`, failing line 301 of
   `scripts/verify-settings-navigation.mts`: `target.top >= pane.top - 1`).
   Bumping the 5-second timeout would wait longer and still fail.
-- Clicking a `.side-nav` link calls `prepareAnchorScroll` (`src/ui/section-nav.js`
-  line 193) *before* the browser processes the anchor jump. By contrast,
+- Clicking a `.side-nav` link calls `prepareAnchorScroll` (`src/ui/section-nav.ts`
+  before conversion) *before* the browser processes the anchor jump. By contrast,
   programmatic or URL-bar hash navigation (`navigate('#ignored-github')` at
   `scripts/verify-settings-navigation.mts` line 295) triggers Chromium's native
   fragment scroll while `.content` still has CSS `scroll-behavior: smooth`, and
-  only afterward fires `window`'s `hashchange` listener (`src/ui/section-nav.js`
-  lines 197–210). At `1000x420`, `smoothLimit` drops to `840px` (`2 * 420`), and
+  only afterward fires `window`'s `hashchange` listener (`src/ui/section-nav.ts`).
+  At `1000x420`, `smoothLimit` drops to `840px` (`2 * 420`), and
   programmatic `content.scrollTop += delta` can race an in-flight compositor
   smooth scroll or asynchronous status-height change above `#ignored-github`.
 
 **Fix:**
-- Convert `src/ui/section-nav.js` to TypeScript (`.ts`), updating
+- Convert `src/ui/section-nav.ts` from `.js`, updating
   `scripts/build-config.mts` (lines 128, 135 for `options/options.js` and
   `photos/guide.js`), `options/options.js` (line 17), `photos/guide.js` (line 11),
   `test/photos/photo-guide.test.mjs` (line 26), `scripts/verify-garmin-ui.mts`

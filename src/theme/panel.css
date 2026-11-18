@@ -152,7 +152,7 @@ a:focus-visible,
 /* ---- Section navigation ------------------------------------------------- */
 
 /* The sidebar + scrolling content frame that Settings and the photo guide
-   share, driven by the one src/ui/section-nav.js scroll-spy. Only .content
+   share, driven by the one src/ui/section-nav.ts scroll-spy. Only .content
    scrolls, so the sidebar stays put and the spy has a single, stable scroll
    container at every width. Each page owns its own outer frame and the
    content's padding; everything the reader recognises as "the sidebar" is

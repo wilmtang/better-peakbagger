@@ -137,6 +137,7 @@ const readFrame = () => {
         return { top, bottom, left, right };
     };
     const content = document.querySelector<HTMLElement>('.content')!;
+    const targetElement = document.querySelector(location.hash || '#general')!;
     return {
         viewport: { width: innerWidth, height: innerHeight },
         rootScroll: document.scrollingElement!.scrollTop,
@@ -144,10 +145,12 @@ const readFrame = () => {
         nav: rect(document.querySelector('.side-nav')!),
         content: rect(content),
         scrollTop: content.scrollTop,
+        scrollHeight: content.scrollHeight,
         scrollMax: content.scrollHeight - content.clientHeight,
         scrollBehavior: content.style.scrollBehavior,
         verificationScrolling: content.dataset.verificationScrolling,
-        target: rect(document.querySelector(location.hash || '#general')!),
+        target: rect(targetElement),
+        targetMarginTop: getComputedStyle(targetElement).scrollMarginTop,
         hash: location.hash,
         current: document.querySelector('.side-nav [aria-current]')?.getAttribute('href'),
         horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
