@@ -1,13 +1,22 @@
-import { chromium } from 'playwright';
-import path from 'node:path';
+/// <reference lib="dom" />
 
+import { access } from 'node:fs/promises';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { chromium, type BrowserContext } from 'playwright';
+import { assertChromeLaunchAllowed } from '../../scripts/chrome-launch-guard.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 async function run() {
+  assertChromeLaunchAllowed();
+  const dist = path.join(root, 'dist');
+  await access(path.join(dist, 'manifest.json')).catch((error: unknown) => {
+    throw new Error('Run npm run build to prepare the unpacked extension in dist/ before recording.', { cause: error });
+  });
   console.log('Launching browser to record promotional assets (with tilting)...');
   const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
     headless: false,
     viewport: { width: 1200, height: 1350 },
     recordVideo: {
@@ -15,13 +24,21 @@ async function run() {
       size: { width: 1200, height: 1350 }
     },
     args: [
-      `--disable-extensions-except=${root}`,
-      `--load-extension=${root}`,
+      `--disable-extensions-except=${dist}`,
+      `--load-extension=${dist}`,
       '--disable-blink-features=AutomationControlled',
     ],
-    ignoreDefaultArgs: ['--enable-automation'],
+    ignoreDefaultArgs: ['--enable-automation', '--enable-unsafe-swiftshader'],
   });
+  try {
+    await recordTour(context);
+  } finally {
+    // Playwright flushes the recording during close.
+    await context.close();
+  }
+}
 
+async function recordTour(context: BrowserContext): Promise<void> {
   const page = await context.newPage();
   console.log('Navigating to Peakbagger ascent page...');
   await page.goto('https://www.peakbagger.com/climber/ascent.aspx?aid=2775541', { waitUntil: 'load' });
@@ -43,8 +60,8 @@ async function run() {
       'hr',
     ];
     selectorsToHide.forEach(sel => {
-      const el = document.querySelector(sel);
-      if (el && el.style) el.style.setProperty('display', 'none', 'important');
+      const element = document.querySelector<HTMLElement | SVGElement>(sel);
+      element?.style?.setProperty('display', 'none', 'important');
     });
   });
 
@@ -72,6 +89,16 @@ async function run() {
 
   console.log('Waiting for 3D map to load terrain...');
   await page.waitForTimeout(6000); // Give plenty of time to load the gorgeous 3D terrain
+  const frame = page.frameLocator('#bpb-terrain-frame');
+  const renderer = await frame.locator('canvas.maplibregl-canvas').evaluate((canvas: HTMLCanvasElement) => {
+    const gl = canvas.getContext('webgl2');
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    const name: unknown = gl && info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : null;
+    return typeof name === 'string' ? name.trim() : null;
+  });
+  if (!renderer || /swiftshader|software|llvmpipe|softpipe|lavapipe|swrast|basic render driver/i.test(renderer)) {
+    throw new Error(`Terrain recording requires a hardware WebGL renderer. Observed ${renderer ?? 'none'}.`);
+  }
 
   // 2. Resize map viewport size
   console.log('Resizing map viewport size...');
@@ -101,7 +128,7 @@ async function run() {
   if (frameBox) {
     const cx = frameBox.x + frameBox.width / 2;
     const cy = frameBox.y + frameBox.height / 2;
-    
+
     // Zoom in
     console.log('Zooming in...');
     await page.mouse.move(cx, cy);
@@ -161,7 +188,7 @@ async function run() {
     await page.waitForTimeout(3500); // Show popup name bubble
 
     // Try to click dismiss/close on any popup close button if visible
-    const closeBtn = page.frameLocator('#bpb-terrain-frame').locator('.maplibregl-popup-close-button');
+    const closeBtn = frame.locator('.maplibregl-popup-close-button');
     if (await closeBtn.isVisible()) {
       console.log('Dismissing peak popup...');
       await closeBtn.click();
@@ -175,7 +202,9 @@ async function run() {
   }
 
   console.log('Saving video and cleaning up...');
-  await context.close();
 }
 
-run().catch(console.error);
+run().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
