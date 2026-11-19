@@ -4,7 +4,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { defineDomSuite, type DomContext } from '../../../scripts/dom-tier.mts';
+import { defineDomSuite, type DomCase, type DomContext } from '../../../scripts/dom-tier.mts';
 
 type Outcome = 'denied' | 'error' | 'granted';
 
@@ -18,13 +18,14 @@ interface AccessFixtureWindow extends Window {
         requests: Request[];
         clickRequestCounts: number[];
         closes: number;
+        notifications: [tabId: number, message: unknown][];
         finish: ((outcome: Outcome) => void) | null;
     };
 }
 
 function installAccessFixture(buttonId: string) {
     const fixture: AccessFixtureWindow['providerAccess'] = {
-        requests: [], clickRequestCounts: [], closes: 0, finish: null,
+        requests: [], clickRequestCounts: [], closes: 0, notifications: [], finish: null,
     };
     const ext = globalThis.browser || globalThis.chrome;
     Object.assign(ext.permissions, {
@@ -39,6 +40,11 @@ function installAccessFixture(buttonId: string) {
             });
         },
     });
+    Object.assign(ext.tabs, {
+        async sendMessage(tabId: number, message: unknown) {
+            fixture.notifications.push([tabId, structuredClone(message)]);
+        },
+    });
     document.addEventListener('click', event => {
         if (event.isTrusted && event.target instanceof HTMLElement && event.target.id === buttonId) {
             fixture.clickRequestCounts.push(fixture.requests.length);
@@ -48,35 +54,99 @@ function installAccessFixture(buttonId: string) {
     (window as unknown as AccessFixtureWindow).providerAccess = fixture;
 }
 
+async function openPackagedAccess({ page, open, route, built }: DomContext, provider: string, search = '') {
+    const pagePath = `/dist/${provider}/access.html`;
+    const fixturePath = '/test/provider-access-fixture.js';
+    const buttonId = `allow-${provider}`;
+    const html = (await built(`${provider}/access.html`)).toString('utf8');
+    const headScript = '<script src="access-head.js"></script>';
+    assert.equal(html.split(headScript).length, 2, 'the packaged head script must be present');
+    // Install the probes before either shipped script can request permission.
+    await route(fixturePath, `(${installAccessFixture.toString()})(${JSON.stringify(buttonId)});`, 'text/javascript');
+    await route(pagePath, html.replace(headScript, `<script src="${fixturePath}"></script>\n${headScript}`));
+    await open(`${pagePath}${search}`);
+    const button = page.locator(`#${buttonId}`);
+    const status = page.getByRole('status');
+    await button.waitFor();
+    const state = () => page.evaluate(() => {
+        const { requests, clickRequestCounts, closes, notifications } = (window as unknown as AccessFixtureWindow).providerAccess;
+        return { requests, clickRequestCounts, closes, notifications };
+    });
+    const finish = (outcome: Outcome) => page.evaluate(resolution => {
+        const fixture = (window as unknown as AccessFixtureWindow).providerAccess;
+        if (!fixture.finish) throw new Error('No permission request is pending');
+        fixture.finish(resolution);
+    }, outcome);
+    return { button, status, state, finish };
+}
+
+const bcLandAccess: DomCase = {
+    name: 'BC parcel maps guards duplicate activation and notifies only the source tab',
+    viewport: { width: 390, height: 760 },
+    async run(context) {
+        const { page } = context;
+        const { button, status, state, finish } = await openPackagedAccess(context, 'bc-land', '?tab=7');
+        assert.equal((await state()).requests.length, 0, 'opening BC access must leave permissions untouched');
+        assert.deepEqual((await state()).notifications, []);
+        await button.focus();
+        await button.evaluate((element: HTMLButtonElement) => element.click());
+        assert.equal((await state()).requests.length, 0, 'synthetic BC access must leave permissions untouched');
+
+        await page.keyboard.press('Enter');
+        await status.filter({ hasText: 'Waiting for the browser' }).waitFor();
+        assert.equal(await button.getAttribute('aria-disabled'), 'true');
+        assert.equal(await button.evaluate((element: HTMLButtonElement) => element.disabled), false);
+        assert.ok(await button.evaluate(element => document.activeElement === element));
+        await page.keyboard.press('Enter');
+        const pending = await state();
+        assert.deepEqual(pending.requests, [{ permission: { origins: ['https://maps.gov.bc.ca/*'] }, active: true }]);
+        assert.deepEqual(pending.clickRequestCounts, [1, 1], 'both trusted clicks reach the busy guard');
+        assert.deepEqual(pending.notifications, []);
+
+        await finish('denied');
+        await status.filter({ hasText: 'Access not granted. Try again.' }).waitFor();
+        await page.locator('#allow-bc-land[aria-disabled="false"]').waitFor();
+        assert.equal(await button.textContent(), 'Allow access');
+        assert.deepEqual((await state()).notifications, []);
+
+        await page.keyboard.press('Enter');
+        await status.filter({ hasText: 'Waiting for the browser' }).waitFor();
+        await finish('granted');
+        await status.filter({ hasText: 'Access enabled.' }).waitFor();
+        await page.locator('#allow-bc-land[aria-disabled="false"]').waitFor();
+        assert.equal(await button.textContent(), 'Return to map');
+        assert.ok(await button.evaluate(element => document.activeElement === element));
+        const granted = await state();
+        assert.deepEqual(granted.requests, [pending.requests[0], pending.requests[0]]);
+        assert.deepEqual(granted.notifications, [[7, { type: 'BC_LAND_PERMISSION_GRANTED' }]]);
+        assert.equal(granted.closes, 0);
+
+        await button.evaluate((element: HTMLButtonElement) => element.click());
+        assert.equal((await state()).closes, 0);
+        await page.keyboard.press('Enter');
+        const returned = await state();
+        assert.equal(returned.closes, 1);
+        assert.deepEqual(returned.requests, granted.requests);
+        assert.deepEqual(returned.notifications, granted.notifications);
+    },
+};
+
+const providers = [
+    ['gaia', 'Gaia', 'https://www.gaiagps.com/*'],
+    ['onx', 'onX', 'https://backcountry.onxmaps.com/*'],
+    ['alltrails', 'AllTrails', 'https://www.alltrails.com/*'],
+    ['caltopo', 'CalTopo', 'https://caltopo.com/*'],
+];
+
 export default defineDomSuite({
     name: 'map provider access',
-    cases: [
-        ['gaia', 'Gaia', 'https://www.gaiagps.com/*'],
-        ['onx', 'onX', 'https://backcountry.onxmaps.com/*'],
-        ['alltrails', 'AllTrails', 'https://www.alltrails.com/*'],
-        ['caltopo', 'CalTopo', 'https://caltopo.com/*'],
-    ].map(([id, name, origin]) => ({
+    cases: [...providers.map(([id, name, origin]) => ({
         name: `${name} requests the selected permission on trusted input and recovers from refusals`,
         viewport: { width: 390, height: 760 },
-        async run({ page, open, route, built }: DomContext) {
-            const pagePath = `/dist/${id}/access.html`;
-            const fixturePath = '/test/provider-access-fixture.js';
-            const html = (await built(`${id}/access.html`)).toString('utf8');
-            const headScript = '<script src="access-head.js"></script>';
-            assert.equal(html.split(headScript).length, 2, 'the packaged head script must be present');
-            // The harness installs the extension API at document start. Install
-            // the probes before either shipped script can request permission.
-            await route(fixturePath, `(${installAccessFixture.toString()})(${JSON.stringify(`allow-${id}`)});`, 'text/javascript');
-            await route(pagePath, html.replace(headScript, `<script src="${fixturePath}"></script>\n${headScript}`));
-            await open(pagePath);
-            const button = page.locator(`#allow-${id}`);
+        async run(context: DomContext) {
+            const { page } = context;
+            const { button, status, state, finish } = await openPackagedAccess(context, id);
             const close = page.locator(`#close-${id}`);
-            const status = page.getByRole('status');
-            await button.waitFor();
-            const state = () => page.evaluate(() => {
-                const { requests, clickRequestCounts, closes } = (window as unknown as AccessFixtureWindow).providerAccess;
-                return { requests, clickRequestCounts, closes };
-            });
             assert.equal((await state()).requests.length, 0, 'opening the page must leave permissions untouched');
             assert.equal((await state()).closes, 0, 'opening the page must leave it open');
             await button.evaluate((element: HTMLButtonElement) => element.click());
@@ -102,11 +172,7 @@ export default defineDomSuite({
                 assert.deepEqual(pending.clickRequestCounts.slice(-2), [index + 1, index + 1],
                     'the trusted activation must start the request in the click dispatch');
                 assert.deepEqual(pending.requests.at(-1), { permission: { origins: [origin] }, active: true });
-                await page.evaluate(resolution => {
-                    const fixture = (window as unknown as AccessFixtureWindow).providerAccess;
-                    if (!fixture.finish) throw new Error('No permission request is pending');
-                    fixture.finish(resolution);
-                }, outcome);
+                await finish(outcome);
                 await status.filter({ hasText: label }).waitFor();
                 await page.locator(`#allow-${id}[aria-busy="false"]`).waitFor();
                 assert.equal(await button.evaluate((element: HTMLButtonElement) => element.disabled), outcome === 'granted');
@@ -121,5 +187,5 @@ export default defineDomSuite({
             await close.click();
             assert.equal((await state()).closes, 1);
         },
-    })),
+    })), bcLandAccess],
 });

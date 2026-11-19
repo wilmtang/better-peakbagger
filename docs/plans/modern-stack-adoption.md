@@ -663,6 +663,12 @@ observation, at 390 × 760 in hidden Chromium 158.0.8127.18 and Firefox 159.0.
 Both engines rejected disposable builds that requested permission on load
 or accepted synthetic input. These fixtures use stubs for the native
 permission dialog and tab close.
+The packaged BC parcel access page now uses this tier. Both browsers passed
+the five provider cases at 390 × 760. For BC, duplicate activation was
+ignored, keyboard focus stayed on the shared action, and only the source tab
+received the grant. A disposable BC bundle that accepted synthetic clicks
+failed in both engines. The permission response, tab message and close
+remain fixture stubs.
 
 The [saved-ascent chart probe](evidence/card-reuse-audit.mts) now renders
 the shipped bundles in the browser tier. Hidden Chromium 158.0.8127.18 and
