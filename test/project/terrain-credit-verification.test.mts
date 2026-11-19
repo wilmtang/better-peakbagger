@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertStableTerrainGeometry, assertTerrainCreditLayout } from '../../scripts/verify-terrain-provider-ui.mts';
 
-const state = lines => ({
-    frameWidth: 798, frameHeight: 450, lines,
+type CreditLines = Parameters<typeof assertTerrainCreditLayout>[0]['lines'];
+const state = (lines: CreditLines) => ({
+    frameWidth: 798, frameHeight: 450, lines, visible: true, linkVisible: true, creditText: 'Fixture credits',
     nav: { x: 756, y: 358.5, right: 788, bottom: 421.5 },
     scale: { x: 10, y: 399.5, right: 101, bottom: 421.5 },
     picker: { x: 593, y: 10, right: 788, bottom: 39 },
@@ -27,7 +28,7 @@ test('wrapped credits flow beside and below controls without reserving an empty 
 });
 
 test('actual text collisions, clipping, and missing text still fail', () => {
-    for (const key of ['nav', 'scale', 'picker', 'hint']) {
+    for (const key of ['nav', 'scale', 'picker', 'hint'] as const) {
         const layout = state([]);
         layout.lines = [layout[key]];
         assert.throws(() => assertTerrainCreditLayout(layout, key), new RegExp(`overlaps ${key}`));
@@ -39,13 +40,19 @@ test('actual text collisions, clipping, and missing text still fail', () => {
 });
 
 test('attribution can displace the informational scale while actions and page content stay anchored', () => {
-    const before = state([{ x: 180, y: 431, right: 793, bottom: 448 }]);
-    for (const key of ['toggle', 'heading', 'following', 'mount', 'scroll']) before[key] = { x: 0, y: 0 };
+    const before = {
+        ...state([{ x: 180, y: 431, right: 793, bottom: 448 }]),
+        toggle: { x: 0, y: 0 },
+        heading: { x: 0, y: 0 },
+        following: { x: 0, y: 0 },
+        mount: { x: 0, y: 0 },
+        scroll: { x: 0, y: 0 },
+    };
     const after = structuredClone(before);
     after.scale.y -= 16;
     after.scale.bottom -= 16;
     assert.doesNotThrow(() => assertStableTerrainGeometry(before, after, 'scale follows credits'));
-    for (const key of ['nav', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll']) {
+    for (const key of ['nav', 'picker', 'toggle', 'heading', 'following', 'mount', 'scroll'] as const) {
         const moved = structuredClone(after);
         moved[key].x += 2;
         assert.throws(() => assertStableTerrainGeometry(before, moved, key), /moved/);

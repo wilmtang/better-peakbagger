@@ -9,7 +9,7 @@ test('the formatting probe accepts a browser omitting its default region', () =>
     for (const [actual, expected] of [['en', 'en-US'], ['de', 'de-DE'], ['en-US', 'en-US']]) {
         assertFormattingLocale(actual, expected);
     }
-    const clock = locale => new Intl.DateTimeFormat(locale, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' })
+    const clock = (locale: string) => new Intl.DateTimeFormat(locale, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' })
         .format(new Date('2026-07-12T21:45:00Z'));
     assert.equal(clock('en'), clock('en-US'));
     assert.notEqual(clock('en'), clock('en-GB'));

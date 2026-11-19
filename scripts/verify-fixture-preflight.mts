@@ -19,7 +19,7 @@ export function fixturePreflightCommands(args: readonly string[]): string[][] {
         'Usage: fixture-preflight --chrome-only|--firefox-only',
     );
     return [
-        ['--test', 'test/project/formatting-locale-verification.test.mjs', 'test/project/browser-verification-evidence.test.mts'],
+        ['--test', 'test/project/formatting-locale-verification.test.mts', 'test/project/browser-verification-evidence.test.mts'],
         ['--test', '--test-name-pattern=capture controls reject|privileged extension routes reject', 'test/background/background-capture.test.mjs'],
         ['scripts/verify-layout-stability.mts', args[0], '--preflight'],
     ];

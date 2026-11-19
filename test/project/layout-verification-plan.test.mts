@@ -3,10 +3,10 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { layoutVerificationPlan } from '../../scripts/layout-verification-plan.mts';
+import { layoutVerificationPlan, type LayoutVerificationCase } from '../../scripts/layout-verification-plan.mts';
 
 const surfaces = ['timestamps', 'ascent-columns', 'peak-columns', 'report-filter', 'ascent-filters', 'ascent-backup', 'profile-backup', ...Array.from({ length: 17 }, (_, i) => `surface-${i}`)];
-const identity = value => JSON.stringify(value);
+const identity = (value: LayoutVerificationCase) => JSON.stringify(value);
 
 test('four balanced shards preserve every browser, surface, theme and viewport exactly once', () => {
     const full = layoutVerificationPlan([], surfaces).cases;
