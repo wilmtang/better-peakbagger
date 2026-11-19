@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import type { BrowserContext, Page } from 'playwright';
 
 /* global document, window */
 
@@ -1425,6 +1426,20 @@ export function sendFixtureText(
 
 export const sendFixtureNotFound = (response: ServerResponse, body = 'Not found'): void =>
     sendFixtureText(response, 404, body);
+
+// Parse fixture markup in a blank page with requests blocked for its entire
+// lifetime. The page under test keeps its own routes and execution order.
+export async function withOfflineFixturePage<T>(context: BrowserContext, prepare: (page: Page) => Promise<T>): Promise<T> {
+    const resources = createResourceStack();
+    const page = await context.newPage();
+    resources.defer('offline fixture page', () => page.close());
+    const result = await resources.guard(async () => {
+        await page.route('**/*', route => route.abort());
+        return prepare(page);
+    });
+    await resources.dispose();
+    return result;
+}
 
 // A fixture server must never swallow its own faults: the stack is the only
 // signal a check has that its harness broke rather than the product.

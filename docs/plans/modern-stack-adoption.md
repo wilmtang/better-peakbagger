@@ -681,6 +681,11 @@ document with one control and zero writes at 1000 × 760 and 390 × 760. The
 layout surface passed eight cases in that Chromium and Firefox 159.0 at
 390 × 900 and 1280 × 900 in both themes. The fixture guard accepts LF and
 CRLF checkouts and rejects missing and duplicate fields.
+The profile units verifier prepares its metric fixture in a separate offline
+browser page. Its before-and-after results matched across 16 cases each in
+hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1280/720 × 900, with both
+themes and simulated 2× reflow. Chromium loaded the real unpacked extension.
+Firefox used the shipped bundles with stubbed settings APIs.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
