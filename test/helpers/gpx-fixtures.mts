@@ -7,7 +7,7 @@ import { gunzipSync } from 'node:zlib';
 
 const FIXTURE_ROOT = path.resolve(import.meta.dirname, '../fixtures/gpx');
 
-export async function readCompressedGpxFixture(name) {
+export async function readCompressedGpxFixture(name: string): Promise<string> {
     const encoded = await readFile(path.join(FIXTURE_ROOT, name), 'utf8');
     return gunzipSync(Buffer.from(encoded.replaceAll(/\s/g, ''), 'base64')).toString('utf8');
 }

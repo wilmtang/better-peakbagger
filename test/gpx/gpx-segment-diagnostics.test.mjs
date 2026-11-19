@@ -6,7 +6,7 @@ import test from 'node:test';
 import { gpxMetrics as M } from '../../src/gpx/gpx-metrics.ts';
 import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS } from '../../src/capture/capture-resource-limits.ts';
 import { diagnoseGpxSegments as diagnose, diagnosticMetricInputs } from '../../src/gpx/gpx-segment-diagnostics.ts';
-import { suspectSegments, metricInputs } from '../helpers/suspect-gpx.mjs';
+import { suspectSegments, metricInputs } from '../helpers/suspect-gpx.mts';
 
 test('synthetic contamination independently doubles distance and extends elapsed time', () => {
     const source = suspectSegments();

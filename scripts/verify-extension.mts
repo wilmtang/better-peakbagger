@@ -52,14 +52,14 @@ import {
     waitForBuddyReportCache,
     waitForPageCondition
 } from './browser-verification-fixtures.mts';
-import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mts';
 import { verifyGpxSegments } from './verify-gpx-segments.mts';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
 import { verifyClimberMembership } from './verify-climber-membership.mts';
 import { verifyClimberHoverCard } from './verify-climber-hover-card.mts';
 import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mts';
 import { verifyProfilePreparation } from './verify-profile-preparation.mts';
-import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
+import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mts';
 import { createResourceStack } from './resource-stack.mts';
 import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';

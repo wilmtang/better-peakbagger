@@ -6,7 +6,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import { gpxParse as GpxParse } from '../../src/gpx/gpx-parse.ts';
 import { gpxMetrics as GpxMetrics } from '../../src/gpx/gpx-metrics.ts';
-import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mts';
 
 test('geographic coordinate validation accepts only finite latitude and longitude bounds', () => {
     for (const [lat, lon] of [[-90, -180], [0, 0], [90, 180]]) {

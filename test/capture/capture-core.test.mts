@@ -8,7 +8,7 @@ import { JSDOM } from '../helpers/test-dom.mts';
 import { captureCore as Core } from '../../src/capture/capture-core.ts';
 import { gpxParse as Parse } from '../../src/gpx/gpx-parse.ts';
 import { gpxMetrics as Metrics } from '../../src/gpx/gpx-metrics.ts';
-import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { uploadLimitFindings } from '../helpers/source-policies.mts';

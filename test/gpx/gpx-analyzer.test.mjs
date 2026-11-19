@@ -7,8 +7,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
-import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mjs';
-import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mjs';
+import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mts';
+import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mts';
 import { waitFor } from '../helpers/load-page.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');

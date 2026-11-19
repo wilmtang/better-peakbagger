@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { createBrowserFixtureServer, projectRoot } from './browser-verification-fixtures.mts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 import { createResourceStack } from './resource-stack.mts';
-import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 type Box = { x: number; y: number; width: number; height: number };

@@ -46,7 +46,7 @@ import {
     quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
 } from './firefox-verifier-processes.mts';
-import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mts';
 import { verifyGpxSegments } from './verify-gpx-segments.mts';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
 import { verifyClimberMembership } from './verify-climber-membership.mts';
@@ -54,7 +54,7 @@ import { verifyClimberHoverCard } from './verify-climber-hover-card.mts';
 import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mts';
 import { installClimberCardCloseProbe } from './climber-card-close-diagnostics.mts';
 import { verifyProfilePreparation } from './verify-profile-preparation.mts';
-import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
+import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mts';
 import { createResourceStack } from './resource-stack.mts';
 import { retainBrowserFailure } from './browser-verification-evidence.mts';
 import { assertVerificationBrowser } from './verification-browser-identity.mts';
