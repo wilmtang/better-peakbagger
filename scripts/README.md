@@ -47,7 +47,7 @@ independent of the existing targets.
 - [create-chrome-description.mts](create-chrome-description.mts)
 - [dependency-metadata.mts](dependency-metadata.mts)
 - [privacy-guard.mts](privacy-guard.mts)
-- [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness and types for `test/dom/*.dom.mts` (routing, extension stub, per-case contexts, selection).
+- [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness for `.dom.mts` suites under `test/dom/`, with routed fixtures, extension stubs, and selection by suite or case.
 - [svelte-build.mts](svelte-build.mts) — The shared Svelte compiler settings and esbuild plugin every bundle receives.
 - [typecheck-node.mts](typecheck-node.mts) — Checks the Node TypeScript project as two programs: jsdom/DOM-driving files with the DOM library (`tsconfig.dom.check.json`), everything else without DOM globals.
 - [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.

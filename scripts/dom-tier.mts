@@ -4,7 +4,7 @@
 //
 // Real-browser DOM tier: tests whose behavior depends on layout, scrolling,
 // trusted input, focus or browser-specific DOM, which jsdom cannot establish.
-// Tests live in test/dom/*.dom.mts, outside the `npm test` glob, and import
+// Tests live under test/dom, outside the `npm test` glob, and import
 // their types from here; scripts/verify-dom.mts runs them through
 // `npm run verify -- dom`.
 //
@@ -134,34 +134,49 @@ function installExtensionStub({ settings, local }: { settings: Record<string, un
     Object.defineProperty(globalThis, 'browser', { value: api, configurable: true, writable: true });
 }
 
-export interface DomSelection { engines: DomEngine[]; filter: string | null; dist: string }
+type DiscoveredDomSuite = DomSuite & { readonly file: string };
+
+export interface DomSelection {
+    engines: DomEngine[];
+    filter: string | null;
+    suite: string | null;
+    dist: string;
+}
 
 // Rejects unknown arguments rather than running a narrower set than asked.
 export function domSelection(args: readonly string[], cwd = projectRoot): DomSelection {
     const engines: DomEngine[] = [];
-    let filter: string | null = null, dist = path.join(cwd, 'dist');
+    let filter: string | null = null, suite: string | null = null, dist = path.join(cwd, 'dist');
     for (let index = 0; index < args.length; index++) {
         const value = args[index]!;
         if ((DOM_ENGINES as readonly string[]).includes(value)) {
             if (engines.includes(value as DomEngine)) throw new Error(`DOM tier engine ${value} was selected twice.`);
             engines.push(value as DomEngine);
+        } else if (value === '--suite' || value.startsWith('--suite=')) {
+            if (suite !== null) throw new Error('DOM tier --suite was given twice.');
+            const selection = value === '--suite' ? args[++index] : value.slice('--suite='.length);
+            if (!selection?.trim() || selection.startsWith('--')) throw new Error('DOM tier --suite requires a name or path.');
+            suite = selection.replaceAll('\\', '/').replace(/^\.\//, '').replace(/^test\/dom\//, '');
+            if (!suite) throw new Error('DOM tier --suite requires a name or path.');
         } else if ((value === '--case' || value === '--dist') && args[index + 1] && !args[index + 1]!.startsWith('--')) {
             if (value === '--case') {
                 if (filter !== null) throw new Error('DOM tier --case was given twice.');
                 filter = args[++index]!;
             } else dist = path.resolve(cwd, args[++index]!);
-        } else throw new Error(`Unknown DOM tier argument: ${value}. Usage: verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]`);
+        } else throw new Error(`Unknown DOM tier argument: ${value}. Usage: verify -- dom [chrome] [firefox] [--suite TEXT] [--case TEXT] [--dist DIR]`);
     }
-    return { engines: engines.length ? engines : [...DOM_ENGINES], filter, dist };
+    return { engines: engines.length ? engines : [...DOM_ENGINES], filter, suite, dist };
 }
 
-export async function loadDomSuites(directory = path.join(projectRoot, 'test', 'dom')): Promise<DomSuite[]> {
-    const files = (await readdir(directory)).filter(file => file.endsWith('.dom.mts')).sort();
-    const suites: DomSuite[] = [];
+export async function loadDomSuites(directory = path.join(projectRoot, 'test', 'dom')): Promise<DiscoveredDomSuite[]> {
+    const entries = await readdir(directory, { recursive: true, withFileTypes: true });
+    const files = entries.filter(entry => entry.isFile() && entry.name.endsWith('.dom.mts'))
+        .map(entry => path.relative(directory, path.join(entry.parentPath, entry.name)).split(path.sep).join('/')).sort();
+    const suites: DiscoveredDomSuite[] = [];
     for (const file of files) {
         const module = await import(pathToFileURL(path.join(directory, file)).href) as { default?: DomSuite };
         assert.ok(module.default?.cases?.length, `${file} must default-export a suite with cases`);
-        suites.push(module.default);
+        suites.push({ ...module.default, file });
     }
     return suites;
 }
@@ -226,10 +241,13 @@ const createContext = async (browser: Browser, engine: DomEngine, item: DomCase,
     }
 };
 
-export async function runDomTier(args: readonly string[], suites?: DomSuite[]): Promise<number> {
+export async function runDomTier(args: readonly string[], suites?: readonly (DomSuite & { file?: string })[]): Promise<number> {
     const selection = domSelection(args);
     const loaded = suites ?? await loadDomSuites();
-    const selected = loaded.flatMap(suite => suite.cases.map(item => ({ suite, item, label: `${suite.name}: ${item.name}` })))
+    const matchingSuites = loaded.filter(suite => !selection.suite ||
+        suite.name.includes(selection.suite) || suite.file?.includes(selection.suite));
+    if (selection.suite && !matchingSuites.length) throw new Error(`No DOM tier suite matches ${JSON.stringify(selection.suite)}.`);
+    const selected = matchingSuites.flatMap(suite => suite.cases.map(item => ({ item, label: `${suite.name}: ${item.name}` })))
         .filter(({ label }) => !selection.filter || label.includes(selection.filter));
     if (!selected.length) throw new Error(`No DOM tier case matches ${JSON.stringify(selection.filter)}.`);
     const built = await builtReader(selection.dist);

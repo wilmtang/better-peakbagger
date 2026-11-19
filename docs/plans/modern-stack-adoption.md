@@ -73,7 +73,7 @@ jsdom retirement remain open.
 | M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime batches 2.1 through 2.5 and the root Node tooling conversion are committed. The tooling batch (`fd12835a`) passed all 4,209 tests, typecheck, lint and exact packaged Chrome/Firefox verification on Node 24.22.3. At that commit 244 files under `test/`, eight documentation/experiment scripts, one browser fixture script and one store-asset script still used JavaScript. |
-| M7.5 | Not started | At `0444ff28`, 118 test files constructed jsdom 297 times. Six `scripts/verify-*` files and two `docs/plans/evidence/` scripts also imported it. Depends on M4.5's browser tier. |
+| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Gaia, onX, AllTrails and CalTopo access behavior moved to real browser input. The remaining jsdom users and dependency removal are open. |
 | M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A 1.9% smaller archive and 3.7× release build time did not justify the additional tooling. See the [candidate and evidence](experiments/wxt-evaluation.md). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
@@ -639,6 +639,16 @@ ownership boundary rather than a percentage target.
 Split from M7's exit on November 13 ([owner decision](#owner-decisions)). This
 is a test-environment migration, independent of the language conversion: it may
 start once M4.5's browser tier exists and does not block M7 or M8.
+
+The [provider access suite](../../test/dom/map-access/provider-access.dom.mts)
+uses the shipped pages with a controlled permission response and close handler.
+Packaging order remains covered by the pure
+[map-access test](../../test/ui/map-access.test.mts). The full browser tier
+ran 28 cases. All eight provider cases passed again after adding startup
+observation, at 390 × 760 in hidden Chromium 158.0.8127.18 and Firefox 159.0.
+Both engines rejected disposable builds that requested permission on load
+or accepted synthetic input. These fixtures use stubs for the native
+permission dialog and tab close.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM

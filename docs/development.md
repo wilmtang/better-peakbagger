@@ -758,9 +758,11 @@ build config does not ship.
   — modules import settings now.
 - **Behaviour that depends on layout, scrolling, trusted input, focus or
   browser-specific DOM**: write a new test for the browser DOM tier in
-  `test/dom/*.dom.mts` (a default-exported `defineDomSuite` from
+  a `.dom.mts` file under `test/dom/` (a default-exported `defineDomSuite` from
   [dom-tier.mts](../scripts/dom-tier.mts)), not in jsdom. It runs in hidden
-  Chromium and Firefox through `npm run verify -- dom`, never in `npm test`.
+  Chromium and Firefox through `npm run verify -- dom`. Use
+  `npm run verify -- dom --suite OWNER` to select by suite name or relative
+  path. The browser tier runs separately from `npm test`.
 
 Routing rule: pure logic stays in `node:test` with no DOM; new DOM-behaviour
 tests use the browser tier; legacy jsdom tests stay on typed jsdom until M7.5

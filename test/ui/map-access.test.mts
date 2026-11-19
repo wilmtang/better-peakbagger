@@ -5,16 +5,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
-import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
-import { fixtureDom } from '../helpers/page-dom.mts';
 
-for (const [id, name, origin] of [
-    ['gaia', 'Gaia', 'https://www.gaiagps.com/*'],
-    ['onx', 'onX', 'https://backcountry.onxmaps.com/*'],
-    ['alltrails', 'AllTrails', 'https://www.alltrails.com/*'],
-    ['caltopo', 'CalTopo', 'https://caltopo.com/*'],
-]) {
-    test(`${name} packaged access preserves trusted permission, retry, focus, and close behavior`, async t => {
+for (const id of ['gaia', 'onx', 'alltrails', 'caltopo']) {
+    test(`${id} packages the access page with its synchronous theme first`, async () => {
         const html = await readFile(new URL(`../../src/${id}/access.html`, import.meta.url), 'utf8');
         assert.deepEqual(ENTRIES.find(entry => entry.out === `${id}/access.js`)?.sources,
             [`${id}/${id}-import.ts`, `${id}/access.ts`]);
@@ -22,43 +15,5 @@ for (const [id, name, origin] of [
             ['settings/settings-schema.ts', 'settings/settings.ts', 'theme/panel-theme.ts']);
         assert.ok(COPY_FILES.some(entry => entry[1] === `${id}/access.html`));
         assert.match(html, /<script src="access-head\.js"><\/script>\s*<link rel="stylesheet" href="\.\.\/css\/panel\.css">/);
-        const dom = fixtureDom(html, { url: `moz-extension://test/${id}/access.html`, runScripts: 'outside-only' });
-        t.after(dom.window.close.bind(dom.window));
-        const requests: { origins: string[] }[] = [];
-        let outcome: boolean | Error = false;
-        let closes = 0;
-        Object.defineProperty(dom.window, 'browser', {
-            value: { permissions: { request: async (value: { origins: string[] }) => {
-                requests.push(structuredClone(value));
-                if (outcome instanceof Error) throw outcome;
-                return outcome;
-            } } },
-        });
-        dom.window.close = () => { closes++; };
-        await evalBundle(dom.window, `${id}/access.js`);
-        const button = dom.window.document.querySelector<HTMLButtonElement>(`#allow-${id}`);
-        const close = dom.window.document.getElementById(`close-${id}`);
-        const status = dom.window.document.getElementById(`${id}-access-status`);
-        button.click(); close.click();
-        assert.equal(requests.length, 0, 'synthetic clicks cannot request permission');
-        assert.equal(closes, 0, 'synthetic clicks cannot close the page');
-        for (const [result, message] of [[false, 'not granted'], [new Error('browser error'), 'could not change'], [true, 'Return to']] as const) {
-            outcome = result;
-            const before: number = requests.length;
-            button.focus();
-            fireTrustedEvent(button, 'click');
-            fireTrustedEvent(button, 'click');
-            assert.equal(button.disabled, false, 'pending permission keeps the action focusable');
-            assert.equal(button.getAttribute('aria-busy'), 'true');
-            assert.equal(requests.length, before + 1, 'permission request must start within the trusted event');
-            assert.deepEqual(requests.at(-1), { origins: [origin] });
-            await waitFor(dom, () => status.textContent.includes(message));
-            assert.equal(button.disabled, result === true);
-            assert.equal(close.hidden, result !== true);
-        }
-        assert.equal(button.textContent, `${name} access enabled`);
-        assert.equal(dom.window.document.activeElement, close);
-        fireTrustedEvent(close, 'click');
-        assert.equal(closes, 1);
     });
 }
