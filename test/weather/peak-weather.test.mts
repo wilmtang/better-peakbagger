@@ -9,7 +9,7 @@ import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mts';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
-import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
+import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mts';
 
 type Values = Record<string, unknown>;
 type RequestOptions = RequestInit & { signal: AbortSignal };

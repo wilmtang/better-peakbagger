@@ -731,6 +731,10 @@ Hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760 computed
 `none` from both sheets, and rejected a disposable early sheet with that rule
 removed. The fixture supplies the native wallpaper locally. The full DOM
 lane passed 70 cases. The test measures computed styles and sheet replacement.
+The peak elevation unit probe now uses native HTML parsing. Both hidden
+browsers at 1000 × 760 preserved all twelve valid and inconclusive heading
+inputs, and both rejected a disposable version that chose the second unit.
+The 124 Node weather and snow consumer cases also passed.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
