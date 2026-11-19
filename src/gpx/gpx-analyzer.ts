@@ -12,30 +12,196 @@
 // isolated-world bridge (src/settings/bridge.js) over window.postMessage. Affected map
 // and chart surfaces update live when settings change.
 
-import { gpxParse as GpxParse } from './gpx-parse.ts';
-import { gpxMetrics as GpxMetrics } from './gpx-metrics.ts';
-import { diagnoseGpxSegments, diagnosticMetricInputs } from './gpx-segment-diagnostics.ts';
+import { gpxParse as GpxParse, type ParsedQualityTrackPoint } from './gpx-parse.ts';
+import {
+    gpxMetrics as GpxMetrics,
+    type AdjustedMetricPoint,
+    type ComputeMetricsResult,
+    type ElevationQuality,
+    type RouteMetricPoint,
+    type TimeQuality,
+} from './gpx-metrics.ts';
+import {
+    diagnoseGpxSegments,
+    diagnosticMetricInputs,
+    type GpxSegmentDiagnostics,
+    type SegmentDispositionReason,
+} from './gpx-segment-diagnostics.ts';
 import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.ts';
 import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { themeResolve as ThemeResolve } from '../theme/theme-resolve.ts';
-import { pageSettingsClient as PageSettingsClient } from '../settings/page-settings-client.ts';
+import { pageSettingsClient as PageSettingsClient, type PageSettingsValues } from '../settings/page-settings-client.ts';
 import { peakMarkers } from '../maps/peak-markers.ts';
-import { mountainTime as MountainTime } from '../time/mountain-time.ts';
+import { mountainTime as MountainTime, type MountainZone } from '../time/mountain-time.ts';
 import { terrainBasemap } from '../terrain/terrain-basemap.ts';
-import { terrainCompass as TerrainCompass } from '../terrain/terrain-compass.ts';
+import { terrainCompass as TerrainCompass, type TerrainCompassControl } from '../terrain/terrain-compass.ts';
 import { terrainCoordinator as TerrainCoordinator } from '../terrain/terrain-coordinator.ts';
 import { terrainFailure as TerrainFailure } from '../terrain/terrain-failure.ts';
-import { units as Units } from '../ui/units.ts';
+import { units as Units, type UnitMeasurementKey } from '../ui/units.ts';
 import { pageLifecycle as PageLifecycle } from '../ui/page-lifecycle.ts';
 import { mapViewport as MapViewport } from './map-viewport.ts';
-import { mapFrameLifecycle as MapFrameLifecycle } from './map-frame-lifecycle.ts';
+import { mapFrameLifecycle as MapFrameLifecycle, type MapFrameChangeDetail } from './map-frame-lifecycle.ts';
 import { mapOverlay as MapOverlay } from './map-overlay.ts';
 import { gpxPanelCss } from './gpx-panel-css.ts';
 import { ascentPage as AscentPage } from '../ascent/ascent-page.ts';
-import { sunState as SunState } from '../sun/sun-state.ts';
-import { sunCalculator as SunCalculator } from '../sun/sun-calculator.ts';
+import { sunState as SunState, type SunStateSnapshot } from '../sun/sun-state.ts';
+import { sunCalculator as SunCalculator, type SunCalculator as SunCalculatorControl } from '../sun/sun-calculator.ts';
 import { createGpxTimeCursorPublisher } from './gpx-time-cursor.ts';
+
+type ChartSeries = 'distance' | 'time';
+type ChartMode = 'elevation' | 'progress' | 'route';
+type AnalyzerAdjustedPoint = AdjustedMetricPoint & { sourcePointId?: string };
+type AnalyzerRoutePoint = RouteMetricPoint & { sourcePointId?: string };
+type AnalyzerPoint = AnalyzerAdjustedPoint | AnalyzerRoutePoint;
+type AnalyzerMetrics = Omit<ComputeMetricsResult, 'points' | 'routePoints' | 'timePoints'> & {
+    points: AnalyzerAdjustedPoint[];
+    routePoints: AnalyzerRoutePoint[];
+    timePoints: AnalyzerRoutePoint[];
+};
+type AnalyzerMetricsState = AnalyzerMetrics | {
+    distanceM: number;
+    gainM: number;
+    rawDistanceM: number;
+    rawGainM: number;
+    points?: undefined;
+    routePoints?: undefined;
+    timePoints?: undefined;
+    coordinateQuality?: undefined;
+    elevationQuality?: undefined;
+    timeQuality?: undefined;
+};
+
+interface ChartDatum<TPoint = AnalyzerPoint> {
+    x: number;
+    y: number | null;
+    _raw: TPoint | null;
+}
+
+interface ChartDataset {
+    label: string;
+    data: ChartDatum<AnalyzerPoint>[];
+    hidden?: boolean;
+    _bpbSeries: ChartSeries;
+    borderColor: string;
+    backgroundColor: string;
+    borderWidth: number;
+    fill: boolean;
+    tension: number;
+    yAxisID: string;
+    xAxisID: string;
+    pointRadius: (context: { raw?: ChartDatum<AnalyzerPoint> }) => number;
+    pointHoverRadius: number;
+    hitRadius: number;
+}
+
+interface ChartActiveElement {
+    datasetIndex: number;
+    index: number;
+}
+
+interface ChartTooltipItem {
+    raw: ChartDatum<AnalyzerPoint>;
+    dataset: ChartDataset;
+    parsed: { y: number | null };
+}
+
+interface ChartInteractionOptions {
+    mode: 'index' | 'nearest';
+    intersect: boolean;
+    axis?: 'xy';
+}
+
+interface ChartOptionsConfig {
+    responsive: boolean;
+    maintainAspectRatio: boolean;
+    animation: false;
+    interaction: ChartInteractionOptions;
+    onHover: (event: Event | { type?: string } | null | undefined, activeElements: readonly ChartActiveElement[]) => void;
+    plugins: {
+        legend: { display: boolean };
+        tooltip: {
+            filter: (tooltipItem: unknown, index: number) => boolean;
+            callbacks: {
+                title: (items: readonly ChartTooltipItem[]) => string;
+                label: (item: ChartTooltipItem) => string;
+                afterBody: (items: readonly ChartTooltipItem[]) => string[];
+            };
+        };
+    };
+    scales: Record<string, unknown>;
+}
+
+interface ChartInstance {
+    data: { datasets: ChartDataset[] };
+    options: ChartOptionsConfig;
+    destroy(): void;
+    update(mode?: string): void;
+    isDatasetVisible?(index: number): boolean;
+    setDatasetVisibility?(index: number, visible: boolean): void;
+    getElementsAtEventForMode?(
+        event: Event,
+        mode: string,
+        options: { intersect: boolean; axis?: string },
+        useFinalPosition: boolean,
+    ): ChartActiveElement[];
+}
+
+interface LeafletCircleMarker {
+    _map?: LeafletMap | null;
+    remove?(): unknown;
+    setLatLng(latlng: [number, number]): unknown;
+    setStyle(style: {
+        color?: string;
+        fillColor?: string;
+        opacity: number;
+        fillOpacity: number;
+    }): unknown;
+    addTo(map: LeafletMap): LeafletCircleMarker;
+}
+
+interface LeafletMap {
+    removeLayer?(layer: LeafletCircleMarker): unknown;
+}
+
+interface MasterMapWindow extends Window {
+    mapsPlaceholder?: LeafletMap;
+    L?: {
+        circleMarker(
+            latlng: [number, number],
+            options: {
+                radius: number;
+                color: string;
+                fillColor: string;
+                fillOpacity: number;
+                opacity: number;
+                weight: number;
+            },
+        ): LeafletCircleMarker;
+    };
+}
+
+interface TerrainPageMessage {
+    __bpbTerrain?: unknown;
+    dir?: unknown;
+    type?: string;
+    enabled?: unknown;
+    camera?: unknown;
+    navTop?: unknown;
+    bearing?: unknown;
+    pitch?: unknown;
+    requestId?: unknown;
+    reason?: unknown;
+}
+
+declare const Chart: new (
+    context: CanvasRenderingContext2D | null,
+    config: {
+        type: 'line';
+        data: { datasets: ChartDataset[] };
+        options: ChartOptionsConfig;
+    },
+) => ChartInstance;
 
 // Chart remains a separately-loaded vendor global (see manifest). The mountain
 // time module owns the bundled offline timezone resolver.
@@ -61,43 +227,43 @@ const run = async () => {
         light: { chartText: '#666666', chartGrid: 'rgba(0,0,0,0.1)', axisTitle: '#000000', timeAxis: '#007fb6' },
         dark: { chartText: '#b6b0a6', chartGrid: 'rgba(255,255,255,0.12)', axisTitle: '#e6e1d8', timeAxis: '#6ab0de' }
     };
-    const effectiveTheme = preference => ThemeResolve.resolve(preference);
+    const effectiveTheme = (preference: unknown) => ThemeResolve.resolve(preference);
 
     // The isolated bridge owns storage; this MAIN-world client owns optimistic
     // ordering, acknowledgement deadlines, and rollback notifications.
     const BPB = PageSettingsClient.create({ fallback: Schema.clean({}) });
 
     const detectPageMetric = () => {
-        const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent.trim() === 'Elevation:');
-        return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent.trim()));
+        const elevTd = Array.from(document.querySelectorAll('td')).find(td => td.textContent?.trim() === 'Elevation:');
+        return !!(elevTd && elevTd.nextElementSibling && /^[\d,.]+\s*m/.test(elevTd.nextElementSibling.textContent?.trim() || ''));
     };
-    const unitPreference = settings => {
+    const unitPreference = (settings: unknown) => {
         const clean = Schema.clean(settings);
         return clean.distanceUnits === clean.elevationUnits ? clean.distanceUnits : 'custom';
     };
     // detectPageMetric reads this page's own Elevation cell; the preference
     // logic around it belongs to the shared resolver, not to a second copy.
-    const resolveUnits = (settings, measurement) => Units.resolveUnits(
+    const resolveUnits = (settings: unknown, measurement: UnitMeasurementKey) => Units.resolveUnits(
         Schema.clean(settings),
         () => (detectPageMetric() ? Units.METRIC : Units.IMPERIAL), measurement
     );
     // Which series to show on load. Only the initial visibility is bound to the
     // setting; the legend's own click handler toggles visibility for the current
     // view without writing it back, so a temporary peek never changes the pref.
-    const resolveChartSeries = settings => Schema.chartDefaultSeries(settings.chartDefaultSeries);
+    const resolveChartSeries = (settings: PageSettingsValues) => Schema.chartDefaultSeries(settings.chartDefaultSeries);
     // Settings arrive over postMessage, so they are re-validated here rather
     // than trusted; the shared schema keeps those checks identical to the ones
     // src/settings/settings.js applies on the way into storage.
     const resolveMapRouteStyle = Schema.routeStyleFromSettings;
     const resolveMapViewportSize = Schema.viewportSizeFromSettings;
-    const resolveTerrainCacheLimitMb = settings => Schema.terrainCacheLimitMb(settings.terrainCacheLimitMb);
+    const resolveTerrainCacheLimitMb = (settings: PageSettingsValues) => Schema.terrainCacheLimitMb(settings.terrainCacheLimitMb);
 
     const initChart = async () => {
         // 1. Locate GPX link and build UI. The link text is the primary signal;
         // match the href (GPXFile.aspx, plus the legacy GetAscentGPX.aspx) as a
         // fallback so a future rewording does not silently disable the analyzer.
         const gpxLink = Array.from(document.querySelectorAll('a')).find(a =>
-            a.textContent.includes('Download this GPS track')
+            (a.textContent || '').includes('Download this GPS track')
             || /GPXFile\.aspx|GetAscentGPX\.aspx/i.test(a.getAttribute('href') || ''));
         if (!gpxLink) return;
 
@@ -106,10 +272,10 @@ const run = async () => {
         const MAP_IFRAME_SELECTOR = 'iframe[src*="MasterMap.aspx"], iframe[src*="mastermap.aspx"]';
         const frameLifecycle = MapFrameLifecycle.create({ selector: MAP_IFRAME_SELECTOR });
         const currentMapIframe = () => frameLifecycle.current();
-        let terrainCoordinator = null;
-        let routeExplorer = null;
-        let mapColumn = null;
-        let mapViewport = null;
+        let terrainCoordinator: ReturnType<typeof TerrainCoordinator.create> | null = null;
+        let routeExplorer: HTMLDivElement | null = null;
+        let mapColumn: HTMLDivElement | null = null;
+        let mapViewport: HTMLElement | null = null;
         let syncRouteExplorerLayout = () => {};
 
         // Resize, persist, and Leaflet invalidation now live in
@@ -216,7 +382,7 @@ const run = async () => {
         unitSelect.setAttribute('aria-label', 'Distance and elevation');
         unitSelect.title = 'Distance & elevation';
         Object.assign(unitSelect.style, { padding: '2px 6px', borderRadius: '4px', borderWidth: '1px', borderStyle: 'solid', cursor: 'pointer' });
-        const unitOption = (value, label) => {
+        const unitOption = (value: string, label: string) => {
             const option = document.createElement('option');
             option.value = value;
             option.textContent = label;
@@ -251,7 +417,7 @@ const run = async () => {
             display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8em'
         });
 
-        const createColorControl = (id, text) => {
+        const createColorControl = (id: string, text: string) => {
             const label = document.createElement('label');
             label.className = 'bpb-gpx-control-label';
             Object.assign(label.style, { display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' });
@@ -328,11 +494,11 @@ const run = async () => {
         container.append(headerBox, terrainMessage, chartLegend, canvasContainer, coordinateControls);
         const ascentDate = AscentPage.parseDate(document);
         const sunState = SunState.create();
-        let sunCalculator = null;
-        let hoverSunState = null;
-        let hoverSunPoint = null;
-        let pendingHoverSunPoint = null;
-        let hoverSunFrameHandle = null;
+        let sunCalculator: SunCalculatorControl | null = null;
+        let hoverSunState: ReturnType<typeof SunState.create> | null = null;
+        let hoverSunPoint: AnalyzerPoint | null = null;
+        let pendingHoverSunPoint: AnalyzerPoint | null = null;
+        let hoverSunFrameHandle: number | null = null;
         const clearHoverSunPreview = () => {
             if (hoverSunFrameHandle !== null) window.cancelAnimationFrame(hoverSunFrameHandle);
             hoverSunFrameHandle = null;
@@ -340,7 +506,10 @@ const run = async () => {
             hoverSunPoint = null;
             hoverSunState = null;
         };
-        const renderSun = (state, contextLabel = selectedCoordinateIndex < 0 ? 'Trailhead' : 'Selected point') => {
+        const renderSun = (
+            state: SunStateSnapshot,
+            contextLabel = selectedCoordinateIndex < 0 ? 'Trailhead' : 'Selected point',
+        ) => {
             const recorded = state.timeSource === 'Recorded at selected GPX point';
             sunCalculator?.render({
                 ...state, contextLabel,
@@ -350,15 +519,15 @@ const run = async () => {
                     ? `Recorded at ${contextLabel.toLowerCase()}` : state.timeSource,
             });
         };
-        const setSunBearing = bearing => {
-            const nextBearing = Number.isFinite(bearing) ? bearing : 0;
+        const setSunBearing = (bearing: number | null) => {
+            const nextBearing = typeof bearing === 'number' && Number.isFinite(bearing) ? bearing : 0;
             const selectedState = sunState.setMapBearing(nextBearing);
             const visibleState = hoverSunState
                 ? hoverSunState.setMapBearing(nextBearing)
                 : selectedState;
             sunCalculator?.setMapBearing(visibleState);
         };
-        const resetSun = message => {
+        const resetSun = (message?: string) => {
             clearHoverSunPreview();
             sunState.resetSubject();
             sunCalculator?.setUnavailable(message || 'Sun position is unavailable.');
@@ -374,8 +543,8 @@ const run = async () => {
             ), 'Trailhead');
             else sunCalculator?.setPrompt(SUN_SELECTION_PROMPT);
         };
-        const selectedPointForSun = point => metrics.timeQuality?.reason === 'not-progressing'
-            ? { ...point, timeState: 'suspect' }
+        const selectedPointForSun = (point: AnalyzerPoint) => metrics.timeQuality?.reason === 'not-progressing'
+            ? { ...point, timeState: 'suspect' as const }
             : point;
         const applyHoverSunPreview = () => {
             hoverSunFrameHandle = null;
@@ -396,14 +565,14 @@ const run = async () => {
             hoverSunState = preview;
             renderSun(previewState, 'Hovered point');
         };
-        const previewSunPoint = point => {
+        const previewSunPoint = (point: AnalyzerPoint) => {
             if (point === hoverSunPoint && hoverSunState) return;
             pendingHoverSunPoint = point;
             if (hoverSunFrameHandle === null) {
                 hoverSunFrameHandle = window.requestAnimationFrame(applyHoverSunPreview);
             }
         };
-        const selectSunPoint = point => renderSun(sunState.selectRoutePoint(
+        const selectSunPoint = (point: AnalyzerPoint) => renderSun(sunState.selectRoutePoint(
             selectedPointForSun(point), ascentDate, mountainZone
         ));
         sunCalculator = SunCalculator.create({
@@ -412,11 +581,11 @@ const run = async () => {
             onMinuteChange: minute => renderSun(sunState.setPreviewMinute(minute)),
         });
         if (sunCalculator) sunCalculator.element.hidden = !BPB.get().showSunMoon;
-        const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => a.textContent.includes('Full Screen Map'));
+        const fullScreenMapLink = Array.from(document.querySelectorAll('a')).find(a => (a.textContent || '').includes('Full Screen Map'));
         if (fullScreenMapLink) {
             fullScreenMapLink.before(container);
             if (mapViewport?.parentNode === fullScreenMapLink.parentNode) {
-                const mapDetailsNodes = [];
+                const mapDetailsNodes: ChildNode[] = [];
                 for (let node = mapViewport.nextSibling; node && node !== fullScreenMapLink;
                     node = node.nextSibling) {
                     if (node !== container && node !== gpxLink) mapDetailsNodes.push(node);
@@ -428,7 +597,7 @@ const run = async () => {
                 while (mapDetailsNodes.length) {
                     const first = mapDetailsNodes[0];
                     const redundantSpacer = first.nodeName === 'BR'
-                        || (first.nodeType === Node.TEXT_NODE && !first.textContent.trim());
+                        || (first.nodeType === Node.TEXT_NODE && !(first.textContent || '').trim());
                     if (!redundantSpacer) break;
                     mapDetailsNodes.shift();
                     first.remove();
@@ -448,7 +617,7 @@ const run = async () => {
                 syncRouteExplorerLayout = () => {
                     const mapRect = mapColumn?.getBoundingClientRect();
                     const analysisRect = container.getBoundingClientRect();
-                    if (!mapRect || !analysisRect) return;
+                    if (!mapRect || !analysisRect || !routeExplorer) return;
                     const sideBySide = mapRect.right <= analysisRect.left + 1;
                     routeExplorer.dataset.layout = sideBySide ? 'side' : 'stacked';
                 };
@@ -480,15 +649,15 @@ const run = async () => {
         // bar labels that estimate. GPX timestamps are UTC; the fallback
         // shifts the epoch and formats in UTC to get the same wall clock.
         // See docs/mountain-local-time.md.
-        let mountainZone = null;
-        const mountainZoneLabel = referenceMs => MountainTime.zoneLabel(mountainZone, referenceMs);
-        const fmtTime = ms => ms > 0 ? `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m` : '0m';
+        let mountainZone: MountainZone | null = null;
+        const mountainZoneLabel = (referenceMs: number) => MountainTime.zoneLabel(mountainZone, referenceMs);
+        const fmtTime = (ms: number) => ms > 0 ? `${Math.floor(ms / 3600000)}h ${Math.floor((ms % 3600000) / 60000)}m` : '0m';
         // The camping-spot scan asks for the day of every track point, and
         // Intl formatting per point is too slow for full-resolution tracks.
         // Memoize per UTC minute: modern IANA offsets are whole minutes, so a
         // minute bucket never straddles the mountain's local midnight.
-        const mountainDayCache = new Map();
-        const mountainDayNumber = ms => {
+        const mountainDayCache = new Map<number, number | null>();
+        const mountainDayNumber = (ms: number): number | null => {
             const key = Math.floor(ms / 60000);
             let dayNumber = mountainDayCache.get(key);
             if (dayNumber === undefined) {
@@ -497,11 +666,12 @@ const run = async () => {
             }
             return dayNumber;
         };
-        const getRelativeDay = (ms, startMs) => mountainDayNumber(ms) - mountainDayNumber(startMs) + 1;
-        const formatTimeStr = (ms, startMs, isMultiDay) => {
-            const timeStr = MountainTime.formatClock(mountainZone, ms);
+        const getRelativeDay = (ms: number, startMsValue: number): number =>
+            (mountainDayNumber(ms) ?? 0) - (mountainDayNumber(startMsValue) ?? 0) + 1;
+        const formatTimeStr = (ms: number, startMsValue: number, isMultiDay: boolean): string => {
+            const timeStr = MountainTime.formatClock(mountainZone, ms) || '';
             if (isMultiDay) {
-                return `Day ${getRelativeDay(ms, startMs)} ${timeStr}`;
+                return `Day ${getRelativeDay(ms, startMsValue)} ${timeStr}`;
             }
             return timeStr;
         };
@@ -516,51 +686,52 @@ const run = async () => {
         syncRouteStyleControls();
 
         // Processing Arrays & Core Metrics
-        let chartInstance = null;
-        let chartData = [];
-        let timeChartData = [];
+        let chartInstance: ChartInstance | null = null;
+        let chartData: AnalyzerPoint[] = [];
+        let timeChartData: AnalyzerPoint[] = [];
         let lastChartPointBudget = 0;
-        let chartResizeObserver = null;
-        let chartResizeFrame = null;
-        let chartMode = 'elevation';
+        let chartResizeObserver: ResizeObserver | null = null;
+        let chartResizeFrame: number | null = null;
+        let chartMode: ChartMode = 'elevation';
         let hasTimeSeries = false;
         let selectedCoordinateIndex = -1;
         let selectedCoordinateExcluded = false;
-        let selectedCoordinateSeries = 'distance';
-        let selectedChartValues = () => [];
-        let coordinateFeedbackTimer = null;
-        let metrics = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
-        let segmentDiagnostics = null;
-        let analysisViews = null;
+        let selectedCoordinateSeries: ChartSeries = 'distance';
+        let selectedChartValues: (point: AnalyzerPoint) => string[] = () => [];
+        let coordinateFeedbackTimer: ReturnType<typeof setTimeout> | null = null;
+        let metrics: AnalyzerMetricsState = { distanceM: 0, gainM: 0, rawDistanceM: 0, rawGainM: 0 };
+        let segmentDiagnostics: GpxSegmentDiagnostics<ParsedQualityTrackPoint> | null = null;
+        let analysisViews: { source: AnalyzerMetrics; interpreted: AnalyzerMetrics } | null = null;
         let sourceView = false;
         let totalMs = 0, hasTime = false;
         let startMs = 0, endMs = 0, summitMs = 0;
-        let campingSpots = [];
-        let mapRouteSegments = [];
-        let hoverMarker = null;
+        let campingSpots: { day: number; lat: number; lon: number }[] = [];
+        let mapRouteSegments: [number, number][][] = [];
+        let hoverMarker: LeafletCircleMarker | null = null;
         const timeCursor = createGpxTimeCursorPublisher(window);
 
-        const isCoordinatePoint = point =>
-            point && Number.isFinite(point.lat) && Number.isFinite(point.lon);
-        const coordinateText = point => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
-        const chartDatasetVisible = (chart, index) =>
+        const isCoordinatePoint = (point: AnalyzerPoint | null | undefined): point is AnalyzerPoint =>
+            Boolean(point && Number.isFinite(point.lat) && Number.isFinite(point.lon));
+        const coordinateText = (point: AnalyzerPoint) => `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
+        const chartDatasetVisible = (chart: ChartInstance | null, index: number): boolean =>
             typeof chart?.isDatasetVisible === 'function'
                 ? chart.isDatasetVisible(index)
                 : chart?.data?.datasets?.[index]?.hidden !== true;
-        const coordinatePointsFor = series => (series === 'time' && hasTimeSeries ? timeChartData : chartData)
-            .filter(isCoordinatePoint);
+        const coordinatePointsFor = (series: ChartSeries): AnalyzerPoint[] =>
+            (series === 'time' && hasTimeSeries ? timeChartData : chartData).filter(isCoordinatePoint);
         const chartDescription = () => chartMode === 'elevation'
             ? 'elevation chart'
             : chartMode === 'progress' ? 'route progress chart' : 'route position chart';
-        const defaultCoordinateSeries = () => {
+        const defaultCoordinateSeries = (): ChartSeries => {
             if (!hasTimeSeries) return chartMode === 'progress' ? 'time' : 'distance';
             if (chartInstance && Array.isArray(chartInstance.data?.datasets)
                 && typeof chartInstance.isDatasetVisible === 'function') {
+                const activeChart = chartInstance;
                 const visibleSeries = chartInstance.data.datasets
-                    .map((dataset, index) => chartDatasetVisible(chartInstance, index)
+                    .map((dataset, index) => chartDatasetVisible(activeChart, index)
                         ? dataset._bpbSeries
                         : null)
-                    .filter(Boolean);
+                    .filter((series): series is ChartSeries => series !== null);
                 if (visibleSeries.length === 1) return visibleSeries[0];
             }
             return resolveChartSeries(BPB.get()) === 'time' ? 'time' : 'distance';
@@ -571,7 +742,7 @@ const run = async () => {
                 coordinateFeedbackTimer = null;
             }
         };
-        const setCoordinateStatus = (text, state = '') => {
+        const setCoordinateStatus = (text: string, state = '') => {
             hintText.textContent = text;
             if (state) hintText.dataset.state = state;
             else delete hintText.dataset.state;
@@ -614,8 +785,9 @@ const run = async () => {
             if (sunState.get().subject) renderSun(sunState.get());
             else showDefaultSun();
         };
-        const selectCoordinateIndex = (index, series = 'distance') => {
-            if (!isCoordinatePoint(chartData[index])) return false;
+        const selectCoordinateIndex = (index: number, series: ChartSeries = 'distance') => {
+            const point = chartData[index];
+            if (!isCoordinatePoint(point)) return false;
             clearHoverSunPreview();
             clearCoordinateFeedbackTimer();
             selectedCoordinateIndex = index;
@@ -630,12 +802,12 @@ const run = async () => {
                 `Interactive ${chartDescription()}. ${selectedCoordinateAnnouncement()}. Use Left and Right Arrow keys to move.`
             );
             if (chartInstance) chartInstance.update('none');
-            renderRouteHighlight(chartData[index], selectedCoordinateSeries);
-            selectSunPoint(chartData[index]);
-            timeCursor.select(chartData[index], metrics.timeQuality);
+            renderRouteHighlight(point, selectedCoordinateSeries);
+            selectSunPoint(point);
+            timeCursor.select(point, metrics.timeQuality);
             return true;
         };
-        const selectCoordinateFromEvent = event => {
+        const selectCoordinateFromEvent = (event: MouseEvent) => {
             if (!chartInstance || typeof chartInstance.getElementsAtEventForMode !== 'function') return false;
             const activeElements = chartInstance.getElementsAtEventForMode(
                 event,
@@ -646,13 +818,13 @@ const run = async () => {
             for (const active of activeElements) {
                 const dataset = chartInstance.data.datasets[active.datasetIndex];
                 const point = dataset?.data[active.index]?._raw;
-                const index = chartData.indexOf(point);
-                const series = dataset?._bpbSeries || 'distance';
-                if (selectCoordinateIndex(index, series)) return true;
+                const index = point ? chartData.indexOf(point) : -1;
+                const series: ChartSeries = dataset?._bpbSeries || 'distance';
+                if (index >= 0 && selectCoordinateIndex(index, series)) return true;
             }
             return false;
         };
-        const showCopyFallback = text => {
+        const showCopyFallback = (text: string) => {
             coordinateFallback.value = text;
             coordinateFallback.hidden = false;
             coordinateFallback.focus();
@@ -678,7 +850,7 @@ const run = async () => {
                     coordinateFeedbackTimer = null;
                     setCoordinateStatus(selectedCoordinateAnnouncement());
                 }, 2500);
-            } catch (error) {
+            } catch {
                 showCopyFallback(text);
             }
         };
@@ -715,13 +887,13 @@ const run = async () => {
         });
 
         let terrainConsentPending = false;
-        let terrainCompass = null;
+        let terrainCompass: TerrainCompassControl | null = null;
 
         const nativeLeafletMap = () => {
             try {
                 const mapIframe = currentMapIframe();
-                return mapIframe && mapIframe.contentWindow && mapIframe.contentWindow.mapsPlaceholder;
-            } catch (error) {
+                return (mapIframe?.contentWindow as MasterMapWindow | null)?.mapsPlaceholder ?? null;
+            } catch {
                 return null;
             }
         };
@@ -740,7 +912,7 @@ const run = async () => {
                 const iframeRect = mapIframe.getBoundingClientRect();
                 const viewportRect = mapViewport.getBoundingClientRect();
                 return viewportRect.bottom - (iframeRect.top + zoomRect.top);
-            } catch (e) {
+            } catch {
                 return null;
             }
         };
@@ -751,7 +923,7 @@ const run = async () => {
             if (terrainCompass) terrainCompass.position();
         };
 
-        const postTerrain = (type, detail = {}) => window.postMessage({
+        const postTerrain = (type: string, detail: Record<string, unknown> = {}) => window.postMessage({
             __bpbTerrain: true,
             dir: 'toCS',
             type,
@@ -770,7 +942,7 @@ const run = async () => {
         };
         attachMapControls();
 
-        const showTerrainMessage = (text, tone = 'info') => {
+        const showTerrainMessage = (text: string, tone: 'info' | 'error' = 'info') => {
             if (!text) {
                 terrainMessage.style.display = 'none';
                 terrainMessage.textContent = '';
@@ -801,7 +973,7 @@ const run = async () => {
             queueMicrotask(() => restoreSelectedRouteHighlight());
         };
 
-        const buildTerrainInit = () => {
+        const buildTerrainInit = (): Record<string, unknown> | null => {
             const mapIframe = currentMapIframe();
             if (!mapViewport || !mapIframe || !mapRouteSegments.length) return null;
             return {
@@ -814,7 +986,7 @@ const run = async () => {
             };
         };
 
-        terrainCoordinator = TerrainCoordinator.create({
+        const coordinator = TerrainCoordinator.create({
             toggle: terrainButton,
             compass: terrainCompass,
             isEnabled: () => BPB.get().enable3dMap === true,
@@ -851,17 +1023,18 @@ const run = async () => {
             theme: () => effectiveTheme(BPB.get().theme),
             position: positionTerrainToggle
         });
+        terrainCoordinator = coordinator;
 
-        const syncTerrainAvailability = settings => {
+        const syncTerrainAvailability = (settings: PageSettingsValues) => {
             const enabled = settings.enable3dMap === true;
             if (!enabled) {
-                if (terrainCoordinator.isOpen()) terrainCoordinator.stop();
+                if (coordinator.isOpen()) coordinator.stop();
                 else showTerrainMessage('');
             }
-            terrainCoordinator.update();
-            if (enabled && terrainConsentPending && terrainCoordinator.isIdle()) {
+            coordinator.update();
+            if (enabled && terrainConsentPending && coordinator.isIdle()) {
                 terrainConsentPending = false;
-                terrainCoordinator.start();
+                coordinator.start();
             }
         };
 
@@ -872,15 +1045,15 @@ const run = async () => {
 
         window.addEventListener('message', event => {
             if (event.source !== window || event.origin !== location.origin) return;
-            const data = event.data;
+            const data = event.data as TerrainPageMessage | null | undefined;
             if (!data || data.__bpbTerrain !== true || data.dir !== 'toPage') return;
 
             if (data.type === 'consentResult' && terrainConsentPending) {
                 terrainConsentPending = false;
-                if (data.enabled === true) terrainCoordinator.start(true);
-            } else if (data.type === 'peaksRequest' && !terrainCoordinator.isIdle()) {
+                if (data.enabled === true) coordinator.start(true);
+            } else if (data.type === 'peaksRequest' && !coordinator.isIdle()) {
                 peaksResponder.answer(data);
-            } else terrainCoordinator.handleMessage(data);
+            } else coordinator.handleMessage(data);
         });
 
         syncTerrainAvailability(BPB.get());
@@ -910,12 +1083,12 @@ const run = async () => {
         const getTerrainBasemap = overlay.getTerrainBasemap;
         const enumerateTerrainBasemaps = overlay.enumerateTerrainBasemaps;
 
-        const resetFrameConsumers = ({ frame, previous, reason }) => {
+        const resetFrameConsumers = ({ frame, previous, reason }: MapFrameChangeDetail) => {
             if (hoverMarker) {
                 try {
                     if (typeof hoverMarker.remove === 'function') hoverMarker.remove();
                     else if (hoverMarker._map?.removeLayer) hoverMarker._map.removeLayer(hoverMarker);
-                } catch (error) { /* The old frame may already be gone. */ }
+                } catch { /* The old frame may already be gone. */ }
                 hoverMarker = null;
             }
             peaksResponder.reset();
@@ -933,7 +1106,7 @@ const run = async () => {
             }
             overlay.handleFrameChange();
             if (frame) {
-                if (terrainCoordinator.isActive()) {
+                if (coordinator.isActive()) {
                     frame.style.visibility = 'hidden';
                     frame.setAttribute('aria-hidden', 'true');
                 } else {
@@ -942,7 +1115,7 @@ const run = async () => {
                 }
             }
             scheduleMapInvalidate();
-            terrainCoordinator.position();
+            coordinator.position();
         };
         frameLifecycle.subscribe(resetFrameConsumers);
         frameLifecycle.start();
@@ -954,8 +1127,8 @@ const run = async () => {
                 // A loading frame owns a deadline that cannot advance while
                 // the document is frozen. Discard that transient attempt; an
                 // already-active 3D surface remains intact in the cached DOM.
-                if (terrainCoordinator.isOpen() && !terrainCoordinator.isActive()) {
-                    terrainCoordinator.reset();
+                if (coordinator.isOpen() && !coordinator.isActive()) {
+                    coordinator.reset();
                 }
             },
             onResume: () => {
@@ -966,14 +1139,14 @@ const run = async () => {
                 scheduleMapLayerSync();
                 scheduleRouteOverlay();
                 scheduleMapInvalidate();
-                terrainCoordinator.update();
-                terrainCoordinator.position();
+                coordinator.update();
+                coordinator.position();
             },
             onDispose: () => {
                 timeCursor.dispose();
                 clearCoordinateFeedbackTimer();
                 clearHoverSunPreview();
-                if (terrainCoordinator.isOpen()) terrainCoordinator.reset();
+                if (coordinator.isOpen()) coordinator.reset();
                 sunState.resetSubject();
                 sunCalculator?.dispose();
                 sunCalculator = null;
@@ -993,22 +1166,22 @@ const run = async () => {
         // is the canvas rather than the plot rectangle so Chart.js can retain
         // its own tooltip while the pointer crosses the axis gutter and legend.
         let routeHighlightShown = false;
-        const renderRouteHighlight = (point, series = 'distance') => {
+        const renderRouteHighlight = (point: AnalyzerPoint | null | undefined, series: ChartSeries = 'distance') => {
             const highlightedPoint = isCoordinatePoint(point) ? point : null;
             if (!highlightedPoint && !routeHighlightShown) return;
             routeHighlightShown = highlightedPoint !== null;
             const fillColor = series === 'time' ? '#0055FF' : '#FF0000';
             const hoverFrame = currentMapIframe();
-            const iframeWin = hoverFrame ? hoverFrame.contentWindow : null;
+            const iframeWin = hoverFrame ? (hoverFrame.contentWindow as MasterMapWindow | null) : null;
 
-            if (terrainCoordinator.isActive()) {
+            if (coordinator.isActive()) {
                 postTerrain('highlight', {
                     coordinates: highlightedPoint ? [highlightedPoint.lon, highlightedPoint.lat] : null,
                     series
                 });
             }
 
-            if (highlightedPoint && !terrainCoordinator.isActive()
+            if (highlightedPoint && !coordinator.isActive()
                 && iframeWin && iframeWin.mapsPlaceholder && iframeWin.L) {
                 ensureRouteOverlay();
                 const L = iframeWin.L;
@@ -1018,7 +1191,7 @@ const run = async () => {
                 if (hoverMarker) {
                     try {
                         if (hoverMarker._map !== map) hoverMarker = null;
-                    } catch (e) {
+                    } catch {
                         hoverMarker = null;
                     }
                 }
@@ -1049,7 +1222,7 @@ const run = async () => {
             restoreSelectedSun();
         });
 
-        const renderUnavailable = (message, { retryable = false } = {}) => {
+        const renderUnavailable = (message: string, { retryable = false } = {}) => {
             timeCursor.select(null);
             clearCoordinateFeedbackTimer();
             if (chartInstance) {
@@ -1059,7 +1232,7 @@ const run = async () => {
             renderRouteHighlight(null);
             mapRouteSegments = [];
             removeRouteOverlay();
-            terrainCoordinator.reset();
+            coordinator.reset();
             resetSun('Sun position is unavailable.');
 
             chartData = [];
@@ -1112,44 +1285,52 @@ const run = async () => {
                 || 640;
             return Math.max(256, Math.min(1200, Math.ceil(width)));
         };
-        const sampleChartData = selectedPoint => {
+        const sampleChartData = (activeMetrics: AnalyzerMetrics, selectedPoint: AnalyzerPoint | null | undefined) => {
             const budget = chartPointBudget();
             lastChartPointBudget = budget;
-            const required = selectedPoint ? [selectedPoint] : [];
 
             if (chartMode === 'elevation') {
-                const distanceSource = metrics.points;
+                const requiredAdjusted: AnalyzerAdjustedPoint[] = selectedPoint && 'eleM' in selectedPoint
+                    ? [selectedPoint]
+                    : [];
+                const distanceSource = activeMetrics.points;
                 const timeSource = hasTime
-                    ? metrics.points.filter(point => point.timeState === 'valid')
+                    ? activeMetrics.points.filter(point => point.timeState === 'valid')
                         .sort((a, b) => a.ms - b.ms)
                     : [];
                 const distanceBudget = timeSource.length ? Math.ceil(budget / 2) : budget;
                 const timeBudget = timeSource.length ? Math.floor(budget / 2) : 0;
-                const included = new Set(GpxMetrics.sampleChartPoints(distanceSource, distanceBudget, {
+                const included = new Set<AnalyzerPoint>(GpxMetrics.sampleChartPoints(distanceSource, distanceBudget, {
                     groupProperty: 'coordinateGroup',
                     valueProperty: 'eleM',
-                    required,
+                    required: requiredAdjusted,
                 }));
                 GpxMetrics.sampleChartPoints(timeSource, timeBudget, {
                     groupProperty: 'timeCoordinateGroup',
                     valueProperty: 'eleM',
-                    required,
+                    required: requiredAdjusted,
                 }).forEach(point => included.add(point));
                 chartData = distanceSource.filter(point => included.has(point));
                 timeChartData = timeSource.filter(point => included.has(point));
             } else if (chartMode === 'progress') {
-                timeChartData = GpxMetrics.sampleChartPoints(metrics.timePoints, budget, {
+                const requiredRoute: AnalyzerRoutePoint[] = selectedPoint && !('eleM' in selectedPoint)
+                    ? [selectedPoint]
+                    : [];
+                timeChartData = GpxMetrics.sampleChartPoints(activeMetrics.timePoints, budget, {
                     groupProperty: 'timeCoordinateGroup',
                     valueProperty: 'distM',
-                    required,
+                    required: requiredRoute,
                 });
                 const included = new Set(timeChartData);
-                chartData = metrics.routePoints.filter(point => included.has(point));
+                chartData = activeMetrics.routePoints.filter(point => included.has(point));
             } else {
-                chartData = GpxMetrics.sampleChartPoints(metrics.routePoints, budget, {
+                const requiredRoute: AnalyzerRoutePoint[] = selectedPoint && !('eleM' in selectedPoint)
+                    ? [selectedPoint]
+                    : [];
+                chartData = GpxMetrics.sampleChartPoints(activeMetrics.routePoints, budget, {
                     groupProperty: 'coordinateGroup',
                     valueProperty: 'distM',
-                    required,
+                    required: requiredRoute,
                 });
                 timeChartData = [];
             }
@@ -1158,10 +1339,15 @@ const run = async () => {
                 : hasTime && timeChartData.length >= 2;
         };
 
-        const renderData = ({ resetSeriesVisibility = false, selectedPoint: retainedSelection = chartData[selectedCoordinateIndex] } = {}) => {
+        const renderData = ({
+            resetSeriesVisibility = false,
+            selectedPoint: retainedSelection = chartData[selectedCoordinateIndex],
+        }: { resetSeriesVisibility?: boolean; selectedPoint?: AnalyzerPoint | null } = {}) => {
+            if (!metrics.routePoints) return;
+            const activeMetrics = metrics;
             const selectedBeforeRebuild = retainedSelection;
             const disclosureFocused = document.activeElement === segmentDetailsButton;
-            sampleChartData(selectedBeforeRebuild);
+            sampleChartData(activeMetrics, selectedBeforeRebuild);
             selectedCoordinateIndex = selectedBeforeRebuild
                 ? chartData.indexOf(selectedBeforeRebuild)
                 : -1;
@@ -1186,17 +1372,17 @@ const run = async () => {
             const metricElevation = resolveUnits(BPB.get(), 'elevation') === 'metric';
             const dMult = metricDistance ? 0.001 : 1 / METERS_PER_MILE, eMult = metricElevation ? 1 : FEET_PER_METER;
             const dUnit = metricDistance ? 'km' : 'miles', eUnit = metricElevation ? 'm' : 'ft';
-            const formatDistanceM = meters => `${(meters * dMult).toFixed(2)} ${dUnit}`;
-            const formatElevationM = meters => `${(meters * eMult).toFixed(0)} ${eUnit}`;
-            const formatSignedDistanceDelta = meters => `${meters >= 0 ? '+' : '-'}${formatDistanceM(Math.abs(meters))}`;
-            const formatSignedElevationDelta = meters => `${meters >= 0 ? '+' : '-'}${formatElevationM(Math.abs(meters))}`;
+            const formatDistanceM = (meters: number) => `${(meters * dMult).toFixed(2)} ${dUnit}`;
+            const formatElevationM = (meters: number) => `${(meters * eMult).toFixed(0)} ${eUnit}`;
+            const formatSignedDistanceDelta = (meters: number) => `${meters >= 0 ? '+' : '-'}${formatDistanceM(Math.abs(meters))}`;
+            const formatSignedElevationDelta = (meters: number) => `${meters >= 0 ? '+' : '-'}${formatElevationM(Math.abs(meters))}`;
             const buildMetricNote = () => {
-                const distDeltaM = metrics.rawDistanceM - metrics.distanceM;
-                const gainDeltaM = metrics.rawGainM - metrics.gainM;
-                const distWorthShowing = Math.abs(distDeltaM) >= Math.max(0.03 * Math.max(metrics.distanceM, 1), 0.1 * METERS_PER_MILE);
+                const distDeltaM = activeMetrics.rawDistanceM - activeMetrics.distanceM;
+                const gainDeltaM = activeMetrics.rawGainM - activeMetrics.gainM;
+                const distWorthShowing = Math.abs(distDeltaM) >= Math.max(0.03 * Math.max(activeMetrics.distanceM, 1), 0.1 * METERS_PER_MILE);
                 const gainWorthShowing = chartMode === 'elevation'
-                    && Math.abs(gainDeltaM) >= Math.max(0.05 * Math.max(metrics.gainM, 1), 100 / FEET_PER_METER);
-                const parts = [];
+                    && Math.abs(gainDeltaM) >= Math.max(0.05 * Math.max(activeMetrics.gainM, 1), 100 / FEET_PER_METER);
+                const parts: string[] = [];
 
                 if (distWorthShowing) parts.push(`${formatSignedDistanceDelta(distDeltaM)} distance`);
                 if (gainWorthShowing) parts.push(`${formatSignedElevationDelta(gainDeltaM)} gain`);
@@ -1216,29 +1402,29 @@ const run = async () => {
                 muted: 'var(--bpb-gpx-muted)',
                 faint: 'var(--bpb-gpx-faint)',
             };
-            const subLine = (text, styles) => {
+            const subLine = (text: string, styles: Partial<CSSStyleDeclaration>) => {
                 const line = document.createElement('div');
                 Object.assign(line.style, styles);
                 line.textContent = text;
                 return line;
             };
-            const qualityIssues = (quality, type) => {
-                const parts = [];
+            const qualityIssues = (quality: ElevationQuality | TimeQuality, type: string) => {
+                const parts: string[] = [];
                 if (quality.missingPoints) parts.push(`${quality.missingPoints} missing`);
                 if (quality.invalidPoints) parts.push(`${quality.invalidPoints} malformed`);
-                if (quality.suspectPoints) {
+                if ('suspectPoints' in quality && quality.suspectPoints) {
                     parts.push(`${quality.suspectPoints} outside the plausible ${type} range`);
                 }
                 return parts.join(', ');
             };
-            const qualityPercent = quality => Math.round(quality.coverage * 100);
-            const qualityLines = [];
-            if (metrics.coordinateQuality.invalidPoints) {
-                const count = metrics.coordinateQuality.invalidPoints;
+            const qualityPercent = (quality: ElevationQuality | TimeQuality) => Math.round(quality.coverage * 100);
+            const qualityLines: string[] = [];
+            if (activeMetrics.coordinateQuality.invalidPoints) {
+                const count = activeMetrics.coordinateQuality.invalidPoints;
                 qualityLines.push(`${count} track ${count === 1 ? 'point has' : 'points have'} invalid coordinates and ${count === 1 ? 'was' : 'were'} excluded.`);
             }
-            if (metrics.elevationQuality.status !== 'complete') {
-                const quality = metrics.elevationQuality;
+            if (activeMetrics.elevationQuality.status !== 'complete') {
+                const quality = activeMetrics.elevationQuality;
                 if (quality.validPoints) {
                     qualityLines.push(
                         `Elevation: ${quality.validPoints} of ${quality.totalPoints} route points (${qualityPercent(quality)}%); ${qualityIssues(quality, 'elevation')}. Gaps mark unavailable data.`
@@ -1248,8 +1434,8 @@ const run = async () => {
                     qualityLines.push(`Elevation data is unavailable in this GPX.${issues ? ` ${issues}.` : ''}`);
                 }
             }
-            if (metrics.timeQuality.status !== 'complete') {
-                const quality = metrics.timeQuality;
+            if (activeMetrics.timeQuality.status !== 'complete') {
+                const quality = activeMetrics.timeQuality;
                 if (quality.status === 'partial') {
                     qualityLines.push(
                         `Time: ${quality.validPoints} of ${quality.totalPoints} route points (${qualityPercent(quality)}%); ${qualityIssues(quality, 'time')}. Gaps mark unavailable timestamps.`
@@ -1265,15 +1451,16 @@ const run = async () => {
             }
 
             let txt = chartMode === 'elevation'
-                ? `Interactive Stats: ${formatDistanceM(metrics.distanceM)} | ${formatElevationM(metrics.gainM)} gain`
+                ? `Interactive Stats: ${formatDistanceM(activeMetrics.distanceM)} | ${formatElevationM(activeMetrics.gainM)} gain`
                 : chartMode === 'progress'
-                    ? `Route Progress: ${formatDistanceM(metrics.distanceM)}`
-                    : `Route: ${formatDistanceM(metrics.distanceM)}`;
-            const subLines = [];
-            const hasSegmentDetails = segmentDiagnostics
-                && (segmentDiagnostics.excludedSegmentCount || segmentDiagnostics.warningSegmentCount);
+                    ? `Route Progress: ${formatDistanceM(activeMetrics.distanceM)}`
+                    : `Route: ${formatDistanceM(activeMetrics.distanceM)}`;
+            const subLines: HTMLDivElement[] = [];
+            const hasSegmentDetails = Boolean(
+                segmentDiagnostics && (segmentDiagnostics.excludedSegmentCount || segmentDiagnostics.warningSegmentCount)
+            );
             const metricNote = buildMetricNote() || (hasSegmentDetails ? 'Adjusted GPX metrics' : '');
-            const sourcePointCount = segmentDiagnostics?.sourcePointCount ?? metrics.coordinateQuality.totalPoints;
+            const sourcePointCount = segmentDiagnostics?.sourcePointCount ?? activeMetrics.coordinateQuality.totalPoints;
             const pointCountText = `${sourcePointCount.toLocaleString()} ${sourcePointCount === 1 ? 'point' : 'points'}`;
             if (metricNote) {
                 const line = subLine('', { color: TONE.muted, fontSize: '0.95em' });
@@ -1287,7 +1474,7 @@ const run = async () => {
                 count.textContent = ` · ${pointCountText}`;
                 count.title = 'Track points in the source GPX';
                 line.append(note, count);
-                if (hasSegmentDetails) {
+                if (hasSegmentDetails && segmentDiagnostics) {
                     const excluded = segmentDiagnostics.excludedSegmentCount;
                     const warnings = segmentDiagnostics.warningSegmentCount;
                     segmentDetailsButton.textContent = sourceView ? 'Source view ▾'
@@ -1299,11 +1486,11 @@ const run = async () => {
                 subLines.push(line);
             }
             if (hasTime) {
-                const completeTime = metrics.timeQuality.status === 'complete';
+                const completeTime = activeMetrics.timeQuality.status === 'complete';
                 txt += ` | ${completeTime ? 'Time' : 'Known time span'}: ${fmtTime(totalMs)}`;
                 const timing = document.createElement('div');
                 timing.className = 'bpb-gpx-timing';
-                const addTime = (text, className = '') => {
+                const addTime = (text: string, className = '') => {
                     const item = document.createElement('span');
                     item.className = className;
                     item.textContent = text;
@@ -1345,7 +1532,7 @@ const run = async () => {
             else stats.removeAttribute('aria-label');
             subStats.replaceChildren(...subLines);
             if (disclosureFocused) segmentDetailsButton.focus({ preventScroll: true });
-            if (hasSegmentDetails) {
+            if (hasSegmentDetails && segmentDiagnostics && analysisViews) {
                 const d = segmentDiagnostics;
                 const activeCount = sourceView ? d.sourcePointCount : d.sourcePointCount - d.excludedPointCount;
                 const summary = document.createElement('p');
@@ -1359,9 +1546,9 @@ const run = async () => {
                 const inventory = document.createElement('ul');
                 for (const segment of d.inventory) {
                     const item = document.createElement('li');
-                    const donor = segment.donorSegmentId + 1;
+                    const donor = (segment.donorSegmentId ?? 0) + 1;
                     const evidence = segment.evidence.comparisons?.[0];
-                    const reasons = {
+                    const reasons: Record<SegmentDispositionReason, string> = {
                         'degenerate-duplicate': `Exact coordinate copy of segment ${donor}, with all-zero elevations and one repeated timestamp.`,
                         'isolated-distant-point': evidence ? `Appears unrelated: an isolated point ${fmtTime(evidence.timeGapMs)} outside segment ${donor}’s time range and ${formatDistanceM(evidence.pathDistanceM)} from its path.` : '',
                         'ambiguous-duplicate': 'Multiple matching recordings; no unambiguous counterpart.',
@@ -1371,7 +1558,8 @@ const run = async () => {
                     const disposition = segment.disposition === 'excluded'
                         ? sourceView ? 'Included in source view; excluded from interpreted view' : 'Excluded from interpreted view'
                         : segment.disposition === 'warning' ? 'Included — review suggested' : 'Retained';
-                    item.textContent = `Segment ${segment.sourceSegmentId + 1} (${segment.pointCount} ${segment.pointCount === 1 ? 'point' : 'points'}): ${disposition}. ${reasons[segment.reason] || ''}`;
+                    const reasonText = segment.reason ? reasons[segment.reason] || '' : '';
+                    item.textContent = `Segment ${segment.sourceSegmentId + 1} (${segment.pointCount} ${segment.pointCount === 1 ? 'point' : 'points'}): ${disposition}. ${reasonText}`;
                     inventory.append(item);
                 }
                 const boundary = document.createElement('p');
@@ -1382,8 +1570,15 @@ const run = async () => {
             }
 
             // Map adjusted arrays
-            const distanceData = [], timeData = [];
-            const appendChartPoint = (target, point, x, y, groupProperty = 'coordinateGroup') => {
+            const distanceData: ChartDatum<AnalyzerPoint>[] = [];
+            const timeData: ChartDatum<AnalyzerPoint>[] = [];
+            const appendChartPoint = (
+                target: ChartDatum<AnalyzerPoint>[],
+                point: AnalyzerPoint,
+                x: number,
+                y: number,
+                groupProperty: 'coordinateGroup' | 'timeCoordinateGroup' = 'coordinateGroup',
+            ) => {
                 const previous = target.at(-1)?._raw;
                 if (previous && previous[groupProperty] !== point[groupProperty]) {
                     target.push({ x, y: null, _raw: null });
@@ -1392,6 +1587,7 @@ const run = async () => {
             };
             if (chartMode === 'elevation') {
                 chartData.forEach(d => {
+                    if (!('eleM' in d)) return;
                     const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
                     appendChartPoint(
                         distanceData,
@@ -1401,6 +1597,7 @@ const run = async () => {
                     );
                 });
                 timeChartData.forEach(d => {
+                    if (!('eleM' in d)) return;
                     const eleConv = parseFloat((d.eleM * eMult).toFixed(0));
                     appendChartPoint(timeData, d, d.ms, eleConv, 'timeCoordinateGroup');
                 });
@@ -1434,9 +1631,9 @@ const run = async () => {
             const hideDistance = splittable && seriesPref === 'time';
             const hideTime = splittable && seriesPref === 'distance';
 
-            const selectedPointRadius = context =>
+            const selectedPointRadius = (context: { raw?: ChartDatum<AnalyzerPoint> }) =>
                 context.raw?._raw === chartData[selectedCoordinateIndex] ? 5 : 0;
-            const datasets = [];
+            const datasets: ChartDataset[] = [];
             if (chartMode === 'elevation') {
                 datasets.push({
                     label: 'Elevation by Distance',
@@ -1485,19 +1682,23 @@ const run = async () => {
             // One formatter owns the visual tooltip and the semantic selected-
             // point announcement. A missing elevation, time, or grade stays
             // absent instead of being restated as zero or inferred data.
-            const formatChartPoint = (point, dataset, y) => {
+            const formatChartPoint = (
+                point: AnalyzerPoint | null | undefined,
+                dataset: ChartDataset,
+                y: number | null,
+            ): { title: string; label: string; afterBody: string[] } => {
                 if (!point) return { title: '', label: '', afterBody: [] };
                 const title = chartMode === 'progress'
                     ? `Time: ${formatTimeStr(point.ms, startMs, isMultiDay)}`
                     : `Distance: ${(point.distM * dMult).toFixed(2)} ${dUnit}`;
-                let label;
+                let label: string;
                 if (chartMode === 'progress') {
                     label = `Distance traveled: ${(point.distM * dMult).toFixed(2)} ${dUnit}`;
                 } else if (chartMode === 'route') {
                     label = 'Recorded route position';
                 } else {
                     label = `${dataset.label}: ${y} ${eUnit}`;
-                    if (Number.isFinite(point.grade)) label += ` (Grade: ${point.grade.toFixed(1)}%)`;
+                    if ('grade' in point && Number.isFinite(point.grade)) label += ` (Grade: ${point.grade.toFixed(1)}%)`;
                 }
                 const afterBody = chartMode !== 'progress'
                     && hasTime && Number.isFinite(point.ms) && point.ms > 0
@@ -1506,9 +1707,9 @@ const run = async () => {
                 return { title, label, afterBody };
             };
 
-            selectedChartValues = point => {
-                const values = [];
-                const add = value => {
+            selectedChartValues = (point: AnalyzerPoint) => {
+                const values: string[] = [];
+                const add = (value: string) => {
                     if (value && !values.includes(value)) values.push(value);
                 };
                 datasets.forEach((dataset, index) => {
@@ -1526,7 +1727,7 @@ const run = async () => {
             // Match the legend handler's rule: one series visible -> index mode.
             const startsSingle = datasets.length === 1 || hideDistance || hideTime;
 
-            const maxDist = parseFloat((metrics.distanceM * dMult).toFixed(2));
+            const maxDist = parseFloat((activeMetrics.distanceM * dMult).toFixed(2));
             const distanceAxis = {
                 type: 'linear',
                 position: 'bottom',
@@ -1534,9 +1735,9 @@ const run = async () => {
                 max: maxDist > 0 ? maxDist : 1,
                 title: { display: true, text: `Distance (${dUnit})`, color: p.axisTitle },
                 grid: { color: p.chartGrid },
-                ticks: { maxTicksLimit: 10, color: p.chartText, callback: function (v) { return parseFloat(v).toFixed(1) + ` ${dUnit}`; } }
+                ticks: { maxTicksLimit: 10, color: p.chartText, callback: (v: number | string) => parseFloat(String(v)).toFixed(1) + ` ${dUnit}` }
             };
-            const timeAxis = position => ({
+            const timeAxis = (position: 'top' | 'bottom') => ({
                 type: 'linear',
                 position,
                 min: startMs,
@@ -1545,16 +1746,14 @@ const run = async () => {
                 ticks: {
                     maxTicksLimit: 10,
                     color: p.timeAxis,
-                    callback: function (v) {
-                        return formatTimeStr(v, startMs, isMultiDay);
-                    }
+                    callback: (v: number | string) => formatTimeStr(Number(v), startMs, isMultiDay)
                 },
                 grid: position === 'top' ? { drawOnChartArea: false } : { color: p.chartGrid }
             });
-            const scales = chartMode === 'elevation'
+            const scales: Record<string, unknown> = chartMode === 'elevation'
                 ? {
                     x: distanceAxis,
-                    ...(hasTimeSeries && { xTime: timeAxis('top') }),
+                    ...(hasTimeSeries ? { xTime: timeAxis('top') } : {}),
                     y: {
                         type: 'linear', position: 'left',
                         title: { display: true, text: `Elevation (${eUnit})`, color: p.axisTitle },
@@ -1579,19 +1778,22 @@ const run = async () => {
                     };
 
             const syncChartInteraction = () => {
-                const visible = datasets.reduce((count, dataset, index) =>
-                    count + (chartDatasetVisible(chartInstance, index) ? 1 : 0), 0);
+                if (!chartInstance) return;
+                const activeChart = chartInstance;
+                const visible = datasets.reduce((count, _dataset, index) =>
+                    count + (chartDatasetVisible(activeChart, index) ? 1 : 0), 0);
                 chartInstance.options.interaction = visible === 1
                     ? { mode: 'index', intersect: false }
                     : { mode: 'nearest', intersect: true, axis: 'xy' };
             };
             const syncChartLegend = () => {
-                chartLegend.querySelectorAll('[data-dataset-index]').forEach(button => {
+                chartLegend.querySelectorAll<HTMLButtonElement>('[data-dataset-index]').forEach(button => {
                     const index = Number(button.dataset.datasetIndex);
                     button.setAttribute('aria-pressed', String(chartDatasetVisible(chartInstance, index)));
                 });
             };
-            const toggleChartSeries = index => {
+            const toggleChartSeries = (index: number) => {
+                if (!chartInstance) return;
                 const visible = !chartDatasetVisible(chartInstance, index);
                 if (typeof chartInstance.setDatasetVisibility === 'function') {
                     chartInstance.setDatasetVisibility(index, visible);
@@ -1623,7 +1825,7 @@ const run = async () => {
                 restoreSelectedRouteHighlight();
             };
 
-            const chartOptions = {
+            const chartOptions: ChartOptionsConfig = {
                 responsive: true, maintainAspectRatio: false,
                 animation: false,
                 interaction: startsSingle ? { mode: 'index', intersect: false } : { mode: 'nearest', intersect: true, axis: 'xy' },
@@ -1637,8 +1839,8 @@ const run = async () => {
                     // renames or restructures them this feature stops
                     // working. It fails closed (the guard below simply skips
                     // the marker), so the chart itself is unaffected.
-                    let hoveredPoint = null;
-                    let hoverSeries = 'distance';
+                    let hoveredPoint: AnalyzerPoint | null = null;
+                    let hoverSeries: ChartSeries = 'distance';
 
                     if (activeElements.length > 0) {
                         const datasetIndex = activeElements[0].datasetIndex;
@@ -1654,7 +1856,7 @@ const run = async () => {
                         previewSunPoint(hoveredPoint);
                         // Chart.js also invokes onHover for clicks; the native
                         // click handler already owns persistent selection.
-                        if (event?.type !== 'click') timeCursor.hover(hoveredPoint, metrics.timeQuality);
+                        if (event?.type !== 'click') timeCursor.hover(hoveredPoint, activeMetrics.timeQuality);
                     } else {
                         restoreSelectedRouteHighlight();
                         restoreSelectedSun();
@@ -1665,30 +1867,28 @@ const run = async () => {
                         display: false
                     },
                     tooltip: {
-                        filter: (tooltipItem, index) => index === 0,
+                        filter: (_tooltipItem, index) => index === 0,
                         callbacks: {
                             title: items => {
                                 const item = items[0];
-                                return formatChartPoint(
-                                    item.raw._raw,
+                                return item ? formatChartPoint(
+                                    item.raw?._raw,
                                     item.dataset,
-                                    item.parsed.y
-                                ).title;
+                                    item.parsed?.y ?? null
+                                ).title : '';
                             },
-                            label: item => {
-                                return formatChartPoint(
-                                    item.raw._raw,
-                                    item.dataset,
-                                    item.parsed.y
-                                ).label;
-                            },
+                            label: item => formatChartPoint(
+                                item.raw?._raw,
+                                item.dataset,
+                                item.parsed?.y ?? null
+                            ).label,
                             afterBody: items => {
                                 const item = items[0];
-                                return formatChartPoint(
-                                    item.raw._raw,
+                                return item ? formatChartPoint(
+                                    item.raw?._raw,
                                     item.dataset,
-                                    item.parsed.y
-                                ).afterBody;
+                                    item.parsed?.y ?? null
+                                ).afterBody : [];
                             }
                         }
                     }
@@ -1699,8 +1899,9 @@ const run = async () => {
                 chartInstance.data.datasets = datasets;
                 Object.assign(chartInstance.options, chartOptions);
                 if (resetSeriesVisibility && typeof chartInstance.setDatasetVisibility === 'function') {
+                    const setVisibility = chartInstance.setDatasetVisibility.bind(chartInstance);
                     datasets.forEach((dataset, index) =>
-                        chartInstance.setDatasetVisibility(index, dataset.hidden !== true));
+                        setVisibility(index, dataset.hidden !== true));
                 }
                 syncChartInteraction();
                 chartInstance.update('none');
@@ -1755,7 +1956,10 @@ const run = async () => {
             if (metrics.routePoints?.length) renderData();
         });
 
-        const bindRouteColor = (control, key) => control.input.addEventListener('change', () => {
+        const bindRouteColor = (
+            control: { input: HTMLInputElement },
+            key: 'mapRouteColor' | 'mapRouteCasingColor',
+        ) => control.input.addEventListener('change', () => {
             BPB.set({ [key]: control.input.value });
             syncRouteStyleControls();
             removeRouteOverlay();
@@ -1780,7 +1984,7 @@ const run = async () => {
                 scheduleRouteOverlay();
             }
             if (changed(['enable3dMap'])) syncTerrainAvailability(settings);
-            if (terrainCoordinator.isOpen()) {
+            if (coordinator.isOpen()) {
                 if (changed(['mapRouteColor', 'mapRouteWidth', 'mapRouteCasingColor', 'mapRouteCasingWidth', 'theme'])) {
                     postTerrain('update', {
                         routeStyle: resolveMapRouteStyle(settings),
@@ -1799,33 +2003,35 @@ const run = async () => {
         });
 
         const applyAnalysisView = () => {
+            if (!segmentDiagnostics || !analysisViews) return;
             const selectedId = chartData[selectedCoordinateIndex]?.sourcePointId;
             const selectedSeries = selectedCoordinateSeries;
             clearCoordinateFeedbackTimer();
             clearHoverSunPreview();
             renderRouteHighlight(null);
             removeRouteOverlay();
-            const restartTerrain = terrainCoordinator.isOpen();
-            if (restartTerrain) terrainCoordinator.reset();
-            metrics = sourceView ? analysisViews.source : analysisViews.interpreted;
+            const restartTerrain = coordinator.isOpen();
+            if (restartTerrain) coordinator.reset();
+            const activeMetrics = sourceView ? analysisViews.source : analysisViews.interpreted;
+            metrics = activeMetrics;
             mapRouteSegments = GpxMetrics.sanitizeMapRouteSegments(segmentDiagnostics.inventory
                 .filter(s => sourceView || s.disposition !== 'excluded')
-                .map(s => s.points.map(p => [p.lat, p.lon])));
-            terrainCoordinator.update();
+                .map(s => s.points.map(point => [point.lat, point.lon])));
+            coordinator.update();
             scheduleRouteOverlay();
-            hasTime = metrics.hasTime;
-            chartMode = metrics.points.length ? 'elevation' : hasTime ? 'progress' : 'route';
-            startMs = metrics.startMs;
-            endMs = metrics.endMs;
-            summitMs = metrics.summitMs;
+            hasTime = activeMetrics.hasTime;
+            chartMode = activeMetrics.points.length ? 'elevation' : hasTime ? 'progress' : 'route';
+            startMs = activeMetrics.startMs;
+            endMs = activeMetrics.endMs;
+            summitMs = activeMetrics.summitMs;
             totalMs = hasTime ? endMs - startMs : 0;
             mountainDayCache.clear();
-            const startPoint = metrics.routePoints[0];
+            const startPoint = activeMetrics.routePoints[0];
             mountainZone = startPoint ? MountainTime.resolve(startPoint.lat, startPoint.lon) : null;
             campingSpots = [];
-            if (hasTime && metrics.timeQuality.status === 'complete') {
-                metrics.timePoints.forEach((point, index) => {
-                    const prev = metrics.timePoints[index - 1];
+            if (hasTime && activeMetrics.timeQuality.status === 'complete') {
+                activeMetrics.timePoints.forEach((point, index) => {
+                    const prev = activeMetrics.timePoints[index - 1];
                     if (!prev || prev.timeCoordinateGroup !== point.timeCoordinateGroup) return;
                     const prevDay = getRelativeDay(prev.ms, startMs);
                     if (getRelativeDay(point.ms, startMs) > prevDay) {
@@ -1833,21 +2039,20 @@ const run = async () => {
                     }
                 });
             }
-            if (!metrics.routePoints.length) {
+            if (!activeMetrics.routePoints.length) {
                 renderUnavailable('No valid track points found. Download the GPX to inspect its recorded data.');
                 return;
             }
-            const pointSource = chartMode === 'elevation' ? metrics.points : metrics.routePoints;
-            const survivingPoint = selectedId ? pointSource.find(p => p.sourcePointId === selectedId) : null;
+            const pointSource: AnalyzerPoint[] = chartMode === 'elevation' ? activeMetrics.points : activeMetrics.routePoints;
+            const survivingPoint = selectedId ? pointSource.find(point => point.sourcePointId === selectedId) : null;
             selectedCoordinateExcluded = Boolean(selectedId && !survivingPoint);
             renderData({ selectedPoint: survivingPoint });
             if (survivingPoint) selectCoordinateIndex(chartData.indexOf(survivingPoint), selectedSeries);
-            if (restartTerrain) terrainCoordinator.start();
+            if (restartTerrain) coordinator.start();
         };
         segmentViewButton.addEventListener('click', () => {
             sourceView = !sourceView;
             applyAnalysisView();
-
         });
 
         // 5. Native DOM XML Extraction Engine
@@ -1886,10 +2091,11 @@ const run = async () => {
                     renderUnavailable('No track points found. Download the GPX to inspect its recorded data.');
                     return;
                 }
-                segmentDiagnostics = diagnoseGpxSegments(parsedGpx.segments);
-                const computeView = allSource => {
-                    const inputs = diagnosticMetricInputs(segmentDiagnostics, allSource);
-                    const result = GpxMetrics.computeMetrics(inputs);
+                const diagnostics = diagnoseGpxSegments(parsedGpx.segments);
+                segmentDiagnostics = diagnostics;
+                const computeView = (allSource: boolean): AnalyzerMetrics => {
+                    const inputs = diagnosticMetricInputs(diagnostics, allSource);
+                    const result = GpxMetrics.computeMetrics(inputs) as AnalyzerMetrics;
                     // Metric sourceIndex is local to its input. Attach the source
                     // identity before sampling; shared capture math stays unchanged.
                     for (const point of [...result.points, ...result.routePoints]) {
@@ -1898,18 +2104,22 @@ const run = async () => {
                     return result;
                 };
                 const sourceMetrics = computeView(true);
-                analysisViews = { source: sourceMetrics,
-                    interpreted: segmentDiagnostics.excludedSegmentCount ? computeView(false) : sourceMetrics };
+                analysisViews = {
+                    source: sourceMetrics,
+                    interpreted: diagnostics.excludedSegmentCount ? computeView(false) : sourceMetrics,
+                };
                 sourceView = false;
                 applyAnalysisView();
 
             } catch (e) {
                 if (generation !== loadGeneration) return;
-                const knownMessage = e?.code === 'invalid-gpx' || e?.code === 'gpx-too-large'
-                    ? e.message
+                const gpxError = e as { code?: unknown; message?: unknown } | null | undefined;
+                const knownMessage = (gpxError?.code === 'invalid-gpx' || gpxError?.code === 'gpx-too-large')
+                    && typeof gpxError.message === 'string'
+                    ? gpxError.message
                     : 'Better Peakbagger could not parse the GPS track. Download the GPX to inspect it.';
                 renderUnavailable(knownMessage);
-                if (!e?.code) console.error(e);
+                if (!gpxError?.code) console.error(e);
             }
         };
         retryButton.addEventListener('click', () => { void loadGpx(); });
@@ -1919,7 +2129,7 @@ const run = async () => {
     if (document.readyState === 'loading') {
         window.addEventListener('DOMContentLoaded', initChart);
     } else {
-        initChart();
+        void initChart();
     }
 };
-run();
+void run();

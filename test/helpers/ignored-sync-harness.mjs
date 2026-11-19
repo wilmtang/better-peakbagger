@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.ts';
-import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { createClimberListSync, readIgnoredSyncState } from '../../src/background/climber-list-sync.js';
+import { createIgnoredStore } from '../../src/background/ignored-store.ts';
+import { createClimberListSync, readIgnoredSyncState } from '../../src/background/climber-list-sync.ts';
 import { githubWriteQueue } from '../../src/github/github-write-queue.ts';
 export const entry = (cid, name = `Climber ${cid}`) => ({ cid, name, addedAt: 1 });
 export const harness = ({ local = [entry(1)], remote = null, syncEnabled = false } = {}) => {

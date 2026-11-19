@@ -8,7 +8,7 @@ import {
 } from './custom-overlay-schema.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { trustedAction } from '../ui/trusted-action.ts';
-import { trustedActions as TrustedActions } from '../background/trusted-actions.js';
+import { trustedActions as TrustedActions } from '../background/trusted-actions.ts';
 
 interface RefreshRequest {
     requestId: string;

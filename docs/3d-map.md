@@ -138,14 +138,14 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
-| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
+| `src/gpx/gpx-analyzer.ts` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
 | `src/gpx/map-frame-lifecycle.ts` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.ts` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
 | `src/maps/peak-map.ts` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.ts` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
 | `src/terrain/terrain-lifecycle.ts` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.ts` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
-| `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-frame.ts` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-frame-runtime.ts` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
 | `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
 | `src/terrain/terrain-camera.ts` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
@@ -155,7 +155,7 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 | `src/maps/peak-markers.ts` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.ts` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
 | `src/background/terrain-activation.ts` | extension worker domain | Short-lived, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
-| `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
+| `src/background/terrain-prefetch.ts` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 
 The separation is deliberate. For example, putting subject discovery into the
 shared coordinator would make it easier for a generic lifecycle change to

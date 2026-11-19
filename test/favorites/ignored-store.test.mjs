@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.ts';
-import { createIgnoredStore } from '../../src/background/ignored-store.js';
+import { createIgnoredStore } from '../../src/background/ignored-store.ts';
 import { observeIgnored } from '../../src/favorites/ignored-client.ts';
 const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: cid });
 const harness = () => {

@@ -85,7 +85,7 @@ export default defineConfig([
         },
     },
     {
-        files: ['src/gpx/gpx-analyzer.js'],
+        files: ['src/gpx/gpx-analyzer.ts'],
         languageOptions: {
             globals: { Chart: 'readonly' },
         },

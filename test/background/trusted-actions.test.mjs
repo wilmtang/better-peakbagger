@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { trustedActions as TrustedActions } from '../../src/background/trusted-actions.js';
+import { trustedActions as TrustedActions } from '../../src/background/trusted-actions.ts';
 
 const peakbagger = (tabId = 5, frameId = 0, documentId = 'document-a') => ({
     tab: { id: tabId },

@@ -17,7 +17,7 @@ test('explicitly enabled connected sync initializes by preserving both lists', a
     }
 });
 test('fresh sync requires a connected repository and preserves explicit opt-outs across connection changes', async () => {
-    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.ts');
     const fresh = harness({ syncEnabled: true });
     const offline = createClimberListSync({ ...fresh.engineOptions, getAccess: async () => ({ error: { code: 'not-connected' } }) });
     assert.equal((await offline.start()).skipped, true);
@@ -38,7 +38,7 @@ test('fresh metadata conflicts keep sync enabled and pause without writing or re
     assert.equal(h.reads, 1, 'a pending review must not repeat the setup');
 });
 test('an automatic check delayed behind manual review preserves the reviewed preview', async () => {
-    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.ts');
     const h = harness({ remote: [entry(2)], syncEnabled: true });
     let releaseCheck, checkReachedAccess;
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
@@ -62,7 +62,7 @@ test('an automatic check delayed behind manual review preserves the reviewed pre
     assert.deepEqual(new Set(confirmed.list.entries.map(item => item.cid)), new Set([1,2]));
 });
 test('an automatic check delayed behind disabling sync retains the opt-out', async () => {
-    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.ts');
     const h = harness({ remote: [entry(2)], syncEnabled: true });
     let releaseCheck, checkReachedAccess;
     const heldCheck = new Promise(resolve => { releaseCheck = resolve; });
@@ -231,7 +231,7 @@ test('worker restart confirms an accepted setup and rebases later local edits', 
     h.commitHook = async () => { await h.store.mutate({ kind: 'add', entry: entry(3) }); h.failReconcile = true; };
     assert.equal((await h.confirm(preview)).ok, false); assert.ok(h.values[I.SYNC_KEY].pending);
     h.failReconcile = false; h.commitHook = null;
-    const { createClimberListSync } = await import('../../src/background/climber-list-sync.js');
+    const { createClimberListSync } = await import('../../src/background/climber-list-sync.ts');
     const resumed = createClimberListSync(h.engineOptions);
     const recovered = await resumed.start(); assert.equal(recovered.ok, true); assert.equal(recovered.result.recovered, true);
     assert.deepEqual(new Set(recovered.list.entries.map(e => e.cid)), new Set([1,2,3]));
@@ -260,7 +260,7 @@ test('disabling during an accepted upload leaves local edits and the uncertainty
 test('alarms trail local edits, check on startup and manager opening, and duplicate sync triggers coalesce', async () => {
     const h = harness({ remote: [entry(1)] }); let time = 1000000;
     const scheduled = new Map();
-    const { createClimberListSync, IGNORED_SYNC_ALARM, IGNORED_CHANGE_ALARM } = await import('../../src/background/climber-list-sync.js');
+    const { createClimberListSync, IGNORED_SYNC_ALARM, IGNORED_CHANGE_ALARM } = await import('../../src/background/climber-list-sync.ts');
     h.engine = createClimberListSync({ ...h.engineOptions, now: () => time,
         alarms: { create: (name, options) => scheduled.set(name, options), clear: name => scheduled.delete(name) } });
     await setup(h); assert.equal(scheduled.get(IGNORED_SYNC_ALARM).periodInMinutes, 15);

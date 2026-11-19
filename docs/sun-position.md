@@ -23,7 +23,7 @@ The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
   Map only after the page id, Full Screen Peak-map id, bounded focus coordinate,
   and subject name agree. The validated summit coordinate is its subject. An
   ambiguous or unsupported page gets no calculator.
-- In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the chart so
+- In the GPX Analyzer, `src/gpx/gpx-analyzer.ts` places it after the chart so
   opening or updating the calculator cannot move the chart point under the
   pointer. Its collapsed card shows level-horizon sunrise and sunset, each with
   the event's timezone, in a fixed-height two-column row. Before selection, the

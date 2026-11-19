@@ -29,7 +29,7 @@ Files read, in full or in the part relevant to a finding:
 - Ignored-report surfaces: `src/ascent/ascent-report-visibility.ts`,
   `src/favorites/peak-report-filter.ts`
 - Network helpers: `src/weather/open-meteo-client.ts`, `src/net/*`,
-  `src/background/peakbagger-request-scheduler.js`
+  `src/background/peakbagger-request-scheduler.ts`
 - Weather day/week windows: `src/weather/weather-day.ts`, `weather-week.js`
 - Export helpers: `options/settings-backup.ts`, `options/climber-files.ts`
 
@@ -622,7 +622,7 @@ documented alarm semantics.
 
 A second pass read the highest-risk code in full: `src/capture/*`,
 `src/net/bounded-text.ts`, all 4,169 lines of `src/background/background.ts`,
-`src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
+`src/background/sender-policy.ts`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
 `src/gpx/gpx-parse.ts`, and the ascent-editor scripts `ascent-draft.js`,
 `ascent-upload.ts`, `ascent-saved.js`, `capture-save-verification.js` and

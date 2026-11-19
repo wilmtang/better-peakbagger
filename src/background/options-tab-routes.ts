@@ -6,7 +6,7 @@
 // registered tab reused across requests) and the report drafts manager. Both
 // require a Peakbagger sender and a trusted user-activation capability.
 
-import { trustedActions as TrustedActions } from './trusted-actions.js';
+import { trustedActions as TrustedActions } from './trusted-actions.ts';
 
 type Ext = typeof chrome;
 type Sender = chrome.runtime.MessageSender;

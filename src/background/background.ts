@@ -7,7 +7,7 @@
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
 import '../reports/report-protection-firefox.ts';
-import { createInstagramFrames } from './instagram-frames.js';
+import { createInstagramFrames } from './instagram-frames.ts';
 import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.ts';
 import { captureCore as Core, type PeakCandidate, type RawWaypoint } from '../capture/capture-core.ts';
 import { createCaptureDiagnostics } from '../capture/capture-diagnostics.ts';
@@ -21,33 +21,33 @@ import {
     PROVIDER_EXPORT_TIMEOUT_MS,
     PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
 } from '../capture/provider-timing.ts';
-import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
-import { createBuddyStore } from './buddy-store.js';
+import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.ts';
+import { createBuddyStore } from './buddy-store.ts';
 import { BUDDY_MESSAGE } from '../favorites/buddy-state.ts';
 import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.ts';
-import { createBuddyCacheStore } from './buddy-cache-store.js';
-import { createIgnoredStore } from './ignored-store.js';
+import { createBuddyCacheStore } from './buddy-cache-store.ts';
+import { createIgnoredStore } from './ignored-store.ts';
 import * as Ignored from '../favorites/ignored-climbers.ts';
-import { createGithubRoutes } from './github-routes.js';
-import { createCaltopoRoutes } from './caltopo-routes.js';
-import { createAlltrailsRoutes } from './alltrails-routes.js';
-import { createGaiaRoutes } from './gaia-routes.js';
-import { createOnxRoutes } from './onx-routes.js';
+import { createGithubRoutes } from './github-routes.ts';
+import { createCaltopoRoutes } from './caltopo-routes.ts';
+import { createAlltrailsRoutes } from './alltrails-routes.ts';
+import { createGaiaRoutes } from './gaia-routes.ts';
+import { createOnxRoutes } from './onx-routes.ts';
 import { createPhotoRoutes } from './photo-routes.ts';
-import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
-import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
-import { createSettingsFileRoutes } from './settings-file-routes.js';
+import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.ts';
+import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.ts';
+import { createSettingsFileRoutes } from './settings-file-routes.ts';
 import { createOptionsTabRoutes } from './options-tab-routes.ts';
-import { createPackagedPageMatcher } from './sender-policy.js';
+import { createPackagedPageMatcher } from './sender-policy.ts';
 import { terrainActivation as TerrainActivation } from './terrain-activation.ts';
-import { createMapLayerHandoff } from './map-layer-handoff.js';
-import { createBCLandRoutes } from './bc-land-routes.js';
-import { createCustomOverlayStore } from './custom-overlay-store.js';
-import { createCustomPrivateStore } from './custom-private-store.js';
-import { createCustomLayerRelay } from './custom-layer-relay.js';
-import { trustedActions as TrustedActions } from './trusted-actions.js';
-import { createTerrainPrefetch } from './terrain-prefetch.js';
-import { publicErrors as PublicErrors } from './public-errors.js';
+import { createMapLayerHandoff } from './map-layer-handoff.ts';
+import { createBCLandRoutes } from './bc-land-routes.ts';
+import { createCustomOverlayStore } from './custom-overlay-store.ts';
+import { createCustomPrivateStore } from './custom-private-store.ts';
+import { createCustomLayerRelay } from './custom-layer-relay.ts';
+import { trustedActions as TrustedActions } from './trusted-actions.ts';
+import { createTerrainPrefetch } from './terrain-prefetch.ts';
+import { publicErrors as PublicErrors } from './public-errors.ts';
 import { settings as Settings } from '../settings/settings.ts';
 import { peakbaggerAccount as PeakbaggerAccount } from '../peakbagger/peakbagger-account.ts';
 import { peakbaggerError as PeakbaggerError, type PeakbaggerErrorCode, type PeakbaggerFailure } from '../peakbagger/peakbagger-error.ts';

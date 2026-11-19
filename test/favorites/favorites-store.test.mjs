@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createFavoritesStore } from '../../src/background/favorites-store.js';
+import { createFavoritesStore } from '../../src/background/favorites-store.ts';
 import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.ts';
 
 const entry = (cid, name = `Climber ${cid}`, addedAt = cid, source = 'manual') => ({

@@ -3,12 +3,12 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSettingsFileRoutes } from '../../src/background/settings-file-routes.js';
+import { createSettingsFileRoutes } from '../../src/background/settings-file-routes.ts';
 import { createSettingsStore } from '../../src/settings/settings.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { imgbbAuth as ImgbbAuth } from '../../src/photos/imgbb-auth.ts';
 import { githubAuth as GithubAuth } from '../../src/github/github-auth.ts';
-import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
+import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.ts';
 import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
 
 const makeArea = (initial = {}) => {

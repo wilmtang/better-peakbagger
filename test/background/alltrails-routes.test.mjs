@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
-import { createAlltrailsRoutes } from '../../src/background/alltrails-routes.js';
+import { createAlltrailsRoutes } from '../../src/background/alltrails-routes.ts';
 import { ALLTRAILS_IMPORT_URL, ALLTRAILS_PERMISSION } from '../../src/alltrails/alltrails-import.ts';
 
 const sender = {

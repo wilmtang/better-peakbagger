@@ -127,7 +127,7 @@ link, which automatically tracks endpoint query changes.
 | `options/favorites-backup.ts` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
 | `options/settings-backup.ts` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
 | `src/background/background.ts` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
-| `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
+| `src/background/github-routes.ts` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
 | `src/github/github-write-queue.ts` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
 | `src/github/github-backup.ts` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
 | `src/github/github-errors.ts` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
@@ -775,7 +775,7 @@ are status/check, conditional backup, restore preview, setup preview, confirm,
 sync, disable and dismiss. Responses contain validated snapshots, counts and
 commit metadata; credentials remain in the worker.
 
-`src/background/climber-list-sync.js` owns device-local `bpbIgnoredSyncState`:
+`src/background/climber-list-sync.ts` owns device-local `bpbIgnoredSyncState`:
 opt-in, auth epoch + owner/repo/branch scope, common baseline, last success,
 reviewed snapshots, retry time and durable proposal. Missing baseline requires
 setup; failed storage never supplies an empty upload. Manual backup first reviews
@@ -1099,7 +1099,7 @@ Two of those exist because a status code cannot report them:
 
 The per-request bound is not the individual-ascent liveness bound. One backup
 uses several requests and may wait behind another branch mutation, so
-`src/background/github-routes.js` gives the whole operation a parent deadline
+`src/background/github-routes.ts` gives the whole operation a parent deadline
 and passes its abort signal through `src/github/github-client.ts` into the REST
 transport. Reconciliation after an operation timeout is read-only and consumes
 the exact save-time snapshot only after GitHub proves the complete payload is

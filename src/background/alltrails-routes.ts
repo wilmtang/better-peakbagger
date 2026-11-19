@@ -7,9 +7,11 @@ import {
     MAX_ALLTRAILS_GPX_BYTES,
     prepareAlltrailsImport,
 } from '../alltrails/alltrails-import.ts';
-import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
+import { createGpxHandoffRoutes, type GpxHandoffCallerOptions } from './gpx-handoff-routes.ts';
 
-export function createAlltrailsRoutes(options) {
+export type AlltrailsRoutesOptions = GpxHandoffCallerOptions;
+
+export function createAlltrailsRoutes(options: AlltrailsRoutesOptions) {
     return createGpxHandoffRoutes({
         ...options,
         provider: {
@@ -22,7 +24,7 @@ export function createAlltrailsRoutes(options) {
             importUrl: ALLTRAILS_IMPORT_URL,
             maxBytes: MAX_ALLTRAILS_GPX_BYTES,
             prepareImport: prepareAlltrailsImport,
-            isTargetUrl: url => url.origin === new URL(ALLTRAILS_IMPORT_URL).origin
+            isTargetUrl: (url: URL) => url.origin === new URL(ALLTRAILS_IMPORT_URL).origin
                 && url.pathname.replace(/\/+$/, '') === '/explore/custom-routes/new',
             wrongPageCode: 'sign-in-required',
             wrongPageMessage: 'Sign in to AllTrails if prompted, then return to Peakbagger and try again.',

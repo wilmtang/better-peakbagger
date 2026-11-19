@@ -7,9 +7,11 @@ import {
     MAX_CALTOPO_GPX_BYTES,
     prepareCaltopoImport,
 } from '../caltopo/caltopo-import.ts';
-import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
+import { createGpxHandoffRoutes, type GpxHandoffCallerOptions } from './gpx-handoff-routes.ts';
 
-export function createCaltopoRoutes(options) {
+export type CaltopoRoutesOptions = GpxHandoffCallerOptions;
+
+export function createCaltopoRoutes(options: CaltopoRoutesOptions) {
     return createGpxHandoffRoutes({
         ...options,
         provider: {
@@ -22,7 +24,7 @@ export function createCaltopoRoutes(options) {
             importUrl: CALTOPO_IMPORT_URL,
             maxBytes: MAX_CALTOPO_GPX_BYTES,
             prepareImport: prepareCaltopoImport,
-            isTargetUrl: url => url.origin === new URL(CALTOPO_IMPORT_URL).origin
+            isTargetUrl: (url: URL) => url.origin === new URL(CALTOPO_IMPORT_URL).origin
                 && url.pathname === '/map.html' && !url.search,
             wrongPageCode: 'sign-in-required',
             wrongPageMessage: 'Open CalTopo’s map, then return to Peakbagger and try again.',

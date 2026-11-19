@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { publicErrors as PublicErrors } from '../../src/background/public-errors.js';
+import { publicErrors as PublicErrors } from '../../src/background/public-errors.ts';
 
 test('only typed product errors may carry public copy across the worker boundary', () => {
     const sentinel = new Error('RAW_BROWSER_SENTINEL');

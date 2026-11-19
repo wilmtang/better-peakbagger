@@ -4,9 +4,9 @@ import { createGarminBadge } from './garmin-badge.ts';
 import { createGarminStore, garminPublicSummary } from './garmin-store.ts';
 import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.ts';
 import { decodeGarminRecording } from './fit-activity.ts';
-import { createPackagedPageMatcher } from '../background/sender-policy.js';
+import { createPackagedPageMatcher } from '../background/sender-policy.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { publicErrors as PublicErrors } from '../background/public-errors.js';
+import { publicErrors as PublicErrors } from '../background/public-errors.ts';
 
 type GarminExt = typeof chrome;
 type GarminPreferences = typeof Schema.DEFAULTS;

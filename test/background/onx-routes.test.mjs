@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createOnxRoutes } from '../../src/background/onx-routes.js';
+import { createOnxRoutes } from '../../src/background/onx-routes.ts';
 import { ONX_IMPORT_URL, ONX_PERMISSION, ONX_ATTEMPTS_KEY, probeOnxImporter } from '../../src/onx/onx-import.ts';
 
 const sender = { tab: { id: 7, windowId: 9 }, documentId: 'source-document',

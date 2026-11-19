@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createGithubRouteTable } from '../../src/background/github-routes.js';
+import { createGithubRouteTable } from '../../src/background/github-routes.ts';
 
 test('every GitHub route must declare its access policy beside its handler', () => {
     const extensionHandler = () => 'extension';

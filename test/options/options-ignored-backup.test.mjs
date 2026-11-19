@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { loadOptions, el, registerCleanup } from '../helpers/options-helpers.mjs';
 import { waitFor } from '../helpers/load-page.mts';
 import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
-import { createGithubRoutes } from '../../src/background/github-routes.js';
+import { createGithubRoutes } from '../../src/background/github-routes.ts';
 import * as I from '../../src/favorites/ignored-climbers.ts';
 registerCleanup();
 test('fresh connected settings keep both climber transfers off until opted in', async () => {

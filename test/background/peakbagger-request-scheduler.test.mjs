@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createPeakbaggerRequestScheduler } from '../../src/background/peakbagger-request-scheduler.js';
+import { createPeakbaggerRequestScheduler } from '../../src/background/peakbagger-request-scheduler.ts';
 
 const deferred = () => {
     let resolve;

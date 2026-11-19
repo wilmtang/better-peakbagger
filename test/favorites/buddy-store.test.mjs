@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBuddyStore } from '../../src/background/buddy-store.js';
-import { createIgnoredStore } from '../../src/background/ignored-store.js';
+import { createBuddyStore } from '../../src/background/buddy-store.ts';
+import { createIgnoredStore } from '../../src/background/ignored-store.ts';
 import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.ts';
 import * as I from '../../src/favorites/ignored-climbers.ts';
 

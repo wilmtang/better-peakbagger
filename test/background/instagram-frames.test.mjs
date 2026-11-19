@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createInstagramFrames} from '../../src/background/instagram-frames.js';
+import {createInstagramFrames} from '../../src/background/instagram-frames.ts';
 const url='https://www.instagram.com/p/fA9uwTtkSN/';
 const sourceNonce='ab'.repeat(24);
 const sourceUrl='https://www.peakbagger.com/climber/ascent.aspx?aid=1';

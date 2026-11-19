@@ -6,30 +6,74 @@
 // concurrency pool: a refusal in one job must be able to stop queued and
 // in-flight siblings before they add more traffic.
 
-const abortError = () => Object.assign(new Error('Peakbagger request cancelled.'), {
-    name: 'AbortError',
-});
+export interface PeakbaggerRequestSchedulerOptions {
+    concurrency?: number;
+}
 
-export const createPeakbaggerRequestScheduler = ({ concurrency = 4 } = {}) => {
+export interface PeakbaggerRequestRunOptions {
+    signal?: AbortSignal | null;
+}
+
+export interface PeakbaggerRequestStopOptions {
+    exceptSignal?: AbortSignal | null;
+}
+
+export interface PeakbaggerRequestSchedulerState {
+    readonly active: number;
+    readonly queued: number;
+    readonly stopped: boolean;
+    readonly reason: unknown;
+}
+
+export interface PeakbaggerRequestScheduler {
+    readonly run: <T>(
+        operation: (signal: AbortSignal) => Promise<T> | T,
+        options?: PeakbaggerRequestRunOptions,
+    ) => Promise<T>;
+    readonly stop: (reason: unknown, options?: PeakbaggerRequestStopOptions) => boolean;
+    readonly resume: () => boolean;
+    readonly state: () => PeakbaggerRequestSchedulerState;
+}
+
+interface SchedulerEntry {
+    operation: (signal: AbortSignal) => unknown;
+    signal: AbortSignal | null;
+    controller: AbortController;
+    resolve: (value: unknown) => void;
+    reject: (reason?: unknown) => void;
+    started: boolean;
+    settled: boolean;
+    stopReason: unknown;
+    cancel: (() => void) | null;
+}
+
+const abortError = (): Error & { name: 'AbortError' } => Object.assign(
+    new Error('Peakbagger request cancelled.'),
+    { name: 'AbortError' as const },
+);
+
+export const createPeakbaggerRequestScheduler = (
+    { concurrency = 4 }: PeakbaggerRequestSchedulerOptions = {},
+): PeakbaggerRequestScheduler => {
     if (!Number.isInteger(concurrency) || concurrency < 1) {
         throw new TypeError('Peakbagger request concurrency must be a positive integer.');
     }
 
-    const queue = [];
-    const active = new Set();
-    let stoppedReason = null;
+    const queue: SchedulerEntry[] = [];
+    const active = new Set<SchedulerEntry>();
+    let stoppedReason: unknown = null;
 
-    const settle = (entry, kind, value) => {
+    const settle = (entry: SchedulerEntry, kind: 'resolve' | 'reject', value: unknown): void => {
         if (entry.settled) return;
         entry.settled = true;
-        entry.signal?.removeEventListener('abort', entry.cancel);
+        if (entry.cancel) entry.signal?.removeEventListener('abort', entry.cancel);
         entry[kind](value);
     };
 
-    const drain = () => {
+    const drain = (): void => {
         if (stoppedReason) return;
         while (active.size < concurrency && queue.length) {
-            const entry = queue.shift();
+            const entry = queue.shift()!;
             if (entry.settled) continue;
             if (entry.signal?.aborted) {
                 settle(entry, 'reject', abortError());
@@ -50,17 +94,20 @@ export const createPeakbaggerRequestScheduler = ({ concurrency = 4 } = {}) => {
         }
     };
 
-    const run = (operation, { signal = null } = {}) => {
+    const run = <T>(
+        operation: (signal: AbortSignal) => Promise<T> | T,
+        { signal = null }: PeakbaggerRequestRunOptions = {},
+    ): Promise<T> => {
         if (typeof operation !== 'function') return Promise.reject(new TypeError('Request operation is required.'));
         if (stoppedReason) return Promise.reject(stoppedReason);
         if (signal?.aborted) return Promise.reject(abortError());
 
-        return new Promise((resolve, reject) => {
-            const entry = {
+        return new Promise<T>((resolve, reject) => {
+            const entry: SchedulerEntry = {
                 operation,
                 signal,
                 controller: new AbortController(),
-                resolve,
+                resolve: value => resolve(value as T),
                 reject,
                 started: false,
                 settled: false,
@@ -81,7 +128,7 @@ export const createPeakbaggerRequestScheduler = ({ concurrency = 4 } = {}) => {
         });
     };
 
-    const stop = (reason, { exceptSignal = null } = {}) => {
+    const stop = (reason: unknown, { exceptSignal = null }: PeakbaggerRequestStopOptions = {}): boolean => {
         if (!reason) throw new TypeError('A stop reason is required.');
         if (stoppedReason) return false;
         stoppedReason = reason;
@@ -94,14 +141,14 @@ export const createPeakbaggerRequestScheduler = ({ concurrency = 4 } = {}) => {
         return true;
     };
 
-    const resume = () => {
+    const resume = (): boolean => {
         if (active.size) return false;
         stoppedReason = null;
         drain();
         return true;
     };
 
-    const state = () => Object.freeze({
+    const state = (): PeakbaggerRequestSchedulerState => Object.freeze({
         active: active.size,
         queued: queue.length,
         stopped: !!stoppedReason,

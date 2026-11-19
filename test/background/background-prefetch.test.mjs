@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 
-import { createTerrainPrefetch } from '../../src/background/terrain-prefetch.js';
+import { createTerrainPrefetch } from '../../src/background/terrain-prefetch.ts';
 
 // The worker ships as one bundle; Unit 7 folds terrain-tiles + terrain-cache in
 // so the DEM prefetch runs entirely inside the extension-origin worker. Boot the

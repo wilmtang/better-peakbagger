@@ -131,16 +131,16 @@ Other local state has separate owners and does not belong in a settings file:
 
 | State | Exact key / owner | Reason |
 | --- | --- | --- |
-| Ignored-list sync consent and baseline | `bpbIgnoredSyncState` in `storage.local`; [sync controller](../src/background/climber-list-sync.js) | Device connection, reviewed merge baseline and interrupted-transfer state; new consent defaults off |
+| Ignored-list sync consent and baseline | `bpbIgnoredSyncState` in `storage.local`; [sync controller](../src/background/climber-list-sync.ts) | Device connection, reviewed merge baseline and interrupted-transfer state; new consent defaults off |
 | Photo canvas dimensions | `bpbPhotoViewport` in `storage.local`; [photo editor](../photos/photos.ts) | Device layout |
-| Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.js) | Current viewing preference, separate from list membership |
+| Peak report favorites-only filter | `bpbPeakReportFilter.favoritesOnly` in `storage.local`; [ignored store](../src/background/ignored-store.ts) | Current viewing preference, separate from list membership |
 | Active ascent chips and Trip report chip threshold | `pbAscentBetaFilter.v1` in Peakbagger `localStorage`; [ascent filter](../src/ascent/ascent-filter.ts) | Current page-view state; chip order and “Has beta” definition are portable |
 | Ascent and peak table splits | `pbAscentTableSplit.v1`, `pbPeakTableSplit.v1`; [column persistence](../src/ui/column-resize.ts) | Device layout |
 | Peak-page map dimensions | `pbPeakMapViewport.v1`; [peak map](../src/maps/peak-map.ts) | Device layout |
 | Theme startup mirrors | `bpbThemePref` in page/panel `localStorage`; [theme](../src/theme/theme.ts), [panel theme](../src/theme/panel-theme.ts) | Mirror of portable `theme`, not a separate theme choice |
 | Garmin consent and account | `connection.enabled`, `connection.cid` in [Garmin store](../src/garmin/garmin-store.ts) | Per-device authorization; key transfer does not copy it |
-| Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.js) | Pending source IDs for deferred private record cleanup on deletion |
-| Provider request budgets | `budget:<host>` in IndexedDB `bpb-private-map-sources-v1`; [custom private store](../src/background/custom-private-store.js) | Device-local hourly/daily request counters |
+| Custom overlay cleanup debt | `bpbCustomOverlayCleanup` in `storage.local`; [custom overlay store](../src/background/custom-overlay-store.ts) | Pending source IDs for deferred private record cleanup on deletion |
+| Provider request budgets | `budget:<host>` in IndexedDB `bpb-private-map-sources-v1`; [custom private store](../src/background/custom-private-store.ts) | Device-local hourly/daily request counters |
 
 ## Migration and settings files
 
@@ -161,7 +161,7 @@ when creating the device record. Fresh devices cannot inherit transfer consent
 from browser sync. An existing ignored-sync record retains its choice. Legacy
 map dimensions/cache budget seed the device record; later sync changes cannot
 replace it. [Settings migration](../src/settings/settings.ts) and
-[connection selection](../src/background/github-routes.js) enforce this boundary.
+[connection selection](../src/background/github-routes.ts) enforce this boundary.
 
 [Settings transfer schema v7](../src/settings/settings-transfer.ts) exports
 portable keys, a `customLayers` envelope, and (for manual settings file exports)
@@ -238,7 +238,7 @@ On import, omitted credentials preserve the destination; an explicit null API
 key removes that key. Included GitHub and non-null Garmin credentials require
 host access and validation. A fresh Garmin key import leaves import consent off;
 existing destination consent remains its own choice. GitHub connection imports
-retain destination transfer settings. See the [manual file routes](../src/background/settings-file-routes.js)
+retain destination transfer settings. See the [manual file routes](../src/background/settings-file-routes.ts)
 and [Garmin import handling](../src/garmin/garmin-imports.ts).
 
 ## Climber-list files
@@ -258,7 +258,7 @@ List files exclude Buddy cache/owner metadata, native Buddy membership, settings
 credentials, sync baselines and filter state. Import never edits Peakbagger's
 Buddy List. Existing automatic backups or ignored sync, if already enabled on
 this device, can transfer the resulting list change. See [file formats](../src/favorites/climber-files.ts),
-[file controls](../options/climber-files.ts), and [list policy](../src/background/climber-list-policy.js).
+[file controls](../options/climber-files.ts), and [list policy](../src/background/climber-list-policy.ts).
 
 ## GitHub behavior and overwrite protection
 
@@ -286,7 +286,7 @@ For migration, connect the destination with automatic transfers off, restore the
 desired settings/lists, then choose which automatic transfers to enable locally.
 Changing those choices no longer changes other browser profiles. See
 [root-backup guard](../src/github/root-backup-guard.ts),
-[GitHub routes](../src/background/github-routes.js), and
+[GitHub routes](../src/background/github-routes.ts), and
 [GitHub client](../src/github/github-client.ts).
 
 ## Verification and remaining limits

@@ -1,25 +1,237 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { guardRootBackup } from '../github/root-backup-guard.ts';
-import { createClimberListSync } from './climber-list-sync.js';
+import { guardRootBackup, type GuardRootBackupInput } from '../github/root-backup-guard.ts';
+import { createClimberListSync, type IgnoredSyncActionMessage } from './climber-list-sync.ts';
 import * as Ignored from '../favorites/ignored-climbers.ts';
-import { createIgnoredStore } from './ignored-store.js';
-import { settings as Settings } from '../settings/settings.ts';
-import { settingsTransfer as Transfer } from '../settings/settings-transfer.ts';
-import { customLayerBackup } from '../maps/custom-overlay-transfer.ts';
+import { createIgnoredStore } from './ignored-store.ts';
+import { settings as Settings, type SettingsData } from '../settings/settings.ts';
+import {
+    settingsTransfer as Transfer,
+    type SettingsTransferGithubConnection,
+} from '../settings/settings-transfer.ts';
+import { customLayerBackup, type CustomLayerBackup, type CustomLayerSnapshot } from '../maps/custom-overlay-transfer.ts';
 import { CUSTOM_REGISTRY_KEY, CUSTOM_PREFERENCES_KEY } from '../maps/custom-overlay-schema.ts';
 import { favoriteClimbers as Favorites } from '../favorites/favorite-climbers.ts';
-import { photoBackup as PhotoBackup } from '../photos/photo-backup.ts';
+import {
+    photoBackup as PhotoBackup,
+    type PhotoBackupMergeResult,
+    type PhotoBackupPayload,
+} from '../photos/photo-backup.ts';
 import { photoStore as PhotoStore } from '../photos/photo-store.ts';
-import { githubAuth as GithubAuth } from '../github/github-auth.ts';
-import { githubClient as GithubClient } from '../github/github-client.ts';
-import { githubErrors as GithubErrors } from '../github/github-errors.ts';
+import {
+    githubAuth as GithubAuth,
+    type GithubAccount,
+    type GithubAuthRecord,
+    type GithubAuthSnapshot,
+    type GithubBackupRepository,
+} from '../github/github-auth.ts';
+import { githubClient as GithubClient, type AscentBackupSnapshot } from '../github/github-client.ts';
+import { githubErrors as GithubErrors, type PublicGithubError } from '../github/github-errors.ts';
 import { githubWriteQueue as GithubWriteQueue } from '../github/github-write-queue.ts';
 import { requestDeadline as Deadline } from '../net/request-deadline.ts';
-import { publicErrors as PublicErrors } from './public-errors.js';
-import { trustedActions as TrustedActions } from './trusted-actions.js';
-import { createPackagedPageMatcher } from './sender-policy.js';
+import { publicErrors as PublicErrors } from './public-errors.ts';
+import { trustedActions as TrustedActions } from './trusted-actions.ts';
+import { createPackagedPageMatcher } from './sender-policy.ts';
+
+export type GithubRouteHandler = (
+    message: Record<string, unknown>,
+    sender: chrome.runtime.MessageSender,
+) => unknown;
+
+export interface GithubRouteDefinition {
+    handler: GithubRouteHandler;
+    extensionOnly: boolean;
+}
+
+export type GithubRoutesMessage = Record<string, unknown>;
+
+export interface GithubLocalStorageArea {
+    get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+    remove?(keys: string | string[]): Promise<void>;
+}
+
+export interface GithubSessionStorageArea {
+    get(keys?: string | string[] | null): Promise<Record<string, unknown>>;
+    set(items: Record<string, unknown>): Promise<void>;
+    remove(keys: string | string[]): Promise<void>;
+}
+
+export interface GithubAlarmsArea {
+    create(name: string, alarmInfo: { delayInMinutes?: number; periodInMinutes?: number }): unknown;
+    get?(name: string): Promise<{ periodInMinutes?: number } | undefined>;
+    clear?(name: string): Promise<boolean>;
+}
+
+export interface GithubRoutesExt {
+    runtime?: {
+        id?: string;
+        getURL?: (path: string) => string;
+        getManifest?: () => { version?: string };
+    };
+    storage: {
+        local: GithubLocalStorageArea;
+    };
+    alarms?: GithubAlarmsArea | null;
+}
+
+export type GithubBackupClient = ReturnType<typeof GithubClient.createGithubClient>;
+
+export interface ConnectedGithubSuccess {
+    authorizationEpoch?: number;
+    repo: {
+        owner: string;
+        name: string;
+        branch: string | null;
+    };
+    client: GithubBackupClient;
+    error?: undefined;
+}
+
+export interface ConnectedGithubFailure {
+    authorizationEpoch?: number;
+    error: {
+        code: string;
+        message?: string;
+        status?: number;
+        retryAfterSeconds?: number;
+    };
+}
+
+export type ConnectedGithubAccess = ConnectedGithubSuccess | ConnectedGithubFailure;
+
+export interface PhotoBackupSettingsReader {
+    requireCurrent(): Promise<Pick<SettingsData, 'autoPhotoLibraryBackup'>>;
+    get(): Promise<Pick<SettingsData, 'autoPhotoLibraryBackup'>>;
+}
+
+export interface CreateGithubRoutesOptions {
+    customLayers?: {
+        snapshot(options?: { includePrivate?: boolean }): Promise<CustomLayerSnapshot>;
+    } | null;
+    ext: GithubRoutesExt;
+    snapshotKey?: string;
+    storage?: () => GithubSessionStorageArea;
+    now: () => number;
+    peakbaggerLogin?: () => Promise<number | string | null | undefined>;
+    peakbaggerNavigationAccount?: () => Promise<{ status?: string; cid?: number | string | null } | null | undefined>;
+    isPeakbaggerSender?: (sender: chrome.runtime.MessageSender) => boolean;
+    isClimbListSender?: (sender: chrome.runtime.MessageSender) => boolean;
+    isFresh?: (record: unknown) => boolean;
+    readMap?: <Value = Record<string, unknown>>(key: string) => Promise<Record<string, Value>>;
+    mutateMap?: <Result = unknown, Value = Record<string, unknown>>(
+        key: string,
+        mutate: (map: Record<string, Value>) => Result | Promise<Result>,
+    ) => Promise<Result>;
+    createPhotoStore?: typeof PhotoStore.createPhotoStore;
+    resolveGithubAccess?: ((options?: {
+        requireEnabled?: boolean;
+        signal?: AbortSignal | null;
+    }) => Promise<ConnectedGithubAccess>) | null;
+    ignoredStore?: ReturnType<typeof createIgnoredStore> | null;
+    photoBackupSettings?: PhotoBackupSettingsReader;
+    trustedActions?: {
+        consumeGrant(
+            message: object,
+            sender: chrome.runtime.MessageSender,
+            action: string,
+            options?: { oneUse?: boolean },
+        ): Promise<boolean> | boolean;
+    } | null;
+}
+
+interface PendingGithubAuth {
+    deviceCode: string;
+    userCode: string;
+    verificationUri: string;
+    verificationUriComplete: string | null;
+    expiresIn: number;
+    interval: number;
+    startedAt: number;
+    expiresAt: number;
+    nextPollAt: number;
+}
+
+interface StoredSnapshotIdentity {
+    ascentId?: unknown;
+    peakId?: unknown;
+    date?: unknown;
+}
+
+interface StoredBackupSnapshot {
+    ascent?: Record<string, unknown>;
+    peak?: Record<string, unknown>;
+    report?: {
+        markdown?: unknown;
+        submitted?: unknown;
+    };
+    backup?: Record<string, unknown>;
+}
+
+interface StoredSnapshotRecord {
+    identity?: StoredSnapshotIdentity | null;
+    attemptId?: string | null;
+    snapshot?: StoredBackupSnapshot;
+    sourceTabId?: number | null;
+    generation?: string;
+    savedAt?: number;
+    expiresAt?: number;
+}
+
+interface AscentDeleteIntentRecord {
+    aid: number;
+    sourceTabId: number;
+    state: 'pending' | 'completed';
+    createdAt: number;
+    completedAt?: number;
+    expiresAt: number;
+}
+
+interface AutoBackupState {
+    signature?: string;
+    scope?: string;
+    syncedAt?: string;
+    needsReview?: boolean;
+    attempts?: number;
+    attemptScope?: string;
+}
+
+interface PhotoBackupStateRecord {
+    signature?: string;
+    signatureVersion?: number;
+    generation?: number;
+    revisions?: Record<string, number>;
+    syncedAt?: string;
+    restoredAt?: string;
+    commitUrl?: string | null;
+    repo?: {
+        owner: string;
+        name: string;
+        branch?: string | null;
+    } | null;
+    attempts?: number;
+    reconciliationPending?: boolean;
+    capacityBlockedGeneration?: number | null;
+    capacityActualBytes?: number;
+    capacityMaxBytes?: number;
+}
+
+type BackupPhotoLibraryResult =
+    | {
+        ok: true;
+        current: boolean;
+        signature?: string;
+        unchanged?: boolean;
+        reconciliationPending?: boolean;
+        result?: unknown;
+        counts?: unknown;
+        warning?: { code: string; message: string };
+    }
+    | {
+        ok: false;
+        error: { code: string; message?: string; [key: string]: unknown };
+    };
 
 const GITHUB_AUTH_PENDING_KEY = 'bpbGithubAuthPending';
 const FAVORITE_CLIMBERS_BACKUP_PATH = 'favorite-climbers.json';
@@ -44,9 +256,9 @@ const ASCENT_GITHUB_OPERATION_TIMEOUT_MS = 2 * 60 * 1000;
 // Keep access policy beside every handler. A bare function is rejected while
 // the worker boots, so adding a route without deciding who may call it cannot
 // silently inherit a stale hand-maintained allowlist.
-export const createGithubRouteTable = definitions => {
-    const handlers = {};
-    const extensionOnly = new Set();
+export const createGithubRouteTable = <T extends Record<string, GithubRouteDefinition>>(definitions: T) => {
+    const handlers: Record<string, GithubRouteHandler> = {};
+    const extensionOnly = new Set<string>();
     for (const [type, definition] of Object.entries(definitions || {})) {
         if (!definition || typeof definition.handler !== 'function'
             || typeof definition.extensionOnly !== 'boolean') {
@@ -56,36 +268,41 @@ export const createGithubRouteTable = definitions => {
         if (definition.extensionOnly) extensionOnly.add(type);
     }
     return {
-        handlers: Object.freeze(handlers),
-        isExtensionOnly: type => extensionOnly.has(type),
+        handlers: Object.freeze(handlers) as Readonly<{ [K in keyof T]: T[K]['handler'] }>,
+        isExtensionOnly: (type: string): boolean => extensionOnly.has(type),
     };
 };
 
-const peakbaggerPage = handler => ({ handler, extensionOnly: false });
+const peakbaggerPage = (handler: GithubRouteHandler): GithubRouteDefinition => ({ handler, extensionOnly: false });
 
 export function createGithubRoutes({
     customLayers = null,
     ext,
-    snapshotKey: SNAPSHOTS_KEY,
-    storage,
+    snapshotKey: SNAPSHOTS_KEY = '',
+    storage = (() => {
+        throw new Error('Session storage is unavailable.');
+    }) as unknown as () => GithubSessionStorageArea,
     now,
-    peakbaggerLogin,
+    peakbaggerLogin = async () => null,
     peakbaggerNavigationAccount = async () => ({ status: 'unverified', cid: null }),
-    isPeakbaggerSender,
-    isClimbListSender,
-    isFresh,
-    readMap,
-    mutateMap,
+    isPeakbaggerSender = () => false,
+    isClimbListSender = () => false,
+    isFresh = () => false,
+    readMap = async () => ({}),
+    mutateMap = async (_key, mutate) => mutate({}),
     createPhotoStore = PhotoStore.createPhotoStore,
     resolveGithubAccess = null,
     ignoredStore = null,
     photoBackupSettings = Settings,
     trustedActions = null,
-}) {
+}: CreateGithubRoutesOptions) {
     const optionsPages = ['options/options.html'];
     const climberPages = [...optionsPages, 'options/favorites.html'];
     const photoPages = [...optionsPages, 'photos/photos.html'];
-    const extensionPage = (handler, pages = optionsPages) => {
+    const extensionPage = (
+        handler: GithubRouteHandler,
+        pages: string[] = optionsPages,
+    ): GithubRouteDefinition => {
         const accepts = createPackagedPageMatcher(ext, pages);
         return {
             extensionOnly: true,
@@ -103,22 +320,27 @@ export function createGithubRoutes({
     // scoping happens on GitHub's own install page, then discovery lists exactly
     // what the token can reach.
 
-    const netFetch = (url, init) => fetch(url, init);
-    const readPendingGithubAuth = async () => (await storage().get(GITHUB_AUTH_PENDING_KEY))[GITHUB_AUTH_PENDING_KEY] || null;
-    const writePendingGithubAuth = pending => storage().set({ [GITHUB_AUTH_PENDING_KEY]: pending });
+    const netFetch = (url: string, init?: RequestInit) => fetch(url, init);
+    const readPendingGithubAuth = async (): Promise<PendingGithubAuth | null> =>
+        ((await storage().get(GITHUB_AUTH_PENDING_KEY))[GITHUB_AUTH_PENDING_KEY] as PendingGithubAuth | undefined) || null;
+    const writePendingGithubAuth = (pending: PendingGithubAuth) =>
+        storage().set({ [GITHUB_AUTH_PENDING_KEY]: pending });
     const clearPendingGithubAuth = () => storage().remove(GITHUB_AUTH_PENDING_KEY);
     let githubAuthEpoch = 0;
-    let githubAuthStateQueue = Promise.resolve();
-    const mutateGithubAuthState = operation => {
+    let githubAuthStateQueue: Promise<unknown> = Promise.resolve();
+    const mutateGithubAuthState = <T>(operation: () => Promise<T>): Promise<T> => {
         const pending = githubAuthStateQueue.then(operation, operation);
         githubAuthStateQueue = pending.catch(() => {});
         return pending;
     };
-    const samePendingGithubAuth = (left, right) => !!left && !!right
+    const samePendingGithubAuth = (
+        left: PendingGithubAuth | null | undefined,
+        right: PendingGithubAuth | null | undefined,
+    ): boolean => !!left && !!right
         && left.deviceCode === right.deviceCode
         && left.startedAt === right.startedAt;
-    const publicGithubAuthState = pending => ({
-        phase: 'polling',
+    const publicGithubAuthState = (pending: PendingGithubAuth) => ({
+        phase: 'polling' as const,
         userCode: pending.userCode,
         verificationUri: pending.verificationUri,
         verificationUriComplete: pending.verificationUriComplete,
@@ -126,20 +348,30 @@ export function createGithubRoutes({
         startedAt: pending.startedAt,
     });
 
+    const positiveAscentId = (value: unknown): number | null => {
+        if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) return null;
+        const number = Number(value);
+        return Number.isSafeInteger(number) && number > 0 ? number : null;
+    };
+
     const peakbaggerMyAscents = async () => {
-        let account;
+        let account: { status?: string; cid?: number | string | null } | null | undefined;
         try {
             account = await peakbaggerNavigationAccount();
         } catch (error) {
             if (PublicErrors.isPublic(error)) return { ok: false, error: { source: 'peakbagger', ...PublicErrors.expose(error) } };
-            const peakbaggerFailure = error?.source === 'peakbagger';
+            const err = error && typeof error === 'object'
+                ? (error as { source?: unknown; code?: unknown; message?: unknown })
+                : null;
+            const peakbaggerFailure = err?.source === 'peakbagger';
             return {
                 ok: false,
                 error: {
                     ...(peakbaggerFailure ? { source: 'peakbagger' } : {}),
-                    code: peakbaggerFailure && error.code ? error.code : 'peakbagger-unavailable',
-                    message: peakbaggerFailure && error.message
-                        ? error.message
+                    code: peakbaggerFailure && typeof err?.code === 'string' && err.code
+                        ? err.code : 'peakbagger-unavailable',
+                    message: peakbaggerFailure && typeof err?.message === 'string' && err.message
+                        ? err.message
                         : 'Could not reach Peakbagger. Check your connection, then try again.',
                 },
             };
@@ -157,14 +389,14 @@ export function createGithubRoutes({
             };
         }
         const url = new URL('https://www.peakbagger.com/climber/ClimbListC.aspx');
-        url.searchParams.set('cid', cid);
+        url.searchParams.set('cid', String(cid));
         url.searchParams.set('j', '-1');
         url.searchParams.set('y', '9999');
         url.searchParams.set('sort', 'AscentDate');
         return { ok: true, url: url.toString() };
     };
 
-    const publicGithubStatus = (auth, settings) => ({
+    const publicGithubStatus = (auth: GithubAuthRecord | null | undefined, settings: SettingsData) => ({
         enabled: settings.enableGithubBackup,
         auto: settings.autoGithubBackup,
         connected: !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name),
@@ -179,13 +411,17 @@ export function createGithubRoutes({
         const auth = await GithubAuth.authStore.read();
         const settings = await Settings.get();
         const states = await ext.storage.local.get([SETTINGS_BACKUP_STATE_KEY, FAVORITES_BACKUP_STATE_KEY]);
-        return { ...publicGithubStatus(auth, settings),
-            settingsBackupNeedsReview: states[SETTINGS_BACKUP_STATE_KEY]?.needsReview === true,
-            favoritesBackupNeedsReview: states[FAVORITES_BACKUP_STATE_KEY]?.needsReview === true };
+        const settingsState = states[SETTINGS_BACKUP_STATE_KEY] as AutoBackupState | undefined;
+        const favoritesState = states[FAVORITES_BACKUP_STATE_KEY] as AutoBackupState | undefined;
+        return {
+            ...publicGithubStatus(auth, settings),
+            settingsBackupNeedsReview: settingsState?.needsReview === true,
+            favoritesBackupNeedsReview: favoritesState?.needsReview === true,
+        };
     };
 
     const supersededGithubAuth = () => ({
-        phase: 'error',
+        phase: 'error' as const,
         code: 'superseded',
         message: 'The GitHub connection changed while this request was finishing. Review the current connection and try again.',
     });
@@ -194,7 +430,10 @@ export function createGithubRoutes({
     // New connections always go through repository inspection; auto-selecting a
     // sole repo would skip the populated-repository confirmation and collision
     // checks that make this write boundary safe.
-    const reconcileDiscoveredRepo = async (repos, snapshot) => {
+    const reconcileDiscoveredRepo = async (
+        repos: GithubBackupRepository[],
+        snapshot: GithubAuthSnapshot,
+    ): Promise<{ ok: true; snapshot: GithubAuthSnapshot } | { ok: false }> => {
         const selected = snapshot.auth?.repo;
         if (!selected) {
             return (await GithubAuth.authStore.isSnapshotCurrent(snapshot))
@@ -207,12 +446,15 @@ export function createGithubRoutes({
                 ? { ok: true, snapshot }
                 : { ok: false };
         }
-        const replacement = { ...snapshot.auth, repo: null, installationId: null };
+        const replacement: GithubAuthRecord = { ...snapshot.auth, repo: null, installationId: null };
         const result = await GithubAuth.authStore.replaceIfSnapshot(snapshot, replacement);
         return result.replaced ? { ok: true, snapshot: result.current } : { ok: false };
     };
 
-    const sameImportedRepository = (candidate, requested) => {
+    const sameImportedRepository = (
+        candidate: GithubBackupRepository,
+        requested: SettingsTransferGithubConnection['repository'],
+    ): boolean => {
         if (requested.id != null) return candidate.id === requested.id;
         return candidate.owner?.toLocaleLowerCase('en-US') === requested.owner.toLocaleLowerCase('en-US')
             && candidate.name?.toLocaleLowerCase('en-US') === requested.name.toLocaleLowerCase('en-US');
@@ -222,7 +464,9 @@ export function createGithubRoutes({
     // identity that was previously selected. Re-prove both against GitHub and
     // run the ordinary repository inspection before the settings-file route is
     // allowed to replace any local store.
-    const validateImportedConnection = async connection => {
+    const validateImportedConnection = async (
+        connection: SettingsTransferGithubConnection,
+    ): Promise<{ ok: true; auth: GithubAuthRecord } | { ok: false; error: PublicGithubError }> => {
         try {
             const { token, repository: requested } = connection;
             const [account, discovered] = await Promise.all([
@@ -233,8 +477,11 @@ export function createGithubRoutes({
             if (!granted) {
                 throw new GithubErrors.GithubError(
                     GithubErrors.ERROR_CODES.NO_ACCESS,
-                    'The exported GitHub repository is no longer granted to Better Peakbagger.'
+                    'The exported GitHub repository is no longer granted to Better Peakbagger.',
                 );
+            }
+            if (!granted.owner) {
+                throw new TypeError('github client requires owner and repo');
             }
             const client = GithubClient.createGithubClient({
                 fetch: netFetch,
@@ -256,7 +503,7 @@ export function createGithubRoutes({
                         owner: granted.owner,
                         name: granted.name,
                         branch: inspection.branch,
-                        id: granted.id ?? null,
+                        id: (granted.id ?? null) as unknown as number | undefined,
                         fullName: granted.fullName || `${granted.owner}/${granted.name}`,
                     },
                     installationId: granted.installationId ?? null,
@@ -267,7 +514,7 @@ export function createGithubRoutes({
                 ok: false,
                 error: GithubErrors.publicError(
                     error,
-                    'The GitHub connection in this file could not be verified.'
+                    'The GitHub connection in this file could not be verified.',
                 ),
             };
         }
@@ -277,7 +524,7 @@ export function createGithubRoutes({
         const epoch = ++githubAuthEpoch;
         await mutateGithubAuthState(() => clearPendingGithubAuth());
         const flow = GithubAuth.createDeviceFlow({ fetch: netFetch });
-        let code;
+        let code: Awaited<ReturnType<typeof flow.requestCode>>;
         try {
             code = await flow.requestCode();
         } catch (error) {
@@ -286,7 +533,7 @@ export function createGithubRoutes({
         }
         if (epoch !== githubAuthEpoch) return { phase: 'idle' };
         const startedAt = now();
-        const pending = {
+        const pending: PendingGithubAuth = {
             deviceCode: code.deviceCode,
             userCode: code.userCode,
             verificationUri: code.verificationUri,
@@ -333,7 +580,7 @@ export function createGithubRoutes({
                 const interval = result.phase === 'slow-down'
                     ? Math.max(pending.interval + 5, result.interval)
                     : pending.interval;
-                const next = { ...pending, interval, nextPollAt: now() + interval * 1000 };
+                const next: PendingGithubAuth = { ...pending, interval, nextPollAt: now() + interval * 1000 };
                 const stored = await mutateGithubAuthState(async () => {
                     if (epoch !== githubAuthEpoch) return false;
                     const current = await readPendingGithubAuth();
@@ -345,10 +592,10 @@ export function createGithubRoutes({
             }
 
             const cred = result.credential;
-            let account = null;
+            let account: GithubAccount | null = null;
             try { account = await GithubAuth.fetchAccount({ fetch: netFetch, token: cred.token }); } catch { /* non-fatal */ }
             if (epoch !== githubAuthEpoch) return { phase: 'idle' };
-            let repos = [];
+            let repos: GithubBackupRepository[] = [];
             let installationCount = 0;
             try {
                 const discovered = await GithubAuth.listBackupRepositories({ fetch: netFetch, token: cred.token });
@@ -412,23 +659,32 @@ export function createGithubRoutes({
         }
     };
 
-    const githubSelectRepo = async message => {
-        const r = message && message.repo;
-        if (!r || !r.owner || !r.name) return { error: 'invalid-repo' };
+    const githubSelectRepo = async (message: GithubRoutesMessage) => {
+        const r = message && message.repo && typeof message.repo === 'object'
+            ? (message.repo as Record<string, unknown>)
+            : null;
+        if (!r || typeof r.owner !== 'string' || !r.owner || typeof r.name !== 'string' || !r.name) {
+            return { error: 'invalid-repo' };
+        }
         const snapshot = await GithubAuth.authStore.readSnapshot();
         if (message.confirmExisting && message.authorizationEpoch !== snapshot.epoch) {
             return supersededGithubAuth();
         }
         const token = snapshot.auth?.token;
         if (!token) return { connected: false, error: { code: 'no-token' } };
+        const repoOwner = r.owner;
+        const repoName = r.name;
+        const requestedBranch = (typeof r.branch === 'string' && r.branch)
+            || (typeof r.defaultBranch === 'string' && r.defaultBranch)
+            || undefined;
         const client = GithubClient.createGithubClient({
             fetch: netFetch,
             token,
-            owner: r.owner,
-            repo: r.name,
-            branch: r.branch || r.defaultBranch || undefined,
+            owner: repoOwner,
+            repo: repoName,
+            branch: requestedBranch,
         });
-        let inspection;
+        let inspection: Awaited<ReturnType<typeof client.inspectRepository>>;
         try {
             inspection = await client.inspectRepository();
         } catch (error) {
@@ -452,16 +708,21 @@ export function createGithubRoutes({
                 authorizationEpoch: snapshot.epoch,
             };
         }
-        const replacement = {
+        const repoFullName = typeof r.fullName === 'string' && r.fullName
+            ? r.fullName
+            : `${repoOwner}/${repoName}`;
+        const repoId = typeof r.id === 'number' ? r.id : null;
+        const installationId = typeof r.installationId === 'number' ? r.installationId : null;
+        const replacement: GithubAuthRecord = {
             ...snapshot.auth,
             repo: {
-                owner: r.owner,
-                name: r.name,
+                owner: repoOwner,
+                name: repoName,
                 branch: inspection.branch,
-                id: r.id ?? null,
-                fullName: r.fullName || `${r.owner}/${r.name}`,
+                id: repoId as unknown as number | undefined,
+                fullName: repoFullName,
             },
-            installationId: r.installationId ?? null,
+            installationId,
         };
         // Freeze this device's choices before the new connection can enable
         // any legacy automatic-transfer preferences inherited from sync.
@@ -506,24 +767,30 @@ export function createGithubRoutes({
     // Peakbagger has assigned either ascent an id.
     // Accepted only from a Peakbagger tab and only while the feature is enabled;
     // the cleanup alarm expires it on the 30-minute horizon.
-    const storeBackupSnapshot = async (message, sender) => {
+    const storeBackupSnapshot = async (
+        message: GithubRoutesMessage,
+        sender: chrome.runtime.MessageSender,
+    ) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, reason: 'forbidden' };
-        if (!message || !message.key || !message.snapshot) return { ok: false, reason: 'invalid' };
+        if (!message || typeof message.key !== 'string' || !message.key
+            || !message.snapshot || typeof message.snapshot !== 'object') {
+            return { ok: false, reason: 'invalid' };
+        }
         const settings = await Settings.get();
         if (!settings.enableGithubBackup) return { ok: false, reason: 'disabled' };
-        const sourceTabId = sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+        const sourceTabId = sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id! : null;
         const storageKey = sourceTabId == null ? message.key : `${message.key}|tab:${sourceTabId}`;
-        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+        await mutateMap<void, StoredSnapshotRecord>(SNAPSHOTS_KEY, snapshots => {
             snapshots[storageKey] = {
-                identity: message.identity || null,
+                identity: (message.identity as StoredSnapshotIdentity | undefined) || null,
                 attemptId: typeof message.attemptId === 'string' ? message.attemptId : null,
-                snapshot: message.snapshot,
+                snapshot: message.snapshot as StoredBackupSnapshot,
                 sourceTabId,
                 generation: crypto.randomUUID(),
                 savedAt: now(),
                 expiresAt: now() + SNAPSHOT_TTL_MS,
             };
-            const ordered = Object.entries(snapshots).sort((a, b) => b[1].savedAt - a[1].savedAt);
+            const ordered = Object.entries(snapshots).sort((a, b) => (b[1].savedAt || 0) - (a[1].savedAt || 0));
             for (const [key] of ordered.slice(SNAPSHOT_LIMIT)) delete snapshots[key];
         });
         return { ok: true };
@@ -531,56 +798,57 @@ export function createGithubRoutes({
 
     // Whether the saved ascent page should offer a backup: enabled and connected.
     // Content-script safe — it exposes no token, only the flags and repo name.
-    const githubBackupStatus = async sender => {
+    const githubBackupStatus = async (sender: chrome.runtime.MessageSender) => {
         if (!isPeakbaggerSender(sender)) return { enabled: false, connected: false };
         const settings = await Settings.get();
         const auth = await GithubAuth.authStore.read();
-        const connected = !!(auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name);
+        const repo = auth && auth.token && auth.repo && auth.repo.owner && auth.repo.name
+            ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` }
+            : null;
         return {
             enabled: !!settings.enableGithubBackup,
             auto: !!settings.autoGithubBackup,
-            connected,
-            repo: connected ? { fullName: auth.repo.fullName || `${auth.repo.owner}/${auth.repo.name}` } : null,
+            connected: !!repo,
+            repo,
         };
     };
 
-    const positiveAscentId = value => {
-        if (typeof value !== 'number' && (typeof value !== 'string' || !/^\d+$/.test(value))) return null;
-        const number = Number(value);
-        return Number.isSafeInteger(number) && number > 0 ? number : null;
-    };
-
-    const isAscentEditSender = (sender, ascentId) => {
+    const isAscentEditSender = (sender: chrome.runtime.MessageSender, ascentId: number): boolean => {
         if (!isPeakbaggerSender(sender)) return false;
         try {
-            const url = new URL(sender.url);
+            const url = new URL(sender.url || '');
             return /\/climber\/ascentedit\.aspx$/i.test(url.pathname)
                 && positiveAscentId(url.searchParams.get('aid')) === ascentId;
         } catch { return false; }
     };
 
-    const senderTabId = sender => Number.isInteger(sender?.tab?.id) ? sender.tab.id : null;
-    const deletionRecord = async ascentId => {
-        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
+    const senderTabId = (sender: chrome.runtime.MessageSender | null | undefined): number | null =>
+        Number.isInteger(sender?.tab?.id) ? (sender!.tab!.id as number) : null;
+    const deletionRecord = async (ascentId: number): Promise<AscentDeleteIntentRecord | null> => {
+        const intents = await readMap<AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY);
         const record = intents[String(ascentId)];
-        return isFresh(record) ? record : null;
+        return record && isFresh(record) ? record : null;
     };
     // One read for the whole batch. This runs twice per profile push (once as a
     // preflight, once inside the write queue), so a per-id read meant twenty
     // storage round trips to answer one question about ten ascents.
-    const deletionBlocksBackup = async ascentIds => {
-        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
+    const deletionBlocksBackup = async (ascentIds: readonly number[]): Promise<number | null> => {
+        const intents = await readMap<AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY);
         for (const ascentId of ascentIds) {
             if (isFresh(intents[String(ascentId)])) return ascentId;
         }
         return null;
     };
-    const clearAscentSnapshots = ascentId => mutateMap(SNAPSHOTS_KEY, snapshots => {
-        for (const [key, record] of Object.entries(snapshots)) {
-            if (positiveAscentId(record?.identity?.ascentId) === ascentId) delete snapshots[key];
-        }
-    });
-    const deletionSettings = async () => {
+    const clearAscentSnapshots = (ascentId: number) =>
+        mutateMap<void, StoredSnapshotRecord>(SNAPSHOTS_KEY, snapshots => {
+            for (const [key, record] of Object.entries(snapshots)) {
+                if (positiveAscentId(record?.identity?.ascentId) === ascentId) delete snapshots[key];
+            }
+        });
+    const deletionSettings = async (): Promise<
+        | { settings: SettingsData; error?: undefined }
+        | { error: { code: string; message: string }; settings?: undefined }
+    > => {
         try {
             return { settings: await Settings.requireCurrent() };
         } catch {
@@ -593,144 +861,18 @@ export function createGithubRoutes({
         }
     };
 
-    // Phase one: intercept only Peakbagger's two native Delete submitters and
-    // durably record intent before the destructive POST is allowed to proceed.
-    // No GitHub mutation happens here.
-    const storeAscentDeleteIntent = async (message, sender) => {
-        const ascentId = positiveAscentId(message?.aid);
-        if (!ascentId || !isAscentEditSender(sender, ascentId)) {
-            return { ok: false, error: { code: 'forbidden' } };
-        }
-        const deletionGate = await deletionSettings();
-        if (deletionGate.error) return { ok: false, error: deletionGate.error };
-        const settings = deletionGate.settings;
-        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
-            return { ok: false, error: { code: 'disabled' } };
-        }
-        const access = await connectedGithubClient({ requireEnabled: true });
-        if (access.error) return { ok: false, error: access.error };
-        const tabId = senderTabId(sender);
-        if (tabId == null) return { ok: false, error: { code: 'forbidden' } };
-
-        await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
-            intents[String(ascentId)] = {
-                aid: ascentId,
-                sourceTabId: tabId,
-                state: 'pending',
-                createdAt: now(),
-                expiresAt: now() + ASCENT_DELETE_TTL_MS,
-            };
-        });
-        await clearAscentSnapshots(ascentId);
-        return { ok: true };
-    };
-
-    // A same-tab My Ascents redirect can ask whether it has deletion work. The
-    // aid is not proof; it is only the input to the complete-list confirmation
-    // below, and completed tombstones remain private so stale backup work stays
-    // blocked without repeating the deletion.
-    const pendingAscentDeletions = async sender => {
-        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const deletionGate = await deletionSettings();
-        if (deletionGate.error) return { ok: false, error: deletionGate.error };
-        const settings = deletionGate.settings;
-        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
-            return { ok: true, aids: [] };
-        }
-        const tabId = senderTabId(sender);
-        const intents = await readMap(ASCENT_DELETE_INTENTS_KEY);
-        const aids = Object.values(intents)
-            .filter(record => isFresh(record) && record.state === 'pending' && record.sourceTabId === tabId)
-            .map(record => positiveAscentId(record.aid))
-            .filter(Boolean);
-        return { ok: true, aids: [...new Set(aids)] };
-    };
-
-    // Phase two: the isolated ClimbListC content script supplies the parsed,
-    // complete all-years owner list. Recheck the signed-in owner in the worker,
-    // then delete only when the intended aid is authoritatively absent.
-    const confirmAscentDeletion = async (message, sender) => {
-        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
-        const ascentId = positiveAscentId(message?.aid);
-        const climberId = positiveAscentId(message?.climberId);
-        const listed = message?.allAscentIds;
-        if (!ascentId || !climberId || message?.pageComplete !== true
-            || !Array.isArray(listed) || listed.length > 100000
-            || listed.some(value => !positiveAscentId(value))) {
-            return { ok: false, error: { code: 'no-data' } };
-        }
-
-        const record = await deletionRecord(ascentId);
-        if (!record || record.state !== 'pending' || record.sourceTabId !== senderTabId(sender)) {
-            return { ok: false, error: { code: 'no-delete-intent' } };
-        }
-        const deletionGate = await deletionSettings();
-        if (deletionGate.error) return { ok: false, error: deletionGate.error };
-        const settings = deletionGate.settings;
-        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
-            return { ok: false, error: { code: 'disabled' } };
-        }
-        let signedInId = null;
-        try { signedInId = positiveAscentId(await peakbaggerLogin()); }
-        catch (error) {
-            return {
-                ok: false,
-                error: {
-                    source: 'peakbagger',
-                    code: error?.code || 'peakbagger-unavailable',
-                    message: error?.message || 'Could not confirm the signed-in Peakbagger account.',
-                },
-            };
-        }
-        if (signedInId !== climberId) {
-            return {
-                ok: false,
-                error: {
-                    source: 'peakbagger',
-                    code: 'identity-mismatch',
-                    message: 'The complete ascent list does not belong to the signed-in Peakbagger account.',
-                },
-            };
-        }
-
-        if (listed.some(value => Number(value) === ascentId)) {
-            await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => { delete intents[String(ascentId)]; });
-            return { ok: true, confirmed: false, reason: 'still-present' };
-        }
-
-        const expectedAccess = await connectedGithubClient({ requireEnabled: true });
-        if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
-        try {
-            const result = await writeQueue.run(async () => {
-                const access = await queuedGithubAccess(expectedAccess, { requireEnabled: true });
-                return access.client.deleteAscentBackup(ascentId);
-            });
-            await clearAscentSnapshots(ascentId);
-            await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
-                const current = intents[String(ascentId)];
-                if (!current) return;
-                intents[String(ascentId)] = {
-                    ...current,
-                    state: 'completed',
-                    completedAt: now(),
-                    expiresAt: now() + ASCENT_DELETE_TTL_MS,
-                };
-            });
-            return { ok: true, confirmed: true, result };
-        } catch (error) {
-            return {
-                ok: false,
-                error: writeError(error, 'The deleted ascent could not be removed from GitHub.'),
-            };
-        }
-    };
-
-    const connectedGithubClient = async ({ requireEnabled = false, signal = null } = {}) => {
+    const connectedGithubClient = async ({
+        requireEnabled = false,
+        signal = null,
+    }: {
+        requireEnabled?: boolean;
+        signal?: AbortSignal | null;
+    } = {}): Promise<ConnectedGithubAccess> => {
         if (typeof resolveGithubAccess === 'function') {
             return resolveGithubAccess({ requireEnabled, signal });
         }
         if (requireEnabled) {
-            let settings;
+            let settings: SettingsData;
             try {
                 settings = await Settings.requireCurrent();
             } catch {
@@ -755,14 +897,14 @@ export function createGithubRoutes({
             repo: {
                 owner: auth.repo.owner,
                 name: auth.repo.name,
-                branch: auth.repo.branch || null,
+                branch: (typeof auth.repo.branch === 'string' && auth.repo.branch) || null,
             },
             client: GithubClient.createGithubClient({
                 fetch: netFetch,
                 token: auth.token,
                 owner: auth.repo.owner,
                 repo: auth.repo.name,
-                branch: auth.repo.branch || undefined,
+                branch: (typeof auth.repo.branch === 'string' && auth.repo.branch) || undefined,
                 signal,
             }),
         };
@@ -774,7 +916,7 @@ export function createGithubRoutes({
     // queue or a sequence of merely-slow requests can leave the page waiting
     // forever. The parent signal also stops a queued client before it can begin
     // a late mutation after the page has already received a timeout.
-    const runAscentGithubOperation = async operation => {
+    const runAscentGithubOperation = async <T>(operation: (signal: AbortSignal | undefined) => Promise<T>): Promise<T> => {
         const deadline = Deadline.createRequestDeadline(ASCENT_GITHUB_OPERATION_TIMEOUT_MS);
         try {
             return await deadline.run(operation(deadline.signal));
@@ -806,24 +948,32 @@ export function createGithubRoutes({
     // Root-file batches retain the connection accepted at submission. The queue
     // may merge only compatible scopes and rechecks that scope before writing.
     class GithubAccessError extends Error {
-        constructor(error) {
+        access: ConnectedGithubFailure['error'];
+
+        constructor(error: ConnectedGithubFailure['error']) {
             super((error && error.message) || 'No GitHub repository is connected.');
             this.name = 'GithubAccessError';
             this.access = error;
         }
     }
-    const writeError = (error, fallback) => error instanceof GithubAccessError
+    const writeError = (error: unknown, fallback: string) => error instanceof GithubAccessError
         ? error.access
         : GithubErrors.publicError(error, fallback);
 
-    const connectionScope = access => JSON.stringify([
+    const connectionScope = (access: {
+        authorizationEpoch?: number;
+        repo?: { owner?: string | null; name?: string | null; branch?: string | null } | null;
+    } | null | undefined): string => JSON.stringify([
         access?.authorizationEpoch ?? null,
         access?.repo?.owner ?? null,
         access?.repo?.name ?? null,
         access?.repo?.branch ?? null,
     ]);
 
-    const queuedGithubAccess = async (expected, options = {}) => {
+    const queuedGithubAccess = async (
+        expected: ConnectedGithubAccess | string,
+        options: { requireEnabled?: boolean; signal?: AbortSignal | null } = {},
+    ): Promise<ConnectedGithubSuccess> => {
         const current = await connectedGithubClient(options);
         // A prerequisite failure can happen before the connection is read.
         // Preserve that actionable error instead of inventing a scope change.
@@ -843,19 +993,169 @@ export function createGithubRoutes({
 
     const writeQueue = GithubWriteQueue.createGithubWriteQueue({
         commitFiles: async (files, message, scope) => {
-            const access = await queuedGithubAccess(scope);
+            const access = await queuedGithubAccess(String(scope));
             return access.client.putRootFiles(files, message);
         },
     });
 
-    const ignoredSync = createClimberListSync({ storage: ext.storage.local,
-        store: ignoredStore || createIgnoredStore({ storage: ext.storage.local }), writeQueue,
-        getAccess: connectedGithubClient, alarms: ext.alarms, now });
+    // Phase one: intercept only Peakbagger's two native Delete submitters and
+    // durably record intent before the destructive POST is allowed to proceed.
+    // No GitHub mutation happens here.
+    const storeAscentDeleteIntent = async (
+        message: GithubRoutesMessage,
+        sender: chrome.runtime.MessageSender,
+    ) => {
+        const ascentId = positiveAscentId(message?.aid);
+        if (!ascentId || !isAscentEditSender(sender, ascentId)) {
+            return { ok: false, error: { code: 'forbidden' } };
+        }
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: false, error: { code: 'disabled' } };
+        }
+        const access = await connectedGithubClient({ requireEnabled: true });
+        if (access.error) return { ok: false, error: access.error };
+        const tabId = senderTabId(sender);
+        if (tabId == null) return { ok: false, error: { code: 'forbidden' } };
+
+        await mutateMap<void, AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY, intents => {
+            intents[String(ascentId)] = {
+                aid: ascentId,
+                sourceTabId: tabId,
+                state: 'pending',
+                createdAt: now(),
+                expiresAt: now() + ASCENT_DELETE_TTL_MS,
+            };
+        });
+        await clearAscentSnapshots(ascentId);
+        return { ok: true };
+    };
+
+    // A same-tab My Ascents redirect can ask whether it has deletion work. The
+    // aid is not proof; it is only the input to the complete-list confirmation
+    // below, and completed tombstones remain private so stale backup work stays
+    // blocked without repeating the deletion.
+    const pendingAscentDeletions = async (sender: chrome.runtime.MessageSender) => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: true, aids: [] };
+        }
+        const tabId = senderTabId(sender);
+        const intents = await readMap<AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY);
+        const aids = Object.values(intents)
+            .filter(record => isFresh(record) && record.state === 'pending' && record.sourceTabId === tabId)
+            .map(record => positiveAscentId(record.aid))
+            .filter((id): id is number => id !== null);
+        return { ok: true, aids: [...new Set(aids)] };
+    };
+
+    // Phase two: the isolated ClimbListC content script supplies the parsed,
+    // complete all-years owner list. Recheck the signed-in owner in the worker,
+    // then delete only when the intended aid is authoritatively absent.
+    const confirmAscentDeletion = async (
+        message: GithubRoutesMessage,
+        sender: chrome.runtime.MessageSender,
+    ) => {
+        if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
+        const ascentId = positiveAscentId(message?.aid);
+        const climberId = positiveAscentId(message?.climberId);
+        const listed = message?.allAscentIds;
+        if (!ascentId || !climberId || message?.pageComplete !== true
+            || !Array.isArray(listed) || listed.length > 100000
+            || listed.some(value => !positiveAscentId(value))) {
+            return { ok: false, error: { code: 'no-data' } };
+        }
+
+        const record = await deletionRecord(ascentId);
+        if (!record || record.state !== 'pending' || record.sourceTabId !== senderTabId(sender)) {
+            return { ok: false, error: { code: 'no-delete-intent' } };
+        }
+        const deletionGate = await deletionSettings();
+        if (deletionGate.error) return { ok: false, error: deletionGate.error };
+        const settings = deletionGate.settings;
+        if (!settings.enableGithubBackup || !settings.removeGithubBackupOnDelete) {
+            return { ok: false, error: { code: 'disabled' } };
+        }
+        let signedInId: number | null = null;
+        try { signedInId = positiveAscentId(await peakbaggerLogin()); }
+        catch (error) {
+            const err = error && typeof error === 'object'
+                ? (error as { code?: unknown; message?: unknown })
+                : null;
+            return {
+                ok: false,
+                error: {
+                    source: 'peakbagger',
+                    code: typeof err?.code === 'string' && err.code ? err.code : 'peakbagger-unavailable',
+                    message: typeof err?.message === 'string' && err.message
+                        ? err.message
+                        : 'Could not confirm the signed-in Peakbagger account.',
+                },
+            };
+        }
+        if (signedInId !== climberId) {
+            return {
+                ok: false,
+                error: {
+                    source: 'peakbagger',
+                    code: 'identity-mismatch',
+                    message: 'The complete ascent list does not belong to the signed-in Peakbagger account.',
+                },
+            };
+        }
+
+        if (listed.some(value => Number(value) === ascentId)) {
+            await mutateMap<void, AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY, intents => {
+                delete intents[String(ascentId)];
+            });
+            return { ok: true, confirmed: false, reason: 'still-present' };
+        }
+
+        const expectedAccess = await connectedGithubClient({ requireEnabled: true });
+        if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
+        try {
+            const result = await writeQueue.run(async () => {
+                const access = await queuedGithubAccess(expectedAccess, { requireEnabled: true });
+                return access.client.deleteAscentBackup(ascentId);
+            });
+            await clearAscentSnapshots(ascentId);
+            await mutateMap<void, AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY, intents => {
+                const current = intents[String(ascentId)];
+                if (!current) return;
+                intents[String(ascentId)] = {
+                    ...current,
+                    state: 'completed',
+                    completedAt: now(),
+                    expiresAt: now() + ASCENT_DELETE_TTL_MS,
+                };
+            });
+            return { ok: true, confirmed: true, result };
+        } catch (error) {
+            return {
+                ok: false,
+                error: writeError(error, 'The deleted ascent could not be removed from GitHub.'),
+            };
+        }
+    };
+
+    const ignoredSync = createClimberListSync({
+        storage: ext.storage.local,
+        store: ignoredStore || createIgnoredStore({ storage: ext.storage.local }),
+        writeQueue,
+        getAccess: connectedGithubClient,
+        alarms: ext.alarms,
+        now,
+    });
 
     // Profile backup preflight adds the repository's ascent-folder leaves to
     // the ordinary status. This stays a dedicated message so viewing a saved
     // ascent never pays for GitHub tree reads.
-    const githubProfileBackupStatus = async sender => {
+    const githubProfileBackupStatus = async (sender: chrome.runtime.MessageSender) => {
         if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
         const status = await githubBackupStatus(sender);
         if (!status.enabled || !status.connected) return { ok: true, ...status, folders: [] };
@@ -889,12 +1189,17 @@ export function createGithubRoutes({
     // The saved page is authoritative for the identity and the fields it renders
     // (aid, date, suffix, peak name/elevation/location); the snapshot supplies
     // the fields the page does not (the entered numbers) and the resolved report.
-    const mergeBackupSnapshot = (snap, page = {}, { pageComplete = false } = {}) => {
-        const p = page && typeof page === 'object' ? page : {};
+    const mergeBackupSnapshot = (
+        snap: StoredBackupSnapshot | null | undefined,
+        page: unknown = {},
+        { pageComplete = false }: { pageComplete?: boolean } = {},
+    ) => {
+        const p = page && typeof page === 'object' ? (page as Record<string, unknown>) : {};
         const base = snap && typeof snap === 'object' ? snap : null;
         if (!base && !p.ascent && !p.peak) return null;
-        const ascent = { ...(!pageComplete && base ? base.ascent : {}) };
-        const pAscent = p.ascent || {};
+        const baseAscent = base?.ascent && typeof base.ascent === 'object' ? base.ascent : {};
+        const ascent: Record<string, unknown> = { ...(!pageComplete && base ? baseAscent : {}) };
+        const pAscent = p.ascent && typeof p.ascent === 'object' ? (p.ascent as Record<string, unknown>) : {};
         if (pageComplete) {
             // A parsed edit form is the complete persisted record. Copy explicit
             // blanks too so a field the user cleared does not survive from the
@@ -907,14 +1212,21 @@ export function createGithubRoutes({
             if (pAscent.date) ascent.date = pAscent.date;
             if (typeof pAscent.suffix === 'string' && pAscent.suffix) ascent.suffix = pAscent.suffix;
         }
-        const peak = { ...(base && base.peak ? base.peak : {}) };
-        for (const [key, value] of Object.entries(p.peak || {})) {
+        const peak: Record<string, unknown> = { ...(base && base.peak ? base.peak : {}) };
+        const pPeak = p.peak && typeof p.peak === 'object' ? (p.peak as Record<string, unknown>) : {};
+        for (const [key, value] of Object.entries(pPeak)) {
             if (value != null && value !== '') peak[key] = value;
         }
         const snapMarkdown = base && base.report && typeof base.report.markdown === 'string' ? base.report.markdown : '';
-        const pageMarkdown = p.report && typeof p.report.markdown === 'string' ? p.report.markdown : '';
+        const pReport = p.report && typeof p.report === 'object' ? (p.report as Record<string, unknown>) : null;
+        const pageMarkdown = pReport && typeof pReport.markdown === 'string' ? pReport.markdown : '';
         const report = { markdown: base ? snapMarkdown : pageMarkdown };
-        return { ascent, peak, report, backup: { ...(base ? base.backup : {}) } };
+        return {
+            ascent,
+            peak,
+            report,
+            backup: { ...(base && base.backup ? base.backup : {}) },
+        };
     };
 
     // Find the pending snapshot for a saved ascent page. A positive ascent id is
@@ -923,17 +1235,20 @@ export function createGithubRoutes({
     // and is therefore usable only in the exact tab that recorded the snapshot.
     // Ambiguity preserves every candidate and falls back to the complete edit-
     // form read instead of guessing which exact report Markdown belongs here.
-    const findSnapshotForPage = async (page, sender) => {
-        const snapshots = await readMap(SNAPSHOTS_KEY);
+    const findSnapshotForPage = async (page: unknown, sender: chrome.runtime.MessageSender) => {
+        const snapshots = await readMap<StoredSnapshotRecord>(SNAPSHOTS_KEY);
         const entries = Object.entries(snapshots)
             .filter(([, record]) => isFresh(record))
             .map(([key, record]) => ({ key, record }))
             .sort((a, b) => (b.record.savedAt || 0) - (a.record.savedAt || 0));
-        const idOf = e => e.record.identity || {};
-        const ascentId = positiveAscentId(page?.ascent?.id);
-        const peakId = page && page.peak ? page.peak.id : null;
-        const date = page && page.ascent ? page.ascent.date : null;
-        const sourceTabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+        const idOf = (e: { record: StoredSnapshotRecord }): StoredSnapshotIdentity => e.record.identity || {};
+        const p = page && typeof page === 'object'
+            ? (page as { ascent?: { id?: unknown; date?: unknown }; peak?: { id?: unknown } })
+            : null;
+        const ascentId = positiveAscentId(p?.ascent?.id);
+        const peakId = p && p.peak ? p.peak.id : null;
+        const date = p && p.ascent ? p.ascent.date : null;
+        const sourceTabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id! : null;
         if (ascentId) {
             const idMatches = entries.filter(entry =>
                 positiveAscentId(idOf(entry).ascentId) === ascentId);
@@ -949,27 +1264,34 @@ export function createGithubRoutes({
             && idOf(entry).date === date) || null;
     };
 
-    const confirmedSnapshotForPage = async (page, sender) => {
+    const confirmedSnapshotForPage = async (page: unknown, sender: chrome.runtime.MessageSender) => {
         const found = await findSnapshotForPage(page, sender);
         const submitted = found?.record.snapshot?.report?.submitted;
-        const persisted = page?.report?.submitted;
+        const p = page && typeof page === 'object'
+            ? (page as { report?: { submitted?: unknown } })
+            : null;
+        const persisted = p?.report?.submitted;
         return found?.record.attemptId && typeof submitted === 'string'
             && typeof persisted === 'string'
             && submitted.replace(/\r\n?/g, '\n') === persisted.replace(/\r\n?/g, '\n')
             ? found : null;
     };
 
-    const consumeSnapshot = found => mutateMap(SNAPSHOTS_KEY, snapshots => {
-        if (found?.record.generation && snapshots[found.key]?.generation === found.record.generation) {
-            delete snapshots[found.key];
-        }
-    });
+    const consumeSnapshot = (found: { key: string; record: StoredSnapshotRecord } | null | undefined) =>
+        mutateMap<void, StoredSnapshotRecord>(SNAPSHOTS_KEY, snapshots => {
+            if (found?.record.generation && snapshots[found.key]?.generation === found.record.generation) {
+                delete snapshots[found.key];
+            }
+        });
 
     // Token-free, read-only freshness preflight for the individual ascent
     // surface. The content script supplies the complete persisted edit-form
     // identity, avoiding the display page's best-effort date. No snapshot data
     // crosses the boundary.
-    const preflightAscentBackup = async (message, sender) => {
+    const preflightAscentBackup = async (
+        message: GithubRoutesMessage,
+        sender: chrome.runtime.MessageSender,
+    ) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, fresh: false, error: { code: 'forbidden' } };
         const status = await githubBackupStatus(sender);
         if (!status.enabled) return { ok: false, fresh: false, error: { code: 'disabled' } };
@@ -983,7 +1305,7 @@ export function createGithubRoutes({
     // Push one saved ascent to the connected repository as a single commit. The
     // token is read here and never leaves the worker. Fails closed when the
     // feature is off, disconnected, or the sender is not a Peakbagger tab.
-    const backupAscent = async (message, sender) => {
+    const backupAscent = async (message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
         if (!message?.auto && !(await trustedActions?.consumeGrant(
             message,
@@ -1016,12 +1338,20 @@ export function createGithubRoutes({
                 const ascentId = positiveAscentId(snapshot.ascent.id);
                 if (!ascentId) return { ok: false, error: { code: 'no-data' } };
                 if (await deletionBlocksBackup([ascentId])) {
-                    return { ok: false, error: { code: 'ascent-delete-pending', message: 'This ascent was deleted from Peakbagger, so its GitHub backup was not recreated.' } };
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'ascent-delete-pending',
+                            message: 'This ascent was deleted from Peakbagger, so its GitHub backup was not recreated.',
+                        },
+                    };
                 }
                 snapshot.backup = {
                     ...(snapshot.backup || {}),
                     syncedAt: new Date().toISOString(),
-                    extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : (snapshot.backup && snapshot.backup.extensionVersion) || '',
+                    extensionVersion: (ext.runtime?.getManifest ? ext.runtime.getManifest().version : undefined)
+                        || (snapshot.backup && snapshot.backup.extensionVersion)
+                        || '',
                 };
 
                 const result = await writeQueue.run(async () => {
@@ -1030,11 +1360,11 @@ export function createGithubRoutes({
                         signal,
                     });
                     if (await deletionBlocksBackup([ascentId])) {
-                        const error = new Error('This ascent has a pending or completed deletion.');
-                        error.code = 'ascent-delete-pending';
-                        throw error;
+                        throw Object.assign(new Error('This ascent has a pending or completed deletion.'), {
+                            code: 'ascent-delete-pending',
+                        });
                     }
-                    return access.client.pushAscentBackup(snapshot, { gpx: message.gpx });
+                    return access.client.pushAscentBackup(snapshot as AscentBackupSnapshot, { gpx: message.gpx });
                 });
                 // The snapshot has served its purpose; drop it so a later view of the
                 // same page does not re-push from stale data.
@@ -1049,7 +1379,7 @@ export function createGithubRoutes({
     // Passive, read-only comparison for an owner ascent page. It accepts only
     // the same complete edit-form snapshot that a manual backup would write,
     // so an incomplete page can never be labelled current from a sparse view.
-    const checkAscentBackup = async (message, sender) => {
+    const checkAscentBackup = async (message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isPeakbaggerSender(sender)) return { ok: false, error: { code: 'forbidden' } };
         if (!message || !message.pageComplete) return { ok: false, error: { code: 'no-data' } };
         try {
@@ -1059,7 +1389,10 @@ export function createGithubRoutes({
                 const found = await confirmedSnapshotForPage(message.page, sender);
                 const snapshot = mergeBackupSnapshot(found?.record.snapshot, message.page, { pageComplete: true });
                 if (!snapshot || snapshot.ascent.id == null) return { ok: false, error: { code: 'no-data' } };
-                const current = await access.client.isAscentBackupCurrent(snapshot, { gpx: message.gpx });
+                const current = await access.client.isAscentBackupCurrent(
+                    snapshot as AscentBackupSnapshot,
+                    { gpx: message.gpx },
+                );
                 // A timed-out write has an unknown outcome. Only this explicit
                 // reconciliation path may consume its save-time snapshot, and
                 // only after GitHub proves that the complete payload landed.
@@ -1077,7 +1410,7 @@ export function createGithubRoutes({
     // independently identity-checked ascents. The content script never sees
     // the token, and a malformed entry rejects the entire batch before GitHub
     // receives anything.
-    const backupProfileBatch = async (message, sender) => {
+    const backupProfileBatch = async (message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isClimbListSender(sender)) return { ok: false, error: { code: 'forbidden' } };
         if (!(await trustedActions?.consumeGrant(
             message,
@@ -1086,19 +1419,24 @@ export function createGithubRoutes({
         ))) {
             return { ok: false, error: { code: 'activation-required' } };
         }
-        const entries = message && message.entries;
-        if (!Array.isArray(entries) || entries.length === 0 || entries.length > PROFILE_BACKUP_BATCH_LIMIT) {
+        const rawEntries = message && message.entries;
+        if (!Array.isArray(rawEntries) || rawEntries.length === 0 || rawEntries.length > PROFILE_BACKUP_BATCH_LIMIT) {
             return { ok: false, error: { code: 'no-data' } };
         }
-        const seen = new Set();
-        for (const entry of entries) {
-            const ascentId = entry && entry.snapshot && entry.snapshot.ascent
-                ? Number(entry.snapshot.ascent.id)
-                : NaN;
-            if (!Number.isFinite(ascentId) || ascentId <= 0 || ascentId !== Number(entry.aid) || seen.has(ascentId)) {
+        const seen = new Set<number>();
+        const entries: { snapshot: AscentBackupSnapshot & { backup?: Record<string, unknown> }; gpx?: unknown }[] = [];
+        for (const rawEntry of rawEntries) {
+            if (!rawEntry || typeof rawEntry !== 'object') return { ok: false, error: { code: 'no-data' } };
+            const candidate = rawEntry as { aid?: unknown; snapshot?: unknown; gpx?: unknown };
+            const snapshot = candidate.snapshot && typeof candidate.snapshot === 'object'
+                ? (candidate.snapshot as AscentBackupSnapshot & { backup?: Record<string, unknown> })
+                : null;
+            const ascentId = snapshot && snapshot.ascent ? Number(snapshot.ascent.id) : NaN;
+            if (!Number.isFinite(ascentId) || ascentId <= 0 || ascentId !== Number(candidate.aid) || seen.has(ascentId)) {
                 return { ok: false, error: { code: 'no-data' } };
             }
             seen.add(ascentId);
+            entries.push({ snapshot: snapshot!, gpx: candidate.gpx });
         }
         const expectedAccess = await connectedGithubClient({ requireEnabled: true });
         if (expectedAccess.error) return { ok: false, error: expectedAccess.error };
@@ -1113,7 +1451,7 @@ export function createGithubRoutes({
             };
         }
 
-        const version = ext.runtime.getManifest ? ext.runtime.getManifest().version : '';
+        const version = (ext.runtime?.getManifest ? ext.runtime.getManifest().version : undefined) || '';
         for (const entry of entries) {
             entry.snapshot.backup = {
                 ...(entry.snapshot.backup || {}),
@@ -1126,9 +1464,9 @@ export function createGithubRoutes({
                 const access = await queuedGithubAccess(expectedAccess, { requireEnabled: true });
                 const blocked = await deletionBlocksBackup([...seen]);
                 if (blocked) {
-                    const error = new Error(`Ascent ${blocked} has a pending or completed deletion.`);
-                    error.code = 'ascent-delete-pending';
-                    throw error;
+                    throw Object.assign(new Error(`Ascent ${blocked} has a pending or completed deletion.`), {
+                        code: 'ascent-delete-pending',
+                    });
                 }
                 return access.client.pushAscentBackups(entries.map(entry => ({
                     snapshot: entry.snapshot,
@@ -1145,10 +1483,25 @@ export function createGithubRoutes({
     // favorites paths. Replacing a named alarm gives us trailing-edge debounce
     // that survives MV3 worker teardown; fire() rechecks every gate so stale or
     // spurious alarms are harmless.
-    const createAutoBackup = ({ alarmName, stateKey, path, commitMessage, enabled, build }) => {
-        const readState = async () => (await ext.storage.local.get(stateKey))[stateKey] || null;
-        let stateTail = Promise.resolve();
-        const updateState = change => {
+    const createAutoBackup = ({
+        alarmName,
+        stateKey,
+        path,
+        commitMessage,
+        enabled,
+        build,
+    }: {
+        alarmName: string;
+        stateKey: string;
+        path: string;
+        commitMessage: string;
+        enabled: () => Promise<boolean>;
+        build: () => Promise<{ text: string; signature: string }>;
+    }) => {
+        const readState = async (): Promise<AutoBackupState | null> =>
+            ((await ext.storage.local.get(stateKey))[stateKey] as AutoBackupState | undefined) || null;
+        let stateTail: Promise<unknown> = Promise.resolve();
+        const updateState = (change: (state: AutoBackupState | null) => AutoBackupState | null | Promise<AutoBackupState | null>) => {
             const operation = stateTail.then(async () => {
                 const next = await change(await readState());
                 if (next) await ext.storage.local.set({ [stateKey]: next });
@@ -1156,28 +1509,53 @@ export function createGithubRoutes({
             stateTail = operation.catch(() => {});
             return operation;
         };
-        const markSynced = (signature, access) => updateState(async () => {
+        const markSynced = (signature: string, access: ConnectedGithubSuccess) => updateState(async () => {
             const current = await connectedGithubClient();
             if (current.error || connectionScope(current) !== connectionScope(access)) return null;
             return { signature, scope: connectionScope(access), syncedAt: new Date().toISOString() };
         });
 
-        const put = async (access, { text, signature }, review, automatic = false) => {
+        const put = async (
+            access: ConnectedGithubSuccess,
+            { text, signature }: { text: string; signature: string },
+            review: GuardRootBackupInput['review'],
+            automatic = false,
+        ) => {
             const scope = connectionScope(access);
-            return writeQueue.putFile({ path, content: text, message: commitMessage, scope,
+            return writeQueue.putFile({
+                path,
+                content: text,
+                message: commitMessage,
+                scope,
                 verify: async remoteText => {
                     await queuedGithubAccess(scope);
                     if (automatic && !(await enabled())) throw new GithubAccessError({ code: 'disabled' });
                     if (remoteText === undefined) return; // pre-ref ownership check
-                    let remoteSignature = null;
+                    let remoteSignature: string | null = null;
                     if (remoteText !== null) {
-                        const parsed = path === Transfer.BACKUP_PATH ? Transfer.parse(remoteText) : Favorites.parseBackup(remoteText);
-                        if (!parsed.ok) throw new GithubAccessError({ code: 'backup-invalid', message: 'The existing backup is invalid or newer. It was not replaced.' });
-                        remoteSignature = path === Transfer.BACKUP_PATH ? Transfer.signature(parsed.settings, parsed.customLayers) : Favorites.backupSignature(parsed.favorites);
+                        const parsed = path === Transfer.BACKUP_PATH
+                            ? Transfer.parse(remoteText)
+                            : Favorites.parseBackup(remoteText);
+                        if (!parsed.ok) {
+                            throw new GithubAccessError({
+                                code: 'backup-invalid',
+                                message: 'The existing backup is invalid or newer. It was not replaced.',
+                            });
+                        }
+                        remoteSignature = 'settings' in parsed
+                            ? Transfer.signature(parsed.settings, parsed.customLayers)
+                            : Favorites.backupSignature(parsed.favorites);
                     }
-                    guardRootBackup({ path, localSignature: signature, remoteSignature, scope,
-                        baseline: await readState(), review });
-                } });
+                    guardRootBackup({
+                        path,
+                        localSignature: signature,
+                        remoteSignature,
+                        scope,
+                        baseline: await readState(),
+                        review,
+                    });
+                },
+            });
         };
 
         const schedule = () => {
@@ -1208,7 +1586,7 @@ export function createGithubRoutes({
             // bare retry counter over the stored signature and syncedAt, which
             // both lost the last-backed-up timestamp and defeated the
             // unchanged-content check on the following run.
-            let state = null;
+            let state: AutoBackupState | null = null;
             try {
                 state = await readState();
             } catch {
@@ -1223,21 +1601,22 @@ export function createGithubRoutes({
                 // does not describe what the repository now holds.
                 if (!result.superseded) await markSynced(signature, access);
             } catch (error) {
-                if (error.code === 'backup-review') {
+                const err = error && typeof error === 'object' ? (error as { code?: unknown }) : null;
+                if (err?.code === 'backup-review') {
                     await updateState(latest => ({ ...latest, needsReview: true }));
                     return;
                 }
                 // Silent bounded retry; the manual buttons remain the loud path.
-                let attempts = null;
+                const retry = { attempts: null as number | null };
                 await updateState(async latest => {
                     const current = await connectedGithubClient();
                     const scope = connectionScope(access);
                     if (current.error || connectionScope(current) !== scope) return null;
-                    attempts = (latest?.attemptScope === scope ? latest.attempts || 0 : 0) + 1;
-                    return { ...(latest || state || {}), attempts, attemptScope: scope };
+                    retry.attempts = (latest?.attemptScope === scope ? latest.attempts || 0 : 0) + 1;
+                    return { ...(latest || state || {}), attempts: retry.attempts, attemptScope: scope };
                 });
-                if (attempts != null && attempts <= AUTO_BACKUP_MAX_RETRIES) {
-                    ext.alarms.create(alarmName, {
+                if (retry.attempts != null && retry.attempts <= AUTO_BACKUP_MAX_RETRIES) {
+                    ext.alarms?.create(alarmName, {
                         delayInMinutes: AUTO_BACKUP_RETRY_MINUTES, periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
                     });
                 }
@@ -1248,8 +1627,8 @@ export function createGithubRoutes({
     };
 
     const buildSettingsBackup = async () => {
-        let settings;
-        let layerBackup;
+        let settings: SettingsData;
+        let layerBackup: CustomLayerBackup | undefined;
         try {
             settings = await Settings.requireCurrent({ includeLegacy: true });
             if (customLayers) layerBackup = customLayerBackup(await customLayers.snapshot());
@@ -1258,13 +1637,13 @@ export function createGithubRoutes({
             throw PublicErrors.exception(
                 'settings-unavailable',
                 'Settings could not be read, so no backup was changed.',
-                { cause }
+                { cause },
             );
         }
         const payload = Transfer.buildPayload(settings, {
-            extensionVersion: ext.runtime.getManifest ? ext.runtime.getManifest().version : '',
+            extensionVersion: (ext.runtime?.getManifest ? ext.runtime.getManifest().version : undefined) || '',
             exportedAt: new Date().toISOString(),
-            ...(layerBackup ? { customLayers: layerBackup } : {})
+            ...(layerBackup ? { customLayers: layerBackup } : {}),
         });
         return { text: Transfer.serialize(payload), signature: Transfer.signature(settings, layerBackup) };
     };
@@ -1275,7 +1654,7 @@ export function createGithubRoutes({
         path: Transfer.BACKUP_PATH,
         commitMessage: 'Back up settings',
         enabled: async () => (await Settings.requireCurrent().catch(() => null))?.autoSettingsBackup === true,
-        build: buildSettingsBackup
+        build: buildSettingsBackup,
     });
 
     const buildFavoritesBackup = async () => {
@@ -1284,7 +1663,7 @@ export function createGithubRoutes({
         const payload = Favorites.buildBackupPayload(favorites, { exportedAt: new Date().toISOString() });
         return {
             text: Favorites.serializeBackup(payload),
-            signature: Favorites.backupSignature(favorites)
+            signature: Favorites.backupSignature(favorites),
         };
     };
 
@@ -1294,19 +1673,24 @@ export function createGithubRoutes({
         path: FAVORITE_CLIMBERS_BACKUP_PATH,
         commitMessage: 'Back up favorite climbers',
         enabled: async () => (await Settings.requireCurrent().catch(() => null))?.autoFavoritesBackup === true,
-        build: buildFavoritesBackup
+        build: buildFavoritesBackup,
     });
 
-    const backupSettings = async (message = {}) => {
+    const backupSettings = async (message: GithubRoutesMessage = {}) => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
             const { text, signature } = await buildSettingsBackup();
-            const result = await settingsAutoBackup.put(access, { text, signature }, message.review);
+            const result = await settingsAutoBackup.put(
+                access,
+                { text, signature },
+                message.review as GuardRootBackupInput['review'],
+            );
             if (!result.superseded) await settingsAutoBackup.markSynced(signature, access);
             return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
-            if (error.code === 'backup-review') return { ok: false, error: { code: error.code }, review: error.review };
+            const err = error && typeof error === 'object' ? (error as { code?: unknown; review?: unknown }) : null;
+            if (err?.code === 'backup-review') return { ok: false, error: { code: err.code }, review: err.review };
             if (PublicErrors.isPublic(error)) return { ok: false, error: PublicErrors.expose(error) };
             return { ok: false, error: writeError(error, 'The settings backup failed.') };
         }
@@ -1324,7 +1708,7 @@ export function createGithubRoutes({
 
     // The worker owns serialization for both manual and automatic backups; the
     // options page still owns restore validation and reversible replacement.
-    const backupFavorites = async (message = {}) => {
+    const backupFavorites = async (message: GithubRoutesMessage = {}) => {
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
         try {
@@ -1333,11 +1717,16 @@ export function createGithubRoutes({
             // contract rather than rejecting into the worker's generic handler,
             // which replies in the unrelated { phase: 'error' } shape.
             const { text, signature } = await buildFavoritesBackup();
-            const result = await favoritesAutoBackup.put(access, { text, signature }, message.review);
+            const result = await favoritesAutoBackup.put(
+                access,
+                { text, signature },
+                message.review as GuardRootBackupInput['review'],
+            );
             if (!result.superseded) await favoritesAutoBackup.markSynced(signature, access);
             return { ok: true, result: { ...result, signature, repo: `${access.repo.owner}/${access.repo.name}` } };
         } catch (error) {
-            if (error.code === 'backup-review') return { ok: false, error: { code: error.code }, review: error.review };
+            const err = error && typeof error === 'object' ? (error as { code?: unknown; review?: unknown }) : null;
+            if (err?.code === 'backup-review') return { ok: false, error: { code: err.code }, review: err.review };
             return { ok: false, error: writeError(error, 'The favorites backup failed.') };
         }
     };
@@ -1362,9 +1751,9 @@ export function createGithubRoutes({
     // origin is browser-defined and serializes as "null" in a spec-strict
     // parser — which would let another extension's identically-pathed page
     // through this gate.
-    const packagedPage = page => {
+    const packagedPage = (page: string) => {
         const base = typeof ext.runtime?.getURL === 'function' ? ext.runtime.getURL(page) : null;
-        return sender => {
+        return (sender: chrome.runtime.MessageSender | null | undefined): boolean => {
             if (!base) return false;
             try {
                 const actual = new URL(sender?.url || '');
@@ -1377,11 +1766,13 @@ export function createGithubRoutes({
         };
     };
     const isClimberListPage = packagedPage('options/favorites.html');
-    const ignoredListAction = (message, sender) => {
+    const ignoredListAction = (message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!packagedPage('options/options.html')(sender) && !isClimberListPage(sender)) {
             return { ok: false, error: { code: 'forbidden', message: 'Open Climber lists in Settings.' } };
         }
-        return message.action === 'status' ? ignoredSync.status() : ignoredSync.action(message);
+        return message.action === 'status'
+            ? ignoredSync.status()
+            : ignoredSync.action(message as IgnoredSyncActionMessage);
     };
     const isPhotoPage = packagedPage('photos/photos.html');
     const isOptionsPage = packagedPage('options/options.html');
@@ -1389,18 +1780,24 @@ export function createGithubRoutes({
     // Settings is where every other GitHub backup lives, and the library is
     // where the user is standing when a photo changes. Announcing a catalog
     // change stays with the photo page or trusted worker report-photo mutations.
-    const isPhotoBackupPage = sender => isPhotoPage(sender) || isOptionsPage(sender);
-    const automaticPhotoBackupEnabled = async () =>
+    const isPhotoBackupPage = (sender: chrome.runtime.MessageSender | null | undefined): boolean =>
+        isPhotoPage(sender) || isOptionsPage(sender);
+    const automaticPhotoBackupEnabled = async (): Promise<boolean> =>
         (await photoBackupSettings.requireCurrent().catch(() => null))?.autoPhotoLibraryBackup === true;
-    const readPhotoBackupState = async () =>
-        (await ext.storage.local.get(PHOTO_BACKUP_STATE_KEY))[PHOTO_BACKUP_STATE_KEY] || null;
-    const sameRepo = (left, right) => !!left && !!right
+    const readPhotoBackupState = async (): Promise<PhotoBackupStateRecord | null> =>
+        ((await ext.storage.local.get(PHOTO_BACKUP_STATE_KEY))[PHOTO_BACKUP_STATE_KEY] as PhotoBackupStateRecord | undefined) || null;
+    const sameRepo = (
+        left: { owner?: string; name?: string; branch?: string | null } | null | undefined,
+        right: { owner?: string; name?: string; branch?: string | null } | null | undefined,
+    ): boolean => !!left && !!right
         && left.owner === right.owner
         && left.name === right.name
         && (left.branch || null) === (right.branch || null);
-    const photoTimestamp = () => new Date(now()).toISOString();
+    const photoTimestamp = (): string => new Date(now()).toISOString();
 
-    const withPhotoStore = async operation => {
+    const withPhotoStore = async <T>(
+        operation: (store: Awaited<ReturnType<typeof PhotoStore.createPhotoStore>>) => Promise<T>,
+    ): Promise<T> => {
         const store = await createPhotoStore();
         try { return await operation(store); }
         finally { store.close(); }
@@ -1411,7 +1808,7 @@ export function createGithubRoutes({
         const payload = PhotoBackup.buildPayload({
             ...snapshot,
             exportedAt: photoTimestamp(),
-            extensionVersion: ext.runtime.getManifest?.().version || '',
+            extensionVersion: ext.runtime?.getManifest?.().version || '',
         });
         try {
             const prepared = await PhotoBackup.prepare(payload);
@@ -1423,7 +1820,7 @@ export function createGithubRoutes({
             };
         } catch (error) {
             if (error instanceof PhotoBackup.PhotoBackupCapacityError) {
-                error.generation = snapshot.catalog.generation;
+                Object.assign(error, { generation: snapshot.catalog.generation });
             }
             throw error;
         }
@@ -1432,7 +1829,10 @@ export function createGithubRoutes({
     // Every record carries the same backup stamp, so rewriting one whose stamp
     // already matches is a pure cost — and this runs on every backup, including
     // the failure path. Only the records that would actually change are put.
-    const sameBackupStamp = (photo, next) => {
+    const sameBackupStamp = (
+        photo: { backup?: { state?: string; signature?: string | null; backedUpAt?: string | null; commitUrl?: string | null } },
+        next: { state: string; signature: string | null; backedUpAt: string | null; commitUrl: string | null },
+    ): boolean => {
         const current = photo && photo.backup;
         return !!current
             && current.state === next.state
@@ -1447,6 +1847,11 @@ export function createGithubRoutes({
         signature = null,
         commitUrl = null,
         revisions = null,
+    }: {
+        state: string;
+        signature?: string | null;
+        commitUrl?: string | null;
+        revisions?: Record<string, number> | null;
     }) => {
         return withPhotoStore(async store => {
             const photos = await store.listPhotos({ includeDeleted: true });
@@ -1473,7 +1878,10 @@ export function createGithubRoutes({
     };
 
     class PhotoBackupError extends Error {
-        constructor(code, message, details = {}) {
+        code: string;
+        conflictCount?: number;
+
+        constructor(code: string, message: string, details: { conflictCount?: number } = {}) {
             super(message);
             this.name = 'PhotoBackupError';
             this.code = code;
@@ -1481,11 +1889,11 @@ export function createGithubRoutes({
         }
     }
 
-    const parseRemotePhotoBackup = text => {
+    const parseRemotePhotoBackup = (text: string | null | undefined): PhotoBackupPayload => {
         if (text == null) {
             return PhotoBackup.buildPayload({
                 exportedAt: photoTimestamp(),
-                extensionVersion: ext.runtime.getManifest?.().version || '',
+                extensionVersion: ext.runtime?.getManifest?.().version || '',
             });
         }
         const parsed = PhotoBackup.parse(text);
@@ -1500,18 +1908,26 @@ export function createGithubRoutes({
         return parsed.payload;
     };
 
-    const publicPhotoBackupError = (error, fallback) => error instanceof PhotoBackupError
-        || error instanceof PhotoBackup.PhotoBackupCapacityError
-        ? {
-            code: error.code,
-            message: error.message,
-            ...(Number.isInteger(error.conflictCount) ? { conflictCount: error.conflictCount } : {}),
-            ...(Number.isSafeInteger(error.actualBytes) ? { actualBytes: error.actualBytes } : {}),
-            ...(Number.isSafeInteger(error.maxBytes) ? { maxBytes: error.maxBytes } : {}),
+    const publicPhotoBackupError = (error: unknown, fallback: string) => {
+        if (error instanceof PhotoBackupError) {
+            return {
+                code: error.code,
+                message: error.message,
+                ...(Number.isInteger(error.conflictCount) ? { conflictCount: error.conflictCount } : {}),
+            };
         }
-        : writeError(error, fallback);
+        if (error instanceof PhotoBackup.PhotoBackupCapacityError) {
+            return {
+                code: error.code,
+                message: error.message,
+                ...(Number.isSafeInteger(error.actualBytes) ? { actualBytes: error.actualBytes } : {}),
+                ...(Number.isSafeInteger(error.maxBytes) ? { maxBytes: error.maxBytes } : {}),
+            };
+        }
+        return writeError(error, fallback);
+    };
 
-    const photoBackupStatus = async (_message, sender) => {
+    const photoBackupStatus = async (_message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const [status, state, catalog] = await Promise.all([
             githubStatus(),
@@ -1524,7 +1940,7 @@ export function createGithubRoutes({
         const repo = status.repo ? {
             owner: status.repo.owner,
             name: status.repo.name,
-            branch: status.repo.branch || null,
+            branch: (typeof status.repo.branch === 'string' && status.repo.branch) || null,
             fullName: status.repo.fullName || `${status.repo.owner}/${status.repo.name}`,
         } : null;
         return {
@@ -1546,7 +1962,13 @@ export function createGithubRoutes({
         };
     };
 
-    const backupPhotoLibrary = async ({ automatic = false, sender = null } = {}) => {
+    const backupPhotoLibrary = async ({
+        automatic = false,
+        sender = null,
+    }: {
+        automatic?: boolean;
+        sender?: chrome.runtime.MessageSender | null;
+    } = {}): Promise<BackupPhotoLibraryResult> => {
         if (!automatic && !isPhotoBackupPage(sender)) {
             return { ok: false, error: { code: 'forbidden' } };
         }
@@ -1554,11 +1976,11 @@ export function createGithubRoutes({
         // remote mutation. A second manual request or automatic alarm cannot
         // snapshot the catalog until the first request has reconciled its
         // confirmed commit back into local state.
-        return writeQueue.run(async () => {
+        return writeQueue.run(async (): Promise<BackupPhotoLibraryResult> => {
             const access = await connectedGithubClient();
             if (access.error) return { ok: false, error: access.error };
-            let local;
-            let state;
+            let local: Awaited<ReturnType<typeof buildPhotoLibraryBackup>> | undefined;
+            let state: PhotoBackupStateRecord | null = null;
             let remoteConfirmed = false;
             try {
                 [local, state] = await Promise.all([buildPhotoLibraryBackup(), readPhotoBackupState()]);
@@ -1569,15 +1991,17 @@ export function createGithubRoutes({
                     && sameRepo(state.repo, access.repo)) {
                     return { ok: true, current: true, signature: local.signature, unchanged: true };
                 }
-                let committed = null;
+                const mergeBox: { committed: Extract<PhotoBackupMergeResult, { ok: true }> | null } = {
+                    committed: null,
+                };
                 const result = await access.client.updateRootFile(
                     PhotoBackup.BACKUP_PATH,
                     async remoteText => {
                         const remote = parseRemotePhotoBackup(remoteText);
-                        const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
+                        const merged = await PhotoBackup.mergePayloads(local!.payload, remote, {
                             exportedAt: photoTimestamp(),
-                            extensionVersion: ext.runtime.getManifest?.().version || '',
-                            baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                            extensionVersion: ext.runtime?.getManifest?.().version || '',
+                            baseSignature: sameRepo(state?.repo, access.repo) ? (state?.signature ?? null) : null,
                             baseSignatureVersion: state?.signatureVersion || 1,
                         });
                         if (!merged.ok) {
@@ -1587,7 +2011,7 @@ export function createGithubRoutes({
                                 { conflictCount: merged.conflicts.length },
                             );
                         }
-                        committed = merged;
+                        mergeBox.committed = merged;
                         return merged.signature === merged.remoteSignature && remoteText != null
                             ? remoteText
                             : merged.prepared.text;
@@ -1596,10 +2020,11 @@ export function createGithubRoutes({
                     { maxBytes: PhotoBackup.MAX_BYTES },
                 );
                 remoteConfirmed = true;
+                const committed = mergeBox.committed;
                 const signature = committed?.signature || local.signature;
                 const syncedAt = photoTimestamp();
                 const commitUrl = result.commitUrl || state?.commitUrl || null;
-                const stateRecord = {
+                const stateRecord: PhotoBackupStateRecord = {
                     signature,
                     signatureVersion: 2,
                     generation: local.generation,
@@ -1613,8 +2038,8 @@ export function createGithubRoutes({
                 // Journal the confirmed remote state before touching individual
                 // records. A worker restart or partial IndexedDB failure can
                 // then retry idempotently without calling the commit a failure.
-                let stateFailure = null;
-                let catalogFailure = null;
+                let stateFailure: unknown = null;
+                let catalogFailure: unknown = null;
                 try {
                     await ext.storage.local.set({ [PHOTO_BACKUP_STATE_KEY]: stateRecord });
                 } catch (error) {
@@ -1622,10 +2047,12 @@ export function createGithubRoutes({
                 }
 
                 try {
+                    const confirmedGeneration = local.generation;
+                    const confirmedRevisions = local.revisions;
                     await withPhotoStore(store => store.confirmCatalogBackup({
-                        generation: local.generation,
+                        generation: confirmedGeneration,
                         signature,
-                        revisions: local.revisions,
+                        revisions: confirmedRevisions,
                         commitUrl,
                         backedUpAt: syncedAt,
                     }));
@@ -1633,8 +2060,8 @@ export function createGithubRoutes({
                     catalogFailure = error;
                 }
 
-                let reconciliation = null;
-                let reconciliationFailure = null;
+                let reconciliation: { conflicts: string[] } | null = null;
+                let reconciliationFailure: unknown = null;
                 try {
                     reconciliation = await markPhotoCatalogBackup({
                         state: 'current',
@@ -1680,13 +2107,16 @@ export function createGithubRoutes({
             } catch (error) {
                 if (!remoteConfirmed) {
                     if (error instanceof PhotoBackup.PhotoBackupCapacityError) {
+                        const capacityError = error as InstanceType<typeof PhotoBackup.PhotoBackupCapacityError> & {
+                            generation?: number;
+                        };
                         const previous = state || await readPhotoBackupState().catch(() => null);
                         await ext.storage.local.set({
                             [PHOTO_BACKUP_STATE_KEY]: {
                                 ...(previous || {}),
-                                capacityBlockedGeneration: error.generation ?? local?.generation ?? null,
-                                capacityActualBytes: error.actualBytes,
-                                capacityMaxBytes: error.maxBytes,
+                                capacityBlockedGeneration: capacityError.generation ?? local?.generation ?? null,
+                                capacityActualBytes: capacityError.actualBytes,
+                                capacityMaxBytes: capacityError.maxBytes,
                                 attempts: 0,
                             },
                         }).catch(() => {});
@@ -1711,7 +2141,10 @@ export function createGithubRoutes({
         });
     };
 
-    const previewPhotoLibraryRestore = async (_message, sender) => {
+    const previewPhotoLibraryRestore = async (
+        _message: GithubRoutesMessage,
+        sender: chrome.runtime.MessageSender,
+    ) => {
         if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const access = await connectedGithubClient();
         if (access.error) return { ok: false, error: access.error };
@@ -1730,8 +2163,8 @@ export function createGithubRoutes({
             ]);
             const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
                 exportedAt: photoTimestamp(),
-                extensionVersion: ext.runtime.getManifest?.().version || '',
-                baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                extensionVersion: ext.runtime?.getManifest?.().version || '',
+                baseSignature: sameRepo(state?.repo, access.repo) ? (state?.signature ?? null) : null,
                 baseSignatureVersion: state?.signatureVersion || 1,
             });
             return {
@@ -1750,7 +2183,7 @@ export function createGithubRoutes({
         }
     };
 
-    const restorePhotoLibrary = async (message, sender) => {
+    const restorePhotoLibrary = async (message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isPhotoBackupPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         const expectedSignature = typeof message?.signature === 'string'
             && /^[0-9a-f]{64}$/.test(message.signature)
@@ -1778,8 +2211,8 @@ export function createGithubRoutes({
             ]);
             const merged = await PhotoBackup.mergePayloads(local.payload, remote, {
                 exportedAt: photoTimestamp(),
-                extensionVersion: ext.runtime.getManifest?.().version || '',
-                baseSignature: sameRepo(state?.repo, access.repo) ? state.signature : null,
+                extensionVersion: ext.runtime?.getManifest?.().version || '',
+                baseSignature: sameRepo(state?.repo, access.repo) ? (state?.signature ?? null) : null,
                 baseSignatureVersion: state?.signatureVersion || 1,
                 conflictPolicy: message.keepLocalConflicts ? 'keep-local' : 'stop',
             });
@@ -1793,12 +2226,12 @@ export function createGithubRoutes({
                     },
                 };
             }
-            const records = merged.payload.photos.map(record =>
-                PhotoBackup.restoreRecord(record, {
+            const records = merged.payload.photos
+                .map(record => PhotoBackup.restoreRecord(record, {
                     signature: remoteSignature,
-                    signatureVersion: 2,
                     restoredAt: photoTimestamp(),
-                }));
+                }))
+                .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
             await withPhotoStore(store => store.applyRestore({
                 records,
                 tombstones: merged.payload.tombstones,
@@ -1839,7 +2272,7 @@ export function createGithubRoutes({
         }
     };
 
-    const armPhotoBackup = delayInMinutes => ext.alarms?.create(PHOTO_BACKUP_ALARM, {
+    const armPhotoBackup = (delayInMinutes: number) => ext.alarms?.create(PHOTO_BACKUP_ALARM, {
         delayInMinutes,
         periodInMinutes: AUTO_BACKUP_WATCHDOG_MINUTES,
     });
@@ -1848,7 +2281,7 @@ export function createGithubRoutes({
         if (await automaticPhotoBackupEnabled() && ext.alarms) armPhotoBackup(AUTO_BACKUP_DELAY_MINUTES);
     };
 
-    const photoLibraryChanged = async (_message, sender) => {
+    const photoLibraryChanged = async (_message: GithubRoutesMessage, sender: chrome.runtime.MessageSender) => {
         if (!isPhotoPage(sender)) return { ok: false, error: { code: 'forbidden' } };
         await schedulePhotoLibraryBackup();
         return { ok: true };
@@ -1857,8 +2290,8 @@ export function createGithubRoutes({
     // The last gate value this worker acted on, persisted so an MV3 teardown
     // between the toggle and the next settings write cannot turn a rising edge
     // into a level and re-arm the scan on every subsequent write.
-    const schedulePhotoBackupOnEnable = async enabled => {
-        let previous = null;
+    const schedulePhotoBackupOnEnable = async (enabled: boolean) => {
+        let previous: unknown = null;
         try {
             previous = (await ext.storage.local.get(PHOTO_BACKUP_GATE_KEY))[PHOTO_BACKUP_GATE_KEY] ?? null;
         } catch {
@@ -1903,7 +2336,7 @@ export function createGithubRoutes({
         if (previousState?.capacityBlockedGeneration === catalog.generation) return;
         const result = await backupPhotoLibrary({ automatic: true });
         if ((result.ok && !result.reconciliationPending)
-            || ['photo-backup-conflict', 'photo-backup-too-large'].includes(result.error?.code)
+            || (!result.ok && ['photo-backup-conflict', 'photo-backup-too-large'].includes(result.error.code))
             || !ext.alarms) return;
         const state = await readPhotoBackupState();
         const attempts = ((state && state.attempts) || 0) + 1;
@@ -1952,20 +2385,20 @@ export function createGithubRoutes({
     });
     const { handlers } = routeTable;
 
-    const cleanup = async cutoff => {
-        await mutateMap(SNAPSHOTS_KEY, snapshots => {
+    const cleanup = async (cutoff: number) => {
+        await mutateMap<void, StoredSnapshotRecord>(SNAPSHOTS_KEY, snapshots => {
             Object.entries(snapshots).forEach(([key, record]) => {
-                if (!record || record.expiresAt <= cutoff) delete snapshots[key];
+                if (!record || (record.expiresAt ?? 0) <= cutoff) delete snapshots[key];
             });
         });
-        await mutateMap(ASCENT_DELETE_INTENTS_KEY, intents => {
+        await mutateMap<void, AscentDeleteIntentRecord>(ASCENT_DELETE_INTENTS_KEY, intents => {
             Object.entries(intents).forEach(([key, record]) => {
                 if (!record || record.expiresAt <= cutoff) delete intents[key];
             });
         });
     };
 
-    const onStorageChanged = (changes, area) => {
+    const onStorageChanged = (changes: Record<string, unknown>, area: string) => {
         if (area !== 'local') return;
         const connectionChanged = !!(changes[GithubAuth.STORAGE_KEY] || changes[GithubAuth.EPOCH_KEY]);
         if (connectionChanged) ignoredSync.connectionChanged();
@@ -1979,9 +2412,9 @@ export function createGithubRoutes({
         }).catch(() => {});
     };
 
-    const onSettingsChanged = settings => {
-        if (settings.autoSettingsBackup) settingsAutoBackup.schedule();
-        if (settings.autoFavoritesBackup) favoritesAutoBackup.schedule();
+    const onSettingsChanged = (currentSettings: SettingsData) => {
+        if (currentSettings.autoSettingsBackup) settingsAutoBackup.schedule();
+        if (currentSettings.autoFavoritesBackup) favoritesAutoBackup.schedule();
         // Settings and favorites are free to nudge on every settings write:
         // fire() compares a cheap in-memory signature and returns. The photo
         // library has no such summary — deciding whether it changed means
@@ -1990,10 +2423,10 @@ export function createGithubRoutes({
         // the whole library. The library announces its own changes through
         // GITHUB_PHOTOS_CHANGED; a settings write only has to catch the one
         // case that announcement cannot, which is the toggle being switched on.
-        void schedulePhotoBackupOnEnable(settings.autoPhotoLibraryBackup === true);
+        void schedulePhotoBackupOnEnable(currentSettings.autoPhotoLibraryBackup === true);
     };
 
-    const onAlarm = name => {
+    const onAlarm = (name: string) => {
         const ignoredOperation = ignoredSync.onAlarm(name);
         if (ignoredOperation) return ignoredOperation;
         if (name === SETTINGS_BACKUP_ALARM) return settingsAutoBackup.fire();

@@ -18,7 +18,7 @@ import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts'
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
 import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.ts';
-import { readIgnoredSyncState } from '../../src/background/climber-list-sync.js';
+import { readIgnoredSyncState } from '../../src/background/climber-list-sync.ts';
 import { SYNC_KEY as IGNORED_SYNC_KEY, IGNORED_KEY, serializeBackup as serializeIgnoredBackup,
     parseBackup as parseIgnoredBackup } from '../../src/favorites/ignored-climbers.ts';
 

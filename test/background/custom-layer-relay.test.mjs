@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { indexedDB } from 'fake-indexeddb';
-import { createCustomPrivateStore } from '../../src/background/custom-private-store.js';
-import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.js';
-import { createCustomLayerRelay } from '../../src/background/custom-layer-relay.js';
+import { createCustomPrivateStore } from '../../src/background/custom-private-store.ts';
+import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.ts';
+import { createCustomLayerRelay } from '../../src/background/custom-layer-relay.ts';
 import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS } from '../../src/maps/custom-overlay-private.ts';
 import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
 const id = 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1';

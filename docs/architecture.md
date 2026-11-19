@@ -156,23 +156,23 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 
 | Shipped surface | Primary owner | Boundary |
 | --- | --- | --- |
-| Background coordination | `src/background/background.ts`, `src/background/github-routes.js`, `src/background/gpx-handoff-routes.js`, `src/background/gaia-routes.js`, `src/background/onx-routes.js`, `src/background/alltrails-routes.js`, `src/background/caltopo-routes.js`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.js` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
+| Background coordination | `src/background/background.ts`, `src/background/github-routes.ts`, `src/background/gpx-handoff-routes.ts`, `src/background/gaia-routes.ts`, `src/background/onx-routes.ts`, `src/background/alltrails-routes.ts`, `src/background/caltopo-routes.ts`, `src/background/terrain-activation.ts`, `src/background/terrain-prefetch.ts` | Shared state/queues and dispatch, GitHub auth/backup routes, bounded saved-GPX handoffs, one-use terrain activation capabilities, and bounded terrain cache warming inside one worker bundle |
 | Provider extraction | `src/capture/provider-page.ts` | On-demand MAIN-world injection into the active owned activity |
 | Capture Peakbagger transport | `src/peakbagger/peakbagger-page.ts` | On-demand MAIN-world login and summit-box requests from a canonical Peakbagger tab; exact endpoint allowlist, no cookie API |
 | Ascent editor | `src/ascent/ascent-draft.ts`, `src/ascent/ascent-upload.ts`, `src/reports/report-editor.ts` | Isolated-world form fill, local-file processing, report editing |
 | Photo topo editor and library | `photos/photos.ts`, `photos/guide.html`, `photos/guide.ts`, `src/photos/photo-project.ts`, `src/photos/photo-renderer.ts`, `src/photos/photo-library.ts`, `src/photos/photo-store.ts`, `src/photos/photo-archive.ts` | Extension-page editing/export, authoritative local catalog, blobs, operation journal, per-photo delete capability, CSP-safe project download and import, and the packaged user guide |
-| Ascent analysis | `src/gpx/gpx-analyzer.js`, `src/gpx/gpx-segment-diagnostics.ts` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
+| Ascent analysis | `src/gpx/gpx-analyzer.ts`, `src/gpx/gpx-segment-diagnostics.ts` | MAIN-world GPX/chart/native-map integration; pure saved-ascent segment interpretation, separate from shared capture metrics |
 | 2D vector basemap | `src/maps/vector-map.ts`, `src/maps/vector-map-bridge.ts`, `src/maps/vector-map-frame.ts`, `src/maps/vector-map-request.ts`, `src/maps/vector-map-availability.ts`, `src/maps/vector-basemap.ts` | Native Leaflet pane/camera ownership with packaged MapLibre in an extension-origin frame; trusted selection, isolated bridge and separate one-use worker authorization before direct Maptoolkit requests. Camera-coupled cartography bitmaps are committed atomically to a page canvas below native overlays, with one capture in flight and parent-clock redraws. 3D keeps the last page pixels for an immediate return, and discards them if the camera moved off them. A provider-scoped MapLibre protocol retains rate-limit headers; the isolated document owns the bounded cooldown. A narrow MapLibre 6 tile-manager adapter checks settled viewport availability. |
 | Historical ascent weather | `src/ascent/ascent-weather.ts`, `src/ascent/ascent-weather-subject.ts`, `src/weather/` | Independent isolated card, strict native summit/date, bounded credential-free Open-Meteo CORS requests, pure model/day policy, tab-memory results; weather requests have no GPX or worker dependency |
 | Peak weather | `src/weather/peak-weather.ts`, `src/weather/peak-weather-subject.ts`, `src/weather/weather-week.ts` | Independent isolated card beneath the native right-column map, current-page summit metadata, up to sixteen past/forecast days, independent named-model choices saved in portable settings, bounded combined requests and tab-memory results |
 | Nearby snow | `src/snow/peak-snow.ts`, `src/snow/snotel-client.ts`, `src/snow/snotel-data.ts`, `src/snow/snotel-map-source.ts`, `src/maps/map-layer-bridge.ts` | Independent isolated western-US/Alaska peak card, local station matching within 50 km, bounded credential-free NRCS requests with fixed station time offsets, seven-day public catalog cache and page-memory observations. Opt-in 2D/3D station overlay receives at most 50 public station records through a read-only bridge, revalidated in each renderer; the independent `showSnotel` gate controls all SNOTEL surfaces and requests, retaining legacy weather opt-outs |
-| Map Layers menu | `src/maps/map-layers.ts`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.ts`, `src/terrain/terrain-overlays.ts`, `src/background/map-layer-handoff.js` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
-| Custom map overlays | `src/maps/custom-overlay-schema.ts`, `src/maps/custom-overlay-control.ts`, `src/maps/custom-overlay-bridge.ts`, `src/maps/custom-overlay-editor.ts`, `src/maps/custom-overlay-client.ts`, `src/maps/custom-overlay-render.ts`, `src/background/custom-overlay-store.js` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
+| Map Layers menu | `src/maps/map-layers.ts`, `src/maps/map-layer-control.ts`, `src/maps/map-overlay-leaflet.ts`, `src/terrain/terrain-overlays.ts`, `src/background/map-layer-handoff.ts` | One collapsed upper-left overlay control across ascent, peak, BigMap and standalone maps; basemap selectors stay separate at the upper-right. Portable opacity and land-type selection, one shared detail well, renderer-owned Sentinel catalogs, bounded once-faded scene mosaics, fixed USGS slope/fee-ownership tiles, viewport NRCS metadata and tab-bound one-use Full Screen handoffs. Shared schema validation never widens analyzer settings writes. |
+| Custom map overlays | `src/maps/custom-overlay-schema.ts`, `src/maps/custom-overlay-control.ts`, `src/maps/custom-overlay-bridge.ts`, `src/maps/custom-overlay-editor.ts`, `src/maps/custom-overlay-client.ts`, `src/maps/custom-overlay-render.ts`, `src/background/custom-overlay-store.ts` | Separate local registry with serialized revision checks; only the packaged editor changes definitions. Public validated configuration crosses the isolated bridge; direct anonymous CORS requests stay with the active renderer. Packaged, disposable workers decode bounded GeoJSON/MVT; private sources instead use the constrained worker relay described below. Early Leaflet discovery attaches one owner per map, including unnamed/late instances. Typed IDs/revisions and opacity extend the existing terrain/Full Screen contract without widening trusted basemap styles or settings writes. |
 | Wildfire data and rendering | `src/maps/wildfire-core.ts`, `src/maps/wildfire-client.ts`, `src/maps/wildfire-session.ts`, `src/maps/wildfire-leaflet.ts`, `src/terrain/terrain-wildfires.ts` | Fixed WF-only NIFC queries, validated public identities/geometry and independent component freshness; bounded page-memory viewport transactions owned by the visible renderer. Typed metadata alone crosses the frame bridge, with retry-only actions and no privileged API exposure. Native vectors retain priority. |
 | Map location menu | `src/maps/map-location-menu.ts`, `src/maps/map-elevation.ts`, `src/maps/peak-weather-map.ts` | Shared MAIN-world coordinates and approximate terrain elevation on native and 3D maps; explicit right-click, bounded credential-free Mapterhorn reads and tab-memory tiles. Independent of weather/3D opt-outs; forecast requests stay with the isolated peak weather card. |
 | Peak card layout | `src/maps/peak-cards.ts`, `src/ui/peak-card-layout.ts` | Isolated owner of standalone Sun & Moon, weather and snow column placement, row ordering and disclosures. Uses schema-validated synced settings and the worker's patch queue; never widens page-world settings writes. The MAIN-world sun calculator retains its native disclosure handler. Native map and legend remain outside the reorderable rows. |
 | Mountain time and Sun/Moon planning | `src/time/mountain-time.ts`, `src/sun/sun-position.ts`, `src/sun/sun-state.ts`, `src/sun/sun-calculator.ts` | Pure offline zone/civil-time and astronomy policy plus ephemeral Peak/GPX interaction state and shared DOM presentation; no storage or network owner |
-| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-lifecycle.ts`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.js`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
+| Terrain lifecycle, bridge, and renderer | `src/terrain/terrain-coordinator.ts`, `src/terrain/terrain-lifecycle.ts`, `src/terrain/terrain-map.ts`, `src/terrain/terrain-frame.ts`, `src/terrain/terrain-frame-runtime.ts` | Shared MAIN-world state machine and parked-frame TTL, trusted-event activation in the isolated bridge, a feature-gated extension-frame entry, and the renderer runtime |
 | Full Screen and Peak maps | `src/maps/big-map.ts`, `src/maps/peak-map.ts` | MAIN-world native-map coordinators |
 | Peakbagger document lifecycle | `src/ui/page-lifecycle.ts` | Shared persisted `pagehide` suspend, `pageshow` revalidation, and non-persisted terminal disposal for analyzer, map, and upload surfaces |
 | Ascent lists | `src/ascent/ascent-filter.ts`, `src/profile/profile-backup.ts` | Isolated-world filter/sort and owner-only backup pipeline |
@@ -180,11 +180,11 @@ There is no parallel raw-source worker list and no `importScripts` fallback.
 | Settings and theme | `src/settings/settings-schema.ts`, `src/settings/settings.ts`, `src/theme/theme-resolve.ts`, `src/theme/theme.ts`, `src/theme/panel-theme.ts`, `options/options.ts`, `src/ui/section-nav.ts` | Pure schema and theme resolution, portable/device storage access, synchronous page startup, settings wiring, and section navigation |
 | Report-draft manager | `src/reports/report-drafts.ts`, `options/drafts.ts` | Shared pure draft contract plus device-local list/copy/delete UI |
 | Saved-ascent and TR backup | `src/ascent/ascent-page.ts`, `src/ascent/ascent-backup.ts` | Owner-only page read and user-facing backup state |
-| Saved-GPX map handoffs | `src/ascent/ascent-gaia.ts`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.js`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
+| Saved-GPX map handoffs | `src/ascent/ascent-gaia.ts`, `src/gpx/saved-gpx-source.ts`, `src/background/gpx-handoff-routes.ts`, `src/gaia/gaia-import.ts`, `src/onx/onx-import.ts`, `src/alltrails/alltrails-import.ts`, `src/caltopo/caltopo-import.ts` | One shared trusted-click surface, destination-scoped optional permission, exact-tab adapter injection, visible previews, and manual Gaia Save, onX Import, AllTrails Upload, or CalTopo Import/Save |
 | Peakbagger request boundary | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, `src/peakbagger/peakbagger-error.ts`, `src/peakbagger/peakbagger-cloudflare.ts`, `src/peakbagger/peakbagger-account.ts` | Authenticated fetch policy, response and account-evidence validation, typed failures, and managed-challenge detection/recovery copy in worker and page transports |
-| GitHub integration | `src/background/github-routes.js`, `src/github/github-error-copy.ts`, `src/github/github-errors.ts`, `src/github/github-api.ts`, `src/github/github-auth.ts`, `src/github/github-client.ts`, `src/github/github-write-queue.ts`, `src/github/github-backup.ts`, `src/photos/photo-backup.ts`, `options/photos.ts` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
+| GitHub integration | `src/background/github-routes.ts`, `src/github/github-error-copy.ts`, `src/github/github-errors.ts`, `src/github/github-api.ts`, `src/github/github-auth.ts`, `src/github/github-client.ts`, `src/github/github-write-queue.ts`, `src/github/github-backup.ts`, `src/photos/photo-backup.ts`, `options/photos.ts` | Worker-only routes and credentials, typed/authenticated transport, Git Data writes, ordering/coalescing, ascent payloads, and metadata-only photo recovery |
 | ImgBB integration | `src/background/photo-routes.ts`, `src/photos/imgbb-auth.ts`, `src/photos/imgbb-client.ts`, `options/imgbb.ts` | Optional permission, device-local BYOK credential leased only to the exact packaged photo page for direct upload, scoped report return; no account gallery or remote deletion |
-| Manual settings transfer | `src/settings/settings-transfer.ts`, `src/background/settings-file-routes.js`, `options/settings-backup.ts` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
+| Manual settings transfer | `src/settings/settings-transfer.ts`, `src/background/settings-file-routes.ts`, `options/settings-backup.ts` | Versioned known-setting file with a 1 MiB UTF-8 import ceiling and bounded parsed structure; manual files include private map definitions/parameters, while saved account credentials require opt-in. Exact-options-page worker revalidation and reads/writes, live account credential validation, confirmation and unencrypted-private-file warning. GitHub snapshots exclude private definitions/credentials. |
 
 Extend the owning surface rather than publishing cross-feature globals. Two
 deliberate page-realm globals bridge worker-injected functions where an ES
@@ -299,7 +299,7 @@ backup controls, and the terrain frame bridge.
 Three coordinators run in the page's MAIN world because they need page-owned
 state:
 
-- `src/gpx/gpx-analyzer.js` reads Peakbagger's same-origin MasterMap frame and its
+- `src/gpx/gpx-analyzer.ts` reads Peakbagger's same-origin MasterMap frame and its
   Leaflet globals for route and hover synchronization.
 - `src/maps/big-map.ts` identifies and restyles Peakbagger's native Full Screen GPS
   layers without replacing their interactions.
@@ -362,7 +362,7 @@ the persistence failure rather than presenting an optimistic control as saved.
 `SETTINGS_PATCH` and `FAVORITES_MUTATE` share one sender gate — extension pages
 and the Peakbagger content scripts — so the worker's two mutation routes fail
 closed instead of trusting whatever reaches runtime messaging.
-Packaged UI authorization uses `src/background/sender-policy.js`: the browser's
+Packaged UI authorization uses `src/background/sender-policy.ts`: the browser's
 extension identity and exact packaged path are checked, with top-frame identity
 required for senders associated with a tab.
 Web-accessible terrain and guide frames are not privileged UI. Capture controls
@@ -417,7 +417,7 @@ unrelated or malformed page messages from becoming renderer input.
 
 ### Public error boundary
 
-`src/background/public-errors.js` is the worker-owned boundary for failures
+`src/background/public-errors.ts` is the worker-owned boundary for failures
 that cross runtime messaging. Known typed product errors may carry curated
 actionable copy; unexpected browser, storage, scripting, tab, and parser
 exceptions stay in contextual logs and become a fixed public recovery error.
@@ -782,7 +782,7 @@ sanitization, lossy-import protection, media restrictions, and draft lifecycle.
 parser. The AST stores ordinary links; `instagram-ui.js` enhances only standalone
 post links in Rich/Markdown previews and saved-ascent readers. Its device-local,
 default-off preference never crosses the page-world settings bridge. Loading
-uses the trusted-action boundary and `src/background/instagram-frames.js` to
+uses the trusted-action boundary and `src/background/instagram-frames.ts` to
 issue a one-use capability tied to one tab, source document and private active
 load nonce. The packaged `reports/instagram.html` wrapper consumes that grant;
 only its sandboxed cross-origin child frame runs provider code. It retains
@@ -885,7 +885,7 @@ limits, credential transfer, library maintenance, and recovery contracts;
 
 ### Extraction and metrics
 
-`src/gpx/gpx-analyzer.js` runs only when an ascent page exposes Peakbagger's stored
+`src/gpx/gpx-analyzer.ts` runs only when an ascent page exposes Peakbagger's stored
 GPX download link. It fetches that saved track in the page session, parses
 trackpoints and segment breaks, and admits route, elevation, and time data as
 independent capabilities. Invalid points split map geometry rather than
@@ -1208,18 +1208,18 @@ below remains independent of ignored membership.
 | Module | Boundary and responsibility |
 | --- | --- |
 | `src/favorites/ignored-climbers.ts` | Pure schema, exact HTTPS profile identity, bounded backup parser/serializer, visibility arithmetic and three-way merge with absence as a deletion |
-| `src/background/ignored-store.js` | Sole ignored-list writer; one mutation lane for idempotent entry operations, revision/signature-guarded replacements and atomic sync reconciliation |
+| `src/background/ignored-store.ts` | Sole ignored-list writer; one mutation lane for idempotent entry operations, revision/signature-guarded replacements and atomic sync reconciliation |
 | `src/favorites/ignored-client.ts` | Subscribe before read; generation/revision guards retain the latest valid local list after read errors |
 | `src/favorites/favorite-source.ts` | Shared custom-or-Buddy source, positive account ownership, stale-cache use, bounded authenticated refresh, cancellation and late-response rejection |
 | `src/favorites/climber-ignore.ts`, `options/ignored.ts` | Independent public-profile Ignore control and accessible manager tab, verified lookup, search/sort and entry Undo |
 | `src/favorites/climber-card-state.ts`, `src/favorites/climber-hover-card.ts` | Pure link identity/membership presenter and top-level isolated name-link card; worker Favorite/Ignore operations, authenticated Buddy absence check before Ignore, and explicit inline Buddy actions |
 | `src/favorites/buddy-client.ts`, `src/favorites/buddy-state.ts` | Exact owner/target/native-form validation, narrowly scoped Buddy POST, uncached confirmation and bounded intent schema; status recovery never repeats a POST |
-| `src/background/buddy-store.js` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
-| `src/favorites/buddy-cache.ts`, `src/background/buddy-cache-store.js` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
+| `src/background/buddy-store.ts` | Pending Buddy reservations in the shared climber-list lane; confirmed target cache reconciliation and configured custom-favorite updates, with partial-success recovery |
+| `src/favorites/buddy-cache.ts`, `src/background/buddy-cache-store.ts` | Versioned full-report publication through the worker list lane; stale responses and rendered reports cannot overwrite later confirmed Buddy changes |
 | `src/favorites/report-adapters.ts`, `src/favorites/peak-report-filter.ts` | Conservative isolated Selected Trip Reports adapter/controller; local peak preference and counted temporary reveal |
 | `src/ascent/ascent-filter.ts` | One row-visibility loop for ordinary filters and ignored membership, compact views, group headers, badges, sorting and temporary full-list override |
 | `src/ascent/ascent-report-visibility.ts` | Independently validated author heading and dedicated report-row boundary; retains nodes, recovers focus, suspends iframe URL/srcdoc and pauses media |
-| `src/background/climber-list-sync.js` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
+| `src/background/climber-list-sync.ts` | Device opt-in, scoped common baseline, reviewed transfer/setup/conflicts, durable proposals, restart recovery and post-upload local-edit rebase |
 | `options/ignored-backup.ts` | Settings transfer/sync UI, scoped impact/version preview and guarded whole-list Undo |
 
 `bpbIgnoredClimbers`, `bpbPeakReportFilter` and `bpbIgnoredSyncState` live in
@@ -1290,8 +1290,8 @@ sync must never acquire the third-party names stored in either local dataset.
 | `options/favorites-backup.ts` | Settings → Backup & sync | The favorites GitHub backup, restore with its own confirm/undo, and the auto-backup gate | List rendering, source selection, or Buddy fetching |
 | `src/profile/profile-backup-core.ts` | Pure shared module | Signed-in owner discovery and numeric URL identity | Favorites persistence or request orchestration |
 | `src/peakbagger/peakbagger-request.ts`, `src/peakbagger/peakbagger-response.ts`, and `src/peakbagger/peakbagger-error.ts` | Shared request boundary | Authenticated fetch policy, response classification, parsing failures, and actionable error copy | Favorites schema or persistence |
-| `src/background/favorites-store.js` and `src/background/background.ts` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
-| `src/background/github-routes.js`, `src/github/github-write-queue.ts`, and `src/github/github-client.ts` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
+| `src/background/favorites-store.ts` and `src/background/background.ts` | Extension worker | Sender-gated, serialized device-local custom-list mutations; latest-value add/remove/merge operations; signature-gated replacements | Buddy-cache fetching, source selection, rendering, or GitHub transfer |
+| `src/background/github-routes.ts`, `src/github/github-write-queue.ts`, and `src/github/github-client.ts` | Extension worker | Shared GitHub write queue, connection/token/routes, fixed `favorite-climbers.json` path, repository validation, serialized and coalesced writes, and restore reads | Interpreting or mutating the favorites schema |
 
 `options/favorites.ts` owns list management on its own page,
 `options/favorites.html`; the Settings **Climber lists** subsection comes first
@@ -1545,7 +1545,7 @@ normally makes further automatic triggers no-ops.
 ### Custom-list mutation paths
 
 Every custom-list write is a `FAVORITES_MUTATE` request to the extension worker.
-`src/background/favorites-store.js` serializes those requests, rereads the
+`src/background/favorites-store.ts` serializes those requests, rereads the
 latest `bpbFavoriteClimbers` value for each one, and writes only the computed
 result. Add, remove, and Buddy merge messages carry intent, not a UI-computed
 whole-list snapshot, so independent operations from different tabs compose.

@@ -10,7 +10,7 @@ import { createSnotelClient } from '../../src/snow/snotel-client.ts';
 import { searchSentinel } from '../../src/maps/sentinel-core.ts';
 import { drawAlbertaLand } from '../../src/maps/canadian-land.ts';
 import { createOverlayTiles } from '../../src/maps/map-overlay-tiles.ts';
-import { createBCLandRoutes } from '../../src/background/bc-land-routes.js';
+import { createBCLandRoutes } from '../../src/background/bc-land-routes.ts';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 

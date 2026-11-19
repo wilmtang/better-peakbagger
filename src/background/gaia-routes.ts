@@ -7,9 +7,11 @@ import {
     MAX_GAIA_GPX_BYTES,
     prepareGaiaImport,
 } from '../gaia/gaia-import.ts';
-import { createGpxHandoffRoutes } from './gpx-handoff-routes.js';
+import { createGpxHandoffRoutes, type GpxHandoffCallerOptions } from './gpx-handoff-routes.ts';
 
-export function createGaiaRoutes(options) {
+export type GaiaRoutesOptions = GpxHandoffCallerOptions;
+
+export function createGaiaRoutes(options: GaiaRoutesOptions) {
     return createGpxHandoffRoutes({
         ...options,
         provider: {
@@ -22,7 +24,7 @@ export function createGaiaRoutes(options) {
             importUrl: GAIA_MAP_URL,
             maxBytes: MAX_GAIA_GPX_BYTES,
             prepareImport: prepareGaiaImport,
-            isTargetUrl: url => url.origin === new URL(GAIA_MAP_URL).origin && url.pathname === '/map/',
+            isTargetUrl: (url: URL) => url.origin === new URL(GAIA_MAP_URL).origin && url.pathname === '/map/',
             wrongPageCode: 'gaia-unavailable',
             wrongPageMessage: 'Gaia did not stay on its map. No GPX was sent.',
             unavailableCode: 'gaia-unavailable',

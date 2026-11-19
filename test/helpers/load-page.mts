@@ -14,13 +14,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from 'jsdom';
 import { createSettingsStore } from '../../src/settings/settings.ts';
-import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.js';
-import { createIgnoredStore } from '../../src/background/ignored-store.js';
-import { createBuddyStore } from '../../src/background/buddy-store.js';
+import { createFavoritesStore, favoritesStore } from '../../src/background/favorites-store.ts';
+import { createIgnoredStore } from '../../src/background/ignored-store.ts';
+import { createBuddyStore } from '../../src/background/buddy-store.ts';
 import { BUDDY_MESSAGE } from '../../src/favorites/buddy-state.ts';
 import { BUDDY_CACHE_MESSAGE } from '../../src/favorites/buddy-cache.ts';
-import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.js';
-import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
+import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.ts';
+import { createReportDraftRoutes } from '../../src/background/report-draft-routes.ts';
 import { isPeakbaggerSenderUrl } from '../../src/peakbagger/peakbagger-origin.ts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import type { ChromeStub, PageDocument, StoredRecord, StubArea, StubMessage, TestWindow } from './page-types.mts';
@@ -35,7 +35,7 @@ export const DIST = path.join(root, 'dist');
 type Values = Record<string, unknown>;
 type StorageChanges = Record<string, { oldValue?: unknown; newValue?: unknown }>;
 type StorageListener = (changes: StorageChanges, area: string) => unknown;
-interface Sender { url?: string; tab?: { id: number } }
+interface Sender { url?: string; tab?: { id?: number } }
 type Reply = (response: unknown) => void;
 type SendMessage = (message: StubMessage, callback?: Reply) => unknown;
 

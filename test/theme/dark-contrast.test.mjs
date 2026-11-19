@@ -261,7 +261,7 @@ test('the GPX analyzer panel has one theming system, not two', async () => {
 
     // The panel and the floating 3D toggle beside it are steered by the same
     // attribute; the panel used to be painted from a JS palette instead.
-    const analyzer = await readFile(path.join(root, 'src/gpx/gpx-analyzer.js'), 'utf8');
+    const analyzer = await readFile(path.join(root, 'src/gpx/gpx-analyzer.ts'), 'utf8');
     assert.match(analyzer, /container\.dataset\.theme = theme;[\s\S]{0,80}terrainButton\.dataset\.theme = theme;/,
         'one data-theme drives the whole surface');
     assert.doesNotMatch(analyzer, /panelBg|panelBorder|selBorder/,

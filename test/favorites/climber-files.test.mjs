@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import * as Files from '../../src/favorites/climber-files.ts';
 import { JSDOM } from 'jsdom';
 import { mountClimberFileTransfer } from '../../options/climber-files.ts';
-import { createFavoritesStore } from '../../src/background/favorites-store.js';
-import { createIgnoredStore } from '../../src/background/ignored-store.js';
+import { createFavoritesStore } from '../../src/background/favorites-store.ts';
+import { createIgnoredStore } from '../../src/background/ignored-store.ts';
 
 const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1, source: 'manual' });
 const list = (kind, entries) => ({ schemaVersion: 1, ...(kind === 'ignored' ? { revision: 0 } : {}), entries });

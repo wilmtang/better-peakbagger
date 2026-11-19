@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createGaiaRoutes } from '../../src/background/gaia-routes.js';
+import { createGaiaRoutes } from '../../src/background/gaia-routes.ts';
 import { GAIA_MAP_URL, GAIA_PERMISSION } from '../../src/gaia/gaia-import.ts';
 
 const sender = {

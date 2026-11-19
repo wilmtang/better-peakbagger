@@ -145,8 +145,8 @@ Gaia handoff. Analyzer arrays and draft payloads are not inputs either.
 
 ## Worker and tab coordination
 
-`src/background/gaia-routes.js` configures the shared
-`src/background/gpx-handoff-routes.js` transaction, which revalidates the
+`src/background/gaia-routes.ts` configures the shared
+`src/background/gpx-handoff-routes.ts` transaction, which revalidates the
 request before opening Gaia:
 
 - the sender must be the exact Peakbagger saved-ascent document;

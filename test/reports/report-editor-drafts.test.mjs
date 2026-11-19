@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
 import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
-import { createReportDraftRoutes } from '../../src/background/report-draft-routes.js';
+import { createReportDraftRoutes } from '../../src/background/report-draft-routes.ts';
 
 const sharedEditor = (first, options = {}) => loadEditor({ ...options, prepare: second => {
     second.chrome.storage.local = first.chrome.storage.local;
