@@ -27,6 +27,7 @@ import {
     readFile,
     readdir,
     realpath,
+    mkdtemp,
     rename,
     rm,
     stat,
@@ -43,17 +44,19 @@ import {
     VENDOR_COPY,
     nodeModule,
     root,
-    distDir,
     type BundleEntry,
 } from './build-config.mts';
 import { writeThirdPartyNotices } from './third-party-notices.mts';
 import { buildWxtBundles } from './wxt-build.mts';
+import { publishBuildTree, RELOAD_SIGNAL } from './build-publication.mts';
+import { prepareFirefoxGeneration } from './run-firefox.mts';
+
+export { publishBuildTree, RELOAD_SIGNAL } from './build-publication.mts';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');
 const WATCH = args.has('--watch');
 
-export const RELOAD_SIGNAL = '.better-peakbagger-reload';
 export const BUILD_TREE_PREFIX = '.better-peakbagger-build-';
 
 export function formatReloadLog(sequence: number, date = new Date()) {
@@ -163,52 +166,6 @@ export async function validateBuildTree(outputDir: string, {
     for (const relative of required) await access(path.join(outputDir, relative));
 }
 
-export interface PublishBuildTreeOptions {
-    candidateDir?: string;
-    targetDir?: string;
-    renameTree?: typeof rename;
-}
-
-export async function publishBuildTree({
-    candidateDir,
-    targetDir = distDir,
-    renameTree = rename,
-}: PublishBuildTreeOptions = {}) {
-    if (!candidateDir || path.resolve(candidateDir) === path.resolve(targetDir)) {
-        throw new Error('Build publication requires a distinct candidate tree.');
-    }
-    const previousDir = `${targetDir}.previous-${process.pid}-${Date.now()}`;
-    await rm(previousDir, { recursive: true, force: true });
-    const hadPrevious = existsSync(targetDir);
-    if (hadPrevious) await renameTree(targetDir, previousDir);
-    try {
-        await renameTree(candidateDir, targetDir);
-    } catch (publishError) {
-        if (hadPrevious) {
-            try {
-                await renameTree(previousDir, targetDir);
-            } catch (rollbackError) {
-                // A transient Windows handle can make the first restore rename
-                // fail even after the publishing rename has already failed.
-                // Retry once while the complete previous tree is still parked
-                // beside the target; a recovered rollback still rejects the
-                // generation, but keeps the live source byte-for-byte old.
-                try {
-                    await renameTree(previousDir, targetDir);
-                } catch (retryError) {
-                    throw new AggregateError([publishError, rollbackError, retryError],
-                        'Build publication and rollback both failed.');
-                }
-                const message = publishError instanceof Error ? publishError.message : String(publishError);
-                throw new AggregateError([publishError, rollbackError],
-                    `Build publication failed (${message}); rollback recovered after retry.`);
-            }
-        }
-        throw publishError;
-    }
-    await rm(previousDir, { recursive: true, force: true });
-}
-
 export async function buildOnce({ minify = MINIFY }: { minify?: boolean } = {}) {
     const stagingRoot = newBuildTreePath();
     const candidateDir = path.join(stagingRoot, 'generation');
@@ -265,7 +222,8 @@ export function watchDirectories({
 
 export interface WatchAllOptions extends BuildLayout {
     reloadFile?: string;
-    afterBuild?: (info: { sequence: number }) => Promise<void> | void;
+    firefoxSourceDir?: string;
+    beforePublish?: (info: { candidateDir: string; sequence: number }) => Promise<void> | void;
     debounceMs?: number;
     watch?: typeof fsWatch;
 }
@@ -280,7 +238,7 @@ async function sourceSnapshot(layout: BuildLayout): Promise<Map<string, string>>
     const snapshot = new Map<string, string>();
     const record = async (file: string) => {
         const info = await stat(file).catch(() => null);
-        if (info?.isFile()) snapshot.set(file, `${info.mtimeMs}:${info.size}`);
+        if (info?.isFile()) snapshot.set(file, `${info.mtimeMs}:${info.ctimeMs}:${info.size}`);
     };
     for (const directory of watchDirectories(layout)) {
         const names = await readdir(directory, { recursive: true }).catch(() => [] as string[]);
@@ -305,7 +263,8 @@ export async function watchAll({
     copyDirs = COPY_DIRS,
     vendorCopy = VENDOR_COPY,
     reloadFile = path.join(targetDistDir, RELOAD_SIGNAL),
-    afterBuild = async () => {},
+    firefoxSourceDir,
+    beforePublish,
     debounceMs = 80,
     watch = fsWatch,
 }: WatchAllOptions = {}): Promise<WatchHandle> {
@@ -318,6 +277,13 @@ export async function watchAll({
         copyDirs,
         vendorCopy,
     };
+    const signalPath = path.resolve(reloadFile);
+    const internalSignal = path.resolve(targetDistDir, RELOAD_SIGNAL);
+    if (signalPath !== internalSignal && [targetDistDir, firefoxSourceDir].some(directory =>
+        directory && (signalPath === path.resolve(directory) || signalPath.startsWith(path.resolve(directory) + path.sep)),
+    )) {
+        throw new Error('The development reload signal must be outside the published trees.');
+    }
     const stagingRoot = newBuildTreePath(projectRoot);
     const outputDir = path.join(stagingRoot, 'working');
     await cleanupAbandonedBuildTrees({ directory: projectRoot, keep: stagingRoot });
@@ -332,22 +298,21 @@ export async function watchAll({
     // An edit made during the first build, or before the OS has armed the watchers,
     // produces no event. Until they have had time to arm, compare the sources with
     // what the last build started from.
-    let startupBaseline = await sourceSnapshot(layout), checkingStartup = true;
+    let publishedSnapshot: Map<string, string> | null = null;
+    let checkingStartup = true;
     const startupChecks: ReturnType<typeof setTimeout>[] = [];
     const checkStartupEdits = async (last: boolean) => {
         if (closed || !checkingStartup) return;
-        const baseline = startupBaseline, current = await sourceSnapshot(layout);
+        const baseline = publishedSnapshot, current = await sourceSnapshot(layout);
         if (last) checkingStartup = false;
         // A rebuild that re-baselined meanwhile has already covered this comparison.
-        if (!closed && baseline === startupBaseline && !sameSnapshot(baseline, current)) requestRebuild();
+        if (!closed && baseline && baseline === publishedSnapshot && !sameSnapshot(baseline, current)) requestRebuild();
     };
 
     const rebuild = async () => {
         const nextSequence = sequence + 1;
-        if (checkingStartup && sequence > 0) {
-            const baseline = await sourceSnapshot(layout);
-            startupBaseline = baseline;
-        }
+        const baseline = await sourceSnapshot(layout);
+        if (publishedSnapshot && sameSnapshot(publishedSnapshot, baseline)) return;
         await rm(outputDir, { recursive: true, force: true });
         const { inputPaths, diagnostics } = await buildWxtBundles({ outputDir, entries, projectRoot,
             manifestPath: manifestSource ? path.resolve(projectRoot, manifestSource) : null });
@@ -355,20 +320,48 @@ export async function watchAll({
         await writeThirdPartyNotices({ inputPaths, outputDir });
         await copyAssets(outputDir, { ...layout, copyFiles: copyFiles.filter(([, to]) => to !== 'manifest.json') });
         await validateBuildTree(outputDir, { minify: false, ...layout });
+        await writeFile(path.join(outputDir, RELOAD_SIGNAL), `${nextSequence}\n`);
 
-        // Preserve the prior token through the tree publication. The new token
-        // is written only after the complete generation is visible at dist/.
+        const firefox = firefoxSourceDir && await prepareFirefoxGeneration({
+            distDir: outputDir,
+            sourceDir: firefoxSourceDir,
+            reloadToken: nextSequence,
+        });
+        let signalStaging: string | undefined;
         try {
-            await writeFile(path.join(outputDir, RELOAD_SIGNAL), await readFile(reloadFile));
-        } catch (error) {
-            if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')) throw error;
+            let commitSignal: (() => Promise<void>) | undefined;
+            if (signalPath !== internalSignal) {
+                signalStaging = await mkdtemp(path.join(path.dirname(signalPath), '.bpb-reload-'));
+                const nextSignal = path.join(signalStaging, 'generation');
+                await writeFile(nextSignal, `${nextSequence}\n`);
+                commitSignal = () => rename(nextSignal, signalPath);
+            }
+            await beforePublish?.({ candidateDir: outputDir, sequence: nextSequence });
+            if (!sameSnapshot(baseline, await sourceSnapshot(layout)) || pending) {
+                pending = true;
+                return;
+            }
+
+            // The stable watched path advances only after both complete trees
+            // are installed. A failure before that point rolls both trees back.
+            await publishBuildTree({
+                candidateDir: outputDir,
+                targetDir: targetDistDir,
+                afterSwap: firefox && firefoxSourceDir
+                    ? () => publishBuildTree({
+                        candidateDir: firefox.sourceDir,
+                        targetDir: firefoxSourceDir,
+                        afterSwap: commitSignal,
+                    })
+                    : commitSignal,
+            });
+            publishedSnapshot = baseline;
+        } finally {
+            await Promise.all([
+                firefox && firefox.cleanup(),
+                signalStaging && rm(signalStaging, { recursive: true, force: true }),
+            ]).catch(error => console.warn('Could not clean development generation staging:', error));
         }
-        const candidateDir = path.join(stagingRoot, `generation-${nextSequence}`);
-        await rm(candidateDir, { recursive: true, force: true });
-        await rename(outputDir, candidateDir);
-        await publishBuildTree({ candidateDir, targetDir: targetDistDir });
-        await afterBuild({ sequence: nextSequence });
-        await writeFile(reloadFile, `${nextSequence}\n`);
         sequence = nextSequence;
         console.log(formatReloadLog(sequence));
     };
@@ -381,7 +374,7 @@ export async function watchAll({
                 try {
                     await rebuild();
                 } catch (error) {
-                    console.error('Rebuild failed; keeping the currently loaded extension:', error);
+                    console.error('Rebuild failed:', error);
                 }
             } while (pending && !closed);
         })().finally(() => {
@@ -399,7 +392,10 @@ export async function watchAll({
 
     try {
         // Fail startup rather than launching a browser with a partial build.
-        await rebuild();
+        do {
+            pending = false;
+            await rebuild();
+        } while (pending);
 
         for (const directory of watchDirectories(layout)) {
             watchers.push(watch(directory, { recursive: true }, requestRebuild));

@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { createFirefoxManifest, type ExtensionManifest } from './build-firefox-package.mts';
-import { publishBuildTree, RELOAD_SIGNAL, type PublishBuildTreeOptions } from './build.mts';
+import { publishBuildTree, RELOAD_SIGNAL, type PublishBuildTreeOptions } from './build-publication.mts';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const defaultProjectRoot = path.resolve(scriptDir, '..');
@@ -143,10 +143,8 @@ export async function validateFirefoxSource(
     }
 }
 
-// Synchronize a complete dist build before changing the watched reload signal.
-// Firefox needs this copy because its development manifest intentionally opens
-// Preferences inline instead of using Chromium's full-tab behavior.
-export async function syncFirefoxSource({
+// Firefox needs its own manifest for inline Preferences and background scripts.
+export async function prepareFirefoxGeneration({
     distDir = defaultDistDir,
     sourceDir,
     reloadToken,
@@ -154,17 +152,16 @@ export async function syncFirefoxSource({
     readText = readFile,
     writeText = writeFile,
     validateTree = validateFirefoxSource,
-    publishTree = publishBuildTree,
-    renameTree,
     removeTree = rm,
-}: SyncFirefoxSourceOptions): Promise<void> {
+}: SyncFirefoxSourceOptions): Promise<FirefoxSource> {
     if (!sourceDir) throw new Error('Firefox development source directory is required.');
     const stagingRoot = await mkdtemp(
         path.join(path.dirname(sourceDir), '.better-peakbagger-firefox-generation-'),
     );
     const candidateDir = path.join(stagingRoot, 'generation');
-    await mkdir(candidateDir, { recursive: true });
+    const cleanup = () => removeTree(stagingRoot, { recursive: true, force: true });
     try {
+        await mkdir(candidateDir, { recursive: true });
         await copyTree(distDir, candidateDir, {
             preserve: new Set([RELOAD_SIGNAL]),
         });
@@ -179,13 +176,20 @@ export async function syncFirefoxSource({
             await writeText(path.join(candidateDir, RELOAD_SIGNAL), `${reloadToken}\n`);
         }
         await validateTree(candidateDir, { distDir, reloadToken });
-        await publishTree({
-            candidateDir,
-            targetDir: sourceDir,
-            ...(renameTree ? { renameTree } : {}),
-        });
+        return { sourceDir: candidateDir, cleanup };
+    } catch (error) {
+        await cleanup();
+        throw error;
+    }
+}
+
+export async function syncFirefoxSource(options: SyncFirefoxSourceOptions): Promise<void> {
+    const { sourceDir, publishTree = publishBuildTree, renameTree } = options;
+    const candidate = await prepareFirefoxGeneration(options);
+    try {
+        await publishTree({ candidateDir: candidate.sourceDir, targetDir: sourceDir, renameTree });
     } finally {
-        await removeTree(stagingRoot, { recursive: true, force: true });
+        await candidate.cleanup();
     }
 }
 

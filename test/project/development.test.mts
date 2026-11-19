@@ -20,7 +20,7 @@ import {
     BUILD_TREE_PREFIX,
     cleanupAbandonedBuildTrees,
     formatReloadLog,
-    publishBuildTree as publishBuildTreeJS,
+    publishBuildTree,
     RELOAD_SIGNAL,
     watchAll,
     watchDirectories,
@@ -29,21 +29,12 @@ import { AUTHORED_SOURCE_ROOTS, ENTRIES, entrySources, root as projectRoot } fro
 import { webExtArguments } from '../../scripts/run-development.mts';
 import {
     createFirefoxSource,
-    syncFirefoxSource as syncFirefoxSourceJS,
+    syncFirefoxSource,
+    type SyncFirefoxSourceOptions,
 } from '../../scripts/run-firefox.mts';
 
 import { isRuntimeSource, runtimeSourceFiles } from '../helpers/runtime-sources.mts';
 
-interface PublishOptions {candidateDir: string; targetDir?: string; renameTree?: typeof rename}
-const publishBuildTree = publishBuildTreeJS as (options: PublishOptions) => Promise<void>;
-interface SyncOptions {
-    distDir?: string; sourceDir: string; reloadToken: number;
-    copyTree?: (source: string, candidate: string, options?: {preserve?: Set<string>}) => Promise<void>;
-    writeText?: (destination: string, contents: string) => Promise<void>;
-    validateTree?: (options: {distDir: string}) => Promise<void>;
-    publishTree?: (options: PublishOptions) => Promise<void>; renameTree?: typeof rename;
-}
-const syncFirefoxSource = syncFirefoxSourceJS as (options: SyncOptions) => Promise<void>;
 const missing = (error: unknown) => error instanceof Error && 'code' in error && error.code === 'ENOENT';
 
 test('source and tests stay organized by owning domain', async () => {
@@ -192,6 +183,52 @@ test('publishing a complete build tree removes stale outputs as one generation',
     }
 });
 
+test('Firefox swap or signal failure rolls both staged development trees back', async () => {
+    const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-build-pair-test-'));
+    const signal = path.join(temporaryRoot, 'generation');
+    const chromium = path.join(temporaryRoot, 'chromium');
+    const firefox = path.join(temporaryRoot, 'firefox');
+    const nextChromium = path.join(temporaryRoot, 'next-chromium');
+    const nextFirefox = path.join(temporaryRoot, 'next-firefox');
+    const readGeneration = (dir: string) => readFile(path.join(dir, 'script.js'), 'utf8');
+
+    try {
+        const generations = new Map([[chromium, 'old'], [firefox, 'old'], [nextChromium, 'new'], [nextFirefox, 'new']]);
+        for (const [dir, generation] of generations) {
+            await mkdir(dir);
+            await writeFile(path.join(dir, 'script.js'), generation);
+        }
+        await writeFile(signal, 'old');
+        for (const failure of ['firefox', 'signal']) {
+            await assert.rejects(publishBuildTree({
+                candidateDir: nextChromium,
+                targetDir: chromium,
+                afterSwap: () => publishBuildTree({
+                    candidateDir: nextFirefox,
+                    targetDir: firefox,
+                    renameTree: async (from, to) => {
+                        if (failure === 'firefox' && from === nextFirefox) throw new Error('forced Firefox swap failure');
+                        await rename(from, to);
+                    },
+                    afterSwap: async () => {
+                        assert.equal(await readGeneration(chromium), 'new');
+                        assert.equal(await readGeneration(firefox), 'new');
+                        throw new Error('forced signal rename failure');
+                    },
+                }),
+            }), failure === 'firefox' ? /forced Firefox swap failure/ : /forced signal rename failure/);
+            assert.equal(await readGeneration(chromium), 'old');
+            assert.equal(await readGeneration(firefox), 'old');
+            assert.equal(await readFile(signal, 'utf8'), 'old');
+            assert.equal(await readGeneration(nextChromium), 'new');
+            assert.equal(await readGeneration(nextFirefox), 'new');
+            assert.deepEqual((await readdir(temporaryRoot)).sort(), ['chromium', 'firefox', 'generation', 'next-chromium', 'next-firefox']);
+        }
+    } finally {
+        await rm(temporaryRoot, { recursive: true, force: true });
+    }
+});
+
 test('build startup removes only abandoned staging trees', async () => {
     const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'bpb-build-cleanup-test-'));
     const alive = path.join(temporaryRoot, `${BUILD_TREE_PREFIX}${process.pid}-alive`);
@@ -209,8 +246,9 @@ test('build startup removes only abandoned staging trees', async () => {
 
 test('development browsers reload only from the completed-build signal', () => {
     const chromiumSource = path.resolve('dist');
+    const reloadFile = path.resolve('control/generation');
     assert.deepEqual(
-        webExtArguments('chromium', chromiumSource, ['--chromium-binary', '/test/chrome']),
+        webExtArguments('chromium', chromiumSource, reloadFile, ['--chromium-binary', '/test/chrome']),
         [
             'run',
             '--source-dir',
@@ -218,21 +256,29 @@ test('development browsers reload only from the completed-build signal', () => {
             '--target',
             'chromium',
             '--watch-file',
-            path.join(chromiumSource, RELOAD_SIGNAL),
+            reloadFile,
             '--chromium-binary',
             '/test/chrome',
         ],
     );
 
-    const firefoxSource = path.resolve('firefox-source');
-    assert.deepEqual(webExtArguments('firefox', firefoxSource), [
+    const firefoxSource = path.resolve('control/firefox-source');
+    assert.deepEqual(webExtArguments('firefox', firefoxSource, reloadFile), [
         'run',
         '--source-dir',
         firefoxSource,
+        '--target',
+        'firefox-desktop',
         '--watch-file',
-        path.join(firefoxSource, RELOAD_SIGNAL),
+        reloadFile,
     ]);
-    assert.throws(() => webExtArguments('safari', chromiumSource), /chromium\|firefox/);
+    assert.throws(() => webExtArguments('safari', chromiumSource, reloadFile), /chromium\|firefox/);
+    for (const option of [
+        '--sourceDir=/other', '--s=/other', '-s/other', '-vs', '-as',
+        '--t=chromium', '-t=chromium', '-vt', '-at', '--target', '--watch-files', '--watchFile=/other',
+    ]) {
+        assert.throws(() => webExtArguments('firefox', firefoxSource, reloadFile, [option]), /runner manages/);
+    }
 });
 
 test('Firefox mirrors a completed build before exposing its reload signal', async () => {
@@ -297,7 +343,7 @@ test('Firefox mirrors a completed build before exposing its reload signal', asyn
 
 test('failed Firefox generations preserve the complete prior tree and token', async t => {
     interface CasePaths {distDir: string; sourceDir: string}
-    const cases: {name: string; prepare?: (paths: CasePaths) => Promise<unknown>; options: (paths: CasePaths) => Partial<SyncOptions>; pattern: RegExp}[] = [
+    const cases: {name: string; prepare?: (paths: CasePaths) => Promise<unknown>; options: (paths: CasePaths) => Partial<SyncFirefoxSourceOptions>; pattern: RegExp}[] = [
         {
             name: 'nested copy',
             options: () => ({
@@ -505,6 +551,7 @@ test('watchAll publishes an edit made during its first build, with no watcher ev
     const log = console.log;
     console.log = () => {};
     let watcher: Awaited<ReturnType<typeof watchAll>> | null = null;
+    let interrupted = false;
     try {
         watcher = await watchAll({
             projectRoot: temporaryRoot, distDir: targetDistDir, authoredSourceRoots: ['src'],
@@ -512,8 +559,11 @@ test('watchAll publishes an edit made during its first build, with no watcher ev
             copyFiles: [['manifest.json', 'manifest.json']], copyDirs: [], vendorCopy: [], debounceMs: 20,
             // A watcher the OS has not armed yet delivers nothing.
             watch: (() => ({ close() {} })) as unknown as typeof import('node:fs').watch,
-            afterBuild: async ({ sequence }) => {
-                if (sequence === 1) await writeFile(entryFile, "console.log('startup-v2');\n");
+            beforePublish: async ({ sequence }) => {
+                assert.equal(sequence, 1, 'the stale startup build must be discarded');
+                if (interrupted) return;
+                interrupted = true;
+                await writeFile(entryFile, "console.log('startup-v2');\n");
             },
         });
         await pollUntil(async () => {
@@ -530,7 +580,7 @@ test('watchAll publishes an edit made during its first build, with no watcher ev
 test('watchAll rebuilds imported src/storage/, new nested domains and page-local roots, syncs Firefox reload state, preserves dist/ on syntax error, recovers and cleans up when closed mid-rebuild', async () => {
     const temporaryRoot = await realpath(await mkdtemp(path.join(tmpdir(), 'bpb-watch-fixture-')));
     const targetDistDir = path.join(temporaryRoot, 'dist');
-    const reloadFile = path.join(targetDistDir, RELOAD_SIGNAL);
+    const reloadFile = path.join(temporaryRoot, 'generation');
     const appOutFile = path.join(targetDistDir, 'content', 'app.js');
     const popupOutFile = path.join(targetDistDir, 'popup', 'popup.js');
     const entryFile = path.join(temporaryRoot, 'src', 'app', 'entry.ts');
@@ -563,6 +613,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
     }) + '\n');
 
     let holdGate: { started: () => void; release: Promise<void> } | null = null;
+    let replaceStaleCandidate = false;
     const errors: string[] = [];
     const originalError = console.error;
     console.error = (...args: unknown[]) => {
@@ -571,12 +622,14 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
 
     const readLiveState = async () => {
         const token = await readFile(reloadFile, 'utf8').catch(() => null);
+        const chromiumToken = await readFile(path.join(targetDistDir, RELOAD_SIGNAL), 'utf8').catch(() => null);
         const firefoxToken = await readFile(firefoxReloadFile, 'utf8').catch(() => null);
         const bundle = await readFile(appOutFile, 'utf8').catch(() => null);
         const firefoxBundle = await readFile(firefoxAppOutFile, 'utf8').catch(() => null);
         const popupBundle = await readFile(popupOutFile, 'utf8').catch(() => null);
         return {
             token: token?.trim() ?? null,
+            chromiumToken: chromiumToken?.trim() ?? null,
             firefoxToken: firefoxToken?.trim() ?? null,
             bundle,
             firefoxBundle,
@@ -604,16 +657,17 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             copyDirs: [['icons', 'icons']],
             vendorCopy: [],
             debounceMs: 20,
-            afterBuild: async ({ sequence }) => {
-                await syncFirefoxSource({
-                    distDir: targetDistDir,
-                    sourceDir: firefoxPrepared.sourceDir,
-                    reloadToken: sequence,
-                });
+            firefoxSourceDir: firefoxPrepared.sourceDir,
+            beforePublish: async ({ candidateDir }) => {
+                const candidate = await readFile(path.join(candidateDir, 'content/app.js'), 'utf8');
+                if (replaceStaleCandidate && candidate.includes('storage-stale')) {
+                    replaceStaleCandidate = false;
+                    await writeFile(storageFile, 'export function readStorageValue(: string {\n');
+                }
                 // Hold only the rebuild carrying the closing edit. A late event from an
                 // earlier edit can start a rebuild first, and closing during that one
                 // would legitimately drop the newer edit.
-                if (holdGate && (await readFile(appOutFile, 'utf8').catch(() => '')).includes('storage-v4-closing')) {
+                if (holdGate && candidate.includes('storage-v4-closing')) {
                     const currentGate = holdGate;
                     holdGate = null;
                     currentGate.started();
@@ -624,6 +678,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
 
         const initial = await readLiveState();
         assert.equal(initial.token, '1');
+        assert.equal(initial.chromiumToken, '1');
         assert.equal(initial.firefoxToken, '1');
         assert.match(initial.bundle ?? '', /storage-v1/);
         assert.match(initial.firefoxBundle ?? '', /storage-v1/);
@@ -636,6 +691,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             return {
                 ok: live.token !== null
                     && Number(live.token) >= 2
+                    && live.chromiumToken === live.token
                     && live.firefoxToken === live.token
                     && Boolean(live.bundle?.includes('storage-v2'))
                     && Boolean(live.firefoxBundle?.includes('storage-v2')),
@@ -669,6 +725,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             const live = await readLiveState();
             return {
                 ok: Number(live.token) > Number(beforeNestedEdit.token)
+                    && live.chromiumToken === live.token
                     && live.firefoxToken === live.token
                     && Boolean(live.bundle?.includes('nested-v2'))
                     && Boolean(live.firefoxBundle?.includes('nested-v2')),
@@ -683,6 +740,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             const live = await readLiveState();
             return {
                 ok: Number(live.token) > Number(afterNestedEdit.token)
+                    && live.chromiumToken === live.token
                     && live.firefoxToken === live.token
                     && Boolean(live.popupBundle?.includes('popup-v2')),
                 value: live,
@@ -690,29 +748,19 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             };
         }, 'popup/ page-local edit to publish popup-v2');
 
-        // Introduce a syntax error; verify previous dist/ and Firefox trees and reload tokens are preserved.
+        // Replace an already compiled candidate with a broken edit before it is
+        // published. The stale candidate and the failed retry must both stay hidden.
         const errorCountBefore = errors.length;
-        await writeFile(storageFile, 'export function readStorageValue(: string {\n');
+        replaceStaleCandidate = true;
+        await writeFile(storageFile, 'export function readStorageValue(): string { return \'storage-stale\'; }\n');
         await pollUntil(async () => ({
             ok: errors.length > errorCountBefore
-                && errors.slice(errorCountBefore).some(line => line.includes('Rebuild failed; keeping the currently loaded extension:')),
+                && errors.slice(errorCountBefore).some(line => line.includes('Rebuild failed:')),
             value: true,
             live: { errors: errors.slice(errorCountBefore), state: await readLiveState() },
         }), 'syntax error rebuild failure to be logged');
-        // A rebuild from the popup edit's late event can publish before that first
-        // failure. Builds are serial, so from here every build sees broken source.
-        const beforeFailure = await readLiveState(), secondErrorCount = errors.length;
-        await writeFile(storageFile, 'export function readStorageValue(: number {\n');
-        await pollUntil(async () => ({
-            ok: errors.length > secondErrorCount,
-            value: true,
-            live: { errors: errors.slice(secondErrorCount), state: await readLiveState() },
-        }), 'second syntax error rebuild failure to be logged');
         const duringFailure = await readLiveState();
-        assert.equal(duringFailure.token, beforeFailure.token, 'failed rebuild must not advance the reload token');
-        assert.equal(duringFailure.firefoxToken, beforeFailure.firefoxToken, 'failed rebuild must not advance the Firefox reload token');
-        assert.equal(duringFailure.bundle, beforeFailure.bundle, 'failed rebuild must preserve the published bundle');
-        assert.equal(duringFailure.firefoxBundle, beforeFailure.firefoxBundle, 'failed rebuild must preserve the Firefox bundle');
+        assert.deepEqual(duringFailure, afterPopupEdit, 'stale and failed candidates must preserve both trees and every reload token');
 
         // Correct the syntax error and verify watch mode recovers and advances both tokens.
         await writeFile(storageFile, 'export function readStorageValue(): string { return \'storage-v3-recovered\'; }\n');
@@ -720,6 +768,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             const live = await readLiveState();
             return {
                 ok: Number(live.token) > Number(afterPopupEdit.token)
+                    && live.chromiumToken === live.token
                     && live.firefoxToken === live.token
                     && Boolean(live.bundle?.includes('storage-v3-recovered'))
                     && Boolean(live.firefoxBundle?.includes('storage-v3-recovered'))
@@ -741,6 +790,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             const firefoxManifest = await readFile(path.join(firefoxPrepared.sourceDir, 'manifest.json'), 'utf8').catch(() => '');
             return {
                 ok: Number(live.token) > Number(recovered.token)
+                    && live.chromiumToken === live.token
                     && live.firefoxToken === live.token
                     && manifest.includes('watch-fixture-v2')
                     && firefoxManifest.includes('watch-fixture-v2')
@@ -761,7 +811,7 @@ test('watchAll rebuilds imported src/storage/, new nested domains and page-local
             let started = false;
             await Promise.race([rebuildStarted.then(() => { started = true; }), new Promise(resolve => setTimeout(resolve, 10))]);
             return { ok: started, value: true, live: await readLiveState() };
-        }, 'in-flight rebuild to enter afterBuild');
+        }, 'in-flight rebuild to enter beforePublish');
 
         const closePromise = watcher.close();
         watcher = null;

@@ -1,30 +1,33 @@
 import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 import { distDir, root } from './build-config.mts';
-import { RELOAD_SIGNAL, watchAll, type WatchHandle } from './build.mts';
-import {
-    createFirefoxSource,
-    syncFirefoxSource,
-    type FirefoxSource,
-} from './run-firefox.mts';
+import { watchAll, type WatchHandle } from './build.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 
 export function webExtArguments(
     browser: string | undefined,
     sourceDir: string,
+    reloadFile: string,
     passthrough: readonly string[] = [],
 ): string[] {
     if (browser !== 'chromium' && browser !== 'firefox') {
         throw new Error('Usage: node scripts/run-development.mts <chromium|firefox> [web-ext options]');
     }
+    const managed = passthrough.find(arg =>
+        /^--(?:source-dir|sourceDir|target|watch-files?|watchFiles?|s|t)(?:=|$)|^-[a-z]*[st]/.test(arg));
+    if (managed) throw new Error(`The development runner manages ${managed.split('=')[0]}.`);
     return [
         'run',
         '--source-dir',
         sourceDir,
-        ...(browser === 'chromium' ? ['--target', 'chromium'] : []),
+        '--target',
+        browser === 'chromium' ? 'chromium' : 'firefox-desktop',
         '--watch-file',
-        path.join(sourceDir, RELOAD_SIGNAL),
+        reloadFile,
         ...passthrough,
     ];
 }
@@ -40,32 +43,20 @@ export async function runDevelopment(
     browser: string | undefined,
     passthrough: readonly string[] = [],
 ): Promise<number> {
-    let firefoxSource: FirefoxSource | null = null;
+    const controlDir = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-development-'));
     let watcher: WatchHandle | null = null;
     let child: ChildProcess | null = null;
     let forwardedSignal: NodeJS.Signals | null = null;
 
     try {
-        if (browser === 'firefox') {
-            firefoxSource = await createFirefoxSource();
-        } else if (browser !== 'chromium') {
-            webExtArguments(browser, distDir);
-        }
+        const firefoxSourceDir = browser === 'firefox' ? path.join(controlDir, 'firefox-source') : undefined;
+        const reloadFile = path.join(controlDir, 'generation');
+        const args = webExtArguments(browser, firefoxSourceDir ?? distDir, reloadFile, passthrough);
+        if (browser === 'chromium') assertChromeLaunchAllowed();
+        watcher = await watchAll({ reloadFile, firefoxSourceDir });
 
-        const activeFirefox = firefoxSource;
-        watcher = await watchAll({
-            afterBuild: activeFirefox
-                ? ({ sequence }) => syncFirefoxSource({
-                    distDir,
-                    sourceDir: activeFirefox.sourceDir,
-                    reloadToken: sequence,
-                })
-                : undefined,
-        });
-
-        const sourceDir = firefoxSource?.sourceDir ?? distDir;
         const executable = process.platform === 'win32' ? 'web-ext.cmd' : 'web-ext';
-        const spawned = spawn(executable, webExtArguments(browser, sourceDir, passthrough), {
+        const spawned = spawn(executable, args, {
             cwd: root,
             stdio: 'inherit',
         });
@@ -91,8 +82,11 @@ export async function runDevelopment(
         }
     } finally {
         if (child && child.exitCode === null && !child.killed) child.kill('SIGTERM');
-        await watcher?.close();
-        await firefoxSource?.cleanup();
+        try {
+            await watcher?.close();
+        } finally {
+            await rm(controlDir, { recursive: true, force: true });
+        }
     }
 }
 

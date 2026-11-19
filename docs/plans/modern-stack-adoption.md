@@ -731,10 +731,18 @@ The production compiler passed the Node suite, the 60-case DOM browser tier,
 and real unpacked and packaged extension verification in hidden Chromium
 158.0.8127.18 and Firefox 160.0.1 on macOS. Both browsers restored the fixture
 from BFCache. The minified Chrome and Firefox archives each contained 145
-entries. Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium at
-448 × 448 and 798 × 448, and in hidden Firefox 159.0 at 1000 × 760. The
-development reload and paired rollback, declared browser floors, and upgrade
-from an esbuild package still need dedicated checks.
+entries. Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium
+with 448 × 448 and 798 × 448 render canvases, and in hidden Firefox 159.0 at a
+1000 × 760 viewport.
+
+Hidden managed Chrome 158.0.8127.18 (1000 × 560) and Firefox 160.0.1
+(1000 × 675) loaded fresh HTTPS fixture documents after an edit, a syntax
+error, and its repair. The injected revision and external generation marker
+advanced together on both successful builds, and kept their prior values
+during the error. Both processes and their profiles shut down cleanly.
+Filesystem tests forced a Firefox swap failure and a signal failure and
+verified rollback of both trees. Declared browser floors and an upgrade from
+an esbuild package still need dedicated checks.
 
 This is feasible to investigate alongside legacy sources, but it is not just a
 bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)

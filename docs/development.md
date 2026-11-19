@@ -671,15 +671,18 @@ Chrome stable 137+ rejects command-line `--load-extension`, so
 web-ext's `--chromium-binary` after the `chromium` argument) or it will fail. Manual **Load
 unpacked** from `dist/` remains the simplest Chrome-family loop.
 
-The reload marker (`dist/.better-peakbagger-reload`) exists only in watch mode.
-It is an internal development coordination file, not extension runtime state;
-one-off and release builds replace `dist/` and do not package it.
+The in-tree build marker (`dist/.better-peakbagger-reload`) exists only in watch
+mode. One-off and release builds replace `dist/` without packaging it. The
+managed development command gives web-ext a separate, nonhidden `generation`
+file under its disposable control directory so its watcher sees the signal
+even when an extension directory is replaced.
 
-The managed Firefox loop derives its Firefox-specific source in a sibling
-candidate directory, validates that complete generation, and publishes it with
-the same rollback-capable directory swap as `dist/`. A failed copy, manifest
-transformation, validation, or publication leaves the prior tree and reload
-token unchanged.
+The managed Firefox loop derives and validates its Firefox-specific source
+before swapping either tree. The watched file advances after both swaps. A
+failed generation, including a candidate superseded by a source edit during
+the build, leaves both published trees and the reload signal on the last
+successful generation when rollback succeeds. If restoration itself fails,
+the watcher reports that error without issuing a reload.
 
 ## How the build works
 
