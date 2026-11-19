@@ -7,9 +7,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { JSDOM } from 'jsdom';
 import type { Page } from 'playwright';
-import { projectRoot } from './browser-verification-fixtures.mts';
+import { projectRoot, withOfflineFixturePage } from './browser-verification-fixtures.mts';
 
 export interface AscentFiltersVariant {
     name: string;
@@ -34,20 +33,32 @@ export async function verifyAscentFilters(
     variant: AscentFiltersVariant,
     { asset, capture }: AscentFiltersHelpers,
 ): Promise<void> {
-    const fixture = new JSDOM(await readFile(path.join(projectRoot,
-        'test/fixtures/peakascents/1039-default-full-columns.html'), 'utf8'));
-    const doc = fixture.window.document;
-    doc.querySelectorAll('script').forEach(script => script.remove());
-    const table = doc.querySelector<HTMLTableElement>('table.gray')!;
-    const rows = [...table.rows].filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD');
-    const cid = (row: HTMLTableRowElement): number => Number(new URL(row.cells[0].querySelector('a')!.href, origin).searchParams.get('cid'));
-    const favorite = cid(rows[0]), ignored = cid(rows.find(row => cid(row) !== favorite)!);
-    // A long, filtered-out climber makes content-dependent column shrinkage
-    // deterministic without replacing the surrounding native page structure.
-    rows.find(row => ![favorite, ignored].includes(cid(row)))!.cells[0].querySelector('a')!.textContent = 'A climber with a considerably longer family name';
-    table.insertAdjacentHTML('afterend', '<p id="filter-following">Following native content</p>');
-    const html = fixture.serialize();
-    fixture.window.close();
+    const markup = await readFile(path.join(projectRoot, 'test/fixtures/peakascents/1039-default-full-columns.html'), 'utf8');
+    const { html, favorite, ignored } = await withOfflineFixturePage(page.context(), fixturePage =>
+        fixturePage.evaluate(({ source, baseUrl }) => {
+            const doc = new DOMParser().parseFromString(source, 'text/html');
+            doc.querySelectorAll('script').forEach(script => script.remove());
+            const table = doc.querySelector<HTMLTableElement>('table.gray')!;
+            const rows = [...table.rows].filter(row => row.cells.length > 1 && row.cells[0].tagName === 'TD');
+            const cid = (row: HTMLTableRowElement): number => {
+                const href = row.cells[0].querySelector('a')!.getAttribute('href')!;
+                return Number(new URL(href, baseUrl).searchParams.get('cid'));
+            };
+            const favoriteCid = cid(rows[0]);
+            const ignoredCid = cid(rows.find(row => cid(row) !== favoriteCid)!);
+            // A long, filtered-out name exposes column shrinkage while keeping
+            // the surrounding native page structure.
+            const other = rows.find(row => ![favoriteCid, ignoredCid].includes(cid(row)))!;
+            other.cells[0].querySelector('a')!.textContent = 'A climber with a considerably longer family name';
+            table.insertAdjacentHTML('afterend', '<p id="filter-following">Following native content</p>');
+            const serializer = new XMLSerializer();
+            return {
+                html: [...doc.childNodes].map(node => node === doc.documentElement
+                    ? doc.documentElement.outerHTML : serializer.serializeToString(node)).join(''),
+                favorite: favoriteCid,
+                ignored: ignoredCid,
+            };
+        }, { source: markup, baseUrl: origin }));
     await page.route('**/*', route => new URL(route.request().url()).pathname === '/climber/PeakAscents.aspx'
         ? route.fulfill({ contentType: 'text/html', body: html })
         : route.request().resourceType() === 'image' ? route.fulfill({ contentType: 'image/svg+xml',

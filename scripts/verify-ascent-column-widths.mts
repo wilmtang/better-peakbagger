@@ -7,9 +7,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { JSDOM } from 'jsdom';
 import type { Page } from 'playwright';
-import { projectRoot, waitForCondition } from './browser-verification-fixtures.mts';
+import { projectRoot, waitForCondition, withOfflineFixturePage } from './browser-verification-fixtures.mts';
 import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
 
 export interface ColumnWidthVariant {
@@ -32,24 +31,27 @@ export async function verifyAscentColumnWidths(
     variant: ColumnWidthVariant,
     { asset, capture }: ColumnWidthHelpers,
 ): Promise<void> {
-    const fixture = new JSDOM(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8'));
-    const doc = fixture.window.document;
-    const cell = (doc.getElementById('summarydata') as HTMLTableElement).insertRow().insertCell();
-    cell.colSpan = 2;
-    cell.innerHTML = '<p align="center"><iframe title="Route map" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="900" height="300"></iframe></p>'
-        + '<p align="center"><a href="/map/BigMap.aspx?t=A">Click Here for a Full Screen Map</a></p>'
-        + '<p><small>Note: GPS Tracks may not be accurate, and may not show the best route. Do not follow this route blindly.</small></p>';
-    cell.append(doc.getElementById('gpxlinks')!);
-    doc.getElementById('page')!.insertAdjacentHTML('beforeend', '<p id="column-following">Following native content</p>');
-    const style = doc.createElement('style');
-    // Match native cell borders/padding. Do not impose a maximum table width:
-    // that would conceal the auto-layout intrinsic sizing defect under test.
-    style.textContent = 'body{margin:18px;font:13px/1.4 Tahoma,Arial,sans-serif}'
-        + 'table.gray{border-collapse:collapse;background:#eee}'
-        + 'table.gray td,table.gray th{border:2px solid #d3d3d3;padding:1px;text-align:left}';
-    doc.head.append(style);
-    const html = fixture.serialize();
-    fixture.window.close();
+    const source = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
+    const html = await withOfflineFixturePage(page.context(), fixturePage => fixturePage.evaluate(markup => {
+        const doc = new DOMParser().parseFromString(markup, 'text/html');
+        const cell = (doc.getElementById('summarydata') as HTMLTableElement).insertRow().insertCell();
+        cell.colSpan = 2;
+        cell.innerHTML = '<p align="center"><iframe title="Route map" src="/map/MasterMap.aspx?t=A&d=2296&c=900001&hj=300" width="900" height="300"></iframe></p>'
+            + '<p align="center"><a href="/map/BigMap.aspx?t=A">Click Here for a Full Screen Map</a></p>'
+            + '<p><small>Note: GPS Tracks may not be accurate, and may not show the best route. Do not follow this route blindly.</small></p>';
+        cell.append(doc.getElementById('gpxlinks')!);
+        doc.getElementById('page')!.insertAdjacentHTML('beforeend', '<p id="column-following">Following native content</p>');
+        const style = doc.createElement('style');
+        // Match native cell borders/padding. A maximum table width would
+        // conceal the auto-layout intrinsic sizing defect under test.
+        style.textContent = 'body{margin:18px;font:13px/1.4 Tahoma,Arial,sans-serif}'
+            + 'table.gray{border-collapse:collapse;background:#eee}'
+            + 'table.gray td,table.gray th{border:2px solid #d3d3d3;padding:1px;text-align:left}';
+        doc.head.append(style);
+        const serializer = new XMLSerializer();
+        return [...doc.childNodes].map(node => node === doc.documentElement
+            ? doc.documentElement.outerHTML : serializer.serializeToString(node)).join('');
+    }, source));
     const held: (() => void)[] = [];
     let mode = 'complete';
     const release = () => held.splice(0).forEach(resolve => resolve());

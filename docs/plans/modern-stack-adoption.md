@@ -73,7 +73,7 @@ jsdom retirement remain open.
 | M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime batches 2.1 through 2.5 and the root Node tooling conversion are committed. The tooling batch (`fd12835a`) passed all 4,209 tests, typecheck, lint and exact packaged Chrome/Firefox verification on Node 24.22.3. At that commit 244 files under `test/`, eight documentation/experiment scripts, one browser fixture script and one store-asset script still used JavaScript. |
-| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Gaia, onX, AllTrails and CalTopo access behavior moved to real browser input. The remaining jsdom users and dependency removal are open. |
+| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Provider access and avalanche links now use browser fixtures. All six standalone verifier imports of jsdom have been removed. Test helpers, test suites, the request-count evidence probe and dependency removal are open. |
 | M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A follow-up reduced its median CLI build time by 38–41% across two comparisons. It still took 2.7–3.0 times as long as esbuild and its archives were about 1.9% smaller. See the [candidate and evidence](experiments/wxt-evaluation.md). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
@@ -686,15 +686,19 @@ browser page. Its before-and-after results matched across 16 cases each in
 hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1280/720 × 900, with both
 themes and simulated 2× reflow. Chromium loaded the real unpacked extension.
 Firefox used the shipped bundles with stubbed settings APIs.
+The ascent columns and filters layout surfaces also prepare their native
+fixtures offline in the browser. Each passed 16 cases across those two
+hidden engines, at 390/1280 × 900 and 260/853 × 600, including light, dark
+and simulated 150% reflow. This removes the last direct verifier imports.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
    moves to plain `node:test` instead. For each ported owner, show the new
    assertion fails against a deliberately broken disposable copy, and delete
    the jsdom original in the same change.
-2. Move the remaining non-test consumers in `scripts/verify-*` and
-   `docs/plans/evidence/`, including evidence scripts that reach jsdom through
-   fixture helpers.
+2. Move the remaining evidence consumer,
+   [the Open-Meteo request audit](evidence/open-meteo-peak-request-audit.mts),
+   which reaches jsdom through a fixture helper.
 3. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
    loader's trusted-dispatch internals, and their Dependabot and
    `DEVELOPMENT_TOOLS` entries.
