@@ -696,6 +696,10 @@ The ascent columns and filters layout surfaces also prepare their native
 fixtures offline in the browser. Each passed 16 cases across those two
 hidden engines, at 390/1280 × 900 and 260/853 × 600, including light, dark
 and simulated 150% reflow. This removes the last direct verifier imports.
+All 28 terrain cache cases run in Node with the existing in-memory storage,
+native fetch primitives, and controlled transports. The cases produced the
+same results with and without the unused jsdom windows. A disposable change
+to the tile coordinate bound failed the preserved out-of-range assertion.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
