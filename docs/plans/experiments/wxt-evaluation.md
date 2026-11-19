@@ -2,10 +2,10 @@
 
 Evaluated November 18, 2026 against `fd12835a` on macOS arm64, with Node
 24.22.3, WXT 0.21.5 and Vite 8.3.8. Keep esbuild as the production publisher.
-The candidate reduced the archive sizes by about 1.9%, while the median
-release build took 3.7 times as long. Adopting it would still require our
-ordered entry inventory, vendor patches, manifest and packaging logic,
-transactional watcher, and browser launchers.
+The original candidate reduced the archive sizes by about 1.9%, while its
+median serial release build took 3.7 times as long. Adopting it would still
+require our ordered entry inventory, vendor patches, manifest and packaging
+logic, transactional watcher, and browser launchers.
 
 ## Fixed and verified
 
@@ -46,6 +46,22 @@ WXT timing starts after loading the toolchain, while the esbuild wall time
 includes Node startup. These are local build timings. Browser startup time
 was outside the measurement.
 
+### Bounded build concurrency
+
+WXT 0.21.5 starts a separate Vite build for every classic script. Our adapter
+also builds each module frame separately, for 67 Vite builds in all. The
+serial group loop dominated the candidate profile. The adapter now uses
+up to six concurrent jobs for the separate outputs, with WXT consuming
+their results in its usual order. A failed build stops the queue and waits
+for active jobs before the disposable tree can be cleaned up. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
+
+Five interleaved release runs on macOS arm64 with Node 24.22.3 gave
+median CLI wall times of 0.43 s for esbuild, 2.13 s for serial WXT and
+1.45 s for concurrent WXT. These timings include Node startup for all
+three commands. The candidate's internal timer fell from 1.71 s to 1.05 s.
+Serial and concurrent WXT output matched byte-for-byte across all 145
+release files and 212 development files.
+
 ## Intentionally not changed
 
 - Production package, release and development commands keep their esbuild
@@ -80,5 +96,7 @@ separate directory with `--artifacts-dir`, and derive the Firefox archive
 with the [existing package command](../../../scripts/build-firefox-package.mts).
 Then run `npm run verify -- packages CHROME.zip FIREFOX.zip` with the two
 archive paths. The `development` selection emits an unminified candidate
-with source maps. Remove the printed workspace and the disposable toolchain
-and archive directories after verification.
+with source maps. Set `BPB_WXT_JOBS=1` for WXT's serial build loop. Values
+from two through six set the concurrent job count explicitly. Remove the
+printed workspace and the disposable toolchain and archive directories
+after verification.

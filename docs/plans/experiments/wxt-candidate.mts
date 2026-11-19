@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
-import { tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Script } from 'node:vm';
 import type { Metafile } from 'esbuild';
 import { compile, compileModule } from 'svelte/compiler';
@@ -24,6 +24,7 @@ import { expectedReleaseFiles } from '../../../scripts/verify-release-archive.mt
 
 const WXT_VERSION = '0.21.5';
 const VITE_VERSION = '8.3.8';
+const MAX_BUILD_JOBS = 6;
 const usage = 'Usage: node docs/plans/experiments/wxt-candidate.mts TOOLCHAIN_DIRECTORY release|development|rollback';
 const sourceManifest = JSON.parse(await readFile(path.join(root, 'manifest.json'), 'utf8')) as Record<string, unknown>;
 
@@ -39,6 +40,9 @@ interface ViteBuildStep {
     };
 }
 
+type WxtEntrypoint = { name: string };
+type WxtGroup = WxtEntrypoint | WxtEntrypoint[];
+
 interface WxtToolchain {
     version: string;
     build(config: {
@@ -51,11 +55,47 @@ interface WxtToolchain {
         imports: { autoImport: false; dirs: [] };
         vite: () => object;
         hooks: {
+            'entrypoints:grouped'?: (
+                wxt: { builder: { build(group: WxtGroup): Promise<unknown> } }, groups: WxtGroup[],
+            ) => void;
             'vite:build:extendConfig': (
-                entries: readonly { name: string }[], config: ViteBuildStep,
+                entries: readonly WxtEntrypoint[], config: ViteBuildStep,
             ) => void;
         };
     }): Promise<unknown>;
+}
+
+// WXT consumes group results in discovery order. Each candidate group writes
+// its own bundle and source map into the disposable tree. Wait for all active
+// writes before returning a result so a failure cannot race tree cleanup.
+export function scheduleBuildGroups<Group, Output>(
+    groups: readonly Group[],
+    jobs: number,
+    build: (group: Group) => Promise<Output>,
+): (group: Group) => Promise<Output> {
+    const results = new Map<Group, PromiseSettledResult<Output>>();
+    let next = 0;
+    let failed = false;
+    let completion: Promise<void[]> | undefined;
+    const work = async () => {
+        while (!failed && next < groups.length) {
+            const group = groups[next++];
+            try {
+                results.set(group, { status: 'fulfilled', value: await build(group) });
+            } catch (reason) {
+                failed = true;
+                results.set(group, { status: 'rejected', reason });
+            }
+        }
+    };
+    return async group => {
+        completion ??= Promise.all(Array.from({ length: Math.min(groups.length, jobs) }, work));
+        await completion;
+        const result = results.get(group);
+        assert.ok(result, 'WXT requested a group outside the completed build sequence');
+        if (result.status === 'rejected') throw result.reason;
+        return result.value;
+    };
 }
 
 function runtimePlugin(entry: BundleEntry, inputs: Metafile['inputs'], patched: Set<string>) {
@@ -127,8 +167,10 @@ async function buildCandidate(
     wxt: WxtToolchain,
     toolchainDirectory: string,
     workspace: string,
-    { minify, fault = false, revision = 0 }: { minify: boolean; fault?: boolean; revision?: number },
+    { minify, jobs, fault = false, revision = 0 }: { minify: boolean; jobs: number; fault?: boolean; revision?: number },
 ) {
+    const bundlePaths = new Set(ENTRIES.map(({ out }) => path.posix.normalize(out).toLowerCase()));
+    assert.equal(bundlePaths.size, ENTRIES.length, 'Candidate entries must have distinct output paths');
     const generation = await mkdtemp(path.join(workspace, 'generation-'));
     const entryDirectory = path.join(generation, 'entrypoints');
     const runtimeDirectory = path.join(generation, 'runtime');
@@ -169,6 +211,11 @@ async function buildCandidate(
             build: { target: ['chrome128', 'firefox152'], sourcemap: !minify, minify },
         }),
         hooks: {
+            ...(jobs > 1 ? {
+                'entrypoints:grouped': ({ builder }, groups) => {
+                    builder.build = scheduleBuildGroups(groups, jobs, builder.build.bind(builder));
+                },
+            } : {}),
             'vite:build:extendConfig': ([resolved], config) => {
                 const definition = definitions.get(resolved.name);
                 assert.ok(definition, `Unexpected WXT entrypoint ${resolved.name}`);
@@ -212,7 +259,7 @@ async function fingerprint(directory: string) {
     return hash.digest('hex');
 }
 
-async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: string) {
+async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: string, jobs: number) {
     const live = path.join(workspace, 'chromium');
     const firefox = await createFirefoxSource({ temporaryRoot: workspace });
     const publish = async (candidateDir: string, sequence: number, renameTree?: typeof rename) => {
@@ -229,9 +276,9 @@ async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: s
     };
     const current = () => Promise.all([fingerprint(live), fingerprint(firefox.sourceDir)]);
 
-    await publish(await buildCandidate(wxt, toolchain, workspace, { minify: false, revision: 1 }), 1);
+    await publish(await buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, revision: 1 }), 1);
     const first = await current();
-    await assert.rejects(buildCandidate(wxt, toolchain, workspace, { minify: false, fault: true }), error => {
+    await assert.rejects(buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, fault: true }), error => {
         assert.ok(error instanceof Error && error.cause instanceof Error);
         assert.match(error.message, /Failed to build bundle_0/);
         assert.match(error.cause.message, /Unexpected token/);
@@ -239,7 +286,7 @@ async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: s
         return true;
     });
     assert.deepEqual(await current(), first, 'A failed build changed a published candidate');
-    const next = await buildCandidate(wxt, toolchain, workspace, { minify: false, revision: 2 });
+    const next = await buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, revision: 2 });
     await assert.rejects(publish(next, 2, async (from, to) => {
         if (from === next && to === live) throw new Error('Injected candidate publication failure');
         await rename(from, to);
@@ -253,6 +300,9 @@ async function main() {
     if (!toolchainPath || extra !== undefined || !['release', 'development', 'rollback'].includes(mode)) {
         throw new Error(usage);
     }
+    const jobs = Number(process.env.BPB_WXT_JOBS ?? Math.min(MAX_BUILD_JOBS, availableParallelism()));
+    assert.ok(Number.isInteger(jobs) && jobs >= 1 && jobs <= MAX_BUILD_JOBS,
+        `BPB_WXT_JOBS must be an integer from 1 to ${MAX_BUILD_JOBS}`);
     const toolchain = path.resolve(toolchainPath);
     const requireTool = createRequire(path.join(toolchain, 'package.json'));
     const wxtEntry = requireTool.resolve('wxt');
@@ -267,10 +317,10 @@ async function main() {
     try {
         process.chdir(workspace);
         if (mode === 'rollback') {
-            await verifyRollback(wxt, toolchain, workspace);
+            await verifyRollback(wxt, toolchain, workspace, jobs);
             console.log('Verified two complete generations and preserved both reload tokens on compile and Chromium directory-swap failures.');
         } else {
-            const candidate = await buildCandidate(wxt, toolchain, workspace, { minify: mode === 'release' });
+            const candidate = await buildCandidate(wxt, toolchain, workspace, { minify: mode === 'release', jobs });
             keep = true;
             console.log(JSON.stringify({ candidate, workspace, bundles: ENTRIES.length, elapsedMs: Math.round(performance.now() - start) }));
         }
@@ -280,4 +330,4 @@ async function main() {
     }
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
