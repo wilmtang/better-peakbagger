@@ -735,6 +735,11 @@ The peak elevation unit probe now uses native HTML parsing. Both hidden
 browsers at 1000 × 760 preserved all twelve valid and inconclusive heading
 inputs, and both rejected a disposable version that chose the second unit.
 The 124 Node weather and snow consumer cases also passed.
+All 14 page settings client cases now use Node's native message events and
+ports with the existing deterministic timers. They passed with jsdom
+resolution blocked. Removing the stale-revision check in a disposable module
+allowed an older acknowledgement to replace the newer settings, as detected
+by the preserved ordering case. The 80 settings owner cases passed.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
