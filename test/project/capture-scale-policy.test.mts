@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateCaptureCpuSamples } from '../helpers/capture-scale-policy.mjs';
+import { evaluateCaptureCpuSamples } from '../helpers/capture-scale-policy.mts';
 
 test('capture CPU policy tolerates one moderate scheduling outlier, preserving all measurements', () => {
     const samples = [10_000, 18_143, 10_100];

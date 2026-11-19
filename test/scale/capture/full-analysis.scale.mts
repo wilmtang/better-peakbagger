@@ -9,12 +9,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 
-import { captureCore as Core } from '../../../src/capture/capture-core.ts';
+import { captureCore as Core, type DraftFields, type TrackSegment } from '../../../src/capture/capture-core.ts';
 import { captureResourceLimits as Limits } from '../../../src/capture/capture-resource-limits.ts';
-import { CAPTURE_CPU_SAMPLE_COUNT, evaluateCaptureCpuSamples } from '../../helpers/capture-scale-policy.mjs';
+import { CAPTURE_CPU_SAMPLE_COUNT, evaluateCaptureCpuSamples } from '../../helpers/capture-scale-policy.mts';
 
 const START_TIME = Date.UTC(2026, 6, 1, 14);
-const route = Array.from({ length: Limits.MAX_GPX_TRACK_POINTS }, (_, index) => {
+const route: TrackSegment = Array.from({ length: Limits.MAX_GPX_TRACK_POINTS }, (_, index) => {
     const fraction = index / (Limits.MAX_GPX_TRACK_POINTS - 1);
     // Increase recording density without changing the original route's
     // geometry or elevation oscillations and its reduction-error expectation.
@@ -50,12 +50,12 @@ const cooperativeScheduler = () => {
 };
 
 test('production-scale full analysis remains exact, bounded, and cooperative', { timeout: 120_000 }, async t => {
-    const samples = [];
+    const samples: number[] = [];
     for (let sample = 1; sample <= CAPTURE_CPU_SAMPLE_COUNT; sample++) {
         const scheduler = cooperativeScheduler();
         const startedAt = performance.now();
-        const phaseCpu = [];
-        const measure = async operation => {
+        const phaseCpu: number[] = [];
+        const measure = async <T,>(operation: () => Promise<T>): Promise<T> => {
             const startedCpu = process.cpuUsage();
             const result = await operation();
             const cpu = process.cpuUsage(startedCpu);
@@ -77,14 +77,14 @@ test('production-scale full analysis remains exact, bounded, and cooperative', {
         ));
         const retained = new Set(cooperativeReduced.segments[0]);
         assert.ok([...retained].every(point => route.includes(point)));
-        assert.ok(retained.has(route[0]) && retained.has(route.at(-1)));
+        assert.ok(retained.has(route[0]) && retained.has(route[route.length - 1]));
         for (const { encounter } of cooperativeMatches) {
             assert.ok(retained.has(route[encounter.edgeIndex]) && retained.has(route[encounter.edgeIndex + 1]));
         }
         assert.ok(Number.isFinite(cooperativeReduced.maxDeviationM) && cooperativeReduced.maxDeviationM < 2);
         assert.equal(cooperativeReduced.retainedPointCount, Core.MAX_UPLOAD_POINTS);
 
-        const draftFields = [];
+        const draftFields: DraftFields[] = [];
         await measure(async () => {
             for (const match of cooperativeMatches.slice(0, 8)) {
                 draftFields.push(Core.calculateDraftFields([route], match, { utcOffsetMinutes: -420 }));
