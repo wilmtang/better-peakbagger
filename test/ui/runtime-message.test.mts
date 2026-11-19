@@ -8,7 +8,10 @@ import { runtimeMessage as RuntimeMessage } from '../../src/ui/runtime-message.t
 test('runtime messaging shares one promise contract across extension surfaces', async () => {
     const extensionApi = {
         runtime: {
-            async sendMessage(message) { return { echoed: message.type }; }
+            async sendMessage(message: unknown) {
+                assert.ok(message && typeof message === 'object' && 'type' in message);
+                return { echoed: message.type };
+            }
         }
     };
     const send = RuntimeMessage.bind(extensionApi);
