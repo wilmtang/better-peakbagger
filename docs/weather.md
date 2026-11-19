@@ -565,6 +565,10 @@ MAIN-world GPX/Sun ownership and worker-owned mutations remain distinct.
 | Request-count and axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts` for requests and `node docs/plans/evidence/card-reuse-audit.mts` for browser-rendered axis labels |
 | Documentation integrity | `node --test test/project/documentation.test.mts`; `git diff --check` |
 
+The Open-Meteo audit needs a development build with source maps. It runs the
+three hashed bundles in hidden Chromium over routed HTTPS fixtures and stubs
+the provider responses, settings, clock and intersections.
+
 Follow [development](development.md) and AGENTS for hidden HTTPS Peakbagger fixtures,
 Chrome launch guards, real browser zoom, renderer checks when terrain is involved,
 and exact owned-process/profile teardown. Do not launch visible test windows over

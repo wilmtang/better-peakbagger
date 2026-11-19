@@ -72,8 +72,8 @@ jsdom retirement remain open.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. WXT now uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | Runtime and root Node tooling are converted. At `8023fbf8`, 223 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
-| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `8023fbf8`, 91 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe and dependency removal also remain open. |
+| M7 | In progress | Runtime and root Node tooling are converted. At `c9bc4a10`, 220 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
+| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `c9bc4a10`, 91 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe now uses the browser tier. |
 | M8 | Done locally | WXT/Vite builds development and release generations (`133384ab`). Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-wxtvite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
@@ -702,6 +702,13 @@ The stable text case preserves all eight assertions in the real DOM tier.
 Hidden Chromium 158.0.8127.18 and Firefox 159.0 passed at 1000 × 760. Removing
 the equality guard in a disposable module produced 120 unwanted mutation
 records in both engines, where the normal module produced zero.
+The [Open-Meteo request audit](evidence/open-meteo-peak-request-audit.mts) ran
+the exact built bundles in hidden Chromium 158.0.8127.18 at 1000 × 760. All
+23 records and the default request URL/cache tuples matched the current jsdom
+baseline after bypassing its obsolete standalone esbuild step. Source
+fingerprints now use embedded development bundle maps. Suppressing the weather
+intersection callback in a disposable bundle failed the `Only weather
+intersects` count assertion.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
@@ -709,10 +716,7 @@ records in both engines, where the normal module produced zero.
    moves to plain `node:test` instead. For each ported owner, show the new
    assertion fails against a deliberately broken disposable copy, and delete
    the jsdom original in the same change.
-2. Move the remaining evidence consumer,
-   [the Open-Meteo request audit](evidence/open-meteo-peak-request-audit.mts),
-   which reaches jsdom through a fixture helper.
-3. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
+2. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
    loader's trusted-dispatch internals, and their Dependabot and
    `DEVELOPMENT_TOOLS` entries.
 
