@@ -2,9 +2,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
-import { canonicalInstagramUrl, instagramPasteUrl, instagramBlocks, instagramParagraphUrl } from '../../src/reports/instagram-url.ts';
+import {
+    canonicalInstagramUrl, instagramPasteUrl, instagramBlocks, instagramParagraphUrl, type ParagraphElementLike,
+} from '../../src/reports/instagram-url.ts';
 const URL='https://www.instagram.com/p/fA9uwTtkSN/';
+
+function linkParagraph(href: string, label: string): ParagraphElementLike {
+    return {
+        tagName: 'P',
+        childNodes: [{
+            nodeType: 1, nodeName: 'A', nodeValue: null, textContent: label,
+            childNodes: [{ nodeType: 3, nodeName: '#text', nodeValue: label, textContent: label, childNodes: [] }],
+            getAttribute(name) { return name === 'href' ? href : null; },
+        }],
+    };
+}
 test('Instagram identity accepts only canonical HTTPS post/reel paths and strips tracking',()=>{
     assert.equal(canonicalInstagramUrl(' https://instagram.com/p/fA9uwTtkSN/?utm_source=ig_web_copy_link#tracking '),URL);
     assert.equal(canonicalInstagramUrl('https://www.instagram.com:443/reel/a_B-123'),'https://www.instagram.com/reel/a_B-123/');
@@ -36,15 +48,11 @@ test('only standalone post lines become blocks; inline and labelled links remain
 test('standalone saved-post links recognize Peakbagger hostname labels through the shared identity rule',()=>{
     for(const label of ['instagram.com','www.instagram.com','WWW.Instagram.Com']){
         const href=URL+'?igshid=fixture';
-        const dom=new JSDOM(`<p><a href="${href}">${label}</a></p>`);
-        try{assert.equal(instagramParagraphUrl(dom.window.document.querySelector('p')),URL,label);}
-        finally{dom.window.close();}
+        assert.equal(instagramParagraphUrl(linkParagraph(href, label)), URL, label);
         assert.deepEqual(instagramBlocks([{type:'p',kids:[{t:'a',href,kids:[{t:'text',text:label}]}]}]),[{type:'instagram',url:URL}],label);
     }
     for(const [href,label]of [[URL,'Instagram post'],[URL,'my photo'],['https://evil.test/p/x','www.instagram.com'],
         [URL,'www.instagram.com.evil.test'],[URL,'https://www.instagram.com/p/other/']]){
-        const dom=new JSDOM(`<p><a href="${href}">${label}</a></p>`);
-        try{assert.equal(instagramParagraphUrl(dom.window.document.querySelector('p')),null,`${href}/${label}`);}
-        finally{dom.window.close();}
+        assert.equal(instagramParagraphUrl(linkParagraph(href, label)), null, `${href}/${label}`);
     }
 });

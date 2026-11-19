@@ -1215,7 +1215,7 @@ consent. No link/image toolbar tool or Instagram API key is required.
 
 The shared URL/label/standalone-line rules live in
 [instagram-url.ts](../src/reports/instagram-url.ts), with regression examples in
-[instagram-url.test.mjs](../test/reports/instagram-url.test.mjs) and the native
+[instagram-url.test.mts](../test/reports/instagram-url.test.mts) and the native
 reader case in [report-security.test.mts](../test/reports/report-security.test.mts).
 
 ### Loading and privacy
