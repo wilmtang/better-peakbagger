@@ -740,6 +740,10 @@ ports with the existing deterministic timers. They passed with jsdom
 resolution blocked. Removing the stale-revision check in a disposable module
 allowed an older acknowledgement to replace the newer settings, as detected
 by the preserved ordering case. The 80 settings owner cases passed.
+The five ascent settings bridge cases now run the shipped bridge bundle
+against the real settings store in hidden Chromium 158.0.8127.18 and
+Firefox 159.0 at 1000 × 760. A disposable bundle that allowed page-world
+theme writes failed the allowlist case in Chromium.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
