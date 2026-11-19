@@ -26,6 +26,7 @@ independent of the existing targets.
 ## Build and local development
 
 - [build-config.mts](build-config.mts)
+- [build-publication.mts](build-publication.mts) — Publishes complete build trees and restores the previous generation when a swap or reload signal fails.
 - [build.mts](build.mts)
 - [generate-map-overlay-regions.mts](generate-map-overlay-regions.mts)
 - [install-git-hooks.mts](install-git-hooks.mts)

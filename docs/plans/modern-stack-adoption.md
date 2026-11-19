@@ -49,7 +49,7 @@ of effort.
 | M6 — Ship one bounded Svelte island | Large; UI integration plus release/browser evidence | M1–M5 and dependency-audit gate | The existing Units settings panel works through checked TS/Svelte beside unchanged legacy sections. |
 | M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M4.5 before DOM test batches; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
 | M7.5 — Retire jsdom | Large; a test-environment migration, owner by owner | M4.5's browser tier; independent of finishing M7 | No test or script depends on jsdom; the package, its types and its checking project are removed. |
-| M8 — Evaluate and optionally cut over WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | A separately built parity candidate, then a dedicated cutover only if all contracts survive. |
+| M8 — Cut over production to WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | One compiler for development and release with manifest, runtime, reload and package parity. |
 
 M4.5 was inserted after M0–M3 shipped, and M7.5 was split from M7 on
 November 13, so other milestone numbers stay stable in existing commits and
@@ -57,7 +57,7 @@ evidence.
 
 ## Current progress
 
-**Open: M7, M7.5 and M8 verification.** The Units settings panel and Summit Cloud controls ship
+**M7 and M7.5 remain open.** The Units settings panel and Summit Cloud controls ship
 through checked TypeScript and Svelte. The production runtime and root Node
 tooling have moved to TypeScript. Test and evidence tooling conversion and
 jsdom retirement remain open.
@@ -70,11 +70,11 @@ jsdom retirement remain open.
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.ts` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
-| M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
+| M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. WXT now uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | Runtime and root Node tooling are converted. At `dc985cc9`, 231 authored JavaScript files remain, including 222 test files and helpers. The repository-wide policy and removal of `allowJs` are exit tasks. |
-| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Provider access and avalanche links now use browser fixtures. All six standalone verifier imports of jsdom have been removed. Test helpers, test suites, the request-count evidence probe and dependency removal are open. |
-| M8 | Production cutover in verification | WXT/Vite builds every development and release generation. The manifest, entry inventory, output filenames and browser-specific packaging remain authoritative in their existing owners. Complete the reload, package, browser-floor and upgrade gates against the production path. See the [evaluation](experiments/wxt-evaluation.md). |
+| M7 | In progress | Runtime and root Node tooling are converted. At `8023fbf8`, 223 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
+| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `8023fbf8`, 91 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe and dependency removal also remain open. |
+| M8 | Done locally | WXT/Vite builds development and release generations (`133384ab`). Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-wxtvite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 
@@ -108,9 +108,9 @@ Limits of what is proven:
   Node `v26.13.1` at `0aa1c6ef` (November 18, 2026), and `4,213/4,213` on
   Node `24.22.3` at `3a3b61a6`.
 - **Resolved guard gap:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
-  now inspects actual esbuild `metafile.inputs` across all 67 `ENTRIES`,
-  covering compiled Svelte runtime imports (`svelte`, `esm-env`, `clsx`) and
-  excluding erased type-only imports (`83541e1f`, `c81c7cee`).
+  inspects actual production Vite/Rolldown module inputs for all 67 `ENTRIES`.
+  It includes compiled Svelte runtime imports (`svelte`, `esm-env`, `clsx`)
+  and excludes erased type-only imports.
 - The **minified esbuild archives** at `fd12835a`
   passed real packaged Chromium 158.0.8127.18 and Firefox 160.0.1 checks at
   1000 × 760, including BFCache restore, worker and bridge checks. The four
@@ -119,11 +119,9 @@ Limits of what is proven:
   30.0.0 exists for the locked jsdom 30.1.3; `esbuild-svelte` 0.9.5 admits
   esbuild ≥0.17 and Svelte ≥4.2.1 <6; `svelte-check` 4.7.8 admits TypeScript 5
   and 6; `eslint-plugin-svelte` 3.24.1 admits ESLint 8.57.1 through 10.
-- **Not established:** Svelte at the Chrome 128 (`chrome-floor`) and Firefox
-  152.0 (`firefox-floor`) Linux CI floors, native focus/window placement, and
-  full WXT cutover parity. The manifest also declares a Firefox for Android
-  142.0 floor. Svelte there rests on the manual device step in
-  [the release guide](../releasing.md).
+- The declared desktop floors passed on macOS. Hosted Linux jobs, native
+  focus and window placement, the Firefox Android 142.0 floor and signed store
+  delivery require their respective [release checks](../releasing.md).
 
 ## Owner decisions
 
@@ -724,7 +722,7 @@ with a reason. Cost to accept before starting: every DOM test then needs a
 browser launch, which the Codex Seatbelt sandbox forbids for Chrome, so those
 tests can no longer run there, and `npm test` covers pure logic only.
 
-### M8 — Evaluate and optionally cut over WXT/Vite
+### M8 — Cut over production to WXT/Vite
 
 The owner selected WXT/Vite for production after reviewing the
 [full candidate evaluation](experiments/wxt-evaluation.md). The production
@@ -735,22 +733,49 @@ build state and environment loading stay inside that generation. The existing
 publisher, reload signal and browser-specific packaging still own their
 respective contracts. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
 
-The production compiler passed the Node suite, the 60-case DOM browser tier,
-and real unpacked and packaged extension verification in hidden Chromium
-158.0.8127.18 and Firefox 160.0.1 on macOS. Both browsers restored the fixture
-from BFCache. The minified Chrome and Firefox archives each contained 145
-entries. Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium
-with 448 × 448 and 798 × 448 render canvases, and in hidden Firefox 159.0 at a
-1000 × 760 viewport.
+#### Verified locally
 
-Hidden managed Chrome 158.0.8127.18 (1000 × 560) and Firefox 160.0.1
-(1000 × 675) loaded fresh HTTPS fixture documents after an edit, a syntax
-error, and its repair. The injected revision and external generation marker
-advanced together on both successful builds, and kept their prior values
-during the error. Both processes and their profiles shut down cleanly.
-Filesystem tests forced a Firefox swap failure and a signal failure and
-verified rollback of both trees. Declared browser floors and an upgrade from
-an esbuild package still need dedicated checks.
+- The production compiler passed 4,213 Node tests, 14 scale tests, strict
+  typecheck, lint, the full branch TypeScript policy check, the dependency
+  audit, and the 60-case DOM browser tier. Hidden Chromium 158.0.8127.18 and
+  Firefox 160.0.1 at 1000 × 760
+  passed the real unpacked and exact packaged verifiers on macOS, including
+  BFCache restoration. Chrome for Testing 128.0.6613.137 and Firefox 152.0
+  passed the same package verifier at the declared browser floors. Each
+  archive contained 145 entries. The Chrome ZIP was 3,632,959 bytes and the
+  Firefox ZIP was 3,632,901 bytes.
+- Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium with
+  448 × 448 and 798 × 448 render canvases, and in hidden Firefox 159.0 at a
+  1000 × 760 viewport.
+- Hidden managed Chrome 158.0.8127.18 (1000 × 560) and Firefox 160.0.1
+  (1000 × 675) loaded fresh HTTPS fixture documents after an edit, a syntax
+  error, and its repair. The injected revision and external generation marker
+  advanced together on both successful builds and kept their prior values
+  during the error. Both processes and their profiles shut down cleanly.
+  Filesystem tests forced Firefox swap and signal failures and verified
+  rollback of both trees.
+- Hidden Chromium 158.0.8127.18 and Firefox 160.0.1 at 1000 × 760 retained
+  their extension identities and the dark theme and metric units settings
+  when upgrading locally from esbuild 4.0.2 to the exact WXT 4.1.0 payloads.
+  The worker migrated the legacy 287 MB terrain cache limit from sync to
+  device storage. The Chrome rehearsal cleared the previous `Service Worker`
+  directory in its disposable profile before reopening the same unpacked path.
+  Extension settings storage was retained. Firefox migrated during same-ID
+  temporary add-on replacement.
+- Reversing `4286ede2` and `133384ab` in a disposable checkout reproduced the
+  last esbuild tree and Git index at `d0eea8b2`. A clean pinned install built
+  all 67 bundles on both sides. Five interleaved release builds on macOS arm64
+  with Node 24.22.3 took a median 672 ms with esbuild and 2,568 ms with WXT.
+  Wall time includes process startup, compilation, assets and notice writing.
+  The owner accepted the roughly 1.9-second increase. The production adapter
+  uses WXT's public scheduler. With the same ZIP Deflate settings, the release
+  trees compressed to 3,702,067 bytes for esbuild and 3,631,327 bytes for WXT.
+
+Hosted Actions, Firefox Android, and a signed store-delivered update still
+require their respective release environments. The local update used unpacked
+Chrome and a temporary Firefox add-on in disposable profiles.
+
+#### Original cutover plan
 
 This is feasible to investigate alongside legacy sources, but it is not just a
 bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
@@ -974,7 +999,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 
 | Report layer | Incremental decision | Later conversion gate |
 | --- | --- | --- |
-| WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof in M8. |
+| WXT / Vite | Compile all development and release bundles through the public build API. | M8 records manifest, output, reload, package and local upgrade checks. |
 | Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.ts` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
 | `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
 | WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |
