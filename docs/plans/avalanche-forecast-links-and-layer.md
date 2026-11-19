@@ -154,7 +154,8 @@ pure, locally maintained source registry. Implemented files:
 ```text
 src/avalanche/avalanche-links.ts       provider registry and safe URL builders
 src/avalanche/avalanche-location.ts    strict Nation parsing, if needed
-test/avalanche/avalanche-links.test.mjs
+test/avalanche/avalanche-links.test.mts
+test/dom/avalanche/avalanche-links.dom.mts
 ```
 
 Keep the coordinate/Links anchoring invariants. Parse only the peak-details

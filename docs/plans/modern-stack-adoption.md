@@ -655,6 +655,13 @@ the shipped bundles in the browser tier. Hidden Chromium 158.0.8127.18 and
 Firefox 159.0 at 1000 × 760 rendered wind labels `0, 2, 4`. A disposable
 bundle with the original narrow scale reproduced `0, 1, 1` in both engines.
 
+The [avalanche planning links suite](../../test/dom/avalanche/avalanche-links.dom.mts)
+runs the shipped peak-links bundle on HTTPS fixtures. All 32 cases passed
+across hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760. In both
+engines a disposable bundle without the idempotence guard created a duplicate
+panel and failed the new assertion. Provider registry and coordinate math
+stay in the checked [Node suite](../../test/avalanche/avalanche-links.test.mts).
+
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
    moves to plain `node:test` instead. For each ported owner, show the new
