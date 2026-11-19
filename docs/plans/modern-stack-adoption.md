@@ -57,7 +57,10 @@ evidence.
 
 ## Current progress
 
-**Next: M7.** M0–M6 are complete: the Units settings panel (`options/UnitSettingsPanel.svelte` mounted by `options/unit-settings.ts` through `src/ui/svelte-island.ts`) ships through checked TS/Svelte beside unchanged legacy UI, and M7's remaining batches are unblocked.
+**Open: M7 and M7.5.** The Units settings panel and Summit Cloud controls ship
+through checked TypeScript and Svelte. The production runtime and root Node
+tooling have moved to TypeScript. Test and evidence tooling conversion and
+jsdom retirement remain open.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -69,9 +72,9 @@ evidence.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.ts`, is still JavaScript. |
-| M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
-| M8 | Not started | Depends on M6. |
+| M7 | In progress | Runtime batches 2.1 through 2.5 and the root Node tooling conversion are committed. The tooling batch (`fd12835a`) passed all 4,209 tests, typecheck, lint and exact packaged Chrome/Firefox verification on Node 24.22.3. At that commit 244 files under `test/`, eight documentation/experiment scripts, one browser fixture script and one store-asset script still used JavaScript. |
+| M7.5 | Not started | At `0444ff28`, 118 test files constructed jsdom 297 times. Six `scripts/verify-*` files and two `docs/plans/evidence/` scripts also imported it. Depends on M4.5's browser tier. |
+| M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A 1.9% smaller archive and 3.7× release build time did not justify the additional tooling. See the [candidate and evidence](experiments/wxt-evaluation.md). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 
@@ -656,6 +659,11 @@ browser launch, which the Codex Seatbelt sandbox forbids for Chrome, so those
 tests can no longer run there, and `npm test` covers pure logic only.
 
 ### M8 — Evaluate and optionally cut over WXT/Vite
+
+Outcome on November 18, 2026: retain the TypeScript, Svelte and esbuild
+production build. The [evaluation ledger](experiments/wxt-evaluation.md)
+records the passing full candidate, the Chromium registration fix, the
+measured trade-off and the remaining cutover proof.
 
 This is feasible to investigate alongside legacy sources, but it is not just a
 bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)

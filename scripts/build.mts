@@ -88,7 +88,7 @@ export interface BuildLayout {
     vendorCopy?: readonly (readonly string[])[];
 }
 
-async function copyAssets(outputDir: string, {
+export async function copyAssets(outputDir: string, {
     projectRoot = root,
     copyFiles = COPY_FILES,
     copyDirs = COPY_DIRS,
