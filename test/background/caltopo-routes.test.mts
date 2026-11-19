@@ -3,14 +3,10 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
+import { createMapImportHarness, savedAscentSender as sender, type MapImportHarnessOptions } from '../helpers/map-import-routes-harness.mts';
 import { createCaltopoRoutes } from '../../src/background/caltopo-routes.ts';
 import { CALTOPO_IMPORT_URL, CALTOPO_PERMISSION } from '../../src/caltopo/caltopo-import.ts';
 
-const sender = {
-    tab: { id: 7, windowId: 9 },
-    url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=42',
-};
 const message = {
     type: 'CALTOPO_IMPORT_PREPARE',
     sourceUrl: sender.url,
@@ -20,7 +16,7 @@ const message = {
     grantToken: 'grant',
 };
 
-const harness = options => createMapImportHarness({
+const harness = (options?: MapImportHarnessOptions) => createMapImportHarness({
     createRoutes: createCaltopoRoutes,
     permission: CALTOPO_PERMISSION,
     action: 'caltopo-import',
@@ -42,6 +38,7 @@ test('CalTopo permission fallback uses an extension-owned setup page', async () 
     h.ext.permissions.request = async () => { throw new Error('user input required'); };
     h.ext.permissions.contains = async () => false;
     const result = await h.routes.handlers.CALTOPO_PERMISSION_REQUEST({}, sender);
+    assert.ok('code' in result);
     assert.equal(result.code, 'permission-setup-opened');
     assert.deepEqual(h.created, [{
         url: 'moz-extension://test/caltopo/access.html', active: true, windowId: 9,
@@ -51,6 +48,7 @@ test('CalTopo permission fallback uses an extension-owned setup page', async () 
 test('CalTopo login redirect focuses the tab without supplying GPX', async () => {
     const h = harness({ redirectUrl: 'https://caltopo.com/login' });
     const result = await h.routes.handlers.CALTOPO_IMPORT_PREPARE(message, sender);
+    assert.ok('supplied' in result);
     assert.equal(result.code, 'sign-in-required');
     assert.equal(result.supplied, false);
     assert.equal(result.targetTabId, 20);
@@ -63,6 +61,7 @@ test('CalTopo route rejects mismatched saved-ascent payloads before using author
         ...message,
         filename: 'peakbagger-43.gpx',
     }, sender);
+    assert.ok('code' in result);
     assert.equal(result.code, 'forbidden');
     assert.equal(h.consumed.length, 0);
     assert.equal(h.created.length, 0);

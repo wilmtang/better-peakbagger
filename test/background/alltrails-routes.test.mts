@@ -3,14 +3,10 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createMapImportHarness } from '../helpers/map-import-routes-harness.mjs';
+import { createMapImportHarness, savedAscentSender as sender, type MapImportHarnessOptions } from '../helpers/map-import-routes-harness.mts';
 import { createAlltrailsRoutes } from '../../src/background/alltrails-routes.ts';
 import { ALLTRAILS_IMPORT_URL, ALLTRAILS_PERMISSION } from '../../src/alltrails/alltrails-import.ts';
 
-const sender = {
-    tab: { id: 7, windowId: 9 },
-    url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=42',
-};
 const message = {
     type: 'ALLTRAILS_IMPORT_PREPARE',
     sourceUrl: sender.url,
@@ -20,7 +16,7 @@ const message = {
     grantToken: 'grant',
 };
 
-const harness = options => createMapImportHarness({
+const harness = (options?: MapImportHarnessOptions) => createMapImportHarness({
     createRoutes: createAlltrailsRoutes,
     permission: ALLTRAILS_PERMISSION,
     action: 'alltrails-import',
@@ -42,6 +38,7 @@ test('AllTrails permission fallback uses an extension-owned setup page', async (
     h.ext.permissions.request = async () => { throw new Error('user input required'); };
     h.ext.permissions.contains = async () => false;
     const result = await h.routes.handlers.ALLTRAILS_PERMISSION_REQUEST({}, sender);
+    assert.ok('code' in result);
     assert.equal(result.code, 'permission-setup-opened');
     assert.deepEqual(h.created, [{
         url: 'moz-extension://test/alltrails/access.html', active: true, windowId: 9,
@@ -51,6 +48,7 @@ test('AllTrails permission fallback uses an extension-owned setup page', async (
 test('AllTrails login redirect focuses the tab without supplying GPX', async () => {
     const h = harness({ redirectUrl: 'https://www.alltrails.com/login?returnTo=%2Fexplore%2Fcustom-routes%2Fnew' });
     const result = await h.routes.handlers.ALLTRAILS_IMPORT_PREPARE(message, sender);
+    assert.ok('supplied' in result);
     assert.equal(result.code, 'sign-in-required');
     assert.equal(result.supplied, false);
     assert.equal(result.targetTabId, 20);
@@ -63,6 +61,7 @@ test('AllTrails route rejects mismatched saved-ascent payloads before using auth
         ...message,
         filename: 'peakbagger-43.gpx',
     }, sender);
+    assert.ok('code' in result);
     assert.equal(result.code, 'forbidden');
     assert.equal(h.consumed.length, 0);
     assert.equal(h.created.length, 0);
