@@ -4,7 +4,7 @@ import { retryAfterAt, rateLimitError, rateLimitMessage } from '../../src/net/ra
 
 const now = Date.parse('2026-10-11T12:00:00Z');
 test('retry timing accepts bounded seconds and HTTP dates, never invents a reset from malformed headers', () => {
-    const read = value => retryAfterAt(new Headers(value === null ? {} : { 'retry-after': value }), now);
+    const read = (value: string | null) => retryAfterAt(new Headers(value === null ? {} : { 'retry-after': value }), now);
     assert.equal(read('120'), now + 120000);
     assert.equal(retryAfterAt({ 'Retry-AFTER': '120' }, now), now + 120000);
     assert.equal(retryAfterAt({ get: 'ordinary header value', 'retry-after': '120' }, now), now + 120000);

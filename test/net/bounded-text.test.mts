@@ -10,9 +10,9 @@ import {
     readBoundedResponseText,
 } from '../../src/net/bounded-text.ts';
 
-const response = (chunks, headers = {}) => ({
+const response = (chunks: string[], headers: HeadersInit = {}) => ({
     headers: new Headers(headers),
-    body: new ReadableStream({
+    body: new ReadableStream<Uint8Array>({
         start(controller) {
             chunks.forEach(chunk => controller.enqueue(new TextEncoder().encode(chunk)));
             controller.close();
@@ -32,26 +32,26 @@ test('bounded response text rejects declared, streamed, and decoded limit plus o
     let cancelled = false;
     const declared = {
         headers: new Headers({ 'content-length': '9' }),
-        body: new ReadableStream({ cancel() { cancelled = true; } }),
+        body: new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } }),
     };
     await assert.rejects(readBoundedResponseText(declared, {
         maxBytes: 8,
-    }), error => error?.code === 'response-too-large');
+    }), { code: 'response-too-large' });
     assert.equal(cancelled, true, 'a rejected declared body releases its stream');
 
     await assert.rejects(readBoundedResponseText(response(['1234', '56789']), {
         maxBytes: 8,
-    }), error => error?.code === 'response-too-large');
+    }), { code: 'response-too-large' });
 
     await assert.rejects(readBoundedResponseText(response(['123456789'], { 'content-length': '2' }), {
         maxBytes: 8,
-    }), error => error?.code === 'response-too-large',
+    }), { code: 'response-too-large' },
     'a compressed or dishonest Content-Length cannot hide the expanded stream');
 
     await assert.rejects(readBoundedResponseText(response(['123456789']), {
         maxBytes: 20,
         maxChars: 8,
-    }), error => error?.code === 'response-too-large');
+    }), { code: 'response-too-large' });
 });
 
 test('bounded blob text preflights size and validates fallback text', async () => {
@@ -59,19 +59,19 @@ test('bounded blob text preflights size and validates fallback text', async () =
     await assert.rejects(readBoundedBlobText({
         size: 9,
         text: async () => { read = true; return '123456789'; },
-    }, { maxBytes: 8 }), error => error?.code === 'response-too-large');
+    }, { maxBytes: 8 }), { code: 'response-too-large' });
     assert.equal(read, false, 'an oversized local file is rejected before it is read');
 
     await assert.rejects(readBoundedBlobText({
         size: 1,
         text: async () => '123456789',
-    }, { maxBytes: 8 }), error => error?.code === 'response-too-large',
+    }, { maxBytes: 8 }), { code: 'response-too-large' },
     'fallback readers still validate the decoded result');
 });
 
 test('caller cancellation stops a streaming body immediately', async () => {
     let cancelled = false;
-    const body = new ReadableStream({
+    const body = new ReadableStream<Uint8Array>({
         start(controller) {
             controller.enqueue(new TextEncoder().encode('partial'));
         },
@@ -83,7 +83,7 @@ test('caller cancellation stops a streaming body immediately', async () => {
         signal: controller.signal,
     });
     controller.abort();
-    await assert.rejects(reading, error => error?.name === 'AbortError');
+    await assert.rejects(reading, { name: 'AbortError' });
     assert.equal(cancelled, true);
 });
 
@@ -104,24 +104,24 @@ test('parsed structure budgets bound depth, breadth, nodes, and strings', () => 
         [1, 2, { three: 3 }],
     ]) {
         assert.throws(() => assertBoundedStructure(value, limits),
-            error => error?.code === 'response-too-large');
+            { code: 'response-too-large' });
     }
 });
 
 for (const cleanup of ['resolve', 'reject', 'stall']) {
     test(`invalid UTF-8 cancels an open tail without waiting for ${cleanup} cleanup`, { timeout: 5000 }, async () => {
         let cancelled = 0;
-        const body = new ReadableStream({
+        const body = new ReadableStream<Uint8Array>({
             start(controller) { controller.enqueue(new Uint8Array([0xff])); },
             cancel() {
                 cancelled++;
                 if (cleanup === 'reject') throw new Error('CANCEL_SENTINEL');
-                if (cleanup === 'stall') return new Promise(() => {});
+                if (cleanup === 'stall') return new Promise<never>(() => {});
             },
         });
         await assert.rejects(readBoundedResponseText({ headers: new Headers(), body }, {
             maxBytes: 100, fatalUtf8: true,
-        }), error => error.name === 'TypeError' && !/CANCEL_SENTINEL/.test(error.message));
+        }), error => error instanceof Error && error.name === 'TypeError' && !/CANCEL_SENTINEL/.test(error.message));
         assert.equal(cancelled, 1, 'early rejection must terminate the unfinished source');
         assert.equal(body.locked, false, 'cleanup must release the reader even when cancellation stalls');
     });
@@ -130,7 +130,7 @@ for (const cleanup of ['resolve', 'reject', 'stall']) {
 test('completed and truncated UTF-8 bodies release their locks after end-of-stream', async () => {
     for (const bytes of [new TextEncoder().encode('Café'), new Uint8Array([0xc3])]) {
         let cancelled = 0;
-        const body = new ReadableStream({
+        const body = new ReadableStream<Uint8Array>({
             start(controller) { controller.enqueue(bytes); controller.close(); },
             cancel() { cancelled++; },
         });
@@ -153,10 +153,10 @@ test('a rejected body read preserves its error while cancelling and releasing th
 
 test('an already-aborted read releases its acquired stream without a second cancel', async () => {
     let cancelled = 0;
-    const body = new ReadableStream({ cancel() { cancelled++; } });
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancelled++; } });
     const controller = new AbortController(); controller.abort();
     await assert.rejects(readBoundedResponseText({ headers: new Headers(), body }, {
         maxBytes: 100, signal: controller.signal,
-    }), error => error.name === 'AbortError');
+    }), { name: 'AbortError' });
     assert.equal(cancelled, 1); assert.equal(body.locked, false);
 });
