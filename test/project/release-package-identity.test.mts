@@ -25,7 +25,7 @@ test('package downloads must retain both verified archives and their source iden
         await assert.rejects(verifyPackageIdentity(directory, '3.8.0', commit), /does not match/);
         await writeFile(firefox, 'verified Firefox bytes');
         const identityPath = path.join(directory, 'package-identity.json');
-        const identity = JSON.parse(await readFile(identityPath, 'utf8'));
+        const identity: Record<string, unknown> = JSON.parse(await readFile(identityPath, 'utf8'));
         identity.version = '3.7.0';
         await writeFile(identityPath, JSON.stringify(identity));
         await assert.rejects(verifyPackageIdentity(directory, '3.8.0', commit), /does not match/);

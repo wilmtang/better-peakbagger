@@ -4,14 +4,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { selectReleaseArtifact } from '../../scripts/select-release-artifact.mts';
+import { selectReleaseArtifact, type ReleaseArtifact } from '../../scripts/select-release-artifact.mts';
 
-const artifact = (attempt, overrides = {}) => ({
+const artifact = (attempt: number | string | null, overrides: ReleaseArtifact = {}) => ({
     name: `browser-extension-v3.8.0${attempt ? `-${attempt}` : ''}`,
     expired: false,
     ...overrides,
 });
-const select = (pages, attempt = 2) => selectReleaseArtifact(pages, 'v3.8.0', attempt);
+const select = (pages: unknown, attempt: number | string = 2) => selectReleaseArtifact(pages, 'v3.8.0', attempt);
 
 test('store-only reruns retain the earlier verified artifact across listing pages', () => {
     const pages = [{ artifacts: [artifact(2, { name: 'release-browser-failure-2' })] },

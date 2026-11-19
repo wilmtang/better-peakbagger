@@ -3,12 +3,12 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyStorePackages } from '../../scripts/verify-store-packages.mts';
+import { verifyStorePackages, type VerifyStorePackagesOptions } from '../../scripts/verify-store-packages.mts';
 
-function fixture(failAt) {
-    const calls = [];
-    const note = name => { calls.push(name); if (name === failAt) throw new Error(`failed ${name}`); };
-    return { calls, hooks: {
+function fixture(failAt?: string) {
+    const calls: string[] = [];
+    const note = (name: string) => { calls.push(name); if (name === failAt) throw new Error(`failed ${name}`); };
+    const hooks = {
         execute: async (command, args) => note(command === 'npm' ? 'build' : `execute ${args.slice(1).join(' ')}`),
         read: async path => { note(`read ${path}`); return 'canonical chrome bytes'; },
         deriveFirefox: async bytes => { assert.equal(bytes, 'canonical chrome bytes'); note('derive'); return 'derived firefox bytes'; },
@@ -18,7 +18,8 @@ function fixture(failAt) {
             note(`verify ${browser}`);
         },
         write: async (path, bytes) => { assert.equal(bytes, 'derived firefox bytes'); note(`write ${path}`); },
-    } };
+    } satisfies Required<VerifyStorePackagesOptions<string>>;
+    return { calls, hooks };
 }
 
 test('CI and release derive, validate, and execute the same two canonical archives', async () => {
