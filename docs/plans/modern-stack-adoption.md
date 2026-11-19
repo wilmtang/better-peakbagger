@@ -709,6 +709,11 @@ baseline after bypassing its obsolete standalone esbuild step. Source
 fingerprints now use embedded development bundle maps. Suppressing the weather
 intersection callback in a disposable bundle failed the `Only weather
 intersects` count assertion.
+The local GPX timestamp filter now exercises the native XML parser and
+serializer in hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760.
+Both passed the removal, metadata retention and invalid XML checks. Both
+detected retained timestamps when the removal loop was disabled in a
+disposable module. The complete DOM lane passed 64 cases.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,

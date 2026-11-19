@@ -3,28 +3,22 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import { transform } from 'esbuild';
 import { defineDomSuite } from '../../scripts/dom-tier.mts';
-
-const SOURCE = new URL('../../src/ui/stable-text.ts', import.meta.url);
-const MODULE = '/fixture/stable-text.js';
-const PAGE = '/fixture/stable-text.html';
+import { openSourceModule } from './source-module.mts';
 
 export default defineDomSuite({
     name: 'stable text',
     cases: [{
         name: 'reserved readings do not duplicate live-region text and updates retain the reading node',
-        async run({ page, route, open }) {
-            const { code } = await transform(await readFile(SOURCE, 'utf8'), {
-                sourcefile: 'stable-text.ts', loader: 'ts', format: 'esm',
+        async run(context) {
+            const modulePath = await openSourceModule(context, {
+                source: new URL('../../src/ui/stable-text.ts', import.meta.url),
+                pagePath: '/fixture/stable-text.html',
+                html: '<!doctype html><html><body><p role="status">Overview</p></body></html>',
             });
-            await route(MODULE, code, 'text/javascript');
-            await route(PAGE, '<!doctype html><html><body><p role="status">Overview</p></body></html>');
-            await open(PAGE);
 
-            const reading = await page.evaluate(async modulePath => {
-                const { createStableText } = await import(modulePath) as typeof import('../../src/ui/stable-text.ts');
+            const reading = await context.page.evaluate(async url => {
+                const { createStableText } = await import(url) as typeof import('../../src/ui/stable-text.ts');
                 const target = document.querySelector('p')!;
                 const text = createStableText(target);
                 const label = target.firstElementChild;
@@ -52,7 +46,7 @@ export default defineDomSuite({
                     repeatedMutations, changedMutations,
                     styleCount: document.querySelectorAll('#bpb-sizing-text-style').length,
                 };
-            }, MODULE);
+            }, modulePath);
 
             assert.equal(reading.reservedText, 'Overview');
             assert.equal(reading.hiddenAlternatives, 2);
