@@ -99,28 +99,25 @@ Limits of what is proven:
   and `4,177/4,177` at `166e55fc` (without a recorded Node version), `3,874/3,874`
   on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), `4,208/4,208`
   on Node `v26.13.1` at `f599ca20` (November 17, 2026), and `4,209/4,209` on
-  Node `v26.13.1` at `0aa1c6ef` (November 18, 2026).
+  Node `v26.13.1` at `0aa1c6ef` (November 18, 2026), and `4,213/4,213` on
+  Node `24.22.3` at `3a3b61a6`.
 - **Resolved guard gap:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
   now inspects actual esbuild `metafile.inputs` across all 67 `ENTRIES`,
   covering compiled Svelte runtime imports (`svelte`, `esm-env`, `clsx`) and
   excluding erased type-only imports (`83541e1f`, `c81c7cee`).
-- **Changed but not fully proven:** four conversions made outside the planned
-  batches still owe part of the M7 gate for their kind of owner:
-  `src/capture/provider-page.ts` (`79fe003c`), `src/terrain/terrain-coordinator.ts`
-  (`20e54c38`, which passed hidden hardware-GPU `npm run verify -- terrain chrome`
-  (`ANGLE Metal Renderer: Apple M3 Pro`) and `npm run verify -- terrain firefox`
-  (`Firefox 159.0`, `Apple M3 Pro`) at `0aa1c6ef`), `src/maps/big-map.ts` (`c3b47b04`),
-  and `src/background/background.ts` (`c45d32ef`, which has Chrome `158.0.8127.18`
-  and Firefox `160.0` real-extension checks from M6).
+- The **minified esbuild archives** at `fd12835a`
+  passed real packaged Chromium 158.0.8127.18 and Firefox 160.0.1 checks at
+  1000 × 760, including BFCache restore, worker and bridge checks. The four
+  early M7 runtime conversions have [additional fixture evidence](#m7--convert-all-remaining-javascript-in-increasing-cost-batches).
 - **Published peer ranges only (npm registry, November 13):** `@types/jsdom`
   30.0.0 exists for the locked jsdom 30.1.3; `esbuild-svelte` 0.9.5 admits
   esbuild ≥0.17 and Svelte ≥4.2.1 <6; `svelte-check` 4.7.8 admits TypeScript 5
   and 6; `eslint-plugin-svelte` 3.24.1 admits ESLint 8.57.1 through 10.
 - **Not established:** Svelte at the Chrome 128 (`chrome-floor`) and Firefox
   152.0 (`firefox-floor`) Linux CI floors, native focus/window placement, and
-  WXT parity. The manifest also declares a Firefox for Android 142.0 floor;
-  desktop automation cannot run it, so Svelte there rests on the manual device
-  step in [the release guide](../releasing.md).
+  full WXT cutover parity. The manifest also declares a Firefox for Android
+  142.0 floor. Svelte there rests on the manual device step in
+  [the release guide](../releasing.md).
 
 ## Owner decisions
 
@@ -610,7 +607,7 @@ batch and backfill the conversions already listed there.
 5. **Large coordinators and cross-world graphics:** convert the MAIN-world GPX
    analyzer, the worker's remaining JavaScript route modules and other
    coordinators last, one boundary at a time. The background worker itself is
-   already converted (`c45d32ef`) and still owes this batch's Firefox check.
+   already converted (`c45d32ef`) and passed the packaged Firefox check.
    Keep bundle order, sender/privacy/Save gates and shared math.
    Require real-manifest/worker/bridge checks and hardware-rendered terrain
    verification for affected graphics paths; pure unit tests cannot close these.
@@ -633,6 +630,19 @@ documented exception. To keep the result, make the policy reject any authored
 JavaScript file rather than only changed ones, and remove `allowJs` from the
 checking projects. Svelte conversion remains per-surface, based on a useful
 ownership boundary rather than a percentage target.
+
+Local owner verification at `b66b506e` used Node 24.22.3 and freshly built
+esbuild bundles. The checks ran hidden, with isolated browser profiles.
+
+| Converted owner | Local evidence |
+| --- | --- |
+| `src/terrain/terrain-coordinator.ts` (`20e54c38`), terrain frame and analyzer | Both `verify -- terrain` engines passed on ANGLE Metal Apple M3 Pro. Chromium 158.0.8127.18 exercised wide Ascent at 1280 × 950, BigMap at 1000 × 760 and Peak layouts at 820/375 × 900. Firefox 159.0 exercised Ascent and Peak at a 1000 × 760 baseline with a 375 px narrow layout. Both used synthetic terrain and activation fixtures. |
+| `src/maps/big-map.ts` (`c3b47b04`) | `verify -- map-controls` passed 14 cases per engine, including both BigMap modes, in Chromium 158.0.8127.18 and Firefox 159.0 at 1280/375 × 1000 on the same renderer. |
+| `src/capture/provider-page.ts` (`79fe003c`) | `verify -- provider-contracts` passed in Chromium 158.0.8127.18 and Firefox 159.0 at 1280 × 720 with intercepted provider fixtures. It exercised ownership, route changes and export responses. |
+| `src/background/background.ts` (`c45d32ef`) | `verify -- capture-readiness` passed pending-image capture, helper startup and signed-out privacy gates with the real worker and a fixture provider in Chromium 158.0.8127.18 at 1000 × 760 and Firefox 160.0.1 at 1000 × 675. |
+
+Teardown removed the browser profiles. Native window focus, live provider
+permissions and hosted Linux browser-floor results require separate evidence.
 
 ### M7.5 — Retire jsdom
 
