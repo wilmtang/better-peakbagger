@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — WXT/Vite build and transactional publication.
+// Better Peakbagger — Vite build and transactional publication.
 //
 // The extension source lives as ES modules under src/. Browsers cannot load an
 // ES module as a classic content script, so manifest entry points are bundled
@@ -11,7 +11,7 @@
 // packagers zip, and what the real-extension checks exercise.
 //
 // The bundle composition and asset list live in scripts/build-config.mts (the
-// single source of truth, shared with the test suite). WXT/Vite compiles the
+// single source of truth, shared with the test suite). Vite compiles the
 // bundles while this file stages assets and publishes complete generations.
 //
 // Usage:
@@ -47,7 +47,7 @@ import {
     type BundleEntry,
 } from './build-config.mts';
 import { writeThirdPartyNotices } from './third-party-notices.mts';
-import { buildWxtBundles } from './wxt-build.mts';
+import { buildBundles } from './vite-build.mts';
 import { publishBuildTree, RELOAD_SIGNAL } from './build-publication.mts';
 import { prepareFirefoxGeneration } from './run-firefox.mts';
 
@@ -171,7 +171,7 @@ export async function buildOnce({ minify = MINIFY }: { minify?: boolean } = {}) 
     const candidateDir = path.join(stagingRoot, 'generation');
     await cleanupAbandonedBuildTrees({ keep: stagingRoot });
     try {
-        const { inputPaths, diagnostics } = await buildWxtBundles({ minify, outputDir: candidateDir });
+        const { inputPaths, diagnostics } = await buildBundles({ minify, outputDir: candidateDir });
         if (diagnostics) console.warn(diagnostics);
         await writeThirdPartyNotices({ inputPaths, outputDir: candidateDir });
         await copyAssets(candidateDir, { copyFiles: COPY_FILES.filter(([, to]) => to !== 'manifest.json') });
@@ -251,7 +251,7 @@ const sameSnapshot = (left: Map<string, string>, right: Map<string, string>) => 
     && [...left].every(([file, signature]) => right.get(file) === signature);
 
 // Watch mode rebuilds every bundle as one transaction. A shared module can
-// feed several WXT entries. Reloading after an individual bundle finishes
+// feed several bundles. Reloading after an individual bundle finishes
 // would expose a mixed runtime tree. The signal file is therefore
 // written only after every bundle and copied asset has completed successfully.
 export async function watchAll({
@@ -314,7 +314,7 @@ export async function watchAll({
         const baseline = await sourceSnapshot(layout);
         if (publishedSnapshot && sameSnapshot(publishedSnapshot, baseline)) return;
         await rm(outputDir, { recursive: true, force: true });
-        const { inputPaths, diagnostics } = await buildWxtBundles({ outputDir, entries, projectRoot,
+        const { inputPaths, diagnostics } = await buildBundles({ outputDir, entries, projectRoot,
             manifestPath: manifestSource ? path.resolve(projectRoot, manifestSource) : null });
         if (diagnostics) console.warn(diagnostics);
         await writeThirdPartyNotices({ inputPaths, outputDir });

@@ -51,7 +51,7 @@ export function terrainVerificationRequired(
     changedPaths: readonly string[] = [],
 ): boolean {
     if (copiedRuntimeChanged(basePackageLock, currentPackageLock)) return true;
-    if (['playwright', 'playwright-core', 'wxt', 'vite', 'rolldown'].some(name =>
+    if (['playwright', 'playwright-core', 'vite', 'rolldown'].some(name =>
         basePackageLock!.packages![`node_modules/${name}`]?.version
         !== currentPackageLock!.packages![`node_modules/${name}`]?.version)) return true;
     return changedPaths.some(file => file.startsWith('src/') || file.startsWith('scripts/')

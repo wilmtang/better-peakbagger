@@ -14,7 +14,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import { RELOAD_SIGNAL, watchAll } from '../../scripts/build.mts';
-import { buildWxtBundles, type WxtBundleOptions } from '../../scripts/wxt-build.mts';
+import { buildBundles, type BundleBuildOptions } from '../../scripts/vite-build.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -44,10 +44,10 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
 });
 
 const fixtureEntry = { out: 'svelte-fixture/island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] };
-const buildFixture = ({ outputDir, minify }: Pick<WxtBundleOptions, 'outputDir' | 'minify'>) =>
-    buildWxtBundles({ entries: [fixtureEntry], manifestPath: null, outputDir, minify });
+const buildFixture = ({ outputDir, minify }: Pick<BundleBuildOptions, 'outputDir' | 'minify'>) =>
+    buildBundles({ entries: [fixtureEntry], manifestPath: null, outputDir, minify });
 
-test('a component and its rune module compile through normal and minified WXT generations', async () => {
+test('a component and its rune module compile through normal and minified Vite generations', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-svelte-build-'));
     try {
         const outputs = new Map<string, string>();

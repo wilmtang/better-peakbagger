@@ -1,7 +1,7 @@
 # Development guide
 
 Better Peakbagger is a Manifest V3 extension whose `src/` is written as **ES
-modules** and bundled with **WXT/Vite** into `dist/`. `dist/` is the extension:
+modules** and bundled with **Vite** into `dist/`. `dist/` is the extension:
 it is what you load in a browser, what the release packagers zip, and what the
 real-extension checks exercise. You never load the repo root directly.
 
@@ -18,7 +18,7 @@ Better Peakbagger module uses a global as an internal dependency.
   TypeScript from authored `.ts`/`.mts` tooling and tests; type checking remains
   a separate required command.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
-  (WXT, Vite, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+  (Vite, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
   which makes `.githooks/pre-commit` scan staged contents and paths and
   `.githooks/commit-msg` scan the proposed message through
@@ -243,7 +243,7 @@ npm run start -- chromium --chromium-binary "/path/to/chrome-for-testing"
 
 Without additional profile flags, each command makes the initial `dist/` build,
 launches web-ext with a temporary browser profile, watches the source tree,
-and reloads the extension after every successful WXT generation. Stop the
+and reloads the extension after every successful build generation. Stop the
 command with Ctrl+C; the watchers, browser process, and Firefox temporary source
 are then cleaned up.
 
@@ -312,7 +312,7 @@ Creating new nested subdirectories or files inside an already-watched root works
 live without restarting. Restart any watcher after adding a new top-level source
 or asset directory, creating a configured top-level directory that did not exist
 when the watcher started, or changing entry or compiler configuration
-(`scripts/build-config.mts`, `scripts/build.mts`, `scripts/wxt-build.mts`, `tsconfig.check.json`,
+(`scripts/build-config.mts`, `scripts/build.mts`, `scripts/vite-build.mts`, `tsconfig.check.json`,
 `tsconfig.node.check.json`) or installed dependencies (`package.json`,
 `package-lock.json`, `node_modules/`). A restart reloads the watch layout and
 compiler settings together.
@@ -688,8 +688,8 @@ the watcher reports that error without issuing a reload.
 
 `scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
-assets/vendor distributions are copied. `scripts/wxt-build.mts` generates WXT
-entries and gives Vite their ordered source imports. `scripts/build.mts`
+assets/vendor distributions are copied. `scripts/vite-build.mts` runs one Vite
+library build per bundle from its ordered source imports. `scripts/build.mts`
 validates and publishes the complete tree. The manifests, copied vendor files
 and notice inventory share this build in development and releases.
 
@@ -947,7 +947,7 @@ attributed:
 | --- | --- | --- |
 | `bundled-runtime` | bundled by Vite | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
-| `tooling` | WXT, Vite, Rolldown, and other build and test tooling | no |
+| `tooling` | Vite, Rolldown, and other build and test tooling | no |
 | `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
 | `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by Vite | yes (runtime only) |
 | `remaining-npm` | depends on the owning dependency path | inspect |

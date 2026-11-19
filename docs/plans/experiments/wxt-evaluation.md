@@ -3,6 +3,8 @@
 Evaluated November 18, 2026 against `fd12835a` on macOS arm64, with Node
 24.22.3, WXT 0.21.5 and Vite 8.3.8. This records the experiment that preceded
 the production cutover in the [M8 plan](../modern-stack-adoption.md).
+Production later dropped WXT and calls Vite directly; WXT added only a
+scheduler around the same library builds.
 The original candidate reduced the archive sizes by about 1.9%. After the
 optimization, its median release build still took 2.7–3.0 times as long as
 esbuild in two matched comparisons. Adopting it would still
@@ -114,5 +116,6 @@ archive paths. The `development` selection emits an unminified candidate
 with source maps. Set `BPB_WXT_JOBS=1` for WXT's serial build loop. Values
 from two through six set the concurrent job count explicitly. Remove the
 printed workspace and the disposable toolchain and archive directories
-after verification. Use the [production WXT build](../../../scripts/wxt-build.mts)
-for current code.
+after verification. The candidate script and the later WXT production
+adapter were removed; production uses the
+[direct Vite build](../../../scripts/vite-build.mts).

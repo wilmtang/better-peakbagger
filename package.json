@@ -85,8 +85,7 @@
     "typescript-eslint": "8.72.1",
     "tz-lookup": "^6.1.25",
     "vite": "8.3.8",
-    "web-ext": "^10.8.0",
-    "wxt": "0.21.5"
+    "web-ext": "^10.8.0"
   },
   "overrides": {
     "fx-runner": {

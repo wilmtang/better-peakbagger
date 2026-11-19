@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Shared Svelte compiler settings for both development and minified WXT
+// Shared Svelte compiler settings for both development and minified Vite
 // output. The Vite plugin applies these to components and rune modules.
 //
 // - Runes mode everywhere, so components cannot fall back to legacy reactivity.

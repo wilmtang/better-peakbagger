@@ -9,7 +9,7 @@ import test from 'node:test';
 // @ts-expect-error js-yaml ships no declarations; parsed workflows are typed below.
 import yaml from 'js-yaml';
 
-import { buildWxtBundles } from '../../scripts/wxt-build.mts';
+import { buildBundles } from '../../scripts/vite-build.mts';
 import {
     ENTRIES,
     VENDOR_COPY,
@@ -107,7 +107,7 @@ const bundledPackagesForEntries = async (
 ): Promise<Set<string>> => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-runtime-graph-'));
     try {
-        const { inputPaths } = await buildWxtBundles({ entries, projectRoot, outputDir: path.join(directory, 'bundles'), minify: true,
+        const { inputPaths } = await buildBundles({ entries, projectRoot, outputDir: path.join(directory, 'bundles'), minify: true,
             manifestPath: entries === ENTRIES ? undefined : null });
         return bundledInputPackages(inputPaths);
     } finally {
@@ -245,7 +245,7 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
 });
 
 const SVELTE_RUNTIME_PACKAGES = new Set(['svelte', 'esm-env', 'clsx']);
-const BUILD_TOOLS = ['wxt', 'vite', 'rolldown', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser'] as const;
+const BUILD_TOOLS = ['vite', 'rolldown', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser'] as const;
 
 const checkBundledGroups = (
     bundledPackages: readonly string[],
@@ -262,7 +262,7 @@ const checkBundledGroups = (
     }
 };
 
-test('runtime dependency groups match the production WXT input graph', async () => {
+test('runtime dependency groups match the production Vite input graph', async () => {
     const bundledPatterns = groupPatterns('bundled-runtime');
     const copiedPatterns = groupPatterns('copied-runtime');
     const sveltePatterns = groupPatterns('svelte');
@@ -309,7 +309,7 @@ test('runtime dependency groups match the production WXT input graph', async () 
     }
 });
 
-test('the WXT input graph captures Svelte runtime packages and ignores erased type-only imports', async () => {
+test('the Vite input graph captures Svelte runtime packages and ignores erased type-only imports', async () => {
     const compiledPackages = await bundledPackagesForEntries([
         { out: 'svelte-fixture/island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] },
     ]);

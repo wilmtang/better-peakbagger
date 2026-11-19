@@ -124,7 +124,7 @@ links to it instead of maintaining a second copy of the same contract.
 ## Deep dive: shipped runtime and bundle ownership
 
 Better Peakbagger ships one Manifest V3 extension for Chrome and Firefox.
-WXT/Vite bundles ES modules into `dist/`. The browser loaders, verifiers and
+Vite bundles ES modules into `dist/`. The browser loaders, verifiers and
 store packagers use that output directory.
 
 Assembly has three owners.
@@ -134,7 +134,7 @@ Assembly has three owners.
 - `scripts/build-config.mts` owns bundle composition, entry-point roots, copied
   files, and packaged vendor assets.
 - `scripts/build.mts` publishes a complete generation built by
-  `scripts/wxt-build.mts`.
+  `scripts/vite-build.mts`.
 
 Classic browser entry points become self-contained IIFE bundles. ES imports
 determine module evaluation order inside a bundle. Chart.js and marked remain

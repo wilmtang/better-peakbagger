@@ -40,7 +40,7 @@ test('adding or removing a copied runtime is treated as a runtime change', () =>
 });
 
 test('GPU gates cover browser and compiler upgrades as well as source and fixture changes', () => {
-    for (const name of ['playwright', 'playwright-core', 'wxt', 'vite', 'rolldown']) {
+    for (const name of ['playwright', 'playwright-core', 'vite', 'rolldown']) {
         const before = lock();
         before.packages[`node_modules/${name}`] = { version: '1.62.1' };
         const after = structuredClone(before);

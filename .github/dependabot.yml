@@ -8,7 +8,7 @@
 #
 # The groups still mirror what reaches users, which is worth knowing when a
 # rehearsal fails and the cause has to be attributed. Both runtime groups are
-# third-party code shipped with the extension; their names distinguish WXT/Vite
+# third-party code shipped with the extension; their names distinguish Vite
 # bundling from copying a prebuilt browser file intact. `package.json` lists
 # every dependency under devDependencies; `tooling` and `jsdom` are genuinely
 # development-only, while the `svelte` group ships only the `svelte` client
@@ -61,7 +61,7 @@ updates:
       - dependency-name: "@types/jsdom"
         update-types: [version-update:semver-major]
     groups:
-      # Bundled into the shipped extension by WXT (direct and transitive).
+      # Bundled into the shipped extension by Vite (direct and transitive).
       bundled-runtime:
         patterns:
           - "@tiptap/*"
@@ -113,8 +113,7 @@ updates:
           - jiti
           - "@types/node"
           - "@types/chrome"
-          # Coordinate WXT, its compiler, and its parser upgrades.
-          - wxt
+          # Coordinate the Vite compiler and its parser upgrades.
           - vite
           - rolldown
 

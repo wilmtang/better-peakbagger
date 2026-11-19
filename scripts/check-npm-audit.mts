@@ -17,7 +17,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DEVELOPMENT_TOOLS: ReadonlySet<string> = new Set([
     '@types/chrome', '@types/jsdom', '@types/node', '@types/selenium-webdriver', 'esbuild', 'eslint', 'eslint-plugin-svelte', 'fake-indexeddb',
     'globals', 'jiti', 'jsdom', 'playwright', 'rolldown', 'selenium-webdriver', 'semver', 'svelte-check', 'typescript',
-    'typescript-eslint', 'vite', 'web-ext', 'wxt',
+    'typescript-eslint', 'vite', 'web-ext',
 ]);
 
 type AuditFinding = { severity?: string; nodes?: string[] };

@@ -19,8 +19,10 @@ packaging through the compiler cutover.
   scripts and tests move to TypeScript in small batches. Generated output and
   upstream third-party code keep their required formats. Svelte conversion stays
   per surface and is not required for every UI.
-- **WXT/Vite is the chosen production compiler (M8).** The owner accepted its
-  measured time cost and requested the cutover after the full evaluation.
+- **Vite is the production compiler (M8).** The owner accepted WXT/Vite's
+  measured time cost for maintainability. WXT contributed only a build
+  scheduler around per-bundle Vite library builds, so production now calls
+  Vite directly with byte-identical code.
 
 Out of scope: rewriting working features in Svelte for uniformity, adding a demonstration
 feature to exercise the stack, and replacing messaging, storage or chart libraries.
@@ -49,7 +51,7 @@ of effort.
 | M6 — Ship one bounded Svelte island | Large; UI integration plus release/browser evidence | M1–M5 and dependency-audit gate | The existing Units settings panel works through checked TS/Svelte beside unchanged legacy sections. |
 | M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M4.5 before DOM test batches; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
 | M7.5 — Retire jsdom | Large; a test-environment migration, owner by owner | M4.5's browser tier; independent of finishing M7 | No test or script depends on jsdom; the package, its types and its checking project are removed. |
-| M8 — Cut over production to WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | One compiler for development and release with manifest, runtime, reload and package parity. |
+| M8 — Cut over production to Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | One compiler for development and release with manifest, runtime, reload and package parity. |
 
 M4.5 was inserted after M0–M3 shipped, and M7.5 was split from M7 on
 November 13, so other milestone numbers stay stable in existing commits and
@@ -70,11 +72,11 @@ jsdom retirement remain open.
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.ts` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
-| M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. WXT now uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
+| M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. The Vite builder uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime and root Node tooling are converted. At `7f20e5f6`, 208 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
 | M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `7f20e5f6`, 88 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe now uses the browser tier. |
-| M8 | Done locally | WXT/Vite builds development and release generations (`133384ab`). Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-wxtvite). |
+| M8 | Done locally | Vite builds development and release generations ([vite-build.mts](../../scripts/vite-build.mts)); WXT (`133384ab`) was removed after it proved to be only a scheduler. Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-vite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 
@@ -761,20 +763,47 @@ with a reason. Cost to accept before starting: every DOM test then needs a
 browser launch, which the Codex Seatbelt sandbox forbids for Chrome, so those
 tests can no longer run there, and `npm test` covers pure logic only.
 
-### M8 — Cut over production to WXT/Vite
+### M8 — Cut over production to Vite
 
 The owner selected WXT/Vite for production after reviewing the
-[full candidate evaluation](experiments/wxt-evaluation.md). The production
-backend uses WXT's build API and public Vite config hook. It generates inert
-entry definitions from the single ordered inventory and uses WXT's scheduler.
-Each generation runs in a separate working directory and Node process so WXT's
-build state and environment loading stay inside that generation. The existing
-publisher, reload signal and browser-specific packaging still own their
-respective contracts. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
+[full candidate evaluation](experiments/wxt-evaluation.md), accepting a
+slower build for easier maintenance. The first cutover (`133384ab`) used WXT's
+build API only as a scheduler: it wrote one inert WXT entry per bundle,
+replaced each entry's Vite configuration with a library build of the ordered
+sources, ran every generation in a child process and temporary workspace
+because WXT keeps module-global state, and restored the manifest WXT
+regenerated. None of WXT's entrypoint, manifest or development-server
+features applied, because `manifest.json` and the ordered `ENTRIES` stay the
+source of truth.
+
+[vite-build.mts](../../scripts/vite-build.mts) now calls Vite's `build()`
+directly, one library build per entry with bounded concurrency, in process.
+Every compiled bundle is byte-identical to the WXT output except module
+region comments. WXT compiled from its temporary workspace, so the shipped
+minified terrain and vector-map frame bundles
+contained 28 comments naming the builder's absolute home directory. The
+direct build pins Rolldown's `cwd` to the real project root, and release
+generations now fail if any bundle contains the project or home path. On the
+same machine the release build took about 0.6 s instead of 2.0 s. The existing
+publisher, reload signal and browser packaging are unchanged.
 
 #### Verified locally
 
-- The production compiler passed 4,213 Node tests, 14 scale tests, strict
+The direct Vite build was verified on its own output: the real unpacked
+extension in hidden Chromium 158.0.8127.18 and Firefox 160.0.1 at 1000 × 760
+(including BFCache restoration and teardown), the full DOM tier, and the
+exact release archives: a 3,632,927-byte Chrome ZIP and a 3,632,869-byte
+Firefox ZIP passed the packaged verifier in the same browsers and viewport,
+with no local path in any bundle. Builder regressions are
+pinned in [vite-build.test.mts](../../test/project/vite-build.test.mts): an
+unresolved bare import fails the generation, a failed entry stops the queue
+and returns only after in-flight builds finish, and release bundles cannot
+contain the project or home path. Each failed against a disposable copy of
+the earlier adapter logic. The items below were recorded on the WXT output
+(`133384ab`, `4286ede2`); its compiled code was byte-identical except for
+the path comments, so they still describe the shipped runtime.
+
+- The WXT-era production compiler passed 4,213 Node tests, 14 scale tests, strict
   typecheck, lint, the full branch TypeScript policy check, the dependency
   audit, and the 60-case DOM browser tier. Hidden Chromium 158.0.8127.18 and
   Firefox 160.0.1 at 1000 × 760
@@ -806,8 +835,8 @@ respective contracts. [WXT build internals](https://wxt.dev/guide/resources/how-
   all 67 bundles on both sides. Five interleaved release builds on macOS arm64
   with Node 24.22.3 took a median 672 ms with esbuild and 2,568 ms with WXT.
   Wall time includes process startup, compilation, assets and notice writing.
-  The owner accepted the roughly 1.9-second increase. The production adapter
-  uses WXT's public scheduler. With the same ZIP Deflate settings, the release
+  The owner accepted the roughly 1.9-second increase; the later direct Vite
+  build takes about 0.6 s. With the same ZIP Deflate settings, the release
   trees compressed to 3,702,067 bytes for esbuild and 3,631,327 bytes for WXT.
 
 Hosted Actions, Firefox Android, and a signed store-delivered update still
@@ -1038,7 +1067,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 
 | Report layer | Incremental decision | Later conversion gate |
 | --- | --- | --- |
-| WXT / Vite | Compile all development and release bundles through the public build API. | M8 records manifest, output, reload, package and local upgrade checks. |
+| Vite | Compile all development and release bundles through the public build API. | M8 records manifest, output, reload, package and local upgrade checks. |
 | Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.ts` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
 | `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
 | WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |

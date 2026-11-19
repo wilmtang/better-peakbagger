@@ -22,8 +22,8 @@
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
   — production runtime and root Node tooling use TypeScript. Test and support
-  script conversion and jsdom retirement remain open. The WXT/Vite evaluation
-  retained esbuild for production.
+  script conversion and jsdom retirement remain open. Production builds use
+  Vite directly.
 
 - [Weather guide and open API optimizations](../weather.md)
   — cloud-request cost and cross-card/page caching remain open in its ledger.

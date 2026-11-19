@@ -49,7 +49,7 @@ independent of the existing targets.
 - [dependency-metadata.mts](dependency-metadata.mts)
 - [privacy-guard.mts](privacy-guard.mts)
 - [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness for `.dom.mts` suites under `test/dom/`, with routed fixtures, extension stubs, and selection by suite or case.
-- [wxt-build.mts](wxt-build.mts) — The production WXT/Vite compiler used by builds and watch generations.
+- [vite-build.mts](vite-build.mts) — The production Vite compiler used by builds and watch generations.
 - [svelte-build.mts](svelte-build.mts) — Shared Svelte compiler settings for development and release bundles.
 - [typecheck-node.mts](typecheck-node.mts) — Checks the Node TypeScript project as two programs: jsdom/DOM-driving files with the DOM library (`tsconfig.dom.check.json`), everything else without DOM globals.
 - [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
