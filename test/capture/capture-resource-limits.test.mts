@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { captureCore as Core } from '../../src/capture/capture-core.ts';
 import { captureResourceLimits as Limits } from '../../src/capture/capture-resource-limits.ts';
 
-const corridorTrack = pointCount => Array.from({ length: pointCount }, (_, index) => ({
+const corridorTrack = (pointCount: number) => Array.from({ length: pointCount }, (_, index) => ({
     lat: 0,
     lon: index * 0.085,
     ele: 100,

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createCaptureDiagnostics } from '../../src/capture/capture-diagnostics.ts';
+import { createCaptureDiagnostics, type CaptureDiagnosticSnapshot } from '../../src/capture/capture-diagnostics.ts';
 
 test('capture diagnostics are inert by default', () => {
     let reports = 0;
@@ -18,7 +18,7 @@ test('capture diagnostics are inert by default', () => {
 
 test('enabled diagnostics report only bounded durations, counts, and an outcome', () => {
     const clock = { now: 10 };
-    const reports = [];
+    const reports: CaptureDiagnosticSnapshot[] = [];
     const diagnostics = createCaptureDiagnostics({
         enabled: true,
         now: () => clock.now,

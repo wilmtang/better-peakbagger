@@ -333,7 +333,7 @@ Existing checks to run during implementation, scaled to each affected unit:
 
 ```sh
 npm run build
-node --test test/capture/provider-url.test.mjs test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mts
+node --test test/capture/provider-url.test.mts test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mts
 node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mjs
 npm test
 npm run lint
