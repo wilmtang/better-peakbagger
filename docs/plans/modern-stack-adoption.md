@@ -72,8 +72,8 @@ jsdom retirement remain open.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. WXT now uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | Runtime and root Node tooling are converted. At `c9bc4a10`, 220 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
-| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `c9bc4a10`, 91 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe now uses the browser tier. |
+| M7 | In progress | Runtime and root Node tooling are converted. At `7f20e5f6`, 208 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
+| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `7f20e5f6`, 88 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe now uses the browser tier. |
 | M8 | Done locally | WXT/Vite builds development and release generations (`133384ab`). Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-wxtvite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
@@ -725,6 +725,12 @@ handling, hidden state and return to the original trigger in the same two
 hidden browsers at 1000 × 760. Removing Cancel focus in a disposable module
 failed the opening focus assertion in each engine. The DOM lane passed 66
 cases after the port.
+The packaged early and complete dark stylesheets retained the dark root
+background and vertical overscroll setting before and after their handoff.
+Hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760 computed
+`none` from both sheets, and rejected a disposable early sheet with that rule
+removed. The fixture supplies the native wallpaper locally. The full DOM
+lane passed 70 cases. The test measures computed styles and sheet replacement.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
