@@ -9,7 +9,7 @@ import { runDomTier, type DomCase, type DomContext } from '../../../scripts/dom-
 import { waitForCondition, withOfflineFixturePage } from '../../../scripts/browser-verification-fixtures.mts';
 import { settingsSchema } from '../../../src/settings/settings-schema.ts';
 import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mts';
-import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mjs';
+import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mts';
 import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mts';
 
 if (process.argv.length !== 2) throw new Error('This audit probe takes no arguments.');

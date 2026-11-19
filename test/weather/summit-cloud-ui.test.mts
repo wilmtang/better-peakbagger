@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fixtureDom } from '../helpers/page-dom.mts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
-import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mjs';
+import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mts';
 
 const [html, bundle, layout] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),

@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { defineDomSuite, type DomContext } from '../../scripts/dom-tier.mts';
-import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mjs';
+import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mts';
 
 const rawRainierHtml = await readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8');
 const PEAK_PAGE_HTML = rawRainierHtml
