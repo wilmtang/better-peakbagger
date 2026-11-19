@@ -700,6 +700,10 @@ All 28 terrain cache cases run in Node with the existing in-memory storage,
 native fetch primitives, and controlled transports. The cases produced the
 same results with and without the unused jsdom windows. A disposable change
 to the tile coordinate bound failed the preserved out-of-range assertion.
+The stable text case preserves all eight assertions in the real DOM tier.
+Hidden Chromium 158.0.8127.18 and Firefox 159.0 passed at 1000 × 760. Removing
+the equality guard in a disposable module produced 120 unwanted mutation
+records in both engines, where the normal module produced zero.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
