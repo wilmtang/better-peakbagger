@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { defineDomSuite, runDomTier, type DomEngine } from '../../../scripts/dom-tier.mts';
-import { weatherFixture } from '../../../test/helpers/weather-fixture.mjs';
+import { weatherFixture } from '../../../test/helpers/weather-fixture.mts';
 
 const usage = 'Usage: node docs/plans/evidence/card-reuse-audit.mts [--expect-regression] [--dist DIR]';
 const args = process.argv.slice(2);

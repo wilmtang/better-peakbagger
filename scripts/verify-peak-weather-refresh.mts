@@ -8,7 +8,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page, Route } from 'playwright';
 import { projectRoot, waitForCondition } from './browser-verification-fixtures.mts';
-import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mts';
 import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.ts';
 
 interface RefreshVariant {

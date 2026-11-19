@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from 'playwright';
 import { projectRoot, waitForCondition, withOfflineFixturePage } from './browser-verification-fixtures.mts';
-import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture } from '../test/helpers/weather-fixture.mts';
 
 export interface ColumnWidthVariant {
     name: string;

@@ -5,7 +5,7 @@ import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weath
 import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolvePeakWeatherModels } from '../../src/weather/peak-weather-models.ts';
 import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.ts';
 import { weatherRequestUrl, peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.ts';
-import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
+import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mts';
 
 const summit = { latitude: 46.85, longitude: -121.76, elevation: 4391, nation: 'united states' };
 const window = weatherPeakWindow(mountainTime.resolve(summit.latitude, summit.longitude), Date.parse('2026-10-11T12:00:00Z'));

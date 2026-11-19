@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
 import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture } from '../test/helpers/weather-fixture.mts';
 
 function nepalPeakFixture(html: string): string {
     const rainierCoordinates = '46.851731, -121.760395 (Dec Deg)'

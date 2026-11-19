@@ -12,7 +12,7 @@ import { createResourceStack } from './resource-stack.mts';
 import { prepareFirefoxSource } from './run-firefox.mts';
 import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
 import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.ts';
-import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mts';
 import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mts';
 import { verifyWeatherClouds } from './verify-weather-clouds.mts';
 import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mts';
@@ -43,7 +43,6 @@ type PageFn = <T>(fn: (...args: never[]) => T, ...args: unknown[]) => Promise<Aw
 type Field = HTMLInputElement & HTMLDetailsElement;
 type Header = { name: string; value: unknown };
 type Reply = { status: number; headers: Record<string, string>; body: string | Buffer; contentType?: string };
-type Hourly = Record<string, (number | null)[]>;
 type Settings = Record<string, unknown>;
 // The analyzer page's Chart.js global; only the members these probes read.
 interface ChartPoint { getCenterPoint(): { x: number; y: number } }
@@ -151,13 +150,12 @@ async function runWeatherVerification() {
             const startDate = requested.searchParams.get('start_date')!, endDate = requested.searchParams.get('end_date')!;
             const body = weatherFixture({ startDate, fields,
                 hours: (Date.parse(endDate) - Date.parse(startDate)) / 3600_000 + 24,
-                latitude: Number(requested.searchParams.get('latitude')), longitude: Number(requested.searchParams.get('longitude')), elevation: Number(requested.searchParams.get('elevation')) }) as unknown as { hourly: Hourly };
-            // Fixture series are numbers; the modes below mutate them in place.
-            const series = body.hourly as Record<string, number[]>;
+                latitude: Number(requested.searchParams.get('latitude')), longitude: Number(requested.searchParams.get('longitude')), elevation: Number(requested.searchParams.get('elevation')) });
+            const series = body.hourly;
             if (peakMode) series.time.forEach((_item, index) => {
                 const day = Math.floor(index / 24), codes = [0, 2, 3, 61, 71, 2, 0, 45, 3], code = codes[day % codes.length];
                 series.weather_code[index] = code;
-                series.temperature_2m[index] += day - 4;
+                series.temperature_2m[index] = Number(series.temperature_2m[index]) + (day - 4);
                 series.precipitation[index] = [61, 71].includes(code) && index % 24 >= 15 && index % 24 <= 18 ? .3 : 0;
                 series.wind_speed_10m[index] = 12 + day * 3;
                 series.wind_gusts_10m[index] = 20 + day * 3;
@@ -173,8 +171,8 @@ async function runWeatherVerification() {
             }
             if (mode === 'missing-cloud') for (const field of ['cloud_cover', 'freezing_level_height']) delete body.hourly[field];
             if (mode === 'empty') Object.entries(body.hourly).forEach(([key, values]) => { if (key !== 'time') values.fill(null); });
-            const replyBody = (peakMode ? weatherModelFixture(body as never, requested.searchParams.get('models')!.split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
-                Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body) as { hourly: Hourly };
+            const replyBody = peakMode ? weatherModelFixture(body, requested.searchParams.get('models')!.split(','), Object.fromEntries(PEAK_WEATHER_MODELS.map(model => [model.id,
+                Date.parse(new Date().toISOString().slice(0, 10)) / 1000 + model.forecastDays * 86400]))) : body;
             if (mode === 'negative-precipitation') for (const [key, values] of Object.entries(replyBody.hourly)) {
                 if (key === 'precipitation' || key === 'precipitation_meteofrance_arpege_world') values[45] = -0.1;
             }

@@ -7,12 +7,10 @@ import type * as MapLocationMenu from '../../src/maps/map-location-menu.ts';
 import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mts';
-import { weatherFixture as untypedWeatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mjs';
+import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mts';
 import { readPeakWeatherSubject } from '../../src/weather/peak-weather-subject.ts';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
-type WeatherBody = { latitude: number; longitude: number; elevation: number | null; utc_offset_seconds: number; hourly_units: Record<string, string>; hourly: Record<string, (number | null)[]> & { time: number[] } };
-const weatherFixture = untypedWeatherFixture as (options?: { latitude?: number; longitude?: number; elevation?: number | null; startDate?: string; hours?: number; fields?: string[] }) => WeatherBody;
 type Values = Record<string, unknown>;
 type RequestOptions = RequestInit & { signal: AbortSignal };
 type FixtureFetch = (url: string, init: RequestOptions) => Response | Promise<Response>;

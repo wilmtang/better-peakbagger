@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { weatherFixture } from '../helpers/weather-fixture.mjs';
+import { weatherFixture } from '../helpers/weather-fixture.mts';
 import { GPX_TIME_CURSOR } from '../../src/gpx/gpx-time-cursor.ts';
 import { pointerEvent } from '../helpers/pointer-event.mjs';
 

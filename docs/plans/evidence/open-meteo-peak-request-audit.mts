@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { runDomTier, type DomCase, type DomContext } from '../../../scripts/dom-tier.mts';
 import { waitForCondition, withOfflineFixturePage } from '../../../scripts/browser-verification-fixtures.mts';
 import { settingsSchema } from '../../../src/settings/settings-schema.ts';
-import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mjs';
+import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mts';
 import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mjs';
 import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mts';
 
