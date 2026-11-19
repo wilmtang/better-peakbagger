@@ -13,7 +13,7 @@ import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition
 import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
-import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
+import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mts';
 // Page-world shapes: Leaflet internals and what the fixtures leave on the page.
 type PageElement = HTMLElement & HTMLInputElement & HTMLSelectElement;
 interface LeafletTile { el: HTMLCanvasElement & HTMLImageElement; loaded?: unknown; active?: unknown; current?: unknown }

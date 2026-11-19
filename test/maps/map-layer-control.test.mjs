@@ -7,7 +7,7 @@ import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts'
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.ts';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.ts';
-import { snowDepthLegend } from '../helpers/snow-depth-fixture.mjs';
+import { snowDepthLegend } from '../helpers/snow-depth-fixture.mts';
 
 test('snow controls identify analysis time, preserve refresh focus and hide unavailable work', () => {
     const dom = new JSDOM('<body></body>', { pretendToBeVisual: true }), doc = dom.window.document, retries = [];

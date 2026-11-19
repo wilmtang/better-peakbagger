@@ -6,9 +6,8 @@ import { wildfireQuery, fetchWildfireComponent } from '../../src/maps/wildfire-c
 import { createTerrainWildfires } from '../../src/terrain/terrain-wildfires.ts';
 import { createWildfireSession } from '../../src/maps/wildfire-session.ts';
 import { readLayerSnapshot, readLayerStatus } from '../../src/maps/map-layer-protocol.ts';
-import { wildfireFeature, wildfireFixture } from '../helpers/wildfire-fixture.mjs';
-// Provider features as these tests build and mutate them; the JavaScript
-// fixture and reader are untyped.
+import { wildfireFeature, wildfireFixture } from '../helpers/wildfire-fixture.mts';
+// Provider features as the validation tests build and mutate them.
 interface WireFeature { type?: string; geometry: { coordinates: unknown }; properties: Record<string, unknown> }
 const ringsOf = (feature: { geometry?: { coordinates: unknown } }) => feature.geometry!.coordinates as number[][][];
 const positionOf = (feature: { geometry?: { coordinates: unknown } }) => feature.geometry!.coordinates as number[];

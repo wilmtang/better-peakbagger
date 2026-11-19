@@ -11,7 +11,7 @@ import { build } from 'esbuild';
 import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
 import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { airQualityFixture } from '../test/helpers/air-quality-fixture.mjs';
+import { airQualityFixture } from '../test/helpers/air-quality-fixture.mts';
 import type { createAirQualityView } from '../src/weather/air-quality-view.ts';
 
 declare global { interface Window {

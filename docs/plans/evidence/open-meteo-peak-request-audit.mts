@@ -10,7 +10,7 @@ import { waitForCondition, withOfflineFixturePage } from '../../../scripts/brows
 import { settingsSchema } from '../../../src/settings/settings-schema.ts';
 import { weatherFixture, weatherModelFixture } from '../../../test/helpers/weather-fixture.mjs';
 import { cloudResponseForUrl } from '../../../test/helpers/summit-cloud-fixture.mjs';
-import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mjs';
+import { airQualityFixture } from '../../../test/helpers/air-quality-fixture.mts';
 
 if (process.argv.length !== 2) throw new Error('This audit probe takes no arguments.');
 const bundlePaths = ['dist/content/peak-weather.js', 'dist/content/summit-cloud.js', 'dist/content/peak-cards.js'];

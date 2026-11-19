@@ -5,7 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { snotelStations, snotelFixture } from '../helpers/snotel-fixture.mjs';
+import { snotelStations, snotelFixture } from '../helpers/snotel-fixture.mts';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mjs';
 
 const [html, bundle] = await Promise.all([

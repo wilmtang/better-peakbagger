@@ -28,7 +28,7 @@ interface SnowTerrain { __snowDepthTestMap: {
     getPaintProperty(layer: string, property: string): unknown; getSource(id: string): unknown;
     once(type: string, callback: () => void): void; triggerRepaint(): void;
 } }
-import { snowDepthCatalogue, snowDepthLegend } from '../test/helpers/snow-depth-fixture.mjs';
+import { snowDepthCatalogue, snowDepthLegend } from '../test/helpers/snow-depth-fixture.mts';
 
 const [kind, ...args] = process.argv.slice(2);
 assert.ok(['chrome', 'firefox'].includes(kind) && !args.length, 'Usage: node scripts/verify-snow-depth.mts chrome|firefox');

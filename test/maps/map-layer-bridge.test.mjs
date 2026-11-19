@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from 'jsdom';
-import { snotelStations } from '../helpers/snotel-fixture.mjs';
+import { snotelStations } from '../helpers/snotel-fixture.mts';
 import { createMapLayerHandoff } from '../../src/background/map-layer-handoff.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 
