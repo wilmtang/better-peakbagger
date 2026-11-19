@@ -13,14 +13,20 @@ test('stored tool preferences reject corrupt fields and ignore annotation conten
         rotation: 0,
     });
     assert.equal(Preferences.clean('unknown'), null);
-    assert.equal(Preferences.clean('text', { style: { align: 'right', background: false } }).style.background, false);
+    const text = Preferences.clean('text', { style: { align: 'right', background: false } });
+    assert.ok(text && 'background' in text.style);
+    assert.equal(text.style.background, false);
 });
 
 test('text width preferences distinguish Auto from an unset or invalid width', () => {
-    assert.equal(Preferences.clean('text', { width: 275 }).width, 275);
-    assert.equal(Preferences.clean('text', { width: null }).width, null);
+    assert.equal(Preferences.clean('text', { width: 275 })?.width, 275);
+    assert.equal(Preferences.clean('text', { width: null })?.width, null);
     for (const width of [undefined, 0, -1, Infinity, '275', 999999]) {
-        assert.equal(Object.hasOwn(Preferences.clean('text', { width }), 'width'), false);
+        const text = Preferences.clean('text', { width });
+        assert.ok(text);
+        assert.equal(Object.hasOwn(text, 'width'), false);
     }
-    assert.equal(Object.hasOwn(Preferences.clean('route', { width: 275 }), 'width'), false);
+    const route = Preferences.clean('route', { width: 275 });
+    assert.ok(route);
+    assert.equal(Object.hasOwn(route, 'width'), false);
 });
