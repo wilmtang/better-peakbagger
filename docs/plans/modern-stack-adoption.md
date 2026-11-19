@@ -74,7 +74,7 @@ jsdom retirement remain open.
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime batches 2.1 through 2.5 and the root Node tooling conversion are committed. The tooling batch (`fd12835a`) passed all 4,209 tests, typecheck, lint and exact packaged Chrome/Firefox verification on Node 24.22.3. At that commit 244 files under `test/`, eight documentation/experiment scripts, one browser fixture script and one store-asset script still used JavaScript. |
 | M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Gaia, onX, AllTrails and CalTopo access behavior moved to real browser input. The remaining jsdom users and dependency removal are open. |
-| M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A 1.9% smaller archive and 3.7× release build time did not justify the additional tooling. See the [candidate and evidence](experiments/wxt-evaluation.md). |
+| M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A follow-up reduced its median CLI build time from 2.24 s to 1.38 s. Production esbuild took 0.46 s and the candidate archives were about 1.9% smaller. See the [candidate and evidence](experiments/wxt-evaluation.md). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 

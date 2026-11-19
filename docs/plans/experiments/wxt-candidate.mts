@@ -11,7 +11,6 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { Script } from 'node:vm';
 import type { Metafile } from 'esbuild';
 import { compile, compileModule } from 'svelte/compiler';
-import ts from 'typescript';
 import { copyAssets, publishBuildTree, RELOAD_SIGNAL } from '../../../scripts/build.mts';
 import { COPY_FILES, ENTRIES, entrySources, root, type BundleEntry } from '../../../scripts/build-config.mts';
 import { patchJsZipCsp } from '../../../scripts/jszip-csp-patch.mts';
@@ -63,6 +62,21 @@ interface WxtToolchain {
             ) => void;
         };
     }): Promise<unknown>;
+}
+
+// Read the module summary without converting Rolldown's native AST to JS.
+type ParseScript = (filename: string, code: string, options: { sourceType: 'module' | 'script' }) => {
+    errors: readonly { message: string }[];
+    module: {
+        staticImports: readonly { moduleRequest: { value: string } }[];
+        dynamicImports: readonly unknown[];
+    };
+};
+
+interface CandidateTools {
+    directory: string;
+    wxt: WxtToolchain;
+    parseSync: ParseScript;
 }
 
 // WXT consumes group results in discovery order. Each candidate group writes
@@ -138,22 +152,17 @@ function runtimePlugin(entry: BundleEntry, inputs: Metafile['inputs'], patched: 
     };
 }
 
-function verifyScriptFormat(entry: BundleEntry, code: string) {
+function verifyScriptFormat(entry: BundleEntry, code: string, parseSync: ParseScript) {
     if (entry.format !== 'esm') new Script(code, { filename: entry.out });
     if (entry.format !== 'esm' && !/(?:-head|theme-early)\.js$/.test(entry.out)) return;
 
-    const source = ts.createSourceFile(entry.out, code, ts.ScriptTarget.Latest, false, ts.ScriptKind.JS);
-    const imports = source.statements.filter(ts.isImportDeclaration).map(statement => {
-        assert.ok(ts.isStringLiteral(statement.moduleSpecifier));
-        return statement.moduleSpecifier.text;
+    const { errors, module: syntax } = parseSync(entry.out, code, {
+        sourceType: entry.format === 'esm' ? 'module' : 'script',
     });
+    assert.deepEqual(errors.map(({ message }) => message), [], `Invalid script ${entry.out}`);
+    const imports = syntax.staticImports.map(({ moduleRequest }) => moduleRequest.value);
     assert.deepEqual(imports, Object.values(entry.browserImports ?? {}), `Static imports changed in ${entry.out}`);
-    const rejectDynamicImport = (node: ts.Node) => {
-        if (ts.isCallExpression(node)) assert.notEqual(node.expression.kind, ts.SyntaxKind.ImportKeyword,
-            `Dynamic import in ${entry.out}`);
-        ts.forEachChild(node, rejectDynamicImport);
-    };
-    rejectDynamicImport(source);
+    assert.equal(syntax.dynamicImports.length, 0, `Dynamic import in ${entry.out}`);
 }
 
 async function inventory(directory: string) {
@@ -164,8 +173,7 @@ async function inventory(directory: string) {
 }
 
 async function buildCandidate(
-    wxt: WxtToolchain,
-    toolchainDirectory: string,
+    { directory, wxt, parseSync }: CandidateTools,
     workspace: string,
     { minify, jobs, fault = false, revision = 0 }: { minify: boolean; jobs: number; fault?: boolean; revision?: number },
 ) {
@@ -177,7 +185,7 @@ async function buildCandidate(
     const publicDirectory = path.join(generation, 'public');
     const inputs: Metafile['inputs'] = {};
     const patched = new Set<string>();
-    await symlink(path.join(toolchainDirectory, 'node_modules'), path.join(generation, 'node_modules'), 'junction');
+    await symlink(path.join(directory, 'node_modules'), path.join(generation, 'node_modules'), 'junction');
     await mkdir(entryDirectory);
     await mkdir(runtimeDirectory);
     await copyAssets(publicDirectory, {
@@ -239,7 +247,7 @@ async function buildCandidate(
     for (const entry of ENTRIES) {
         const code = utf8.decode(await readFile(path.join(candidate, entry.out)));
         assert.ok(!/\p{Noncharacter_Code_Point}/u.test(code), `Invalid extension script character in ${entry.out}`);
-        verifyScriptFormat(entry, code);
+        verifyScriptFormat(entry, code, parseSync);
     }
     for (const asset of await inventory(publicDirectory)) {
         const [source, emitted] = await Promise.all([publicDirectory, candidate].map(dir => readFile(path.join(dir, asset))));
@@ -259,7 +267,7 @@ async function fingerprint(directory: string) {
     return hash.digest('hex');
 }
 
-async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: string, jobs: number) {
+async function verifyRollback(tools: CandidateTools, workspace: string, jobs: number) {
     const live = path.join(workspace, 'chromium');
     const firefox = await createFirefoxSource({ temporaryRoot: workspace });
     const publish = async (candidateDir: string, sequence: number, renameTree?: typeof rename) => {
@@ -276,9 +284,9 @@ async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: s
     };
     const current = () => Promise.all([fingerprint(live), fingerprint(firefox.sourceDir)]);
 
-    await publish(await buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, revision: 1 }), 1);
+    await publish(await buildCandidate(tools, workspace, { minify: false, jobs, revision: 1 }), 1);
     const first = await current();
-    await assert.rejects(buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, fault: true }), error => {
+    await assert.rejects(buildCandidate(tools, workspace, { minify: false, jobs, fault: true }), error => {
         assert.ok(error instanceof Error && error.cause instanceof Error);
         assert.match(error.message, /Failed to build bundle_0/);
         assert.match(error.cause.message, /Unexpected token/);
@@ -286,7 +294,7 @@ async function verifyRollback(wxt: WxtToolchain, toolchain: string, workspace: s
         return true;
     });
     assert.deepEqual(await current(), first, 'A failed build changed a published candidate');
-    const next = await buildCandidate(wxt, toolchain, workspace, { minify: false, jobs, revision: 2 });
+    const next = await buildCandidate(tools, workspace, { minify: false, jobs, revision: 2 });
     await assert.rejects(publish(next, 2, async (from, to) => {
         if (from === next && to === live) throw new Error('Injected candidate publication failure');
         await rename(from, to);
@@ -303,13 +311,17 @@ async function main() {
     const jobs = Number(process.env.BPB_WXT_JOBS ?? Math.min(MAX_BUILD_JOBS, availableParallelism()));
     assert.ok(Number.isInteger(jobs) && jobs >= 1 && jobs <= MAX_BUILD_JOBS,
         `BPB_WXT_JOBS must be an integer from 1 to ${MAX_BUILD_JOBS}`);
-    const toolchain = path.resolve(toolchainPath);
-    const requireTool = createRequire(path.join(toolchain, 'package.json'));
+    const directory = path.resolve(toolchainPath);
+    const requireTool = createRequire(path.join(directory, 'package.json'));
     const wxtEntry = requireTool.resolve('wxt');
     const wxt = await import(pathToFileURL(wxtEntry).href) as WxtToolchain;
-    const vite = createRequire(wxtEntry)('vite/package.json') as { version: string };
+    const requireVite = createRequire(wxtEntry);
+    const vite = requireVite('vite/package.json') as { version: string };
     assert.equal(wxt.version, WXT_VERSION);
     assert.equal(vite.version, VITE_VERSION);
+    const rolldownUtils = createRequire(requireVite.resolve('vite/package.json')).resolve('rolldown/utils');
+    const { parseSync } = await import(pathToFileURL(rolldownUtils).href) as { parseSync: ParseScript };
+    const tools = { directory, wxt, parseSync };
     const workspace = await mkdtemp(path.join(tmpdir(), 'bpb-wxt-candidate-'));
     const previousDirectory = process.cwd();
     const start = performance.now();
@@ -317,10 +329,10 @@ async function main() {
     try {
         process.chdir(workspace);
         if (mode === 'rollback') {
-            await verifyRollback(wxt, toolchain, workspace, jobs);
+            await verifyRollback(tools, workspace, jobs);
             console.log('Verified two complete generations and preserved both reload tokens on compile and Chromium directory-swap failures.');
         } else {
-            const candidate = await buildCandidate(wxt, toolchain, workspace, { minify: mode === 'release', jobs });
+            const candidate = await buildCandidate(tools, workspace, { minify: mode === 'release', jobs });
             keep = true;
             console.log(JSON.stringify({ candidate, workspace, bundles: ENTRIES.length, elapsedMs: Math.round(performance.now() - start) }));
         }

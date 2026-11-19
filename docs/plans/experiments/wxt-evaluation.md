@@ -46,7 +46,7 @@ WXT timing starts after loading the toolchain, while the esbuild wall time
 includes Node startup. These are local build timings. Browser startup time
 was outside the measurement.
 
-### Bounded build concurrency
+### Build performance follow-up
 
 WXT 0.21.5 starts a separate Vite build for every classic script. Our adapter
 also builds each module frame separately, for 67 Vite builds in all. The
@@ -55,12 +55,26 @@ up to six concurrent jobs for the separate outputs, with WXT consuming
 their results in its usual order. A failed build stops the queue and waits
 for active jobs before the disposable tree can be cleaned up. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
 
-Five interleaved release runs on macOS arm64 with Node 24.22.3 gave
-median CLI wall times of 0.43 s for esbuild, 2.13 s for serial WXT and
-1.45 s for concurrent WXT. These timings include Node startup for all
-three commands. The candidate's internal timer fell from 1.71 s to 1.05 s.
-Serial and concurrent WXT output matched byte-for-byte across all 145
-release files and 212 development files.
+Bundle verification reads the emitted files. The follow-up reads the module
+summary from Vite's Rolldown parser, keeping the V8 classic-script and UTF-8
+checks. This saves the cost of loading TypeScript and constructing a second
+AST to check early-script and frame imports.
+
+Each measurement is the median of five interleaved release runs on macOS
+arm64 with Node 24.22.3.
+
+| Release build | CLI wall time | Candidate's internal timer |
+| --- | ---: | ---: |
+| Production esbuild | 0.46 s | — |
+| Serial WXT | 2.24 s | 1.79 s |
+| Concurrent WXT with TypeScript format checks | 1.55 s | 1.13 s |
+| Concurrent WXT with Rolldown format checks | 1.38 s | 1.03 s |
+
+CLI wall time includes Node and toolchain startup for every command. The
+optimized candidate took 38% less wall time than the serial candidate.
+Output matched the original serial candidate byte-for-byte across all 145
+release files and 212 development files. The queue and rollback checks
+also passed.
 
 ## Intentionally not changed
 
