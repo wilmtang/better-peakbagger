@@ -2,8 +2,9 @@
 
 Evaluated November 18, 2026 against `fd12835a` on macOS arm64, with Node
 24.22.3, WXT 0.21.5 and Vite 8.3.8. Keep esbuild as the production publisher.
-The original candidate reduced the archive sizes by about 1.9%, while its
-median serial release build took 3.7 times as long. Adopting it would still
+The original candidate reduced the archive sizes by about 1.9%. After the
+optimization, its median release build still took 2.7–3.0 times as long as
+esbuild in two matched comparisons. Adopting it would still
 require our ordered entry inventory, vendor patches, manifest and packaging
 logic, transactional watcher, and browser launchers.
 
@@ -36,45 +37,44 @@ logic, transactional watcher, and browser launchers.
   browser trees and reload tokens. An injected syntax error and a failed
   Chromium directory swap each preserved the prior trees byte-for-byte.
 
-| Release measurement | esbuild | WXT and Vite |
+| Original release archives | esbuild | WXT and Vite |
 | --- | ---: | ---: |
-| Median of three one-off builds, including assets and notices | 0.50 s | 1.85 s |
 | Chrome archive | 3,703,699 bytes | 3,633,196 bytes |
 | Firefox archive | 3,703,641 bytes | 3,633,316 bytes |
 
-WXT timing starts after loading the toolchain, while the esbuild wall time
-includes Node startup. These are local build timings. Browser startup time
-was outside the measurement.
-
 ### Build performance follow-up
 
-WXT 0.21.5 starts a separate Vite build for every classic script. Our adapter
-also builds each module frame separately, for 67 Vite builds in all. The
-serial group loop dominated the candidate profile. The adapter now uses
-up to six concurrent jobs for the separate outputs, with WXT consuming
-their results in its usual order. A failed build stops the queue and waits
-for active jobs before the disposable tree can be cleaned up. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
+WXT 0.21.5 built each of the candidate's 67 unlisted entry wrappers in a
+separate Vite build. The serial group loop dominated the candidate profile.
+The adapter now uses up to six concurrent jobs for the separate outputs, with
+WXT consuming their results in its usual order. A failed build stops the queue
+and waits for active jobs before the disposable tree can be cleaned up. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
 
 Bundle verification reads the emitted files. The follow-up reads the module
 summary from Vite's Rolldown parser, keeping the V8 classic-script and UTF-8
-checks. This saves the cost of loading TypeScript and constructing a second
-AST to check early-script and frame imports.
+checks. This avoids loading TypeScript and materializing or traversing a
+JavaScript AST to check early-script and frame imports.
 
-Each measurement is the median of five interleaved release runs on macOS
-arm64 with Node 24.22.3.
+Both comparisons interleaved five runs per variant on macOS arm64 with Node
+24.22.3. Each wall measurement spans subprocess launch through exit, including
+Node and toolchain startup, asset copying and notices. Archive compression
+and browser startup were outside the timed commands. The original 3.7× figure
+divided WXT's in-process build time by esbuild's full CLI wall time.
 
-| Release build | CLI wall time | Candidate's internal timer |
-| --- | ---: | ---: |
-| Production esbuild | 0.46 s | — |
-| Serial WXT | 2.24 s | 1.79 s |
-| Concurrent WXT with TypeScript format checks | 1.55 s | 1.13 s |
-| Concurrent WXT with Rolldown format checks | 1.38 s | 1.03 s |
+| Release build | First CLI median | Replicate CLI median | Replicate CLI samples (ms) |
+| --- | ---: | ---: | --- |
+| Production esbuild (`node scripts/build.mts --minify`) | 463 ms | 499 ms | 454, 457, 499, 514, 527 |
+| Serial WXT | 2,242 ms | 2,264 ms | 2,264, 2,121, 2,194, 2,345, 2,518 |
+| Six WXT jobs with TypeScript format checks | 1,550 ms | 1,566 ms | 1,699, 1,457, 1,526, 1,566, 1,951 |
+| Six WXT jobs with Rolldown format checks | 1,383 ms | 1,345 ms | 1,586, 1,273, 1,272, 1,345, 1,642 |
 
-CLI wall time includes Node and toolchain startup for every command. The
-optimized candidate took 38% less wall time than the serial candidate.
-Output matched the original serial candidate byte-for-byte across all 145
-release files and 212 development files. The queue and rollback checks
-also passed.
+The first comparison used `BPB_WXT_JOBS=1` at `eaa22553` for the serial row.
+The replicate ran the original serial adapter at `df8ba40c`. Both used
+`eaa22553` for six jobs with TypeScript checks and `01f54b06` for six jobs
+with Rolldown checks. The optimized candidate took 38–41% less wall time
+than the serial candidate. Both concurrent adapters matched the original
+serial candidate's file paths and SHA-256 digests across all 145 release
+files and 212 development files. The queue and rollback checks also passed.
 
 ## Intentionally not changed
 

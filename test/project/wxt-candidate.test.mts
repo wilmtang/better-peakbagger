@@ -2,7 +2,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { scheduleBuildGroups } from '../../docs/plans/experiments/wxt-candidate.mts';
 
 function deferred<T>() {
@@ -10,6 +15,19 @@ function deferred<T>() {
     const promise = new Promise<T>(complete => { resolve = complete; });
     return { promise, resolve };
 }
+
+test('WXT CLI validates arguments when invoked through a symlinked checkout', async t => {
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-wxt-cli-test-'));
+    t.after(() => rm(directory, { recursive: true, force: true }));
+    const checkout = path.join(directory, 'checkout');
+    const root = fileURLToPath(new URL('../../', import.meta.url));
+    await symlink(root, checkout, 'junction');
+
+    const entry = path.join(checkout, 'docs/plans/experiments/wxt-candidate.mts');
+    const result = spawnSync(process.execPath, [entry, directory, 'invalid'], { encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.match(result.stderr, /Usage: node docs\/plans\/experiments\/wxt-candidate\.mts/);
+});
 
 test('WXT keeps build work bounded and returns the result for each requested group', async () => {
     const first = deferred<string>();

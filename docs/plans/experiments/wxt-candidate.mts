@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire, stripTypeScriptTypes } from 'node:module';
 import { availableParallelism, tmpdir } from 'node:os';
 import path from 'node:path';
@@ -342,4 +342,8 @@ async function main() {
     }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
+if (process.argv[1]) {
+    const entry = path.resolve(process.argv[1]);
+    const modulePath = fileURLToPath(import.meta.url);
+    if (entry === modulePath || (await realpath(entry).catch(() => null)) === modulePath) await main();
+}
