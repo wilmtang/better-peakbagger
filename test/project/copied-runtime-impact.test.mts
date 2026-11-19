@@ -12,7 +12,7 @@ import {
     terrainVerificationRequired,
 } from '../../scripts/copied-runtime-impact.mts';
 
-const lock = (overrides = {}) => ({
+const lock = (overrides: Record<string, string> = {}) => ({
     packages: Object.fromEntries(COPIED_RUNTIME_PACKAGES.map((packageName) => [
         `node_modules/${packageName}`,
         { version: overrides[packageName] || '1.0.0' },
@@ -39,8 +39,8 @@ test('adding or removing a copied runtime is treated as a runtime change', () =>
     assert.throws(() => copiedRuntimeVersions({}), /no packages inventory/);
 });
 
-test('GPU gates cover browser upgrades and source or fixture changes before the next library update', () => {
-    for (const name of ['playwright', 'playwright-core']) {
+test('GPU gates cover browser and compiler upgrades as well as source and fixture changes', () => {
+    for (const name of ['playwright', 'playwright-core', 'wxt', 'vite', 'rolldown']) {
         const before = lock();
         before.packages[`node_modules/${name}`] = { version: '1.62.1' };
         const after = structuredClone(before);

@@ -1,7 +1,7 @@
 # Development guide
 
 Better Peakbagger is a Manifest V3 extension whose `src/` is written as **ES
-modules** and bundled with **esbuild** into `dist/`. `dist/` is the extension:
+modules** and bundled with **WXT/Vite** into `dist/`. `dist/` is the extension:
 it is what you load in a browser, what the release packagers zip, and what the
 real-extension checks exercise. You never load the repo root directly.
 
@@ -18,7 +18,7 @@ Better Peakbagger module uses a global as an internal dependency.
   TypeScript from authored `.ts`/`.mts` tooling and tests; type checking remains
   a separate required command.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
-  (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+  (WXT, Vite, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
   which makes `.githooks/pre-commit` scan staged contents and paths and
   `.githooks/commit-msg` scan the proposed message through
@@ -71,14 +71,13 @@ generated `.js` filenames consumed by the manifest and pages. New Node tests use
 `.test.mts`; run converted scale tests explicitly until their owning runner is
 updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
 conversion must also update the relevant source guards and watch coverage from
-[the adoption plan](plans/modern-stack-adoption.md). Svelte is installed and
-compiles, but no shipped bundle imports a component yet (M6).
+[the adoption plan](plans/modern-stack-adoption.md). The Units settings panel
+and Summit Cloud controls ship as Svelte islands.
 
 Svelte components (`.svelte`) and rune modules (`.svelte.ts`) compile through
-[svelte-build.mts](../scripts/svelte-build.mts), which every bundle in
-`scripts/build.mts` receives: runes mode, production client output in every
-build including watch, and styles injected by the component so a bundle keeps
-one output file. `npm run typecheck` runs
+[the shared Svelte settings](../scripts/svelte-build.mts) applied by Vite.
+Every build uses runes mode and production client output. The component
+injects its styles so each bundle keeps one output file. `npm run typecheck` runs
 `svelte-check --tsconfig ./tsconfig.check.json` over the browser project, and
 ESLint lints components and rune modules in the runtime roots with the
 TypeScript rules, requiring `<script lang="ts">`. Mount a component beside
@@ -243,8 +242,8 @@ npm run start -- chromium --chromium-binary "/path/to/chrome-for-testing"
 ```
 
 Without additional profile flags, each command makes the initial `dist/` build,
-launches web-ext with a temporary browser profile, keeps esbuild watching the
-source tree, and reloads the extension after every successful rebuild. Stop the
+launches web-ext with a temporary browser profile, watches the source tree,
+and reloads the extension after every successful WXT generation. Stop the
 command with Ctrl+C; the watchers, browser process, and Firefox temporary source
 are then cleaned up.
 
@@ -313,10 +312,10 @@ Creating new nested subdirectories or files inside an already-watched root works
 live without restarting. Restart any watcher after adding a new top-level source
 or asset directory, creating a configured top-level directory that did not exist
 when the watcher started, or changing entry or compiler configuration
-(`scripts/build-config.mts`, `scripts/build.mts`, `tsconfig.check.json`,
+(`scripts/build-config.mts`, `scripts/build.mts`, `scripts/wxt-build.mts`, `tsconfig.check.json`,
 `tsconfig.node.check.json`) or installed dependencies (`package.json`,
-`package-lock.json`, `node_modules/`)—the running Node process has already
-created its esbuild contexts and loaded those inputs.
+`package-lock.json`, `node_modules/`). A restart reloads the watch layout and
+compiler settings together.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
@@ -686,9 +685,10 @@ token unchanged.
 
 `scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
-assets/vendor distributions are copied. `scripts/build.mts` turns that config
-into esbuild calls. The manifest names only generated bundle paths; tests
-cross-check those references against the config.
+assets/vendor distributions are copied. `scripts/wxt-build.mts` generates WXT
+entries and gives Vite their ordered source imports. `scripts/build.mts`
+validates and publishes the complete tree. The manifests, copied vendor files
+and notice inventory share this build in development and releases.
 
 Every classic browser entry point (the service worker, each content script, and
 the options and popup pages) is bundled into one self-contained **IIFE** file.
@@ -725,7 +725,7 @@ build config.
 
 ## Adding or changing a source module
 
-1. Write `src/<domain>/foo.js` as an ES module: `export` what other modules
+1. Write `src/<domain>/foo.ts` as an ES module: `export` what other modules
    need, and `import` your own dependencies. Do **not** publish a `globalThis`
    global.
    - Modules that only run for side effects and need an early `return` (e.g. "no
@@ -733,7 +733,7 @@ build config.
      control flow. That is fine as long as they publish no globals.
 2. Add the module to the relevant bundle(s) in `scripts/build-config.mts`
    `ENTRIES` as an explicit root. A module can appear in several bundles;
-   esbuild follows and deduplicates imports within each bundle.
+   Vite follows and deduplicates imports within each bundle.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
    an `ENTRIES` record **and** wire it into `manifest.json` (or the page HTML).
 4. Add focused coverage and run `npm test`.
@@ -835,7 +835,7 @@ exactly by `package-lock.json`. The build sources them from `node_modules` into
   `scripts/maplibre-terrain-lod-patch.mts`; worker/shared code stays verbatim.
   Dependency upgrades must review or remove that patch. The native terrain-frame
   entry imports the main module directly and sets the packaged worker URL.
-- **tz-lookup** ships only CommonJS, so esbuild bundles it directly into the GPX
+- **tz-lookup** ships only CommonJS, so Vite bundles it directly into the GPX
   analyzer and ascent-editor bundles that import it.
 
 Chart and marked stay **separately-loaded browser globals** because the manifest
@@ -942,11 +942,11 @@ attributed:
 
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
-| `bundled-runtime` | bundled by esbuild | yes |
+| `bundled-runtime` | bundled by Vite | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
-| `tooling` | nothing; build and test only | no |
+| `tooling` | WXT, Vite, Rolldown, and other build and test tooling | no |
 | `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
-| `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by esbuild; compiler, checker, and lint tools never | yes (runtime only) |
+| `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by Vite | yes (runtime only) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 

@@ -1,7 +1,8 @@
 # WXT and Vite build evaluation
 
 Evaluated November 18, 2026 against `fd12835a` on macOS arm64, with Node
-24.22.3, WXT 0.21.5 and Vite 8.3.8. Keep esbuild as the production publisher.
+24.22.3, WXT 0.21.5 and Vite 8.3.8. This records the experiment that preceded
+the production cutover in the [M8 plan](../modern-stack-adoption.md).
 The original candidate reduced the archive sizes by about 1.9%. After the
 optimization, its median release build still took 2.7–3.0 times as long as
 esbuild in two matched comparisons. Adopting it would still
@@ -10,7 +11,7 @@ logic, transactional watcher, and browser launchers.
 
 ## Fixed and verified
 
-- The [candidate builder](wxt-candidate.mts) emits all 67 bundles from the
+- The candidate builder at `3a3b61a6` emitted all 67 bundles from the
   production entry inventory. WXT evaluates inert metadata during discovery.
   The Vite build hook then receives the ordered, static source imports.
   Both module frames kept their local MapLibre imports. The other 65 bundles
@@ -92,10 +93,10 @@ files and 212 development files. The queue and rollback checks also passed.
   the candidate. The comparison did not publish packages or run a hosted
   Actions workflow.
 
-## Reproduce the candidate
+## Reproduce the historical candidate
 
-Install the experimental tools in a disposable directory. The separate
-lockfile captures the resolved dependencies for reuse with `npm ci`.
+Use a disposable checkout at `3a3b61a6`, which contains the candidate
+runner. Install its tools in a separate directory.
 
 ```bash
 wxt_tools="$(mktemp -d)"
@@ -113,4 +114,5 @@ archive paths. The `development` selection emits an unminified candidate
 with source maps. Set `BPB_WXT_JOBS=1` for WXT's serial build loop. Values
 from two through six set the concurrent job count explicitly. Remove the
 printed workspace and the disposable toolchain and archive directories
-after verification.
+after verification. Use the [production WXT build](../../../scripts/wxt-build.mts)
+for current code.

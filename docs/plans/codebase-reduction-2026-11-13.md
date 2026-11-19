@@ -191,7 +191,7 @@ roughly 16–20 other test files that read authored source, CSS or HTML (not the
      (about 75 lines, `release.test.mts:600-674`) pin the text of `verify-firefox-extension.mts`. The
      surviving check is that verifier itself; what it cannot show is a
      reintroduced fixed sleep that still passes on an idle machine.
-  2. `copied-runtime-impact.test.mjs` "Firefox GPU gestures…", "Chrome solar
+  2. `copied-runtime-impact.test.mts` "Firefox GPU gestures…", "Chrome solar
      bearing…", "Chrome terrain verification waits out…" and "Chrome
      tilted-peak verification…" pin GPU-verifier text, with the same trade-off
      against `verify -- terrain`.

@@ -6,11 +6,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { build, type Metafile } from 'esbuild';
 // @ts-expect-error js-yaml ships no declarations; parsed workflows are typed below.
 import yaml from 'js-yaml';
 
-import { esbuildOptions } from '../../scripts/build.mts';
+import { buildWxtBundles } from '../../scripts/wxt-build.mts';
 import {
     ENTRIES,
     VENDOR_COPY,
@@ -91,15 +90,13 @@ const npmPackageName = (specifier: string): string => specifier.startsWith('@')
     ? specifier.split('/').slice(0, 2).join('/')
     : specifier.split('/')[0];
 
-const metafilePackages = (metafiles: readonly Metafile[]): Set<string> => {
+const bundledInputPackages = (inputs: readonly string[]): Set<string> => {
     const packages = new Set<string>();
-    for (const metafile of metafiles) {
-        for (const input of Object.keys(metafile.inputs)) {
-            const normalized = input.replaceAll(path.sep, '/');
-            if (!/(?:^|\/)node_modules\//.test(normalized)) continue;
-            const inner = normalized.split(/(?:^|\/)node_modules\//).pop();
-            if (inner) packages.add(npmPackageName(inner));
-        }
+    for (const input of inputs) {
+        const normalized = input.replaceAll(path.sep, '/');
+        if (!/(?:^|\/)node_modules\//.test(normalized)) continue;
+        const inner = normalized.split(/(?:^|\/)node_modules\//).pop();
+        if (inner) packages.add(npmPackageName(inner));
     }
     return packages;
 };
@@ -108,9 +105,14 @@ const bundledPackagesForEntries = async (
     entries: readonly BundleEntry[],
     projectRoot?: string,
 ): Promise<Set<string>> => {
-    const results = await Promise.all(entries.map(entry =>
-        build({ ...esbuildOptions(entry, { projectRoot }), write: false })));
-    return metafilePackages(results.map(result => result.metafile));
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-runtime-graph-'));
+    try {
+        const { inputPaths } = await buildWxtBundles({ entries, projectRoot, outputDir: path.join(directory, 'bundles'), minify: true,
+            manifestPath: entries === ENTRIES ? undefined : null });
+        return bundledInputPackages(inputPaths);
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
 };
 
 test('the privileged merge decision runs only from trusted base-branch code', () => {
@@ -243,7 +245,7 @@ test('copied runtime updates add hardware GPU gates to stable required checks', 
 });
 
 const SVELTE_RUNTIME_PACKAGES = new Set(['svelte', 'esm-env', 'clsx']);
-const SVELTE_COMPILER_PACKAGES = ['esbuild-svelte', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser'] as const;
+const BUILD_TOOLS = ['wxt', 'vite', 'rolldown', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser'] as const;
 
 const checkBundledGroups = (
     bundledPackages: readonly string[],
@@ -260,7 +262,7 @@ const checkBundledGroups = (
     }
 };
 
-test('runtime dependency groups match actual esbuild metafiles', async () => {
+test('runtime dependency groups match the production WXT input graph', async () => {
     const bundledPatterns = groupPatterns('bundled-runtime');
     const copiedPatterns = groupPatterns('copied-runtime');
     const sveltePatterns = groupPatterns('svelte');
@@ -289,7 +291,7 @@ test('runtime dependency groups match actual esbuild metafiles', async () => {
     assert.ok(bundledPackages.includes('suncalc'));
     for (const expected of SVELTE_RUNTIME_PACKAGES) {
         assert.ok(bundledPackages.includes(expected),
-            `shipped Svelte runtime package ${expected} must be discovered in production metafiles`);
+            `shipped Svelte runtime package ${expected} must be discovered in production inputs`);
         assert.throws(
             () => checkBundledGroups(
                 bundledPackages,
@@ -301,20 +303,20 @@ test('runtime dependency groups match actual esbuild metafiles', async () => {
             `removing ${expected} from the Dependabot svelte group must fail the guard`,
         );
     }
-    for (const compilerTool of SVELTE_COMPILER_PACKAGES) {
+    for (const compilerTool of BUILD_TOOLS) {
         assert.equal(bundledPackages.includes(compilerTool), false,
             `compiler tool ${compilerTool} must never ship into production bundles`);
     }
 });
 
-test('metafile extraction captures compiled Svelte runtime packages and ignores erased type-only imports', async () => {
+test('the WXT input graph captures Svelte runtime packages and ignores erased type-only imports', async () => {
     const compiledPackages = await bundledPackagesForEntries([
         { out: 'svelte-fixture/island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] },
     ]);
     for (const expected of ['svelte', 'esm-env', 'clsx']) {
-        assert.ok(compiledPackages.has(expected), `compiled fixture metafile must report ${expected}`);
+        assert.ok(compiledPackages.has(expected), `compiled fixture must report ${expected}`);
     }
-    for (const compilerTool of ['esbuild-svelte', 'svelte-check', 'eslint-plugin-svelte', 'svelte-eslint-parser']) {
+    for (const compilerTool of BUILD_TOOLS) {
         assert.equal(compiledPackages.has(compilerTool), false,
             `compiler tooling ${compilerTool} must not appear in bundled inputs`);
     }

@@ -4,7 +4,6 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { Metafile } from 'esbuild';
 
 import {
     NON_PACKAGE_NOTICES,
@@ -116,13 +115,12 @@ function renderRecord(record: PackageNoticeRecord): string {
     ].join('\n');
 }
 
-export async function collectThirdPartyNotices({ metafiles }: {
-    readonly metafiles: readonly Metafile[];
+export async function collectThirdPartyNotices({ inputPaths }: {
+    readonly inputPaths: readonly string[];
 }): Promise<PackageNoticeRecord[]> {
     const packageRoots = new Set<string>();
-    const bundledInputs = metafiles.flatMap((metafile) => Object.keys(metafile.inputs));
     const runtimeInputs = [
-        ...bundledInputs.map((input) => path.resolve(root, input)),
+        ...inputPaths.map((input) => path.resolve(root, input)),
         ...VENDOR_COPY.map(([input]) => nodeModule(input)),
     ];
 
@@ -164,11 +162,11 @@ export function renderThirdPartyNotices(records: readonly PackageNoticeRecord[])
     ].join('\n');
 }
 
-export async function writeThirdPartyNotices({ metafiles, outputDir = distDir }: {
-    readonly metafiles: readonly Metafile[];
+export async function writeThirdPartyNotices({ inputPaths, outputDir = distDir }: {
+    readonly inputPaths: readonly string[];
     readonly outputDir?: string;
 }): Promise<{ readonly records: PackageNoticeRecord[]; readonly output: string }> {
-    const records = await collectThirdPartyNotices({ metafiles });
+    const records = await collectThirdPartyNotices({ inputPaths });
     const output = renderThirdPartyNotices(records);
     await writeFile(path.join(outputDir, 'THIRD_PARTY_NOTICES.txt'), output);
     return { records, output };

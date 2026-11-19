@@ -139,7 +139,13 @@ interface BrowserOperation<Result> {
 // Page-realm globals the worker's injected functions call. Those functions are
 // serialized and run in the page, so these casts never reach the worker.
 type PageGlobals = typeof globalThis & {
-    BPBPeakbaggerPage?: { version?: number; accountEvidence(): unknown; request(request: unknown): unknown; [member: string]: unknown };
+    BPBPeakbaggerPage?: {
+        version?: number;
+        accountEvidence(): unknown;
+        request(request: unknown): unknown;
+        cancel?(id: string): boolean;
+        [member: string]: unknown;
+    };
     BPBProviderPage?: {
         cancelCapture?(generation: string): unknown;
         waitForOwnership(expected: unknown, generation: string): Promise<unknown>;
@@ -1144,7 +1150,7 @@ type DraftMap = Record<string, DraftRecord>;
             if (requestId === null) return;
             void ext.scripting.executeScript({
                 target: { tabId },
-                func: (id: string) => ((globalThis as PageGlobals).BPBPeakbaggerPage?.cancel as ((id: string) => unknown) | undefined)?.(id) === true,
+                func: (id: string) => (globalThis as PageGlobals).BPBPeakbaggerPage?.cancel?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
                 injectImmediately: true,

@@ -8,9 +8,8 @@ choices the same day, recorded under [Owner decisions](#owner-decisions).
 ## Goal
 
 Write new and changed extension code in checked TypeScript and, where a UI owner
-benefits, Svelte. Do this through the existing esbuild build, beside legacy
-JavaScript, without changing behavior, storage or wire formats, permissions or
-packaging.
+benefits, Svelte. Preserve behavior, storage and wire formats, permissions and
+packaging through the compiler cutover.
 
 - **Production adoption is done at M6:** one real settings panel ships through
   checked TS/Svelte beside unchanged legacy code and passes the browser and
@@ -20,11 +19,12 @@ packaging.
   scripts and tests move to TypeScript in small batches. Generated output and
   upstream third-party code keep their required formats. Svelte conversion stays
   per surface and is not required for every UI.
-- **WXT/Vite is optional (M8):** declining it is a supported outcome.
+- **WXT/Vite is the chosen production compiler (M8).** The owner accepted its
+  measured time cost and requested the cutover after the full evaluation.
 
 Out of scope: rewriting working features in Svelte for uniformity, adding a demonstration
-feature to exercise the stack, and requiring WXT/Vite or replacement messaging,
-storage or chart libraries first. The supplied
+feature to exercise the stack, and replacing messaging, storage or chart libraries.
+The supplied
 `ts_svelte_vite_migration_and_stack_report.md` proposes WXT/Vite for a greenfield
 extension; treat that as a candidate, and measure its size estimates and chart
 replacement before they become acceptance criteria.
@@ -57,7 +57,7 @@ evidence.
 
 ## Current progress
 
-**Open: M7 and M7.5.** The Units settings panel and Summit Cloud controls ship
+**Open: M7, M7.5 and M8 verification.** The Units settings panel and Summit Cloud controls ship
 through checked TypeScript and Svelte. The production runtime and root Node
 tooling have moved to TypeScript. Test and evidence tooling conversion and
 jsdom retirement remain open.
@@ -74,7 +74,7 @@ jsdom retirement remain open.
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime and root Node tooling are converted. At `dc985cc9`, 231 authored JavaScript files remain, including 222 test files and helpers. The repository-wide policy and removal of `allowJs` are exit tasks. |
 | M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Provider access and avalanche links now use browser fixtures. All six standalone verifier imports of jsdom have been removed. Test helpers, test suites, the request-count evidence probe and dependency removal are open. |
-| M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A follow-up reduced its median CLI build time by 38–41% across two comparisons. It still took 2.7–3.0 times as long as esbuild and its archives were about 1.9% smaller. See the [candidate and evidence](experiments/wxt-evaluation.md). |
+| M8 | Production cutover in verification | WXT/Vite builds every development and release generation. The manifest, entry inventory, output filenames and browser-specific packaging remain authoritative in their existing owners. Complete the reload, package, browser-floor and upgrade gates against the production path. See the [evaluation](experiments/wxt-evaluation.md). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 
@@ -718,10 +718,23 @@ tests can no longer run there, and `npm test` covers pure logic only.
 
 ### M8 — Evaluate and optionally cut over WXT/Vite
 
-Outcome on November 18, 2026: retain the TypeScript, Svelte and esbuild
-production build. The [evaluation ledger](experiments/wxt-evaluation.md)
-records the passing full candidate, the Chromium registration fix, the
-measured trade-off and the remaining cutover proof.
+The owner selected WXT/Vite for production after reviewing the
+[full candidate evaluation](experiments/wxt-evaluation.md). The production
+backend uses WXT's build API and public Vite config hook. It generates inert
+entry definitions from the single ordered inventory and uses WXT's scheduler.
+Each generation runs in a separate working directory and Node process so WXT's
+build state and environment loading stay inside that generation. The existing
+publisher, reload signal and browser-specific packaging still own their
+respective contracts. [WXT build internals](https://wxt.dev/guide/resources/how-wxt-works#building)
+
+The production compiler passed the Node suite, the 60-case DOM browser tier,
+and real unpacked and packaged extension verification in hidden Chromium
+158.0.8127.18 and Firefox 160.0.1 on macOS. Both browsers restored the fixture
+from BFCache. The minified Chrome and Firefox archives each contained 145
+entries. Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium at
+448 × 448 and 798 × 448, and in hidden Firefox 159.0 at 1000 × 760. The
+development reload and paired rollback, declared browser floors, and upgrade
+from an esbuild package still need dedicated checks.
 
 This is feasible to investigate alongside legacy sources, but it is not just a
 bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
@@ -758,9 +771,9 @@ top-level side effects.
 
 Exit: the candidate passes the same manifest, runtime, reload, package and
 upgrade checks as production, with reviewed size/startup differences and a
-rollback path. A successful one-page spike alone cannot close M8. Do not combine
-the cutover with new messaging/storage libraries or a visual redesign. Keep
-declining WXT as an explicit supported outcome if parity or benefit is absent.
+rollback path. The owner accepted the performance cost of the full candidate.
+Any failure of a release compatibility gate still warrants restoring the last
+verified publisher until the failure is fixed.
 
 ## Compatibility checklist for every implementation milestone
 

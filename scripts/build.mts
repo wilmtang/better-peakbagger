@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Better Peakbagger — esbuild bundler.
+// Better Peakbagger — WXT/Vite build and transactional publication.
 //
 // The extension source lives as ES modules under src/. Browsers cannot load an
 // ES module as a classic content script, so manifest entry points are bundled
@@ -11,24 +11,22 @@
 // packagers zip, and what the real-extension checks exercise.
 //
 // The bundle composition and asset list live in scripts/build-config.mts (the
-// single source of truth, shared with the test suite). This file only turns
-// that config into esbuild calls and copies.
+// single source of truth, shared with the test suite). WXT/Vite compiles the
+// bundles while this file stages assets and publishes complete generations.
 //
 // Usage:
 //   node scripts/build.mts            one-off development build (sourcemaps)
 //   node scripts/build.mts --minify   production build (minified, no sourcemap)
 //   node scripts/build.mts --watch    rebuild on source/asset change
 
-import { build, context, type BuildOptions, type Plugin } from 'esbuild';
-import { jsZipCspPlugin } from './jszip-csp-patch.mts';
 import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mts';
-import { sveltePlugins } from './svelte-build.mts';
 import {
     access,
     copyFile,
     mkdir,
     readFile,
     readdir,
+    realpath,
     rename,
     rm,
     stat,
@@ -44,12 +42,12 @@ import {
     COPY_DIRS,
     VENDOR_COPY,
     nodeModule,
-    entrySources,
     root,
     distDir,
     type BundleEntry,
 } from './build-config.mts';
 import { writeThirdPartyNotices } from './third-party-notices.mts';
+import { buildWxtBundles } from './wxt-build.mts';
 
 const args = new Set(process.argv.slice(2));
 const MINIFY = args.has('--minify');
@@ -113,48 +111,6 @@ export async function copyAssets(outputDir: string, {
             await writeFile(dest, patchMapLibreTerrainLod(source, version));
         } else await copyFile(nodeModule(from), dest);
     }
-}
-
-// esbuild takes one entry file per output. For a multi-module bundle we feed it
-// a generated stub that imports each source in order.
-function browserImportPlugins(imports: Record<string, string> = {}): Plugin[] {
-    if (Object.keys(imports).length === 0) return [];
-    return [{
-        name: 'extension-browser-imports',
-        setup(buildContext) {
-            buildContext.onResolve({ filter: /.*/ }, resolveArgs => {
-                if (!Object.hasOwn(imports, resolveArgs.path)) return undefined;
-                return { path: imports[resolveArgs.path], external: true };
-            });
-        },
-    }];
-}
-
-export function esbuildOptions(entry: BundleEntry, {
-    minify = MINIFY,
-    outputDir = distDir,
-    projectRoot = root,
-}: { minify?: boolean; outputDir?: string; projectRoot?: string } = {}): BuildOptions & { metafile: true } {
-    const imports = entrySources(entry, projectRoot).map(f => `import ${JSON.stringify(f)};`).join('\n');
-    return {
-        stdin: {
-            contents: imports + '\n',
-            resolveDir: projectRoot,
-            sourcefile: path.join('build-entry', entry.out),
-            loader: 'js',
-        },
-        outfile: path.join(outputDir, entry.out),
-        bundle: true,
-        format: (entry.format as 'iife' | 'esm' | 'cjs' | undefined) || 'iife',
-        target: ['chrome128', 'firefox152'],
-        platform: 'browser',
-        legalComments: 'none',
-        metafile: true,
-        minify,
-        sourcemap: minify ? false : 'linked',
-        logLevel: 'warning',
-        plugins: [...browserImportPlugins(entry.browserImports), ...(entry.patchJsZip ? [jsZipCspPlugin() as Plugin] : []), ...sveltePlugins()],
-    };
 }
 
 function newBuildTreePath(projectRoot = root) {
@@ -257,17 +213,11 @@ export async function buildOnce({ minify = MINIFY }: { minify?: boolean } = {}) 
     const stagingRoot = newBuildTreePath();
     const candidateDir = path.join(stagingRoot, 'generation');
     await cleanupAbandonedBuildTrees({ keep: stagingRoot });
-    await mkdir(candidateDir, { recursive: true });
     try {
-        const results = await Promise.all(ENTRIES.map(e => build(esbuildOptions(e, {
-            minify,
-            outputDir: candidateDir,
-        }))));
-        await writeThirdPartyNotices({
-            metafiles: results.map(({ metafile }) => metafile),
-            outputDir: candidateDir,
-        });
-        await copyAssets(candidateDir);
+        const { inputPaths, diagnostics } = await buildWxtBundles({ minify, outputDir: candidateDir });
+        if (diagnostics) console.warn(diagnostics);
+        await writeThirdPartyNotices({ inputPaths, outputDir: candidateDir });
+        await copyAssets(candidateDir, { copyFiles: COPY_FILES.filter(([, to]) => to !== 'manifest.json') });
         await validateBuildTree(candidateDir, { minify });
         await publishBuildTree({ candidateDir });
         console.log(`Built ${ENTRIES.length} bundles into dist/${minify ? ' (minified)' : ''}`);
@@ -343,8 +293,8 @@ const sameSnapshot = (left: Map<string, string>, right: Map<string, string>) => 
     && [...left].every(([file, signature]) => right.get(file) === signature);
 
 // Watch mode rebuilds every bundle as one transaction. A shared module can
-// feed several independent esbuild contexts; reloading after the first context
-// finishes would expose a mixed runtime tree. The signal file is therefore
+// feed several WXT entries. Reloading after an individual bundle finishes
+// would expose a mixed runtime tree. The signal file is therefore
 // written only after every bundle and copied asset has completed successfully.
 export async function watchAll({
     projectRoot = root,
@@ -371,12 +321,7 @@ export async function watchAll({
     const stagingRoot = newBuildTreePath(projectRoot);
     const outputDir = path.join(stagingRoot, 'working');
     await cleanupAbandonedBuildTrees({ directory: projectRoot, keep: stagingRoot });
-    await mkdir(outputDir, { recursive: true });
-    const contexts = await Promise.all(entries.map(e => context(esbuildOptions(e, {
-        minify: false,
-        outputDir,
-        projectRoot,
-    }))));
+    const manifestSource = copyFiles.find(([, to]) => to === 'manifest.json')?.[0];
     const watchers: FSWatcher[] = [];
     let sequence = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -404,13 +349,11 @@ export async function watchAll({
             startupBaseline = baseline;
         }
         await rm(outputDir, { recursive: true, force: true });
-        await mkdir(outputDir, { recursive: true });
-        const results = await Promise.all(contexts.map(buildContext => buildContext.rebuild()));
-        await writeThirdPartyNotices({
-            metafiles: results.map(({ metafile }) => metafile),
-            outputDir,
-        });
-        await copyAssets(outputDir, layout);
+        const { inputPaths, diagnostics } = await buildWxtBundles({ outputDir, entries, projectRoot,
+            manifestPath: manifestSource ? path.resolve(projectRoot, manifestSource) : null });
+        if (diagnostics) console.warn(diagnostics);
+        await writeThirdPartyNotices({ inputPaths, outputDir });
+        await copyAssets(outputDir, { ...layout, copyFiles: copyFiles.filter(([, to]) => to !== 'manifest.json') });
         await validateBuildTree(outputDir, { minify: false, ...layout });
 
         // Preserve the prior token through the tree publication. The new token
@@ -475,7 +418,6 @@ export async function watchAll({
         }
     } catch (error) {
         for (const watcher of watchers) watcher.close();
-        await Promise.all(contexts.map(buildContext => buildContext.dispose()));
         await rm(stagingRoot, { recursive: true, force: true });
         throw error;
     }
@@ -495,16 +437,19 @@ export async function watchAll({
             startupChecks.forEach(clearTimeout);
             for (const watcher of watchers) watcher.close();
             if (building) await building;
-            await Promise.all(contexts.map(buildContext => buildContext.dispose()));
             await rm(stagingRoot, { recursive: true, force: true });
         },
     };
 }
 
-const isCli = process.argv[1]
-    && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const argvEntry = process.argv[1] && path.resolve(process.argv[1]);
+const modulePath = fileURLToPath(import.meta.url);
+const isCli = argvEntry && (argvEntry === modulePath || await realpath(argvEntry).catch(() => null) === modulePath);
 
 if (isCli) {
+    if (process.argv.length > 3 || [...args].some(arg => arg !== '--minify' && arg !== '--watch')) {
+        throw new Error('Usage: node scripts/build.mts [--minify|--watch]');
+    }
     const run = WATCH ? () => watchAll() : () => buildOnce();
     run().catch(err => { console.error(err); process.exit(1); });
 }
