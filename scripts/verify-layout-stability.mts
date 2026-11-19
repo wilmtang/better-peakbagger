@@ -8,10 +8,9 @@ import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
-import { JSDOM } from 'jsdom';
 import { layoutVerificationPlan } from './layout-verification-plan.mts';
 import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mts';
-import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mts';
+import { createBrowserFixtureServer, fixtureContentType, prepareAscentBackupEditFixture, projectRoot } from './browser-verification-fixtures.mts';
 import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 import { createResourceStack } from './resource-stack.mts';
 import { gpxPanelCss } from '../src/gpx/gpx-panel-css.ts';
@@ -297,12 +296,8 @@ async function handoffCase(page: Page, origin: string, variant: LayoutVariant) {
 }
 async function ascentBackupCase(page: Page, origin: string, variant: LayoutVariant) {
     const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
-    const edit = new JSDOM(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'));
-    (edit.window.document.getElementById('PeakListBox') as FixtureElement).innerHTML = '<option value="2296" selected>Mount Rainier</option>';
-    (edit.window.document.getElementById('DateText') as FixtureElement).setAttribute('value', '2026-07-12');
-    (edit.window.document.getElementById('PointFt') as FixtureElement).setAttribute('value', '14411');
-    const editHtml = edit.serialize();
-    edit.window.close();
+    const editPath = path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html');
+    const editHtml = prepareAscentBackupEditFixture(await readFile(editPath, 'utf8'), { elevationFeet: 14411 });
     await page.route('**/climber/ascent.aspx?aid=7654321', (route: Route) => route.fulfill({ contentType: 'text/html', body: html }));
     await page.route('**/climber/ascentedit.aspx**', (route: Route) => route.fulfill({ contentType: 'text/html', body: editHtml }));
     await page.route('**/climber/GPXFile.aspx**', (route: Route) => route.fulfill({ contentType: 'application/gpx+xml',

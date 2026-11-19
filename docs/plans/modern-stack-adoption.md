@@ -675,6 +675,12 @@ The [weather interval verifier](../../scripts/verify-weather-intervals.mts)
 now prepares its Nepal fixture without jsdom. The old and new versions both
 passed in hidden Chromium 158.0.8127.18 at 1440 × 1000, with the same 24.0 mm
 sum, GMT+5:45 boundary labels, keyboard readout and two intercepted requests.
+The ascent backup lifecycle and layout verifiers now share a checked edit-form
+fixture transform. Hidden Chromium 158.0.8127.18 restored the exact BFCache
+document with one control and zero writes at 1000 × 760 and 390 × 760. The
+layout surface passed eight cases in that Chromium and Firefox 159.0 at
+390 × 900 and 1280 × 900 in both themes. The fixture guard accepts LF and
+CRLF checkouts and rejects missing and duplicate fields.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM

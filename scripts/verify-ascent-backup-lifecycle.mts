@@ -8,8 +8,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
-import { JSDOM } from 'jsdom';
-import { createFixtureCertificate, projectRoot } from './browser-verification-fixtures.mts';
+import { createFixtureCertificate, prepareAscentBackupEditFixture, projectRoot } from './browser-verification-fixtures.mts';
 import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
@@ -28,11 +27,7 @@ try {
     assert.ok(certificate);
     resources.defer('certificate', () => certificate.remove());
     const ascent = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
-    const edit = new JSDOM(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'));
-    edit.window.document.getElementById('PeakListBox')!.innerHTML = '<option selected value="2296">Mount Rainier</option>';
-    edit.window.document.getElementById('DateText')!.setAttribute('value', '2026-07-12');
-    const editHtml = edit.serialize();
-    edit.window.close();
+    const editHtml = prepareAscentBackupEditFixture(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'));
     const server = createServer(certificate, (request, response) => {
         const pathname = new URL(request.url || '/', 'https://www.peakbagger.com').pathname;
         const isGpx = /GPXFile/i.test(pathname);

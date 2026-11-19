@@ -1456,6 +1456,26 @@ export async function sendFixtureFile(
     response.end(contents);
 }
 
+// Both ascent backup verifiers use this saved edit form. Keep the production
+// fixture markup intact outside the fields the two scenarios populate.
+export function prepareAscentBackupEditFixture(html: string, { elevationFeet }: { elevationFeet?: number } = {}): string {
+    const peak = '<select size="4" name="PeakListBox" id="PeakListBox" style="height:116px;width:292px;">';
+    const peakFields = html.match(new RegExp(`${peak}\\s*</select>`, 'g'));
+    if (peakFields?.length !== 1) throw new Error('Expected one empty PeakListBox in the ascent backup fixture');
+    const date = '<input name="DateText" type="text" id="DateText" style="width:80px;">';
+    const elevation = '<input name="PointFt" type="text" id="PointFt" style="WIDTH: 48px" size="1" value="0">';
+    const fields = [
+        ['PeakListBox', peakFields[0], `${peak}<option value="2296" selected>Mount Rainier</option></select>`],
+        ['DateText', date, `${date.slice(0, -1)} value="2026-07-12">`],
+    ];
+    if (elevationFeet !== undefined) fields.push(['PointFt', elevation, elevation.replace('value="0"', `value="${elevationFeet}"`)]);
+    for (const [field, before, after] of fields) {
+        if (html.split(before).length !== 2) throw new Error(`Expected one ${field} field in the ascent backup fixture`);
+        html = html.replace(before, after);
+    }
+    return html;
+}
+
 // The terrain verifiers load terrain/terrain.html directly rather than through
 // the extension, so they have to supply the chrome.runtime URL resolver the real
 // frame gets from its extension origin. This was copied byte-for-byte between
