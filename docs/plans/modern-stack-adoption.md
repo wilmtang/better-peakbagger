@@ -714,6 +714,11 @@ serializer in hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760.
 Both passed the removal, metadata retention and invalid XML checks. Both
 detected retained timestamps when the removal loop was disabled in a
 disposable module. The complete DOM lane passed 64 cases.
+The backup replacement review now checks its Cancel label, native Escape
+handling, hidden state and return to the original trigger in the same two
+hidden browsers at 1000 × 760. Removing Cancel focus in a disposable module
+failed the opening focus assertion in each engine. The DOM lane passed 66
+cases after the port.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
