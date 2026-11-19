@@ -7,8 +7,8 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { verificationScreenshots } from './browser-verification-evidence.mjs';
-import { waitForCondition } from './browser-verification-fixtures.mjs';
+import { verificationScreenshots } from './browser-verification-evidence.mts';
+import { waitForCondition } from './browser-verification-fixtures.mts';
 
 export function assertFormattingLocale(actual: string, expected: string) {
     // Firefox may omit the default region from its resolved locale. Preserve

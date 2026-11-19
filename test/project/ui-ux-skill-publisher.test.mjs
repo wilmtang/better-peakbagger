@@ -8,8 +8,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import yaml from 'js-yaml';
-import { stageSkillUpdate, main } from '../../scripts/stage-ui-ux-skill-update.mjs';
-import { SKILL_PATH } from '../../scripts/update-ui-ux-skill.mjs';
+import { stageSkillUpdate, main } from '../../scripts/stage-ui-ux-skill-update.mts';
+import { SKILL_PATH } from '../../scripts/update-ui-ux-skill.mts';
 
 function git(root, args) {
     const result = spawnSync('git', [
@@ -34,8 +34,8 @@ async function fixture(t) {
         [`${SKILL_PATH}/scripts/search.py`, 'search\n'],
         [`${SKILL_PATH}/scripts/validate_data.py`, 'validate\n'],
         ['src/application.js', 'existing application\n'],
-        ['scripts/stage-ui-ux-skill-update.mjs', await readFile(new URL('../../scripts/stage-ui-ux-skill-update.mjs', import.meta.url), 'utf8')],
-        ['scripts/update-ui-ux-skill.mjs', await readFile(new URL('../../scripts/update-ui-ux-skill.mjs', import.meta.url), 'utf8')],
+        ['scripts/stage-ui-ux-skill-update.mts', await readFile(new URL('../../scripts/stage-ui-ux-skill-update.mts', import.meta.url), 'utf8')],
+        ['scripts/update-ui-ux-skill.mts', await readFile(new URL('../../scripts/update-ui-ux-skill.mts', import.meta.url), 'utf8')],
     ]);
     for (const [file, content] of files) {
         await mkdir(path.dirname(path.join(root, file)), { recursive: true });
@@ -72,7 +72,7 @@ test('publisher CLI makes one skill-only commit with the checked base and no app
     await writeFile(path.join(f.root, SKILL_PATH, 'scripts/core.py'), 'checked update\n');
     await f.capture();
     const result = spawnSync(process.execPath, [
-        path.join(f.root, 'scripts/stage-ui-ux-skill-update.mjs'), f.patch, f.base,
+        path.join(f.root, 'scripts/stage-ui-ux-skill-update.mts'), f.patch, f.base,
     ], { cwd: f.root, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     const published = JSON.parse(result.stdout.trim().split('\n').at(-1));

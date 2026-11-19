@@ -26,11 +26,11 @@ import {
     watchDirectories,
 } from '../../scripts/build.mts';
 import { AUTHORED_SOURCE_ROOTS, ENTRIES, entrySources, root as projectRoot } from '../../scripts/build-config.mts';
-import { webExtArguments } from '../../scripts/run-development.mjs';
+import { webExtArguments } from '../../scripts/run-development.mts';
 import {
     createFirefoxSource,
     syncFirefoxSource as syncFirefoxSourceJS,
-} from '../../scripts/run-firefox.mjs';
+} from '../../scripts/run-firefox.mts';
 
 import { isRuntimeSource, runtimeSourceFiles } from '../helpers/runtime-sources.mts';
 

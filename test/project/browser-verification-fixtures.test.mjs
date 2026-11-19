@@ -26,7 +26,7 @@ import {
     waitForPageCondition,
     waitForWindowUrl,
     webdriverScript,
-} from '../../scripts/browser-verification-fixtures.mjs';
+} from '../../scripts/browser-verification-fixtures.mts';
 
 const executePageFunction = (pageFunction, context, ...args) => vm.runInNewContext(
     `(() => { ${webdriverScript(pageFunction, ...args)} })()`,

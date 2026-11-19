@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { assertVerificationBrowser, playwrightChromiumVersion } from '../../scripts/verification-browser-identity.mjs';
+import { assertVerificationBrowser, playwrightChromiumVersion } from '../../scripts/verification-browser-identity.mts';
 
 const firefox = { name: 'firefox', version: '157.0.1', expectedName: 'firefox', expectedVersion: '157.0.1' };
 

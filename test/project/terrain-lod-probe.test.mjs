@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawnSync } from 'node:child_process';
-import { installTerrainLodProbe } from '../../scripts/terrain-lod-probe.mjs';
+import { installTerrainLodProbe } from '../../scripts/terrain-lod-probe.mts';
 
 test('the LOD probe counts painted DEM provenance, missing data, and tile deficits separately', () => {
     const handlers = {}, colors = [], pixels = new Uint8Array(8 * 8 * 4);

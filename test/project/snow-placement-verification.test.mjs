@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { readSnowCardPlacement } from '../../scripts/verify-peak-snow-cases.mjs';
+import { readSnowCardPlacement } from '../../scripts/verify-peak-snow-cases.mts';
 
 const row = id => `<tr id="${id}"><td>Card</td></tr>`;
 const weather = row('bpb-peak-weather-row'), snow = row('bpb-peak-snow-row');

@@ -10,12 +10,12 @@ import type { ReportRule } from './generate-report-protection.mts';
 import { Builder } from 'selenium-webdriver';
 import { By, Key } from 'selenium-webdriver';
 import firefox from 'selenium-webdriver/firefox.js';
-import { createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mjs';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
+import { createFixtureCertificate, waitForCondition } from './browser-verification-fixtures.mts';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
 
 const kind = process.argv[2] || '';
 assert.ok(['chrome', 'firefox'].includes(kind) && process.argv.length === 3, 'Choose chrome or firefox');

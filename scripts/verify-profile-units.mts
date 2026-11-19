@@ -9,8 +9,8 @@ import path from 'node:path';
 import { firefox, type BrowserContext, type Page } from 'playwright';
 import { JSDOM } from 'jsdom';
 import { units } from '../src/ui/units.ts';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const [browserName, mode, ...extra] = process.argv.slice(2);

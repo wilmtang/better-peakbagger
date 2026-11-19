@@ -7,12 +7,12 @@ import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { mkdir, cp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createFixtureCertificate, createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
-import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { createFixtureCertificate, createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { setFirefoxContentViewport } from './firefox-content-viewport.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 

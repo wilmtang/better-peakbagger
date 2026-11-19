@@ -13,7 +13,7 @@ import { createPageSettingsClient } from '../../src/settings/page-settings-clien
 import {
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
-} from '../../scripts/browser-verification-fixtures.mjs';
+} from '../../scripts/browser-verification-fixtures.mts';
 
 const gpxShowcase = await readFile(new URL('../../scripts/showcase/gpx.html', import.meta.url), 'utf8');
 const mapShowcase = await readFile(new URL('../../scripts/showcase/map.html', import.meta.url), 'utf8');
@@ -146,11 +146,11 @@ test('BigMap showcase contains only synthetic multi-route interaction data', () 
 // showcase:render writes that refusal into the store listing screenshots.
 const FIXTURE_SERVERS = [
     'scripts/verify-map-controls.mts',
-    'scripts/verify-draft-recovery.mjs',
+    'scripts/verify-draft-recovery.mts',
     'scripts/verify-terrain-visual.mts',
     'scripts/verify-terrain-lod.mts',
     'scripts/verify-firefox-terrain.mts',
-    'scripts/render-showcase.mjs',
+    'scripts/render-showcase.mts',
 ];
 
 test('every showcase server speaks HTTPS on a Peakbagger host, or the analyzer refuses its own GPX', async () => {
@@ -184,7 +184,7 @@ test('every showcase server speaks HTTPS on a Peakbagger host, or the analyzer r
 
 test('the shared fixture certificate is self-signed for a Peakbagger host and disposable', async () => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-    const source = await readFile(path.join(root, 'scripts/browser-verification-fixtures.mjs'), 'utf8');
+    const source = await readFile(path.join(root, 'scripts/browser-verification-fixtures.mts'), 'utf8');
     assert.match(source, /openssl/, 'the shared helper mints the certificate itself');
     assert.match(source, /'-x509'/, 'the certificate is self-signed');
     assert.match(source, /\/CN=\$\{host\}/, 'the certificate names the fixture host');

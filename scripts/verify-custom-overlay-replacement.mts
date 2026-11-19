@@ -9,8 +9,8 @@ import type {AddressInfo} from 'node:net';
 import path from 'node:path';
 import {build} from 'esbuild';
 import type {Page} from 'playwright';
-import {createFixtureCertificate,waitForCondition as untypedWaitForCondition} from './browser-verification-fixtures.mjs';
-import {createResourceStack,listenServer,closeServer} from './resource-stack.mjs';
+import {createFixtureCertificate,waitForCondition as untypedWaitForCondition} from './browser-verification-fixtures.mts';
+import {createResourceStack,listenServer,closeServer} from './resource-stack.mts';
 import {createVerificationRoot,launchVerificationChrome,PEAKBAGGER_HOST_RULE} from './verification-launch.mts';
 
 // Page-world globals the evaluated callbacks below install and read.

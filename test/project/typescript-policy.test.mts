@@ -136,7 +136,7 @@ test('unknown arguments, missing revisions and initial-push comparisons cannot s
 
 test('the existing pre-commit hook preserves privacy-first ordering and CI checks the committed base', async () => {
     const hook = await readFile(path.join(root, '.githooks/pre-commit'), 'utf8');
-    assert.ok(hook.indexOf('privacy-guard.mjs') < hook.indexOf('typescript-policy.mts'));
+    assert.ok(hook.indexOf('privacy-guard.mts') < hook.indexOf('typescript-policy.mts'));
     assert.match(hook, /typescript-policy\.mts" --staged/);
     const workflow = await readFile(path.join(root, '.github/workflows/test.yml'), 'utf8');
     assert.match(workflow, /TYPESCRIPT_POLICY_BASE: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.before \}\}/);

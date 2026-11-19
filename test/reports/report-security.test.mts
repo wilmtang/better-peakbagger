@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import rules from '../../src/reports/report-protection.json' with { type: 'json' };
 import { peakbaggerCloudflare as Cloudflare } from '../../src/peakbagger/peakbagger-cloudflare.ts';
-import { createFirefoxManifest } from '../../scripts/build-firefox-package.mjs';
+import { createFirefoxManifest } from '../../scripts/build-firefox-package.mts';
 import { REPORT_CSP, protectedReportDocument, protectReportHeaders } from '../../src/reports/report-security-policy.ts';
 import { readFile } from 'node:fs/promises';
 import { JSDOM } from '../helpers/test-dom.mts';

@@ -10,9 +10,9 @@ import type { AddressInfo } from 'node:net';
 import { build } from 'esbuild';
 import type { BrowserContext } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { createFixtureCertificate } from './browser-verification-fixtures.mjs';
-import { snowMapDocument } from './verify-snow-map-fixture.mjs';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
+import { createFixtureCertificate } from './browser-verification-fixtures.mts';
+import { snowMapDocument } from './verify-snow-map-fixture.mts';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 // Page-world fixture objects; callbacks cast in place so the shared program keeps Window unchanged.

@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { quitFirefoxDriver } from '../../scripts/firefox-verifier-processes.mjs';
-import { createResourceStack } from '../../scripts/resource-stack.mjs';
+import { quitFirefoxDriver } from '../../scripts/firefox-verifier-processes.mts';
+import { createResourceStack } from '../../scripts/resource-stack.mts';
 
 const lostQuitResponse = {
     quit: async () => { throw new Error('Failed to decode response from marionette'); },

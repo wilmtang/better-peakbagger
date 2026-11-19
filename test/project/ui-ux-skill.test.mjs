@@ -12,7 +12,7 @@ import yaml from 'js-yaml';
 import {
     applySkillUpdate, blobHash, main, mergeSkillMarkdown, parseProvenance,
     planSkillUpdate, selectSkillFiles, SKILL_PATH,
-} from '../../scripts/update-ui-ux-skill.mjs';
+} from '../../scripts/update-ui-ux-skill.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const source = '.claude/skills/ui-ux-pro-max';

@@ -7,8 +7,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { validateRelease } from './release-check.mjs';
-import { validateReleasePreflight } from './release-bump.mjs';
+import { validateRelease } from './release-check.mts';
+import { validateReleasePreflight } from './release-bump.mts';
 import { acquireEvidence } from './release-evidence.mts';
 
 const execute = promisify(execFile);
@@ -105,7 +105,7 @@ export function validateConsecutivePasses(log: string, label: string) {
     if (label === 'Verify release') {
         // Unit tests exercise repeatVerification too. Their synthetic passes
         // must never count as archive execution, nor obscure the real proof.
-        const boundaries = [...log.matchAll(/> node scripts\/verify-store-packages\.mjs(?=\r?$)/gm)];
+        const boundaries = [...log.matchAll(/> node scripts\/verify-store-packages\.mts(?=\r?$)/gm)];
         requireEvidence(boundaries.length === 1, 'The current-package execution boundary is missing or ambiguous');
         log = log.slice(boundaries[0].index + boundaries[0][0].length);
     }
@@ -222,7 +222,7 @@ export async function releasePreflight({ tag, ciRunId, rehearsalRunId }: { tag: 
         read('CHANGELOG.md', 'utf8'),
     ]);
     const version = validateRelease({ tag, manifest, packageJson, packageLock, changelog });
-    await runCommand(process.execPath, ['scripts/check-changelog-history.mjs']);
+    await runCommand(process.execPath, ['scripts/check-changelog-history.mts']);
     // A green run from yesterday cannot cover an advisory disclosed today.
     await runCommand(process.execPath, ['scripts/check-npm-audit.mts']);
     await runCommand(process.execPath, ['scripts/release-readiness.mts']);

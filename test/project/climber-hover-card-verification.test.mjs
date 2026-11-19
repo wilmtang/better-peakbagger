@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runInNewContext } from 'node:vm';
 import { JSDOM } from 'jsdom';
-import { climberCardPlacementReady, prepareClimberCardViewport } from '../../scripts/verify-climber-hover-card.mjs';
+import { climberCardPlacementReady, prepareClimberCardViewport } from '../../scripts/verify-climber-hover-card.mts';
 
 test('viewport captures close before repositioning and reopen with keyboard focus after the anchor settles', async t => {
     const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger"></button><div id="bpb-climber-card"><button class="bpb-climber-card-close">Close</button></div>', { runScripts: 'outside-only' });

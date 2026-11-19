@@ -218,9 +218,12 @@ test('the declared and locked TipTap family moves as one version', () => {
 });
 
 test('copied runtime updates add hardware GPU gates to stable required checks', () => {
-    assert.match(testWorkflow, /^  dependency-impact:\n[\s\S]*?^    outputs:\n      copied-runtime:/m);
-    assert.match(testWorkflow,
-        /node scripts\/copied-runtime-impact\.mjs "\$BASE_REVISION"/);
+    const impactJob = testWorkflow.slice(
+        testWorkflow.indexOf('  dependency-impact:'), testWorkflow.indexOf('  node:'),
+    );
+    assert.match(impactJob, /^    outputs:\n      copied-runtime:/m);
+    assert.match(impactJob,
+        /uses: actions\/setup-node@[a-f\d]{40}[^\n]*\n\s+with:\n\s+node-version: 24\n[\s\S]*?node scripts\/copied-runtime-impact\.mts "\$BASE_REVISION"/);
     assert.match(testWorkflow,
         /^  chrome-terrain:\n[\s\S]*?if: needs\.dependency-impact\.outputs\.copied-runtime == 'true'[\s\S]*?runs-on: macos-15[\s\S]*?npm run verify -- terrain chrome/m);
     assert.match(testWorkflow,

@@ -14,9 +14,9 @@ import path from 'node:path';
 import type { Page } from 'playwright';
 import type { AddressInfo } from 'node:net';
 import { captureProfileCount, installPreviewProbe, sanitizePreviewEvent, type PreviewEvent } from './capture-preview-diagnostics.mts';
-import { activateToolbarTarget, createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mjs';
-import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
-import { runChildProcess } from './resource-stack.mjs';
+import { activateToolbarTarget, createFixtureCertificate, waitForCondition as waitFor } from './browser-verification-fixtures.mts';
+import { createResourceStack, closeServer, listenServer } from './resource-stack.mts';
+import { runChildProcess } from './resource-stack.mts';
 import { fileURLToPath } from 'node:url';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 

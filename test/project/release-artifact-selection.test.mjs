@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
-import { selectReleaseArtifact } from '../../scripts/select-release-artifact.mjs';
+import { selectReleaseArtifact } from '../../scripts/select-release-artifact.mts';
 
 const artifact = (attempt, overrides = {}) => ({
     name: `browser-extension-v3.8.0${attempt ? `-${attempt}` : ''}`,
@@ -17,7 +17,7 @@ test('store-only reruns retain the earlier verified artifact across listing page
     const pages = [{ artifacts: [artifact(2, { name: 'release-browser-failure-2' })] },
         { artifacts: [artifact(1)] }];
     assert.equal(select(pages), 'browser-extension-v3.8.0-1');
-    const cli = spawnSync(process.execPath, ['scripts/select-release-artifact.mjs', 'v3.8.0', '2'], {
+    const cli = spawnSync(process.execPath, ['scripts/select-release-artifact.mts', 'v3.8.0', '2'], {
         input: JSON.stringify(pages), encoding: 'utf8',
     });
     assert.equal(cli.status, 0, cli.stderr);

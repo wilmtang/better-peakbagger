@@ -6,7 +6,7 @@
 /* global document, window, getSelection, requestAnimationFrame */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { projectRoot } from './browser-verification-fixtures.mjs';
+import { projectRoot } from './browser-verification-fixtures.mts';
 import type { Page, Route } from 'playwright';
 
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their serialized argument under its own name. */

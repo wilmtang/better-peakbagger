@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-import { convertChromeDescription } from '../../scripts/create-chrome-description.mjs';
+import { convertChromeDescription } from '../../scripts/create-chrome-description.mts';
 
 test('Chrome description converts the supported store Markdown to plain text', () => {
     const markdown = [

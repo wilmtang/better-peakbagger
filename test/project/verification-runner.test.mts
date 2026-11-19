@@ -22,15 +22,15 @@ test('verification targets preserve the existing checks and browser order with o
         [['layout-stability', '--firefox-only', '--surface=maps'],
             [['verify-layout-stability.mts', '--firefox-only', '--surface=maps']]],
         [['multi-summit'], [['verify-multi-summit.mts']]],
-        [['draft-recovery'], [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']]],
+        [['draft-recovery'], [['verify-draft-recovery.mts', 'chrome'], ['verify-draft-recovery.mts', 'firefox']]],
         [['profile-editor'], [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']]],
         [['instagram'], [['verify-instagram.mts', 'chrome'], ['verify-instagram.mts', 'firefox']]],
         [['report-security'], [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']]],
         [['inline-buddies'], [['verify-inline-buddies.mts'], ['verify-inline-buddies.mts', '--firefox']]],
         [['capture-flow'], [['verify-capture-flow.mts']]],
         [['capture-readiness', 'firefox'], [['verify-capture-readiness.mts', 'firefox']]],
-        [['provider-contracts'], [['verify-provider-contracts.mjs']]],
-        [['provider-performance'], [['verify-provider-performance.mjs']]],
+        [['provider-contracts'], [['verify-provider-contracts.mts']]],
+        [['provider-performance'], [['verify-provider-performance.mts']]],
         [['map-handoffs'], [['verify-map-handoffs.mts']]],
         [['onx'], [['verify-onx.mts', 'chrome'], ['verify-onx.mts', 'firefox']]],
         [['map-layers'], [['verify-map-layer-control.mts'], ['verify-map-layers.mts']]],
@@ -110,7 +110,7 @@ test('CLI help lists the targets and invalid selections exit unsuccessfully', ()
 
 test('draft recovery rejects missing, unknown and extra selections before opening a browser', () => {
     for (const args of [[], ['chromee'], ['chrome', '--unknown']]) {
-        const result = spawnSync(process.execPath, [script('verify-draft-recovery.mjs'), ...args], { encoding: 'utf8' });
+        const result = spawnSync(process.execPath, [script('verify-draft-recovery.mts'), ...args], { encoding: 'utf8' });
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Usage: node scripts\/verify-draft-recovery/);
     }

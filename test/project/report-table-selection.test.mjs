@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { webdriverScript } from '../../scripts/browser-verification-fixtures.mjs';
+import { webdriverScript } from '../../scripts/browser-verification-fixtures.mts';
 import {
     readRichTableCellSelection, readRichTableInput, waitForRichTableCellSelection, waitForRichTableInput,
-} from '../../scripts/report-table-selection.mjs';
+} from '../../scripts/report-table-selection.mts';
 
 test('table input waits for the editor selection, rather than only the native caret', async () => {
     const dom = new JSDOM('<div class="bpb-re-surface" tabindex="0"><table><tr><td><p></p></td><td><p></p></td></tr></table></div>');

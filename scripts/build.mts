@@ -20,7 +20,7 @@
 //   node scripts/build.mts --watch    rebuild on source/asset change
 
 import { build, context, type BuildOptions, type Plugin } from 'esbuild';
-import { jsZipCspPlugin } from './jszip-csp-patch.mjs';
+import { jsZipCspPlugin } from './jszip-csp-patch.mts';
 import { patchMapLibreTerrainLod } from './maplibre-terrain-lod-patch.mts';
 import { sveltePlugins } from './svelte-build.mts';
 import {

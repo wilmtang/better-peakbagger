@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 // Page-world fixture state; callbacks cast in place so the shared program keeps its globals.

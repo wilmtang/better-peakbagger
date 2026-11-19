@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { peakPopupSnapshot, waitForPeakPopupSnapshot } from '../../scripts/verify-terrain-popup.mjs';
+import { peakPopupSnapshot, waitForPeakPopupSnapshot } from '../../scripts/verify-terrain-popup.mts';
 
 test('terrain popup verification captures marker identity, name and URL before reconciliation', async t => {
     const dom = new JSDOM('<iframe id="bpb-terrain-frame"></iframe>', { runScripts: 'outside-only' });

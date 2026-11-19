@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { waitForCondition } from './browser-verification-fixtures.mjs';
+import { waitForCondition } from './browser-verification-fixtures.mts';
 
 export type WeatherEvaluate = <R, A = undefined>(fn: (argument: A) => R | Promise<R>, argument?: A) => Promise<Awaited<R>>;
 export interface WeatherControls {

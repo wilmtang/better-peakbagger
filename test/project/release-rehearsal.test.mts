@@ -97,7 +97,7 @@ test('Firefox recovery still resolves preserved source identity without invoking
     const steps = (await load('retry-firefox-release.yml')).jobs.firefox!.steps;
     const source = steps.find(step => step.id === 'recovery')!;
     assert.match(source.run!, /gh api --paginate --slurp/);
-    assert.match(source.run!, /node scripts\/select-release-artifact\.mjs "\$TARGET_TAG" "\$attempt"/);
+    assert.match(source.run!, /node scripts\/select-release-artifact\.mts "\$TARGET_TAG" "\$attempt"/);
     assert.match(source.run!, /\.event.*push/); assert.match(source.run!, /\.head_sha.*tag_commit/);
     assert.doesNotMatch(JSON.stringify(steps), /publish-chrome/);
 });

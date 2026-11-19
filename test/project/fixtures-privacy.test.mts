@@ -5,7 +5,7 @@
 // account holder whose signed-in session the live captures came from.
 //
 // The banned identifiers are deliberately not stored in plaintext. The shared
-// salted-hash scanner lives in scripts/privacy-guard.mjs and is also used by
+// salted-hash scanner lives in scripts/privacy-guard.mts and is also used by
 // the repository-local pre-commit hook.
 
 import test from 'node:test';
@@ -15,8 +15,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM } from '../helpers/test-dom.mts';
-import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mjs';
-import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mjs';
+import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mts';
+import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mts';
 import {
     decodeFixtureForPrivacy,
     FIXTURE_PRIVACY_MANIFEST,
@@ -248,11 +248,11 @@ test('the staged privacy scan is wired into every clone, not just a configured o
     const repoRoot = REPO_ROOT;
 
     const hook = await readFile(path.join(repoRoot, '.githooks', 'pre-commit'), 'utf8');
-    assert.match(hook, /scripts\/privacy-guard\.mjs/,
+    assert.match(hook, /scripts\/privacy-guard\.mts/,
         'the pre-commit hook must run the shared privacy scanner');
 
     const manifest = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
-    assert.match(manifest.scripts.prepare ?? '', /install-git-hooks\.mjs/,
+    assert.match(manifest.scripts.prepare ?? '', /install-git-hooks\.mts/,
         'npm install/ci must point this clone at .githooks');
 
     // Installing must never break an install, and must never overwrite a

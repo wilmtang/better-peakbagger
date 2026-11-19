@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { fixturePreflightCommands, runFixturePreflight } from '../../scripts/verify-fixture-preflight.mjs';
+import { fixturePreflightCommands, runFixturePreflight } from '../../scripts/verify-fixture-preflight.mts';
 
 test('preflight exercises real locale, evidence, worker authorization and production fixtures', async () => {
     for (const browser of ['chrome', 'firefox']) {

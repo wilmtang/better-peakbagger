@@ -5,10 +5,10 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createResourceStack } from './resource-stack.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
+import { createResourceStack } from './resource-stack.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
 import { createVerificationRoot } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 

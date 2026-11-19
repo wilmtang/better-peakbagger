@@ -37,28 +37,28 @@ import {
     waitForCondition,
     waitForWindowUrl,
     webdriverScript,
-} from './browser-verification-fixtures.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
+} from './browser-verification-fixtures.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mts';
 import { TERRAIN_COORDINATOR_LOAD_TIMEOUT_MS } from '../src/terrain/terrain-coordinator.ts';
 import {
     isRetryableFirefoxStartup,
     quitFirefoxDriver,
     stopOwnedFirefoxProcesses,
-} from './firefox-verifier-processes.mjs';
+} from './firefox-verifier-processes.mts';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
-import { verifyGpxSegments } from './verify-gpx-segments.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mts';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
-import { verifyClimberMembership } from './verify-climber-membership.mjs';
-import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
-import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';
-import { installClimberCardCloseProbe } from './climber-card-close-diagnostics.mjs';
-import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
+import { verifyClimberMembership } from './verify-climber-membership.mts';
+import { verifyClimberHoverCard } from './verify-climber-hover-card.mts';
+import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mts';
+import { installClimberCardCloseProbe } from './climber-card-close-diagnostics.mts';
+import { verifyProfilePreparation } from './verify-profile-preparation.mts';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { retainBrowserFailure } from './browser-verification-evidence.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
-import { setFirefoxContentViewport as setContentViewport, withFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { createResourceStack } from './resource-stack.mts';
+import { retainBrowserFailure } from './browser-verification-evidence.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
+import { setFirefoxContentViewport as setContentViewport, withFirefoxContentViewport } from './firefox-content-viewport.mts';
 
 // Fixture types. Node strips these annotations in place, so page-world callback
 // source is unchanged when Selenium serializes it.
@@ -68,7 +68,6 @@ type WebDriver = firefox.Driver;
 type FixtureEvent = KeyboardEvent & MouseEvent;
 type FixtureRow = { localId: string; objects: { style: { opacity: number } }[]; blob: Blob };
 type SettingsTopology = { options: { id: number; windowId: number; active?: boolean }[]; source: { id: number; windowId: number; active?: boolean }; windowCount: number };
-type ScriptState = { ready?: unknown; moonMarker?: string; moonBand?: unknown } | undefined;
 declare global {
     interface Window {
         __bpbTerrainForgeryDrained: boolean;
@@ -129,16 +128,26 @@ async function writeElementScreenshot(driver: WebDriver, selector: string, outpu
     await writeFile(outputPath, screenshot, 'base64');
 }
 
-async function waitForScript(
+async function waitForScript<T = unknown>(
     driver: WebDriver,
     script: string,
     description: string,
     timeout = 15_000,
-    isReady: (state: ScriptState) => unknown = Boolean,
-) {
-    return waitForCondition(() => driver.executeScript(script), {
-        description, timeoutMs: timeout, isReady: isReady as unknown as BooleanConstructor,
+    isReady: (state: T) => unknown = Boolean,
+): Promise<T> {
+    const state = await waitForCondition(() => driver.executeScript<T | null | false>(script), {
+        description, timeoutMs: timeout,
+        isReady: value => value !== null && value !== false && isReady(value),
     });
+    if (state === null || state === false) throw new Error(`No result for ${description}`);
+    return state;
+}
+
+function waitForPageFunction<T>(
+    driver: WebDriver, probe: () => T | false | null, description: string, timeout?: number,
+    isReady?: (state: T) => unknown,
+): Promise<T> {
+    return waitForScript<T>(driver, webdriverScript(probe), description, timeout, isReady);
 }
 
 async function evaluatePageRealm(driver: WebDriver, expression: string) {
@@ -278,7 +287,7 @@ async function main() {
                 },
                 back: () => driver.navigate().back(),
                 forward: () => driver.navigate().forward(),
-                wait: fn => waitForScript(driver, webdriverScript(fn), 'Firefox settings navigation'),
+                wait: fn => waitForPageFunction(driver, fn, 'Firefox settings navigation'),
                 screenshot: process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR ? async name => {
                     await writeFile(path.join(process.env.BPB_VERIFY_SETTINGS_NAVIGATION_SCREENSHOT_DIR as string,
                         `firefox-${name}.png`), await driver.takeScreenshot(), 'base64');
@@ -297,7 +306,7 @@ async function main() {
         if (!runtimeProbe?.ok) {
             throw new Error(`Firefox background did not answer CAPTURE_STATUS: ${runtimeProbe?.error || 'no reply'}`);
         }
-        await waitForScript(driver, webdriverScript(readDisconnectedGithubControls),
+        await waitForPageFunction(driver, readDisconnectedGithubControls,
             'opt-in GitHub climber sync disabled before setup', 5000, state => state?.ready);
 
         const extensionState = await driver.executeAsyncScript((done: (result?: unknown) => void) => {
@@ -372,7 +381,7 @@ async function main() {
             'Firefox Settings could not save the ImgBB verifier key',
             imgbbSaved,
         );
-        const firefoxImgbbOptions = await waitForScript(
+        const firefoxImgbbOptions = await waitForScript<{ removeVisible: boolean; status: string }>(
             driver,
             `const status = document.getElementById("imgbb-key-status")?.textContent || "";
        if (!status.startsWith("ImgBB is configured")) return null;
@@ -392,7 +401,12 @@ async function main() {
 
         const photoUrl = new URL('photos/photos.html?mode=library', baseUrl).href;
         await driver.get(photoUrl);
-        const firefoxPhotoLibrary = await waitForScript(
+        const firefoxPhotoLibrary = await waitForScript<{
+            heading?: string;
+            boundary?: string;
+            credentialHidden: boolean;
+            horizontalOverflow: boolean;
+        }>(
             driver,
             `const status = document.getElementById("photo-backup-status")?.textContent || "";
        if (/Checking/.test(status)) return null;
@@ -446,7 +460,12 @@ async function main() {
         });
         await driver.wait(until.elementIsVisible(driver.findElement(By.id('editor-workspace'))), 5_000);
         await driver.findElement(By.id('photo-caption')).sendKeys('Firefox verification mountain route');
-        const firefoxPhotoEditor = await waitForScript(
+        const firefoxPhotoEditor = await waitForScript<{
+            upload?: string;
+            viewport: { width: number;
+            height: number } | null;
+            horizontalOverflow: boolean;
+        }>(
             driver,
             `const saved = document.getElementById("save-status")?.textContent || "";
        if (!/Saved on this device/.test(saved)) return null;
@@ -462,9 +481,10 @@ async function main() {
             value => !!value,
         );
         assertState(
-            /^Upload to ImgBB…?$/.test(firefoxPhotoEditor.upload)
-        && firefoxPhotoEditor.viewport?.width > 300
-        && firefoxPhotoEditor.viewport?.height > 300
+            /^Upload to ImgBB…?$/.test(firefoxPhotoEditor.upload ?? '')
+        && firefoxPhotoEditor.viewport !== null
+        && firefoxPhotoEditor.viewport.width > 300
+        && firefoxPhotoEditor.viewport.height > 300
         && !firefoxPhotoEditor.horizontalOverflow,
             'Firefox did not decode and autosave the packaged photo editor',
             firefoxPhotoEditor,
@@ -476,7 +496,7 @@ async function main() {
         // write started inside the click from one started after the encode;
         // test/photos/photo-output.test.mts guards that ordering instead.
         await driver.findElement(By.id('copy-image')).click();
-        const firefoxCopy = await waitForScript(
+        const firefoxCopy = await waitForScript<{ label?: string }>(
             driver,
             `const label = document.getElementById("copy-image")?.textContent?.trim();
        const toast = document.getElementById("toast");
@@ -531,7 +551,7 @@ async function main() {
 
         await driver.findElement(By.css('[data-tool="route"]')).click();
         await clickOverlay(-140, 110);
-        const firefoxRouteStart = await waitForScript(
+        const firefoxRouteStart = await waitForScript<{ cx?: string; cy?: string }>(
             driver,
             `const dot = document.querySelector("#photo-overlay .route-preview-dot");
        return dot ? { cx: dot.getAttribute("cx"), cy: dot.getAttribute("cy") } : null;`,
@@ -560,7 +580,13 @@ async function main() {
       slider.value = "40";
       slider.dispatchEvent(new Event("input", { bubbles: true }));`);
 
-        const firefoxTopoState = await waitForScript(
+        const firefoxTopoState = await waitForScript<{
+            armed?: string;
+            curved: boolean;
+            opacity?: string;
+            smoothStillChecked: boolean;
+            symbolsPainted: number;
+        }>(
             driver,
             `const armed = document.querySelector('[data-tool][aria-pressed="true"]')?.dataset.tool;
        const route = document.querySelector('#photo-overlay g[data-bpb-object] path');
@@ -784,7 +810,7 @@ async function main() {
             'Firefox could not stage a project bundle',
             firefoxImport,
         );
-        const firefoxImported = await waitForScript(
+        const firefoxImported = await waitForScript<{ cards: number; toast: string }>(
             driver,
             `const toast = document.getElementById("toast-message")?.textContent || "";
        if (!/Imported/.test(toast)) return null;
@@ -843,7 +869,16 @@ async function main() {
             }, error => done({ ok: false, error: String(error) }));
         });
         await driver.get(photoUrl);
-        const firefoxPagedLibrary = await waitForScript(
+        const firefoxPagedLibrary = await waitForScript<{
+            cards: number;
+            pageStatus: string;
+            previousDisabled: boolean;
+            nextDisabled: boolean;
+            paginationLeft: number;
+            paginationRight: number;
+            viewportWidth: number;
+            horizontalOverflow: boolean;
+        }>(
             driver,
             `const cards = document.querySelectorAll("#library-list .photo-card");
        const pagination = document.getElementById("library-pagination");
@@ -912,7 +947,7 @@ async function main() {
             );
         }
         await driver.findElement(By.id('library-next')).click();
-        const firefoxSecondPage = await waitForScript(
+        const firefoxSecondPage = await waitForScript<{ cards: number; previousDisabled: boolean; nextDisabled: boolean }>(
             driver,
             `const status = document.getElementById("library-page-status")?.textContent || "";
        if (status !== "Page 2 of 2 · 49 photos") return null;
@@ -937,7 +972,7 @@ async function main() {
         // The guide, which is a packaged page of its own and paints its legend from
         // the renderer rather than from authored artwork.
         await driver.get(new URL('photos/guide.html', baseUrl).href);
-        const firefoxGuide = await waitForScript(
+        const firefoxGuide = await waitForScript<{ painted: number; horizontalOverflow: boolean }>(
             driver,
             `const painted = document.querySelectorAll(".guide-legend [data-symbol] svg").length;
        if (!painted) return null;
@@ -1062,7 +1097,7 @@ async function main() {
         );
         const fullFavoriteCount = await driver.findElement(By.id('favorites-count')).getText();
         await driver.findElement(By.id('favorites-search')).sendKeys('alpin clmber 1499');
-        const fuzzyFavoriteSearch = await waitForScript(driver, `
+        const fuzzyFavoriteSearch = await waitForScript<{ name: string }>(driver, `
       const rows = [...document.querySelectorAll(".favorite-item")];
       const count = document.getElementById("favorites-count")?.textContent || "";
       return rows.length === 1 && count === "1 of 1,500 favorites" ? {
@@ -1134,7 +1169,7 @@ async function main() {
         const addButtonHeight = await driver.executeScript("return document.getElementById('favorites-add-button').getBoundingClientRect().height;") as FixtureRecord;
         assertState((addButtonHeight as unknown as number) >= 32 && (addButtonHeight as unknown as number) <= 36,
             'Firefox Add action must stay compact on one line instead of wrapping each letter', { addButtonHeight });
-        const mirrorPreview = await waitForScript(driver, `
+        const mirrorPreview = await waitForScript<{ visible: boolean; requests: number }>(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
       const status = document.getElementById("favorites-import-status")?.textContent || "";
       return !dialog.hidden
@@ -1152,7 +1187,12 @@ async function main() {
             "return document.getElementById('favorites-mirror-confirmation-detail').textContent;",
         );
         await driver.findElement(By.id('favorites-mirror-confirm')).click();
-        const replacementBusy = await waitForScript(driver, `
+        const replacementBusy = await waitForScript<{
+            focused: string;
+            busy: string;
+            confirmDisabled: boolean;
+            cancelDisabled: boolean;
+        }>(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
       const confirm = document.getElementById("favorites-mirror-confirm");
       const cancel = document.getElementById("favorites-mirror-cancel");
@@ -1193,7 +1233,14 @@ async function main() {
       globalThis.__bpbHeldReplacement = null;
       document.getElementById("favorites-mirror-confirmation").dataset.verifyHeld = "false";
     `);
-        const retryableReplacement = await waitForScript(driver, `
+        const retryableReplacement = await waitForScript<{
+            hidden: boolean;
+            focused: string;
+            confirmDisabled: boolean;
+            cancelDisabled: boolean;
+            impactMatches: boolean;
+            dismissals: number;
+        }>(driver, `
       const dialog = document.getElementById("favorites-mirror-confirmation");
       const confirm = document.getElementById("favorites-mirror-confirm");
       const cancel = document.getElementById("favorites-mirror-cancel");
@@ -1228,7 +1275,7 @@ async function main() {
             "return Number(document.getElementById('favorites-mirror-confirmation').dataset.verifyBuddyRequests);",
         );
         await driver.findElement(By.id('favorites-mirror-confirm')).click();
-        const mirrorApplied = await waitForScript(driver, `
+        const mirrorApplied = await waitForScript<{ dismissals: number; buddyRequests: number }>(driver, `
       const api = globalThis.browser || globalThis.chrome;
       return api.storage.local.get("bpbFavoriteClimbers").then(({ bpbFavoriteClimbers }) => {
         const status = document.getElementById("favorites-import-status")?.textContent || "";
@@ -1286,7 +1333,12 @@ async function main() {
       };
     `) as { distance: unknown; viewportHeight: unknown };
         await driver.findElement(By.css('.side-nav a[href="#drafts"]')).click();
-        const longDistanceAfter = await waitForScript(driver, `
+        const longDistanceAfter = await waitForScript<{
+            distance: number;
+            scrollTop: number;
+            hash: string;
+            ready: boolean;
+        }>(driver, `
       const content = document.querySelector(".content");
       const target = document.getElementById("drafts");
       const margin = parseFloat(getComputedStyle(target).scrollMarginTop) || 0;
@@ -1335,7 +1387,7 @@ async function main() {
         assertState(favoritePreparation === true, 'Firefox custom favorites preparation failed', favoritePreparation);
         const buddyMutationBaseline = { ...fixture.requests };
         const otherClimberUrl = `https://${fixtureHost}:${fixture.port}/climber/climber.aspx?cid=900002`;
-        const waitForBuddyAdditionReady = () => waitForScript(driver, `
+        const waitForBuddyAdditionReady = () => waitForScript<{ ready: boolean }>(driver, `
       const native = document.getElementById("BuddyButton");
       const favorite = document.getElementById("bpb-climber-favorite");
       const state = {
@@ -1412,7 +1464,7 @@ async function main() {
                 && fixture!.requests.buddyReports - buddyMutationBaseline.buddyReports >= count,
         15_000, description);
         await driver.findElement(By.id('BuddyButton')).click();
-        const buddyAdded = await waitForScript(driver, `
+        const buddyAdded = await waitForScript<{ favorite?: string }>(driver, `
       const nativeButton = document.getElementById("BuddyButton");
       const favorite = document.getElementById("bpb-climber-favorite");
       return /^Remove\\b/.test(nativeButton?.value || "") && favorite?.textContent === "★" ? {
@@ -1505,7 +1557,7 @@ async function main() {
 
         await verifyClimberMembership({
             evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
-            wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox climber membership'),
+            wait: (fn: (...values: never[]) => unknown) => waitForPageFunction(driver, fn, 'Firefox climber membership'),
             click: async (selector: string) => driver.findElement(By.css(selector)).click(),
             key: async (selector: string) => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
             resize: (width: number, height: number) => driver.manage().window().setRect({ width, height }),
@@ -1543,7 +1595,7 @@ async function main() {
         await withFirefoxContentViewport(driver, async () => {
             await verifyClimberHoverCard({
                 evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
-                wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox climber hover card'),
+                wait: (fn: (...values: never[]) => unknown) => waitForPageFunction(driver, fn, 'Firefox climber hover card'),
                 click: (selector: string) => driver.findElement(By.css(selector)).click(),
                 hover: async (selector: string) => driver.actions().move({ origin: await driver.findElement(By.css(selector)) }).perform(),
                 key: (selector: string, value: 'Escape' | 'Tab' | 'Enter') => driver.findElement(By.css(selector)).sendKeys(
@@ -1576,7 +1628,7 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=1`,
         );
-        const surfaceState = await waitForScript(driver, `
+        const surfaceState = await waitForScript<{ theme: string | null; ready: boolean }>(driver, `
       const state = {
         origin: location.origin,
         theme: document.documentElement.getAttribute("data-bpb-theme"),
@@ -1648,7 +1700,7 @@ async function main() {
                     await driver.executeScript('arguments[0].focus()', element);
                     await element.sendKeys(key === 'Enter' ? Key.ENTER : Key.ARROW_RIGHT);
                 },
-                wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox segment interpretation'),
+                wait: (fn: (...values: never[]) => unknown) => waitForPageFunction(driver, fn, 'Firefox segment interpretation'),
                 screenshot: process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT ? (name: string) => writeElementScreenshot(
                     driver, '#bpb-gpx-analysis', `${process.env.BPB_VERIFY_FIREFOX_GPX_SEGMENTS_SCREENSHOT}.${name}.png`,
                 ) : null,
@@ -1665,9 +1717,9 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/climber/ascent.aspx?aid=analyzer-scale`,
         );
-        const narrowScaleState = await waitForScript(
+        const narrowScaleState = await waitForPageFunction(
             driver,
-            webdriverScript(readScaleChartState),
+            readScaleChartState,
             'the 20,000-point narrow Firefox analyzer',
             30_000,
         );
@@ -1702,7 +1754,7 @@ async function main() {
     `) as { selected: unknown; sun: unknown };
         const resizeStarted = Date.now();
         await driver.manage().window().setRect({ width: 1100, height: 760 });
-        const wideScaleState = await waitForScript(driver, `
+        const wideScaleState = await waitForScript<{ sameChart: boolean; selected: string; maxFrameGapMs: number }>(driver, `
       const canvas = document.querySelector('#bpb-gpx-analysis canvas');
       const chart = canvas ? globalThis.Chart?.getChart?.(canvas) : null;
       const count = chart?.data?.datasets?.[0]?.data?.filter(point => point?._raw).length || 0;
@@ -1752,7 +1804,11 @@ async function main() {
         assertState(!crossTabSettings?.error,
             'Firefox could not issue the cross-tab settings update', crossTabSettings);
         await driver.switchTo().window(analyzerHandle);
-        const crossTabBridgeState = await waitForScript(driver, `
+        const crossTabBridgeState = await waitForScript<{
+            snapshotRevision: number;
+            throughRequestId: number;
+            metadataInSettings: boolean;
+        }>(driver, `
       const expected = ${JSON.stringify(crossTabSettings.changed)};
       const control = document.getElementById('bpb-map-route-color');
       const push = window.__bpbSettingsPushes?.find(message =>
@@ -1799,7 +1855,16 @@ async function main() {
         await driver.close();
         await driver.switchTo().window(awayHandle);
         await driver.navigate().back();
-        const firefoxBfcacheState = await waitForScript(
+        const firefoxBfcacheState = await waitForScript<{
+            token: string | null;
+            hidePersisted: boolean | null;
+            showPersisted: boolean | null;
+            settingsGets: number | null;
+            panels: number;
+            calculators: number;
+            viewports: number;
+            toggles: number;
+        }>(
             driver,
             webdriverScript(readAnalyzerBfcacheState, crossTabSettings.changed),
             'the exact Firefox BFCache analyzer restoration',
@@ -1864,7 +1929,7 @@ async function main() {
         firefoxSunHeaderHeights);
         const analyzerCanvas = await driver.findElement(By.css('#bpb-gpx-analysis canvas'));
         await analyzerCanvas.sendKeys(Key.ARROW_RIGHT);
-        const selectedSunState = await waitForScript(driver, `
+        const selectedSunState = await waitForScript<{ summary: string }>(driver, `
       const calculator = document.querySelector(".bpb-sun-calculator");
       const summary = calculator?.querySelector(".bpb-sun-calculator__summary")?.textContent || "";
       const direction = calculator?.querySelector(".bpb-sun-calculator__direction")?.textContent || "";
@@ -1977,7 +2042,7 @@ async function main() {
       return { coarse, railHeight: coarse ? 44 : 16, targetSize: coarse ? 44 : 24 };
     `) as { railHeight: number; targetSize: number };
         await driver.manage().window().setRect({ width: 1200, height: 600 });
-        const shortPreferredHeight = await waitForScript(driver, `
+        const shortPreferredHeight = await waitForScript<{ contentHeight: number; viewportHeight: number }>(driver, `
       const map = document.getElementById('bpb-map-viewport');
       const frame = map?.querySelector('iframe[src*="MasterMap.aspx"]');
       const handle = document.getElementById('bpb-map-resize-handle');
@@ -1992,7 +2057,7 @@ async function main() {
         } : false;
     `, 'the short-window Firefox effective map height');
         await driver.manage().window().setRect({ width: 1200, height: 1100 });
-        const grownUntouchedHeight = await waitForScript(driver, `
+        const grownUntouchedHeight = await waitForScript<{ contentHeight: number }>(driver, `
       const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
       const handle = document.getElementById('bpb-map-resize-handle');
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
@@ -2010,7 +2075,7 @@ async function main() {
         const effectiveMapHandle = await driver.findElement(By.id('bpb-map-resize-handle'));
         await driver.executeScript('arguments[0].focus();', effectiveMapHandle);
         await effectiveMapHandle.sendKeys(Key.ARROW_UP);
-        const firstUpHeight = await waitForScript(driver, `
+        const firstUpHeight = await waitForScript<{ contentHeight: number }>(driver, `
       const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
       const handle = document.getElementById('bpb-map-resize-handle');
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
@@ -2020,7 +2085,7 @@ async function main() {
         && labelledHeight === contentHeight ? { contentHeight, labelledHeight } : false;
     `, 'the first Firefox short-window ArrowUp');
         await effectiveMapHandle.sendKeys(Key.ARROW_DOWN);
-        const firstDownHeight = await waitForScript(driver, `
+        const firstDownHeight = await waitForScript<{ contentHeight: number }>(driver, `
       const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
       const handle = document.getElementById('bpb-map-resize-handle');
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
@@ -2045,7 +2110,7 @@ async function main() {
       handle.dispatchEvent(pointer('pointerup', rect.top + rect.height / 2 - 1));
       return move.defaultPrevented;
     `);
-        const firstPointerHeight = await waitForScript(driver, `
+        const firstPointerHeight = await waitForScript<{ contentHeight: number }>(driver, `
       const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
       const handle = document.getElementById('bpb-map-resize-handle');
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
@@ -2055,7 +2120,7 @@ async function main() {
         && labelledHeight === contentHeight ? { contentHeight, labelledHeight } : false;
     `, 'the first Firefox short-window pointer pixel');
         await driver.manage().window().setRect({ width: 1200, height: 1100 });
-        const grownInteractedHeight = await waitForScript(driver, `
+        const grownInteractedHeight = await waitForScript<number>(driver, `
       const frame = document.querySelector('#bpb-map-viewport iframe[src*="MasterMap.aspx"]');
       const contentHeight = Math.round(frame?.getBoundingClientRect().height || 0);
       return contentHeight === ${firstPointerHeight.contentHeight} ? contentHeight : false;
@@ -2101,7 +2166,17 @@ async function main() {
             'arguments[0].scrollIntoView({ block: "center", inline: "nearest" });',
             analyzerCanvas,
         );
-        const routeExplorerLayout = await waitForScript(driver, `
+        const routeExplorerLayout = await waitForScript<{
+            ready: boolean;
+            display: string;
+            layoutState: string;
+            mapPosition: string;
+            sideBySide: boolean;
+            mapVisible: boolean;
+            chartVisible: boolean;
+            fullScreenWithMap: boolean;
+            documentOverflow: boolean;
+        }>(driver, `
       const explorer = document.getElementById('bpb-route-explorer');
       const map = document.getElementById('bpb-map-viewport');
       const mapColumn = explorer?.querySelector('.bpb-route-explorer__map-column');
@@ -2245,7 +2320,16 @@ async function main() {
         ) as { value: number; valueText: unknown };
         await driver.executeScript('arguments[0].focus();', analyzerSunToggle);
         await driver.actions().sendKeys(Key.TAB, Key.ARROW_RIGHT).perform();
-        const analyzerSunAccessibility = await waitForScript(driver, `
+        const analyzerSunAccessibility = await waitForScript<{
+            height: number;
+            focusVisible: boolean;
+            outlineWidth: string;
+            outlineStyle: string;
+            horizon: string;
+            belowClass: boolean;
+            summary: string;
+            chevronTransform: string;
+        }>(driver, `
       const slider = document.querySelector('.bpb-sun-calculator__time');
       const style = slider ? getComputedStyle(slider) : null;
       const valueText = slider?.getAttribute('aria-valuetext') || '';
@@ -2382,7 +2466,7 @@ async function main() {
                 && document.querySelectorAll<FixtureElement>('#bpb-terrain-frame').length === 0;
         }, surfaceSelectors.terrainToggle), 5_000, 'Firefox terrain toggle to finish stopping');
         await terrainToggle.click();
-        const activeTerrainState = await waitForScript(driver, `
+        const activeTerrainState = await waitForScript<{ ready: boolean; origin: string }>(driver, `
           const frames = document.querySelectorAll('#bpb-terrain-frame');
           const origin = frames[0]?.src || '';
           const toggle = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
@@ -2426,10 +2510,24 @@ async function main() {
         await driver.get(`https://${fixtureHost}:${fixture.port}/Peak.aspx?pid=2829`);
         await driver.wait(until.elementLocated(By.id('bpb-peak-links')), 10_000);
         await driver.wait(until.elementLocated(By.css(surfaceSelectors.terrainToggle)), 10_000);
-        const peakSunPlacement = await waitForScript(driver, webdriverScript(readPeakSunPlacement),
+        const peakSunPlacement = await waitForPageFunction(driver, readPeakSunPlacement,
             'the independent Peak Sun card row with its native map link', 10_000);
         assertPeakMapLinks(await driver.executeScript(webdriverScript(readPeakMapLinks)));
-        const peakState = await waitForScript(driver, `
+        const peakState = await waitForScript<{
+            links: string[];
+            theme: string | null;
+            framePreserved: boolean;
+            sunDateInput: boolean;
+            sunExpanded: boolean;
+            sunSummary: string;
+            moon: string;
+            moonEvents: string;
+            moonPhase: string;
+            moonIcon: string;
+            moonMarker: string;
+            moonBand: boolean;
+            sunBorderStyle: string;
+        }>(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       const mount = document.getElementById("bpb-map-viewport");
       const sun = document.querySelector(".bpb-sun-calculator");
@@ -2534,7 +2632,7 @@ async function main() {
         }
 
         await driver.get(`https://${fixtureHost}:${fixture.port}/map/BigMap.aspx?t=A&d=2296`);
-        const bigMapState = await waitForScript(driver, `
+        const bigMapState = await waitForScript<{ theme: string | null; frameReady: boolean }>(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       return button && !button.disabled && document.getElementById("bpb-map-viewport") ? {
         theme: document.documentElement.getAttribute("data-bpb-theme"),
@@ -2550,7 +2648,7 @@ async function main() {
         await driver.get(
             `https://${fixtureHost}:${fixture.port}/map/BigMap.aspx?cy=48.83115&cx=-121.60214&z=14&t=P&d=2829&c=0&hj=300&cyn=0`,
         );
-        const peakBigMapState = await waitForScript(driver, `
+        const peakBigMapState = await waitForScript<{ title: string; markerReady: boolean }>(driver, `
       const button = document.querySelector(${JSON.stringify(surfaceSelectors.terrainToggle)});
       const iframe = document.getElementById("if");
       return button && !button.disabled && document.getElementById("bpb-map-viewport") ? {
@@ -2622,7 +2720,7 @@ async function main() {
             for (const surface of ['list', 'compact', 'detail']) {
                 await driver.get(`https://${fixtureHost}:${fixture.port}/climber/${surface === 'detail'
                     ? 'ascent.aspx?aid=ignored&ignored=1' : `PeakAscents.aspx?pid=1039${surface === 'compact' ? '&compact=1' : ''}`}`);
-                const state = await waitForScript(driver, `
+                const state = await waitForScript<{ label: string }>(driver, `
                     const button = document.querySelector('button[aria-label^="Show"][aria-label*="ignored"]');
                     return button && !button.hidden ? { label: button.getAttribute('aria-label') } : false;
                 `, `Firefox ignored ${surface}`);
@@ -2694,7 +2792,7 @@ async function main() {
         await driver.wait(async () => (await driver.getCurrentUrl()).endsWith('/options/options.html#beta'), 10_000,
             'Firefox Settings destination to reach beta');
         // Settings builds its panels after load, so wait for the linked heading.
-        const linkedSettingsState = await waitForScript(driver, `
+        const linkedSettingsState = await waitForScript<{ href: string; heading: string }>(driver, `
       const heading = document.querySelector('#beta-settings-heading')?.textContent;
       return heading ? { href: location.href, heading } : null;
     `, 'the linked Firefox settings heading') as { href: string; heading: string };
@@ -2970,7 +3068,7 @@ async function main() {
                 if (process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR) await mkdir(process.env.BPB_VERIFY_PROFILE_PREPARATION_DIR, { recursive: true });
                 await verifyProfilePreparation({
                     evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
-                    wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox profile preparation'),
+                    wait: (fn: (...values: never[]) => unknown) => waitForPageFunction(driver, fn, 'Firefox profile preparation'),
                     click: (selector: string) => driver.findElement(By.css(selector)).click(),
                     key: (selector: string) => driver.findElement(By.css(selector)).sendKeys(Key.ENTER),
                     resize: (width: number, height: number) => setContentViewport(driver, { width, height }),
@@ -3002,12 +3100,12 @@ async function main() {
         await driver.switchTo().window(draftsManagerHandle as string);
         // A new window handle can still point at about:blank. Wait for the
         // requested extension document and its deferred bundle before seeding.
-        const draftsManagerReady = await waitForCondition(() => driver.executeScript(
+        const draftsManagerReady = await waitForCondition(() => driver.executeScript<{ url: string; ready?: unknown }>(
             webdriverScript(readDraftsManagerReadiness, `${baseUrl}options/drafts.html`),
         ), {
             description: 'the Firefox standalone drafts manager destination to finish loading',
             timeoutMs: 5_000,
-            isReady: ((state: ScriptState) => state!.ready) as unknown as BooleanConstructor,
+            isReady: state => state.ready,
         });
         const draftsManagerUrl = draftsManagerReady.url;
         // The manager is its own page, so this also proves the standalone page
@@ -3051,7 +3149,13 @@ async function main() {
         await driver.wait(until.elementLocated(By.css(surfaceSelectors.editor)), 10_000);
 
         await driver.findElement(By.id('GPXUpload')).sendKeys(fixture.gpxPath);
-        const uploadState = await waitForScript(driver, `
+        const uploadState = await waitForScript<{
+            date: string;
+            today: string;
+            label?: string;
+            ariaLabel: string;
+            nativePreviewHidden: boolean;
+        }>(driver, `
       const process = document.querySelector(".bpb-process-button");
       const date = document.getElementById("DateText")?.value || "";
       const now = new Date();
@@ -3074,7 +3178,7 @@ async function main() {
             'Firefox did not autofill the ascent date and swap trusted GPX selection to Process',
             uploadState,
         );
-        const creditState = await waitForScript(driver, `
+        const creditState = await waitForScript<{ href: string; nativeForm: boolean }>(driver, `
       const link = document.querySelector("#bpb-report-editor a[href*='better-peakbagger']");
       const textarea = document.getElementById("JournalText");
       return link && textarea?.value.includes(link.href) ? {
@@ -3194,7 +3298,14 @@ async function main() {
         assertState(captionScrollGaps.length > 0
             && (captionScrollGaps as unknown as { gap: number }[]).every(({ gap }: { gap: number }) => Number.isFinite(gap) && gap >= -0.01),
         'Firefox caption overlaps its image after scrolling', captionScrollGaps);
-        const captionState = await waitForScript(driver, `
+        const captionState = await waitForScript<{
+            ready: boolean;
+            text: string;
+            below: boolean;
+            width: number;
+            imageWidth: number;
+            source: string;
+        }>(driver, `
       const figure = document.querySelector('.bpb-re-surface figure');
       if (!figure) return false;
       const image = figure.querySelector('.bpb-re-image-resize img').getBoundingClientRect();
@@ -3294,7 +3405,7 @@ async function main() {
         const modifier = process.platform === 'darwin' ? Key.COMMAND : Key.CONTROL;
         await driver.actions({ async: true })
             .keyDown(modifier).sendKeys('z').keyUp(modifier).perform();
-        const mediaUndoState = await waitForScript(driver, `
+        const mediaUndoState = await waitForScript<{ value?: string }>(driver, `
       const value = document.getElementById('JournalText')?.value || '';
       return /width="320" height="180"/.test(value) ? { value } : false;
     `, 'Firefox one-step media resize Undo');
@@ -3314,7 +3425,7 @@ async function main() {
             .perform();
         // An async action can return before its last key lands, so wait for the whole
         // string; a wrong serialization still times out here or fails the assertion.
-        const editorTypedState = await waitForScript(
+        const editorTypedState = await waitForScript<{ value: string }>(
             driver,
             "const value = document.getElementById('JournalText')?.value || ''; return value.includes('Cross-browser') && value.endsWith('.') ? { value } : false;",
             'Firefox editor serialization',
@@ -3333,7 +3444,7 @@ async function main() {
         await driver.wait(until.elementLocated(By.css('.bpb-re-draft')), 10_000);
 
         await driver.get(new URL('popup/popup.html', baseUrl).href);
-        const popupState = await waitForScript(driver, `
+        const popupState = await waitForScript<string>(driver, `
       const text = document.getElementById("state")?.textContent || "";
       return /Open an activity to begin/.test(text) ? text : false;
     `, 'the Firefox popup worker status');
@@ -3477,7 +3588,7 @@ async function main() {
             },
             navigate: () => driver.get(`https://${fixtureHost}:${fixture.port}/Peak.aspx?pid=2296&signed-out=1`),
             evaluate: (fn: (...values: never[]) => unknown) => driver.executeScript(webdriverScript(fn)),
-            wait: (fn: (...values: never[]) => unknown) => waitForScript(driver, webdriverScript(fn), 'Firefox signed-out smoke'),
+            wait: (fn: (...values: never[]) => unknown) => waitForPageFunction(driver, fn, 'Firefox signed-out smoke'),
             press: (selector: string, key: string) => driver.findElement(By.css(selector)).sendKeys(key === 'Enter' ? Key.ENTER : key),
             readFavorites: async () => {
                 await driver.get(optionsUrl);

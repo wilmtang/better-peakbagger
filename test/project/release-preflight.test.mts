@@ -76,7 +76,7 @@ test('rehearsal proof requires all ordered passes and teardown, without hiding a
         `${log(3)}\n${log(3)}`, log(3).split('\n').reverse().join('\n')]) {
         assert.throws(() => validateConsecutivePasses(invalid, 'Chrome'), /Chrome.*passes/);
     }
-    const boundary = '> node scripts/verify-store-packages.mjs\n';
+    const boundary = '> node scripts/verify-store-packages.mts\n';
     assert.equal(validateConsecutivePasses(`${log(3)}\n${boundary}${log(3)}`, 'Verify release'), 3);
     assert.throws(() => validateConsecutivePasses(`${log(3)}\n${boundary}${log(1)}`, 'Verify release'), /consecutive passes/);
     assert.throws(() => validateConsecutivePasses(log(3), 'Verify release'), /boundary/);
@@ -227,7 +227,7 @@ test('local preflight shares publication acquisition and rechecks candidate iden
             paginate: async endpoint => endpoint.startsWith('rulesets') ? state.rulesets : state.policies,
             runCommand: async (program, args) => {
                 assert.equal(program, process.execPath);
-                assert.ok(['scripts/check-changelog-history.mjs', 'scripts/check-npm-audit.mts', 'scripts/release-readiness.mts'].includes(args[0]!)); return '';
+                assert.ok(['scripts/check-changelog-history.mts', 'scripts/check-npm-audit.mts', 'scripts/release-readiness.mts'].includes(args[0]!)); return '';
             },
             acquire: async options => {
                 directory = options.directory;

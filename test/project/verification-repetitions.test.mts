@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import JSZip from 'jszip';
-import { repeatVerification, verificationRepetitions } from '../../scripts/verification-repetitions.mjs';
+import { repeatVerification, verificationRepetitions } from '../../scripts/verification-repetitions.mts';
 import {
     extractArchive, packageArguments, prepareChromeArchive, verifyPackageRepetitions,
     type PackageVerificationOptions,

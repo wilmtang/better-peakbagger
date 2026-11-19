@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from '../helpers/test-dom.mts';
-import { assertMapToggleAnchor } from '../../scripts/browser-verification-fixtures.mjs';
+import { assertMapToggleAnchor } from '../../scripts/browser-verification-fixtures.mts';
 import { readTerrainToggleReadiness } from '../../scripts/terrain-toggle-readiness.mts';
 
 function fixture() {

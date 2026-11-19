@@ -13,7 +13,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createFixtureCertificate } from '../../scripts/browser-verification-fixtures.mjs';
+import { createFixtureCertificate } from '../../scripts/browser-verification-fixtures.mts';
 import {
     closeServer,
     createResourceStack,
@@ -21,7 +21,7 @@ import {
     manageChildProcess,
     quitWebDriver,
     runChildProcess,
-} from '../../scripts/resource-stack.mjs';
+} from '../../scripts/resource-stack.mts';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -225,7 +225,7 @@ test('browser verifiers use the shared resource stack and condition-based analyz
         'scripts/verify-firefox-terrain.mts',
         'scripts/verify-terrain-lod.mts',
         'scripts/verify-terrain-visual.mts',
-        'scripts/render-showcase.mjs',
+        'scripts/render-showcase.mts',
     ];
     const sources = await Promise.all(verifierPaths.map(async verifierPath => ({
         verifierPath,

@@ -16,7 +16,7 @@ export interface Cdp { call(method: string, params?: object): Promise<CdpResult>
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const waitForDebugPort = async (profile: string, child: ChildProcess, childState: { error?: Error | null; [field: string]: unknown }, timeoutMs = 10000) => {
+export const waitForDebugPort = async (profile: string, child: ChildProcess, childState: { error?: Error | null }, timeoutMs = 10000) => {
     const activePortFile = path.join(profile, 'DevToolsActivePort');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {

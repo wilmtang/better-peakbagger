@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyStorePackages } from '../../scripts/verify-store-packages.mjs';
+import { verifyStorePackages } from '../../scripts/verify-store-packages.mts';
 
 function fixture(failAt) {
     const calls = [];

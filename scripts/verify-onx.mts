@@ -8,11 +8,11 @@ import path from 'node:path';
 import { createServer } from 'node:https';
 import { createServer as httpServer } from 'node:http';
 import { connect, type AddressInfo, type Socket } from 'node:net';
-import { createFixtureCertificate, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { createFixtureCertificate, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { setFirefoxContentViewport } from './firefox-content-viewport.mts';
 import { createVerificationRoot } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 

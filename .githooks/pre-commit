@@ -2,5 +2,5 @@
 set -eu
 
 root="$(git rev-parse --show-toplevel)"
-node "$root/scripts/privacy-guard.mjs"
+node "$root/scripts/privacy-guard.mts"
 exec node "$root/scripts/typescript-policy.mts" --staged

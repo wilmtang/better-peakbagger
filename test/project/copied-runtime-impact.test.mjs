@@ -10,7 +10,7 @@ import {
     copiedRuntimeChanged,
     copiedRuntimeVersions,
     terrainVerificationRequired,
-} from '../../scripts/copied-runtime-impact.mjs';
+} from '../../scripts/copied-runtime-impact.mts';
 
 const lock = (overrides = {}) => ({
     packages: Object.fromEntries(COPIED_RUNTIME_PACKAGES.map((packageName) => [

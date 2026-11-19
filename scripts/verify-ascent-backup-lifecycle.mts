@@ -9,8 +9,8 @@ import path from 'node:path';
 import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { JSDOM } from 'jsdom';
-import { createFixtureCertificate, projectRoot } from './browser-verification-fixtures.mjs';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
+import { createFixtureCertificate, projectRoot } from './browser-verification-fixtures.mts';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 // Worker- and page-world probes the evaluated callbacks install; each callback

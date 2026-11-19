@@ -21,10 +21,10 @@ import { access, readdir, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium, firefox, type Browser, type Page, type Route } from 'playwright';
-import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
-import { fixtureContentType, fixtureHost, projectRoot } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mts';
+import { fixtureContentType, fixtureHost, projectRoot } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
 
 export const DOM_ORIGIN = `https://${fixtureHost}`;
 export const DOM_ENGINES = ['chrome', 'firefox'] as const;

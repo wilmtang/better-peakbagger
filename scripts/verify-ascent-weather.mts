@@ -7,34 +7,35 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition, webdriverScript } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
+import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition, webdriverScript } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
 import { PEAK_WEATHER_MODELS } from '../src/weather/peak-weather-models.ts';
 import { weatherFixture, weatherModelFixture } from '../test/helpers/weather-fixture.mjs';
-import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mjs';
-import { verifyWeatherClouds } from './verify-weather-clouds.mjs';
-import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mjs';
-import { verifyWeatherCardDrag } from './verify-weather-card-drag.mjs';
-import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mjs';
-import { verifyPeakSnowCases } from './verify-peak-snow-cases.mjs';
+import { verifyPeakWeatherCases } from './verify-peak-weather-cases.mts';
+import { verifyWeatherClouds } from './verify-weather-clouds.mts';
+import { verifyWeatherTabStyles } from './verify-weather-tab-styles.mts';
+import { verifyWeatherCardDrag } from './verify-weather-card-drag.mts';
+import { verifyWeatherModelRefresh, verifyAscentWeatherModelMemory } from './verify-weather-model-refresh.mts';
+import { verifyPeakSnowCases } from './verify-peak-snow-cases.mts';
 import { snotelStations, snotelFixture } from '../test/helpers/snotel-fixture.mjs';
-import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
-import { verifySnowMapCases } from './verify-snow-map-cases.mjs';
-import { verifySnotelOptions } from './verify-snotel-options.mjs';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mts';
+import { verifySnowMapCases } from './verify-snow-map-cases.mts';
+import { verifySnotelOptions } from './verify-snotel-options.mts';
 import { verifyPeakCards } from './verify-peak-cards.mts';
 import { airQualityFixture } from '../test/helpers/air-quality-fixture.mjs';
 import { wildfireFixture } from '../test/helpers/wildfire-fixture.mjs';
-import { verifyWildfires } from './verify-wildfires.mjs';
+import { verifyWildfires } from './verify-wildfires.mts';
 import { verifyAirQuality } from './verify-air-quality.mts';
 import { verifyPeakWeatherInteractions } from './verify-peak-weather-interactions.mts';
-import { verifyMapLocationCases } from './verify-map-location-cases.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
-import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';
+import { verifyMapLocationCases } from './verify-map-location-cases.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
+import { retainBrowserFailure, verificationScreenshots, type RetainBrowserFailureOptions } from './browser-verification-evidence.mts';
 import { settingsSchema } from '../src/settings/settings-schema.ts';
 import { createVerificationRoot } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
+import type { Locator } from 'playwright';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => T | Promise<T>, options: { description: string; timeoutMs?: number; intervalMs?: number; isReady?: (value: T) => unknown }) => Promise<T>;
 // Browser-neutral page access: Playwright evaluates the function, WebDriver its source.
@@ -101,7 +102,7 @@ async function runWeatherVerification() {
     const cardId = snowMode ? 'bpb-peak-snow' : peakMode ? 'bpb-peak-weather' : 'bpb-ascent-weather';
     const resources = createResourceStack();
     let primaryError: unknown = null, summary: unknown;
-    const failureEvidence: Record<string, unknown> = {};
+    const failureEvidence: RetainBrowserFailureOptions<Locator> = { fixtureOrigin: '' };
     try {
         const temporaryRoot = await createVerificationRoot(resources, 'bpb-ascent-weather-verify-', 'weather verification profile');
         const nativeMap = snowMapMode || mapLocationMode || peakMode ? await snowMapDocument() : null;
@@ -997,7 +998,7 @@ async function runWeatherVerification() {
         }
     } catch (error) {
         primaryError = error;
-        await retainBrowserFailure(failureEvidence as Parameters<typeof retainBrowserFailure>[0]);
+        await retainBrowserFailure(failureEvidence);
     }
     await resources.dispose(primaryError as null);
     console.log(JSON.stringify({ ...(summary as object), teardown: 'passed' }));

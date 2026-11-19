@@ -4,10 +4,10 @@
 import assert from 'node:assert/strict';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition, webdriverScript } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition, webdriverScript } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { setFirefoxContentViewport } from './firefox-content-viewport.mts';
 import { createVerificationRoot } from './verification-launch.mts';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 

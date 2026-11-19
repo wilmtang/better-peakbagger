@@ -9,8 +9,8 @@ import path from 'node:path';
 import { createServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { chromium, firefox, type Browser } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createFixtureCertificate, resolveFixtureFile, sendFixtureFile } from './browser-verification-fixtures.mts';
 import { settingsSchema as Schema } from '../src/settings/settings-schema.ts';
 import { initSectionNav } from '../src/ui/section-nav.ts';
 

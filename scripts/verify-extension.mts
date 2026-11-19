@@ -9,7 +9,7 @@
 //
 // This covers what nothing else does. npm test evaluates the built bundles in
 // jsdom, so it cannot see how a browser interprets manifest order and worlds.
-// scripts/verify-terrain-visual.mjs provides storage and bridge-protocol stubs,
+// scripts/verify-terrain-visual.mts provides storage and bridge-protocol stubs,
 // so it does not exercise the real cross-world bridge. The worker also has to
 // boot through the manifest's single bundled background entry. Two shipped
 // regressions lived in exactly those blind spots.
@@ -51,22 +51,22 @@ import {
     waitForBuddyHelperCleanup,
     waitForBuddyReportCache,
     waitForPageCondition
-} from './browser-verification-fixtures.mjs';
+} from './browser-verification-fixtures.mts';
 import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
-import { verifyGpxSegments } from './verify-gpx-segments.mjs';
+import { verifyGpxSegments } from './verify-gpx-segments.mts';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
-import { verifyClimberMembership } from './verify-climber-membership.mjs';
-import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
-import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';
-import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
+import { verifyClimberMembership } from './verify-climber-membership.mts';
+import { verifyClimberHoverCard } from './verify-climber-hover-card.mts';
+import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mts';
+import { verifyProfilePreparation } from './verify-profile-preparation.mts';
 import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
-import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
-import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
+import { createResourceStack } from './resource-stack.mts';
+import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
+import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mts';
+import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mts';
 import { observeTerrainFrameCreation } from './terrain-frame-creation.mts';
 
 import type { BrowserContext, ConsoleMessage, Download, JSHandle, Locator, Page } from 'playwright';
@@ -1447,7 +1447,8 @@ try {
         const fallbackTabClosed = fallbackCleanup.closed;
         check(buddyRequests === 4
             && fixture!.requests.buddyReports >= 2
-            && fallbackImport?.count === 6
+            && Boolean(fallbackImport)
+            && (fallbackImport as { count: number }).count === 6
             && fallbackTabClosed,
         `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
             buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls, workingBuddyCache,

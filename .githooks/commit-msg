@@ -2,4 +2,4 @@
 set -eu
 
 root="$(git rev-parse --show-toplevel)"
-exec node "$root/scripts/privacy-guard.mjs" --message-file "$1"
+exec node "$root/scripts/privacy-guard.mts" --message-file "$1"

@@ -35,11 +35,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
       - name: Detect terrain runtime and verification changes
         id: impact
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/copied-runtime-impact.mjs "$BASE_REVISION"
+        run: node scripts/copied-runtime-impact.mts "$BASE_REVISION"
 
   node:
     name: Node tests and lint

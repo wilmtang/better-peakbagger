@@ -22,7 +22,7 @@ Better Peakbagger module uses a global as an internal dependency.
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
   which makes `.githooks/pre-commit` scan staged contents and paths and
   `.githooks/commit-msg` scan the proposed message through
-  `scripts/privacy-guard.mjs`. Salted hashes cover personal identifiers and
+  `scripts/privacy-guard.mts`. Salted hashes cover personal identifiers and
   complete private hostnames/IPs, including compound resource names; common
   hostname words and individual IP octets are not banned. Never commit the
   plaintext identifiers as test cases. This is the one check whose absence is
@@ -36,7 +36,7 @@ Better Peakbagger module uses a global as an internal dependency.
   On macOS, run browser checks outside Codex's Seatbelt sandbox through its
   approved execution path. Headless Chrome still registers with macOS and can
   abort during a sandboxed launch, causing a visible system crash dialog.
-  Repository verifiers use `scripts/chrome-launch-guard.mjs` to stop that
+  Repository verifiers use `scripts/chrome-launch-guard.mts` to stop that
   launch before Chrome starts. Keep test profiles isolated and Chrome hidden;
   do not disable the system's crash reporting.
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
@@ -168,7 +168,7 @@ check. It runs entirely on GitHub, without Codex or the maintainer's computer.
 Verified skill updates are committed directly to `main`; no feature branch or
 pull request is created.
 
-`scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
+`scripts/update-ui-ux-skill.mts` pins the upstream commit, verifies downloaded
 blob hashes, and three-way merges `SKILL.md` with the installed upstream version
 to retain project guidance. Changed local helpers, merge conflicts, license
 changes, unsupported layouts, and divergent upstream history stop the run.
@@ -187,7 +187,7 @@ pushes. Keep future deploy keys subject to the check-bypass policy in mind. Auto
 commits include `[skip ci]`; conflicts and failed skill checks stop the run.
 Updater and publisher regressions also run with `npm test`.
 
-For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
+For a local preview, run `node scripts/update-ui-ux-skill.mts --check`; omit
 `--check` to apply the proposed update in a clean skill working tree. Neither
 command commits, pushes, or merges anything locally.
 

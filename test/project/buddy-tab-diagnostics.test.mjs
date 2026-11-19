@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import test from 'node:test';
-import { installBuddyTabDiagnostics } from '../../scripts/buddy-tab-diagnostics.mjs';
+import { installBuddyTabDiagnostics } from '../../scripts/buddy-tab-diagnostics.mts';
 
 const setup = methods => {
     const listeners = new Set();

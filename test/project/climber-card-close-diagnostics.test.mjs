@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
-import { installClimberCardCloseProbe } from '../../scripts/climber-card-close-diagnostics.mjs';
+import { installClimberCardCloseProbe } from '../../scripts/climber-card-close-diagnostics.mts';
 
 test('isolated close diagnostics preserve setter behavior, record the calling frame, and restore on navigation', t => {
     const dom = new JSDOM('<a id="hover-climber" href="/climber/climber.aspx?cid=900002">Morgan</a><button></button><div id="bpb-climber-card"></div>', { runScripts: 'outside-only' });

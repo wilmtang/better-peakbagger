@@ -74,7 +74,7 @@ jobs:
           # Store-only reruns retain packages from an earlier verify attempt.
           artifact_name="$(gh api --paginate --slurp \
             "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID/artifacts?per_page=100" \
-            | node scripts/select-release-artifact.mjs "$TARGET_TAG" "$attempt")"
+            | node scripts/select-release-artifact.mts "$TARGET_TAG" "$attempt")"
           echo "artifact-name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "tag-commit=$tag_commit" >> "$GITHUB_OUTPUT"
 

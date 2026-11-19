@@ -7,11 +7,11 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 import { photoLibrary as Library } from '../src/photos/photo-library.ts';
 import { photoProject as Project } from '../src/photos/photo-project.ts';
-import { verifyPhotoBackupStatus } from './verify-photo-backup-status.mjs';
+import { verifyPhotoBackupStatus } from './verify-photo-backup-status.mts';
 
 assert.equal(process.argv.length, 2, 'photo status verification accepts no arguments');
 

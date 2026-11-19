@@ -8,8 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import JSZip from 'jszip';
-import { repeatVerification, verificationRepetitions } from './verification-repetitions.mjs';
-import { createResourceStack, runChildProcess } from './resource-stack.mjs';
+import { repeatVerification, verificationRepetitions } from './verification-repetitions.mts';
+import { createResourceStack, runChildProcess } from './resource-stack.mts';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export type PackageBrowser = 'chrome' | 'firefox';

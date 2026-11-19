@@ -13,7 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { chromium, firefox, type BrowserContext } from 'playwright';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 
 export interface DeferringResources { defer(label: string, finalizer: () => unknown): void }
 export type PersistentLaunchOptions = NonNullable<Parameters<typeof chromium.launchPersistentContext>[1]>;

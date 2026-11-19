@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { utils } from 'playwright-core/lib/coreBundle';
-import { DEM_FIXTURE_CONTENT_TYPE, syntheticDemPixels, syntheticDemWebp } from '../../scripts/terrain-dem-fixture.mjs';
+import { DEM_FIXTURE_CONTENT_TYPE, syntheticDemPixels, syntheticDemWebp } from '../../scripts/terrain-dem-fixture.mts';
 import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 
 test('synthetic DEM WebP preserves every Terrarium channel losslessly', () => {
