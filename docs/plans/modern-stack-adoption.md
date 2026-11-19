@@ -72,7 +72,7 @@ jsdom retirement remain open.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical pre-M6 output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; M5 itself shipped no production component (M6 shipped the first). |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | Runtime batches 2.1 through 2.5 and the root Node tooling conversion are committed. The tooling batch (`fd12835a`) passed all 4,209 tests, typecheck, lint and exact packaged Chrome/Firefox verification on Node 24.22.3. At that commit 244 files under `test/`, eight documentation/experiment scripts, one browser fixture script and one store-asset script still used JavaScript. |
+| M7 | In progress | Runtime and root Node tooling are converted. At `dc985cc9`, 231 authored JavaScript files remain, including 222 test files and helpers. The repository-wide policy and removal of `allowJs` are exit tasks. |
 | M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. Provider access and avalanche links now use browser fixtures. All six standalone verifier imports of jsdom have been removed. Test helpers, test suites, the request-count evidence probe and dependency removal are open. |
 | M8 | Evaluated, esbuild retained | The full 67-bundle candidate passed packaging and current desktop browser gates. A follow-up reduced its median CLI build time by 38–41% across two comparisons. It still took 2.7–3.0 times as long as esbuild and its archives were about 1.9% smaller. See the [candidate and evidence](experiments/wxt-evaluation.md). |
 
@@ -92,6 +92,12 @@ and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
+
+Local verification at `dc985cc9` passed on Node 24.22.3. It covered 4,213
+Node tests, 14 scale tests, typecheck, lint, the full branch TypeScript diff,
+and the dependency audit. The hidden browser DOM tier passed 60 cases across
+Chromium 158.0.8127.18 and Firefox 159.0. The fixture preflight passed in both
+engines. Hosted Linux jobs and their browser-floor results remain open.
 
 Limits of what is proven:
 
@@ -691,8 +697,9 @@ fixtures offline in the browser. Each passed 16 cases across those two
 hidden engines, at 390/1280 × 900 and 260/853 × 600, including light, dark
 and simulated 150% reflow. This removes the last direct verifier imports.
 
-1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
-   files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
+1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
+   `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
+   and additional tests reach it through helpers. Pure logic that needs no DOM
    moves to plain `node:test` instead. For each ported owner, show the new
    assertion fails against a deliberately broken disposable copy, and delete
    the jsdom original in the same change.
