@@ -562,7 +562,7 @@ MAIN-world GPX/Sun ownership and worker-owned mutations remain distinct.
 | Layout / movement / pending feedback | `npm run verify -- peak-cards`, `npm run verify -- weather-interactions` |
 | 3D point-weather integration | `node scripts/verify-peak-weather-3d.mts` |
 | Real manifest startup | `npm run verify -- chrome` |
-| Request-count / axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts`; `node docs/plans/evidence/card-reuse-audit.mjs` |
+| Request-count and axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts` for requests and `node docs/plans/evidence/card-reuse-audit.mts` for browser-rendered axis labels |
 | Documentation integrity | `node --test test/project/documentation.test.mts`; `git diff --check` |
 
 Follow [development](development.md) and AGENTS for hidden HTTPS Peakbagger fixtures,

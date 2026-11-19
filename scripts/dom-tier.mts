@@ -241,7 +241,11 @@ const createContext = async (browser: Browser, engine: DomEngine, item: DomCase,
     }
 };
 
-export async function runDomTier(args: readonly string[], suites?: readonly (DomSuite & { file?: string })[]): Promise<number> {
+export async function runDomTier(
+    args: readonly string[],
+    suites?: readonly (DomSuite & { file?: string })[],
+    report: (record: Record<string, unknown>) => void = record => console.log(JSON.stringify(record)),
+): Promise<number> {
     const selection = domSelection(args);
     const loaded = suites ?? await loadDomSuites();
     const matchingSuites = loaded.filter(suite => !selection.suite ||
@@ -270,8 +274,8 @@ export async function runDomTier(args: readonly string[], suites?: readonly (Dom
                     assert.deepEqual(pageErrors, [], `${label}: uncaught page errors`);
                     assert.deepEqual(unexpected, [], `${label}: unexpected requests`);
                     executed++;
-                    console.log(JSON.stringify({ tier: 'dom', engine, version: browser.version(), hidden: true, case: label,
-                        viewport: item.viewport ?? { width: 1000, height: 760 }, durationMs: Math.round(performance.now() - startedAt), result: 'passed' }));
+                    report({ tier: 'dom', engine, version: browser.version(), hidden: true, case: label,
+                        viewport: item.viewport ?? { width: 1000, height: 760 }, durationMs: Math.round(performance.now() - startedAt), result: 'passed' });
                 } catch (error) {
                     caseError = error;
                     await retainBrowserFailure({ context, fixtureOrigin: DOM_ORIGIN, requests } as unknown as Parameters<typeof retainBrowserFailure>[0]);
@@ -286,7 +290,7 @@ export async function runDomTier(args: readonly string[], suites?: readonly (Dom
         }
         // Retries are off: a case that passes only on re-run is a bug in the case.
         assert.equal(executed, selected.length * selection.engines.length, 'every selected DOM tier case must execute');
-        console.log(JSON.stringify({ verification: 'dom', engines: selection.engines, executedCases: executed }));
+        report({ verification: 'dom', engines: selection.engines, executedCases: executed });
     } catch (error) { failure = error; }
     await resources.dispose(failure as null);
     return executed;
