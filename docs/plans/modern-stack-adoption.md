@@ -661,15 +661,19 @@ across hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760. In both
 engines a disposable bundle without the idempotence guard created a duplicate
 panel and failed the new assertion. Provider registry and coordinate math
 stay in the checked [Node suite](../../test/avalanche/avalanche-links.test.mts).
+The [weather interval verifier](../../scripts/verify-weather-intervals.mts)
+now prepares its Nepal fixture without jsdom. The old and new versions both
+passed in hidden Chromium 158.0.8127.18 at 1440 × 1000, with the same 24.0 mm
+sum, GMT+5:45 boundary labels, keyboard readout and two intercepted requests.
 
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
    files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
    moves to plain `node:test` instead. For each ported owner, show the new
    assertion fails against a deliberately broken disposable copy, and delete
    the jsdom original in the same change.
-2. Move the non-test consumers: six `scripts/verify-*` files and two
-   `docs/plans/evidence/` scripts import jsdom, so the package cannot be removed
-   while they do.
+2. Move the remaining non-test consumers in `scripts/verify-*` and
+   `docs/plans/evidence/`, including evidence scripts that reach jsdom through
+   fixture helpers.
 3. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
    loader's trusted-dispatch internals, and their Dependabot and
    `DEVELOPMENT_TOOLS` entries.
