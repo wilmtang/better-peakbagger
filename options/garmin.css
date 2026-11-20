@@ -56,6 +56,18 @@
 .garmin-recovery-link { min-height:1.6em; line-height:1.6; margin:0 0 14px; }
 /* The inbox's recovery actions share one reserved line. */
 .garmin-recovery-links { display:flex; flex-wrap:wrap; column-gap:20px; }
+/* An info toggletip: opened by click or keyboard, never by hover, so touch
+   and keyboard readers get the same explanation. Its negative block margin
+   keeps the reserved recovery line's height when the button appears. */
+.garmin-resume { display:inline-flex; align-items:center; gap:6px; }
+.garmin-info-button { appearance:none; display:inline-grid; place-items:center; width:28px; height:28px; margin-block:-4px; padding:0;
+    color:var(--sub); background:none; border:0; border-radius:50%; cursor:pointer; }
+.garmin-info-button:hover,.garmin-info-button[aria-expanded="true"] { color:var(--text); background:color-mix(in srgb, var(--accent) 10%, transparent); }
+.garmin-info-button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+/* The larger touch target overlaps nearby text, so it paints no fill there. */
+@media (pointer: coarse) { .garmin-info-button { width:44px; height:44px; margin-block:-12px; } .garmin-info-button:hover,.garmin-info-button[aria-expanded="true"] { background:none; } }
+.garmin-info-note { max-width:62ch; margin:-4px 0 16px; padding:10px 14px; font-size:13px; line-height:1.5; color:var(--text);
+    background:color-mix(in srgb, var(--accent) 7%, var(--card)); border:1px solid var(--border); border-radius:8px; }
 /* The in-page confirmation Settings and the drafts page use, for the two
    Garmin actions that cannot be undone. Shown on request, below its trigger. */
 .garmin-confirmation { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:14px; padding:12px 18px;

@@ -342,6 +342,40 @@ try {
             await page.locator('#inbox-status').filter({ hasText: 'asked us to wait' }).waitFor();
             stable(queuedGeometry, await geometry(['#inbox-check', 'h1', '#inbox-list', 'footer']));
             if (name === 'chromium') await page.screenshot({ path: path.join(output, `queued-${width}-${theme}.png`) });
+            // The info button joins the reserved recovery line without growing it:
+            // the list does not move as the queue empties and refills.
+            const why = page.locator('#inbox-why-peakbagger'), whyNote = page.locator('#inbox-why-peakbagger-note');
+            const listTop = () => page.evaluate(() => document.querySelector('#inbox-list')!.getBoundingClientRect().top + scrollY);
+            const queuedTop = await listTop();
+            await page.evaluate(() => { window.fixture.state.queued = 0; });
+            await page.locator('#inbox-resume').waitFor({ state: 'hidden' });
+            assert(Math.abs(await listTop() - queuedTop) <= 1, `${name} the queue line's info button moved the list`);
+            await page.evaluate(() => { window.fixture.state.queued = 1; });
+            await why.waitFor();
+            const target = await why.boundingBox();
+            assert(target && target.width >= 24 && target.height >= 24, `${name} info button is below the 24px target size`);
+            // Opening is a requested expansion: the trigger and everything above it hold still.
+            const whySelectors = ['.garmin-heading', '#inbox-check', '#inbox-why-peakbagger'];
+            const closedWhy = await geometry(whySelectors);
+            await why.focus(); await page.keyboard.press('Enter');
+            await whyNote.waitFor();
+            assert.equal(await why.getAttribute('aria-expanded'), 'true');
+            stable(closedWhy, await geometry(whySelectors));
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `why-peakbagger-${width}-${theme}.png`) });
+            await page.evaluate(value => scrollTo(0, value), closedWhy.scroll[1]);
+            await page.keyboard.press('Escape');
+            await whyNote.waitFor({ state: 'hidden' });
+            assert(await why.evaluate(el => document.activeElement === el), 'Escape keeps focus on the info button');
+            stable(closedWhy, await geometry(whySelectors));
+            // If the queue drains while the note is open and focused, both close and focus moves to Check now.
+            await page.keyboard.press('Enter'); await whyNote.waitFor();
+            await page.evaluate(() => { window.fixture.state.queued = 0; });
+            await page.locator('#inbox-resume').waitFor({ state: 'hidden' });
+            assert(await whyNote.isHidden());
+            await page.waitForFunction(() => document.activeElement!.id === 'inbox-check');
+            await page.evaluate(() => { window.fixture.state.queued = 1; });
+            await why.waitFor();
             // The list is newest first, one compact row per activity, with every
             // row's Review in the same column whether or not it can be dismissed.
             await page.goto(`${origin}/options/inbox.html?list`);

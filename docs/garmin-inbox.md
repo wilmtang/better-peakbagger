@@ -63,7 +63,8 @@ types automatically; choose **Check full history** to find older activities now.
 
 Garmin discovery continues on your chosen schedule. New activities wait locally
 if Peakbagger is closed, signed out, rate limited or asking for a human check.
-The inbox shows how many activities are waiting for peak checks. Open a
+The inbox shows how many activities are waiting for peak checks; the info button
+beside **Open Peakbagger to resume** gives the short reason. Open a
 Peakbagger tab and complete any check or sign-in: returning to a loaded
 Peakbagger page resumes the queue automatically, including in Manual only mode.
 This prepares activities already discovered; it does not scan Garmin history.

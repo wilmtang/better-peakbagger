@@ -274,7 +274,10 @@ async function refresh(initial = false) {
     $('#inbox-description').textContent = !current.configured ? 'Connect Garmin to import your activities.' : current.manual ? 'Your Garmin activities, ready when you check.' : 'Your Garmin activities, imported automatically.';
     const queued = current.queued || 0;
     $('#inbox-queue').textContent = queued ? `${queued} ${queued === 1 ? 'activity' : 'activities'} waiting for peak checks. Visit Peakbagger to resume.` : 'No activities waiting for peak checks.';
-    $('#inbox-resume-peaks').hidden = !queued;
+    // With nothing waiting the explanation has no subject; close it, moving focus
+    // off the info button before the button is hidden.
+    if (!queued) { if (document.activeElement === $('#inbox-why-peakbagger')) $('#inbox-check').focus(); setWhyPeakbagger(false); }
+    $('#inbox-resume-peaks').hidden = !queued; $('#inbox-resume').hidden = !queued;
     const peakbaggerMessage = current.peakbaggerBlocked?.code === 'cloudflare'
         ? 'Peakbagger needs a human check. Your activities are queued safely.'
         : current.peakbaggerBlocked?.code === 'rate-limit' ? 'Peakbagger asked us to wait. Your activities are queued safely.' : null;
@@ -285,6 +288,15 @@ async function refresh(initial = false) {
     $('#inbox-check').setAttribute('aria-disabled', String(current.checking || !current.enabled || ['key-rejected', 'permission'].includes(current.error?.code as string)));
     paintList();
 }
+// Why peak checks need an open Peakbagger tab: a toggletip the reader opens.
+function setWhyPeakbagger(open: boolean) {
+    $('#inbox-why-peakbagger-note').hidden = !open; $('#inbox-why-peakbagger').setAttribute('aria-expanded', String(open));
+}
+$('#inbox-why-peakbagger').addEventListener('click', () => setWhyPeakbagger($('#inbox-why-peakbagger').getAttribute('aria-expanded') !== 'true'));
+$('#inbox-why-peakbagger').addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || $('#inbox-why-peakbagger-note').hidden) return;
+    event.preventDefault(); setWhyPeakbagger(false); $('#inbox-why-peakbagger').focus();
+});
 // Check now takes over the status line, so it retires the dismissal notice.
 $('#inbox-check').addEventListener('click', () => void busyAction($('#inbox-check'), $('#inbox-status'), async () => {
     dismissal = null; await send({ type: 'GARMIN_CHECK' }); await refresh();

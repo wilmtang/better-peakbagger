@@ -482,3 +482,27 @@ test('the row summary names off-track matches as the review does, and history li
         assert.equal(h.d.querySelector('#history-11 p').textContent, `${localDay('2026-10-05')} · Dismissed`);
     } finally { h.dom.window.close(); }
 });
+
+test('a queued inbox explains, on request, why Peakbagger must be open', async () => {
+    const h = await listInbox([activity('600', { date: '2026-11-03', name: 'Queued hike' }, { phase: 'waiting' })]);
+    try {
+        const why = h.d.querySelector('#inbox-why-peakbagger'), note = h.d.querySelector('#inbox-why-peakbagger-note');
+        assert.equal(h.d.querySelector('#inbox-resume').hidden, true, 'nothing waiting, nothing to explain');
+        h.state.queued = 1; await h.refresh();
+        assert.equal(h.d.querySelector('#inbox-resume').hidden, false);
+        assert.equal(why.getAttribute('aria-label'), 'Why Peakbagger needs to be open');
+        assert.equal(note.hidden, true, 'the explanation starts closed');
+        why.focus(); why.click();
+        assert.equal(note.hidden, false); assert.equal(why.getAttribute('aria-expanded'), 'true');
+        assert.match(note.textContent, /signed-in Peakbagger tab/);
+        await h.refresh();
+        assert.equal(note.hidden, false, 'polling keeps it open');
+        why.dispatchEvent(new h.dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+        assert.equal(note.hidden, true); assert.equal(why.getAttribute('aria-expanded'), 'false');
+        assert.equal(h.d.activeElement, why, 'Escape leaves focus on the button');
+        why.click(); h.state.queued = 0; await h.refresh();
+        assert.equal(note.hidden, true, 'the explanation closes when nothing is waiting');
+        assert.equal(h.d.querySelector('#inbox-resume').hidden, true);
+        assert.equal(h.d.activeElement.id, 'inbox-check', 'focus is not lost with the hidden button');
+    } finally { h.dom.window.close(); }
+});
