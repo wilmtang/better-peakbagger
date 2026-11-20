@@ -276,8 +276,8 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   its marker and field projection. Both bundle source lists, their pins and
   the settings-read policy (the one fail-soft read moved to the shared module)
   are updated. The per-bundle behavior tests in
-  `passive-settings-ownership.test.mjs`, `big-map.test.mjs` and
-  `peak-map.test.mts` exercise both bridges unchanged. Checks: build, those
+  `passive-settings-ownership.test.mjs`, `big-map.browser.mts` and
+  `peak-map.browser.mts` exercise both bridges unchanged. Checks: build, those
   tests plus the settings and project tests (662 pass), typecheck, lint.
 - Phase 4 step 2, one family. `OPTIONS_TAB_REGISTER`, `OPEN_BETA_SETTINGS`,
   `OPEN_CUSTOM_LAYER_SETTINGS` and `OPEN_DRAFTS_MANAGER`, with the registered

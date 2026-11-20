@@ -1,8 +1,9 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserWindow, fixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom } from '../helpers/fixture-dom.mts';
 import { rect } from '../helpers/page-types.mts';
 import { installMapLayers } from '../../src/maps/map-layers.ts';
 
@@ -18,7 +19,7 @@ type MapHandler = (event: { target: object }) => void;
 const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78266, longitude: -121.74767, elevation: 1570 };
 const bounds = [-121.77, 46.84, -121.75, 46.86];
 function setup(terrain = false, { preferences = true } = {}) {
-    const dom = fixtureDom('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296', pretendToBeVisual: true });
+    const dom = fixtureDom('<body><div id="map"></div></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=2296' });
     const win = dom.window, messages: Posted[] = [], moves: unknown[] = [], removed: unknown[] = [], popups: HTMLElement[] = [], rasterPaints: [string, number][] = [], events = new Map<string, Set<MapHandler>>(); let currentBounds = bounds;
     const container = win.document.getElementById('map')!;
     container.getBoundingClientRect = () => rect({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
@@ -30,7 +31,7 @@ function setup(terrain = false, { preferences = true } = {}) {
         off(name: string, handler: MapHandler) { events.get(name)?.delete(handler); }, flyToBounds: (...args: unknown[]) => moves.push(args), stop() {} };
     if (terrain) { const frame = win.document.createElement('div'); frame.id = 'bpb-terrain-frame'; frame.getBoundingClientRect = container.getBoundingClientRect; win.document.body.append(frame); }
     // Leaflet page globals; the stubs implement only what the owner calls.
-    const leafletPage = win as { mapsPlaceholder?: unknown; L?: unknown };
+    const leafletPage = win as unknown as { mapsPlaceholder?: unknown; L?: unknown };
     leafletPage.mapsPlaceholder = map; win.fetch = async () => { throw new Error('Unexpected provider request'); };
     leafletPage.L = ({ GridLayer: { extend: () => class {
         declare id: string;
@@ -41,11 +42,11 @@ function setup(terrain = false, { preferences = true } = {}) {
     divIcon: () => ({}), layerGroup: () => ({ addTo() {} }) });
     win.postMessage = ((message: Posted) => messages.push(message)) as typeof win.postMessage;
     // The stubbed window carries only the Leaflet globals the owner reads.
-    const owner = installMapLayers(browserWindow<OwnerWindow>(win));
+    const owner = installMapLayers(win as unknown as OwnerWindow);
     const send = (detail: Record<string, unknown>, kind = '__bpbMapLayers') => win.dispatchEvent(new win.MessageEvent('message', {
-        source: browserWindow(win), origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
+        source: win as unknown as Window, origin: win.location.origin, data: { [kind]: true, dir: 'toPage', ...detail } }));
     if (preferences) send({ type: 'preferences', snotel: true });
-    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
+    if (terrain) { win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data: { __bpbTerrain: true, dir: 'toCS', type: 'init' } })); send({ type: 'loaded' }, '__bpbTerrain'); send({ type: 'layerView', bounds, zoom: 16 }, '__bpbTerrain'); }
     const toggle = () => win.document.querySelector('[data-layer="snotel"] input')!.click();
     const request = () => messages.filter(message => message.__bpbMapLayers && message.type === 'stations').at(-1);
     const panStart = () => { for (const handler of events.get('movestart') || []) handler({ target: map }); };
@@ -169,7 +170,7 @@ for (const terrain of [false, true]) test(`${terrain ? '3D' : 'native'} SNOTEL r
         assert.equal(env.request()!.reveal, false, 'retry cannot repeat the activation auto-zoom');
         env.send({ type: 'stations', requestId: env.request()!.requestId, stations: [visibleStation] });
         assert.equal(env.moves.length, 0);
-        env.view([-122,45,-121,46]); t.mock.timers.tick(300);
+        env.view([-122, 45, -121, 46]); t.mock.timers.tick(300);
         env.send({ type: 'stations', requestId: env.request()!.requestId, error: true });
         assert.equal(env.win.document.querySelector('[data-layer="snotel"] .bpb-layers-row-status')!.textContent, 'Couldn’t load');
         assert.doesNotMatch(env.win.document.querySelector('.bpb-layers-detail:not([hidden])')!.textContent, /No SNOTEL stations/);
@@ -267,13 +268,13 @@ test('terrain discovery receives the union of the overlay trigger and expanded m
     const env = setup(true), doc = env.win.document;
     try {
         const frame = doc.createElement('div'); frame.id = 'bpb-terrain-frame'; doc.body.append(frame);
-        frame.getBoundingClientRect = () => rect({left:20,top:40,bottom:440,width:800,height:400});
-        doc.querySelector('.bpb-layers-trigger')!.getBoundingClientRect = () => rect({left:30,top:50,right:140,bottom:82});
-        doc.querySelector('.bpb-layers-panel')!.getBoundingClientRect = () => rect({left:30,top:88,right:262,bottom:360});
+        frame.getBoundingClientRect = () => rect({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
+        doc.querySelector('.bpb-layers-trigger')!.getBoundingClientRect = () => rect({ left: 30, top: 50, right: 140, bottom: 82 });
+        doc.querySelector('.bpb-layers-panel')!.getBoundingClientRect = () => rect({ left: 30, top: 88, right: 262, bottom: 360 });
         doc.querySelector('.bpb-layers-trigger')!.click(); env.toggle();
-        const request = env.request(); env.send({type:'stations',requestId:request!.requestId,stations:[station],nearby:true});
+        const request = env.request(); env.send({ type: 'stations', requestId: request!.requestId, stations: [station], nearby: true });
         const reveal = env.messages.filter(message => message.type === 'snowStations' && message.reveal).at(-1);
-        assert.deepEqual(reveal!.occlusions, [[.0125,.025,.3025,.8]]);
+        assert.deepEqual(reveal!.occlusions, [[.0125, .025, .3025, .8]]);
     } finally { env.close(); }
 });
 

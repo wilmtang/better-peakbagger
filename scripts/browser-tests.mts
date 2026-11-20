@@ -218,28 +218,34 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
         return paths;
     };
     const unexpected: string[] = [];
+    let runnerPage: Page | null = null;
     await context.route('**/*', async route => {
         const url = new URL(route.request().url());
         const request = route.request();
         const sameSite = url.protocol === new URL(test.origin).protocol && siteOf(url.hostname) === siteOf(new URL(test.origin).hostname);
-        // Fixture frames (FixtureDom.open) navigate to their URL and receive an
-        // empty document, which the test then fills. It joins the test page's
-        // relaxed document.domain, so frames on any origin of the site are
-        // reachable.
+        // Fixture frames (FixtureDom.open) and same-site child iframes navigate
+        // to their URL and receive an empty document. Relax document.domain
+        // only when crossing origins on the site or after the test page has
+        // already relaxed it; setting document.domain on a same-origin child
+        // frame while the parent stays unrelaxed makes the child cross-origin.
         const fixtureFrame = request.isNavigationRequest() && request.frame() !== request.frame().page().mainFrame() && sameSite
             && url.pathname !== RUNNER_PATH && !url.pathname.startsWith(`${FILE_ROUTE}/`) && !url.pathname.startsWith('/dist/');
         if (fixtureFrame) {
             // FixtureDom.open announces each navigation it starts; any other
             // fixture-frame navigation comes from the page under test.
-            const announced = await request.frame().page().mainFrame().evaluate(href => {
-                const list = (globalThis as { __bpbFixtureNavigations?: string[] }).__bpbFixtureNavigations ?? [];
+            const state = await (runnerPage ?? request.frame().page()).mainFrame().evaluate(href => {
+                const win = globalThis as { __bpbFixtureNavigations?: string[]; __bpbRelaxedDomain?: boolean };
+                const list = win.__bpbFixtureNavigations ?? [];
                 const index = list.indexOf(href);
                 if (index >= 0) list.splice(index, 1);
-                return index >= 0;
-            }, url.href.split('#')[0]!).catch(() => false);
-            if (!announced) unexpected.push(`navigated ${url.origin}${url.pathname}`);
+                return { announced: index >= 0, relaxed: Boolean(win.__bpbRelaxedDomain) };
+            }, url.href.split('#')[0]!).catch(() => ({ announced: false, relaxed: false }));
+            if (!state.announced) unexpected.push(`navigated ${url.origin}${url.pathname}`);
+            const relaxScript = url.origin !== test.origin || state.relaxed
+                ? `<script nonce="${FIXTURE_NONCE}">document.domain = ${JSON.stringify(siteOf(url.hostname))};</script>`
+                : '';
             return route.fulfill({ status: 200, contentType: 'text/html', headers: runnerHeaders,
-                body: `<!doctype html><script nonce="${FIXTURE_NONCE}">document.domain = ${JSON.stringify(siteOf(url.hostname))};</script>` });
+                body: `<!doctype html>${relaxScript}` });
         }
         if (url.origin !== test.origin) {
             unexpected.push(`aborted ${url.origin}${url.pathname}`);
@@ -283,6 +289,7 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
     };
     context.on('page', attachPageListeners);
     const page = await context.newPage();
+    runnerPage = page;
     attachPageListeners(page);
     await page.exposeBinding('__bpbTrustedInput', (_source, action: TrustedAction) => performTrustedInput(page, action, stageFiles));
     try {

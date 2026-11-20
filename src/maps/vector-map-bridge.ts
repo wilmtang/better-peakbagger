@@ -186,4 +186,7 @@ export function installVectorMapBridge(win: Window & typeof globalThis = window,
         },
     });
 }
-if (typeof window !== 'undefined') installVectorMapBridge();
+if (typeof window !== 'undefined'
+    && ((globalThis as { browser?: BridgeExtension }).browser || (globalThis as { chrome?: BridgeExtension }).chrome)?.runtime?.getURL) {
+    installVectorMapBridge();
+}

@@ -1,8 +1,9 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { createTerrainOverlays } from '../../src/terrain/terrain-overlays.ts';
 
 // The overlay owner talks to a MapLibre map, document and protocol registry;
@@ -17,10 +18,18 @@ interface StyleLayer { id: string }
 interface StubSource { tiles: string[]; setTiles?(tiles: string[]): void }
 type Protocol = (request: { url: string }, controller: AbortController) => Promise<unknown>;
 type Extension = { chrome?: unknown; createImageBitmap?: unknown };
-const tick = () => new Promise(resolve => setImmediate(resolve));
+const nativeSetTimeout = globalThis.setTimeout.bind(globalThis);
+const tick = () => new Promise(resolve => nativeSetTimeout(resolve, 0));
+async function waitUntil(ready: () => boolean, label: string, timeoutMs = 2000) {
+    const deadline = Date.now() + timeoutMs;
+    while (!ready()) {
+        if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);
+        await tick();
+    }
+}
 
 test('custom terrain errors replay on a newer snapshot without restarting failed reads', async t => {
-    const dom = new JSDOM('', { url: 'https://www.peakbagger.com/', pretendToBeVisual: true });
+    const dom = new FixtureDom('', { url: 'https://www.peakbagger.com/' });
     const previous = (globalThis as Extension).chrome, posts: Post[] = [];
     let reads = 0, catalogs = 0;
     const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Fixture', kind: 'raster',
@@ -28,7 +37,7 @@ test('custom terrain errors replay on a newer snapshot without restarting failed
         approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
     (globalThis as Extension).chrome = { runtime: { getURL: (path: string) => path, sendMessage: async () => { catalogs++; return { ok: true, registry: { schemaVersion: 1, revision: 1, sources: [source] } }; } } };
     t.after(() => { if (previous === undefined) delete (globalThis as Extension).chrome; else (globalThis as Extension).chrome = previous; dom.window.close(); });
-    dom.window.fetch = async () => { reads++; throw new TypeError('Controlled unavailable'); };
+    (dom.window as unknown as { fetch: () => Promise<never> }).fetch = async () => { reads++; throw new TypeError('Controlled unavailable'); };
     const map = { getStyle: () => ({ layers: [] }), getLayersOrder: () => [], getSource() {}, getLayer() {} };
     const owner = createOverlays({ map, document: dom.window.document, maplibre: { addProtocol() {}, removeProtocol() {} }, post: (type: string, value: Post) => posts.push({ type, ...value }) });
     const snapshot = { revision: 1, state: {}, custom: [{ id: source.id, sourceRevision: 1, enabled: true }], customSession: 'fixture' };
@@ -57,14 +66,17 @@ test('terrain scene changes reload the existing raster source and leave other la
     const owner = createOverlays({ map, document: {}, maplibre: { addProtocol() {}, removeProtocol() {} }, post: (_type: string, value: Post) => posts.push(value) });
     try {
         owner.update({ revision: 1, state: Object.fromEntries(['sentinel', 'slope', 'land'].map(id => [id, { enabled: true, opacity: 60 }])) });
-        await tick();
+        await waitUntil(() => sources.size === 3, 'initial three overlay sources');
         const originalSources = [...sources.values()], originalLayers = [...layers.values()];
         assert.equal(originalSources.length, 3);
-        scene = 'next'; owner.refresh(); t.mock.timers.tick(300); await tick();
+        scene = 'next'; owner.refresh(); t.mock.timers.tick(300);
+        await waitUntil(() => urls.length === 1, 'sentinel raster tile reload');
         assert.deepEqual([...sources.values()], originalSources, 'a pan keeps the existing raster textures reachable');
         assert.deepEqual([...layers.values()], originalLayers);
         assert.equal(urls.length, 1); assert.match(urls[0][0], /sentinel\/2\//, 'a fresh revision replaces the scene data in place');
-        scene = 'next'; owner.refresh(); t.mock.timers.tick(300); await tick();
+        const beforeThird = posts.length;
+        scene = 'next'; owner.refresh(); t.mock.timers.tick(300);
+        await waitUntil(() => posts.length > beforeThird && posts.filter((item: Post) => item.id === 'sentinel').at(-1)?.capturePending === false, 'unchanged mosaic refresh to settle');
         assert.equal(urls.length, 1, 'unchanged mosaics never reload the raster source');
         assert.equal(posts.filter((item: Post) => item.id === 'sentinel').at(-1)!.capturePending, false);
         owner.suspend(); assert.equal(sources.size, 0); assert.equal(layers.size, 0);

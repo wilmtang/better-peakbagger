@@ -129,6 +129,26 @@ test('subtests and after hooks run in order', async t => {
     await t.test('two', () => { order.push('two'); });
 });
 
+test('same-origin child iframes stay synchronously accessible before and after same-site relaxation', async t => {
+    const checkChildIframe = async () => {
+        const dom = new FixtureDom('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1' });
+        t.after(() => dom.window.close());
+        const iframe = dom.window.document.createElement('iframe');
+        const loaded = new Promise<void>(resolve => iframe.addEventListener('load', () => resolve(), { once: true }));
+        iframe.src = '/Map/MasterMap.aspx?t=G&d=1';
+        dom.window.document.body.append(iframe);
+        await loaded;
+        assert.equal(iframe.contentWindow?.location.pathname, '/Map/MasterMap.aspx');
+        assert.ok(iframe.contentDocument);
+    };
+    await checkChildIframe();
+    const crossOrigin = await FixtureDom.open('<!doctype html><body><p id="p">bare host</p></body>',
+        { url: 'https://peakbagger.com/report/report.aspx?r=b' });
+    t.after(() => crossOrigin.window.close());
+    assert.equal(crossOrigin.window.document.getElementById('p')?.textContent, 'bare host');
+    await checkChildIframe();
+});
+
 test('same-site fixtures load at their own origin and stay synchronously reachable', async t => {
     const dom = await FixtureDom.open('<!doctype html><body><p id="p">bare host</p><script>window.ran = true;</script></body>',
         { url: 'https://peakbagger.com/report/report.aspx?r=b' });

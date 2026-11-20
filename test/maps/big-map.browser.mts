@@ -1,23 +1,106 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
-import { makeChromeStub, waitFor } from '../helpers/load-page.mts';
+import { FixtureDom, builtBundle } from '../helpers/fixture-dom.mts';
+import { makeChromeStub, waitFor, type PageChrome } from '../helpers/fixture-page.mts';
+import type { PageDom } from '../helpers/page-types.mts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The BigMap page loads the isolated settings-bridge bundle then the MAIN-world
 // enhancer bundle (which carries metrics, basemap, and the peak-marker feed).
-const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'big-map-bridge.js'), 'utf8');
-const mainBundle = await readFile(path.join(root, 'dist', 'content', 'big-map.js'), 'utf8');
+const bridgeBundle = await builtBundle('content/big-map-bridge.js');
+const mainBundle = await builtBundle('content/big-map.js');
 
-const makeLeaflet = window => {
-    class Polyline {
-        constructor(latLngs, options = {}) {
+interface LatLng { lat: number; lng: number }
+interface StyleOptions { color?: string; weight?: number; fill?: boolean; interactive?: boolean; [key: string]: unknown }
+interface MapMessage {
+    __bpbBigMap?: boolean;
+    __bpbTerrain?: boolean;
+    dir?: string;
+    type?: string;
+    requestId?: number;
+    routeSegments?: number[][][];
+    routeColors?: string[];
+    routeLinks?: ({ id: number; label: string } | null)[];
+    routeTracks?: (number | null)[];
+    camera?: { center: number[]; zoom: number };
+    focus?: number[];
+    focusZoom?: number;
+    focusPeak?: { id: number; name: string; lat: number; lon: number; state: string };
+    bounds?: { minLat: number; minLon: number; maxLat: number; maxLon: number };
+    viewport?: { width: number; height: number };
+    unavailable?: boolean;
+    peaks?: { id: number; name: string; lat: number; lon: number; state: string }[];
+    [key: string]: unknown;
+}
+
+interface LeafletStub {
+    Polyline: new (latLngs: LatLng[] | LatLng[][], options?: StyleOptions) => PolylineStub;
+    Polygon: new (latLngs: LatLng[] | LatLng[][], options?: StyleOptions) => PolylineStub;
+    Marker: new (latLng: LatLng, iconUrl: string) => MarkerStub;
+    MapStub: new (layers?: unknown[]) => MapStubInstance;
+}
+
+interface PolylineStub {
+    latLngs: LatLng[] | LatLng[][];
+    options: StyleOptions;
+    _events: Record<string, ((event: { type: string; target: PolylineStub }) => void)[]>;
+    _map: MapStubInstance | null;
+    _popup?: { content?: string; getContent?: () => string };
+    styleCalls: StyleOptions[];
+    getLatLngs(): LatLng[] | LatLng[][];
+    setStyle(style: StyleOptions): this;
+    on(type: string, handler: (event: { type: string; target: PolylineStub }) => void): this;
+    off(type: string, handler: (event: { type: string; target: PolylineStub }) => void): this;
+    fire(type: string): void;
+}
+
+interface MarkerStub {
+    latLng: LatLng;
+    options: { icon: { options: { iconUrl: string } } };
+    _map: MapStubInstance | null;
+    getLatLng(): LatLng;
+}
+
+interface MapStubInstance {
+    layers: unknown[];
+    events: Record<string, ((event: { layer: unknown }) => void)[]>;
+    center: LatLng;
+    zoom: number;
+    setViewCalls: { center: number[]; zoom: number; options: Record<string, unknown> }[];
+    eachLayer(callback: (layer: unknown) => void): void;
+    on(type: string, handler: (event: { layer: unknown }) => void): this;
+    off(type: string, handler: (event: { layer: unknown }) => void): this;
+    getCenter(): LatLng;
+    getZoom(): number;
+    setView(center: number[], zoom: number, options?: Record<string, unknown>): this;
+    addLayer(layer: unknown): this;
+    removeLayer(layer: unknown): this;
+}
+
+type BigMapWindow = Omit<PageDom['window'], 'chrome' | 'L' | 'mapsPlaceholder' | 'map'> & {
+    chrome: PageChrome;
+    L?: {
+        Polyline: LeafletStub['Polyline'];
+        Polygon: LeafletStub['Polygon'];
+        Marker: LeafletStub['Marker'];
+        Map: LeafletStub['MapStub'];
+    };
+    mapsPlaceholder?: MapStubInstance;
+    map?: MapStubInstance;
+};
+
+const makeLeaflet = (win: BigMapWindow): LeafletStub => {
+    class Polyline implements PolylineStub {
+        latLngs: LatLng[] | LatLng[][];
+        options: StyleOptions;
+        _events: Record<string, ((event: { type: string; target: PolylineStub }) => void)[]>;
+        _map: MapStubInstance | null;
+        _popup?: { content?: string; getContent?: () => string };
+        styleCalls: StyleOptions[];
+        constructor(latLngs: LatLng[] | LatLng[][], options: StyleOptions = {}) {
             this.latLngs = latLngs;
             this.options = { ...options };
             this._events = {};
@@ -25,34 +108,42 @@ const makeLeaflet = window => {
             this.styleCalls = [];
         }
         getLatLngs() { return this.latLngs; }
-        setStyle(style) {
+        setStyle(style: StyleOptions) {
             this.styleCalls.push({ ...style });
             Object.assign(this.options, style);
             return this;
         }
-        on(type, handler) {
+        on(type: string, handler: (event: { type: string; target: PolylineStub }) => void) {
             (this._events[type] ||= []).push(handler);
             return this;
         }
-        off(type, handler) {
+        off(type: string, handler: (event: { type: string; target: PolylineStub }) => void) {
             this._events[type] = (this._events[type] || []).filter(candidate => candidate !== handler);
             return this;
         }
-        fire(type) {
+        fire(type: string) {
             for (const handler of this._events[type] || []) handler({ type, target: this });
         }
     }
     class Polygon extends Polyline {}
-    class Marker {
-        constructor(latLng, iconUrl) {
+    class Marker implements MarkerStub {
+        latLng: LatLng;
+        options: { icon: { options: { iconUrl: string } } };
+        _map: MapStubInstance | null;
+        constructor(latLng: LatLng, iconUrl: string) {
             this.latLng = latLng;
             this.options = { icon: { options: { iconUrl } } };
             this._map = null;
         }
         getLatLng() { return this.latLng; }
     }
-    class MapStub {
-        constructor(layers = []) {
+    class MapStub implements MapStubInstance {
+        layers: unknown[];
+        events: Record<string, ((event: { layer: unknown }) => void)[]>;
+        center: LatLng;
+        zoom: number;
+        setViewCalls: { center: number[]; zoom: number; options: Record<string, unknown> }[];
+        constructor(layers: unknown[] = []) {
             this.layers = [];
             this.events = {};
             this.center = { lat: 44.155, lng: -121.765 };
@@ -60,58 +151,66 @@ const makeLeaflet = window => {
             this.setViewCalls = [];
             layers.forEach(layer => this.addLayer(layer));
         }
-        eachLayer(callback) { this.layers.slice().forEach(callback); }
-        on(type, handler) { (this.events[type] ||= []).push(handler); return this; }
-        off(type, handler) {
+        eachLayer(callback: (layer: unknown) => void) { this.layers.slice().forEach(callback); }
+        on(type: string, handler: (event: { layer: unknown }) => void) { (this.events[type] ||= []).push(handler); return this; }
+        off(type: string, handler: (event: { layer: unknown }) => void) {
             this.events[type] = (this.events[type] || []).filter(candidate => candidate !== handler);
             return this;
         }
         getCenter() { return this.center; }
         getZoom() { return this.zoom; }
-        setView(center, zoom, options) {
+        setView(center: number[], zoom: number, options: Record<string, unknown> = {}) {
             this.center = { lat: center[0], lng: center[1] };
             this.zoom = zoom;
             this.setViewCalls.push({ center: [...center], zoom, options: { ...options } });
             return this;
         }
-        addLayer(layer) {
-            layer._map = this;
+        addLayer(layer: unknown) {
+            (layer as { _map?: MapStubInstance | null })._map = this;
             this.layers.push(layer);
             for (const handler of this.events.layeradd || []) handler({ layer });
             return this;
         }
-        removeLayer(layer) {
+        removeLayer(layer: unknown) {
             this.layers = this.layers.filter(candidate => candidate !== layer);
-            layer._map = null;
+            (layer as { _map?: MapStubInstance | null })._map = null;
             for (const handler of this.events.layerremove || []) handler({ layer });
             return this;
         }
     }
-    window.L = { Polyline, Polygon, Marker, Map: MapStub };
+    win.L = { Polyline, Polygon, Marker, Map: MapStub };
     return { Polyline, Polygon, Marker, MapStub };
 };
 
-const loadBigMap = async ({ type = 'G', width = 7, settings = {}, html, query } = {}) => {
-    const dom = new JSDOM(html || '<!doctype html><body><div id="map"></div></body>', {
+interface LoadBigMapOptions {
+    type?: string;
+    width?: number;
+    settings?: Record<string, unknown>;
+    html?: string;
+    query?: string;
+}
+
+const loadBigMap = async ({ type = 'G', width = 7, settings = {}, html, query }: LoadBigMapOptions = {}) => {
+    const dom = new FixtureDom(html || '<!doctype html><body><div id="map"></div></body>', {
         url: `https://www.peakbagger.com/Map/BigMap.aspx?${query || `t=${type}&d=2414&gt=rc`}`,
-        runScripts: 'outside-only'
+        runScripts: 'outside-only',
     });
-    const { window } = dom;
-    const messages = [];
-    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: width, ...settings } });
-    const nativePostMessage = message => window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: message
+    const win = dom.window as unknown as BigMapWindow;
+    const messages: MapMessage[] = [];
+    win.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: width, ...settings } });
+    const nativePostMessage = (message: MapMessage) => win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: message,
     })));
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: MapMessage) => void }).postMessage = message => {
         messages.push(structuredClone(message));
         nativePostMessage(message);
     };
-    const leaflet = makeLeaflet(window);
-    return { dom, window, messages, leaflet, evaluate: () => {
-        window.eval(bridgeBundle);
-        window.eval(mainBundle);
+    const leaflet = makeLeaflet(win);
+    return { dom, window: win, messages, leaflet, evaluate: () => {
+        win.eval(bridgeBundle);
+        win.eval(mainBundle);
     } };
 };
 
@@ -148,7 +247,7 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
 
     // Each native track gains one white casing underlay; the hover effect and
     // the polygon do not.
-    const casingsOf = () => window.mapsPlaceholder.layers.filter(layer =>
+    const casingsOf = () => window.mapsPlaceholder!.layers.filter((layer): layer is PolylineStub =>
         layer instanceof leaflet.Polyline && layer.options.interactive === false);
     assert.equal(casingsOf().length, 2, 'each native track gains exactly one casing');
     assert.ok(casingsOf().every(casing => casing.options.color === '#ffffff' && casing.options.weight === 9),
@@ -159,7 +258,7 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     routeA.fire('click');
     assert.equal(clicks, 1, 'native click handlers should remain attached');
     routeA.fire('mouseout');
-    await new Promise(resolve => window.queueMicrotask(resolve));
+    await new Promise<void>(resolve => window.queueMicrotask(resolve));
     assert.equal(routeA.options.weight, 7, 'the preferred base width should return after native mouseout');
 
     const lateRoute = new leaflet.Polyline(routeB.getLatLngs(), { color: '#31a354', weight: 3 });
@@ -178,7 +277,7 @@ test('Full Screen recent-track maps preserve native colors, hover, and click beh
     await waitFor(dom, () => casingsOf().every(casing => casing.options.weight === 11));
     assert.equal(casingsOf().length, 3, 're-applying the style must not duplicate casings');
 
-    const bridgeReply = messages.find(message => message.__bpbBigMap === true && message.dir === 'toPage');
+    const bridgeReply = messages.find(message => message.__bpbBigMap === true && message.dir === 'toPage')!;
     assert.deepEqual(Object.keys(bridgeReply).sort(),
         ['__bpbBigMap', 'casingColor', 'casingWidth', 'dir', 'enable3dMap', 'routeColor', 'routeWidth', 'terrainCacheLimitMb', 'theme']);
     // The bridge forwards validated style values plus the 3D gate/theme/cache
@@ -224,7 +323,7 @@ test('Full Screen map suspends polling without releasing the bound map from BFCa
 
 test('Full Screen single-ascent maps recolor the native track and add a casing', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: {
-        mapRouteColor: '#112233', mapRouteCasingColor: '#eeddcc', mapRouteCasingWidth: 10
+        mapRouteColor: '#112233', mapRouteCasingColor: '#eeddcc', mapRouteCasingWidth: 10,
     } });
     const { dom, window, leaflet } = fixture;
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
@@ -233,7 +332,7 @@ test('Full Screen single-ascent maps recolor the native track and add a casing',
     await waitFor(dom, () => route.options.weight === 6);
     assert.equal(route.options.color, '#112233', 'the single track is recolored to the route color');
 
-    const casing = window.map.layers.find(layer =>
+    const casing = window.map.layers.find((layer): layer is PolylineStub =>
         layer instanceof leaflet.Polyline && layer.options.interactive === false);
     assert.ok(casing, 'a casing underlay is added behind the track');
     assert.equal(casing.options.color, '#eeddcc');
@@ -247,7 +346,7 @@ test('idle terrain updates check route presence without recollecting route geome
     const route = new leaflet.Polyline([
         { lat: 44.15, lng: -121.78 },
         { lat: 44.16, lng: -121.76 },
-        { lat: 44.17, lng: -121.75 }
+        { lat: 44.17, lng: -121.75 },
     ], { color: '#d9483b', weight: 3 });
     let geometryReads = 0;
     const nativeGetLatLngs = route.getLatLngs.bind(route);
@@ -275,18 +374,24 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     // in a same-origin MasterMap.aspx child iframe, not the top window. The
     // enhancer must reach into that frame — checking only the top window (the
     // previous behavior) never found the tracks, so no casing was applied.
-    const dom = new JSDOM(
-        '<!doctype html><body><iframe id="if" src="MasterMap.aspx?t=G&d=1&l=L_CT"></iframe></body>',
-        { url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1&gt=rc', runScripts: 'outside-only' }
+    const dom = new FixtureDom(
+        '<!doctype html><body></body>',
+        { url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1&gt=rc', runScripts: 'outside-only' },
     );
-    const { window } = dom;
-    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
-    window.postMessage = message => window.queueMicrotask(() => window.dispatchEvent(
-        new window.MessageEvent('message', { source: window, origin: window.location.origin, data: message })));
+    const win = dom.window as unknown as BigMapWindow;
+    win.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
+    (win as unknown as { postMessage: (message: MapMessage) => void }).postMessage = message => win.queueMicrotask(() => win.dispatchEvent(
+        new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data: message })));
 
-    const iframe = window.document.getElementById('if');
-    const mapWin = iframe.contentWindow;
-    assert.ok(mapWin && mapWin !== window, 'the child iframe exposes its own contentWindow');
+    const iframe = win.document.createElement('iframe');
+    iframe.id = 'if';
+    const loaded = new Promise<void>(resolve => iframe.addEventListener('load', () => resolve(), { once: true }));
+    iframe.src = 'MasterMap.aspx?t=G&d=1&l=L_CT';
+    win.document.body.append(iframe);
+    await loaded;
+
+    const mapWin = iframe.contentWindow as unknown as BigMapWindow;
+    assert.ok(mapWin && mapWin !== win, 'the child iframe exposes its own contentWindow');
     const leaflet = makeLeaflet(mapWin);
     const track = new leaflet.Polyline(
         [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#FF0000', weight: 2 });
@@ -295,13 +400,13 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
     track._popup = { content: 'Native Peakbagger trip report' };
     mapWin.mapsPlaceholder = new leaflet.MapStub([track]);
 
-    window.eval(bridgeBundle);
-    window.eval(mainBundle);
+    win.eval(bridgeBundle);
+    win.eval(mainBundle);
 
     await waitFor(dom, () => track.options.weight === 8);
     assert.equal(track.options.color, '#FF0000', 'group tracks keep their native color');
-    const casingsOf = () => mapWin.mapsPlaceholder.layers.filter(
-        layer => layer instanceof leaflet.Polyline && layer.options.interactive === false);
+    const casingsOf = () => mapWin.mapsPlaceholder!.layers.filter((layer): layer is PolylineStub =>
+        layer instanceof leaflet.Polyline && layer.options.interactive === false);
     assert.equal(casingsOf().length, 1, 'the child-iframe track gains exactly one white casing');
     assert.equal(casingsOf()[0].options.color, '#ffffff');
 
@@ -318,55 +423,72 @@ test('Full Screen maps case native tracks that live in the MasterMap child ifram
 });
 
 test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen feature', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = new FixtureDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=A&d=2414&gt=rc',
-        runScripts: 'outside-only'
+        runScripts: 'outside-only',
     });
-    const { window } = dom;
-    const messages = [];
-    const feedRequests = [];
-    const intervals = new Map();
+    const win = dom.window as unknown as BigMapWindow;
+    const messages: MapMessage[] = [];
+    const feedRequests: string[] = [];
+    const intervals = new Map<number, () => void>();
     let intervalId = 0;
-    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8, enable3dMap: true } });
-    window.setInterval = callback => {
+    win.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8, enable3dMap: true } });
+    (win as unknown as { setInterval: (callback: () => void) => number }).setInterval = callback => {
         const id = ++intervalId;
         intervals.set(id, callback);
         return id;
     };
-    window.clearInterval = id => intervals.delete(id);
-    window.postMessage = message => {
+    (win as unknown as { clearInterval: (id: number) => void }).clearInterval = id => { intervals.delete(id); };
+    (win as unknown as { postMessage: (message: MapMessage) => void }).postMessage = message => {
         messages.push(structuredClone(message));
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window, origin: window.location.origin, data: message
+        win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+            source: win as unknown as Window, origin: win.location.origin, data: message,
         })));
     };
-    window.fetch = async url => {
+    (win as unknown as { fetch: (url: string) => Promise<{ ok: boolean; text: () => Promise<string> }> }).fetch = async url => {
         feedRequests.push(String(url));
         return {
             ok: true,
-            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>'
+            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>',
         };
     };
 
-    const installFrameMap = (frame, { cid, points, color }) => {
+    interface FrameState {
+        leaflet: LeafletStub;
+        map: MapStubInstance;
+        mapWindow: BigMapWindow;
+        route: PolylineStub;
+    }
+
+    const mountFrameMap = (
+        mount: (frame: HTMLIFrameElement) => void,
+        { cid, points, color }: { cid: number; points: LatLng[]; color: string },
+    ): Promise<{ frame: HTMLIFrameElement; state: FrameState }> => new Promise(resolve => {
+        const frame = win.document.createElement('iframe');
+        frame.id = 'if';
+        // Register before attaching so Leaflet globals land on the settled
+        // frame window before BigMap's load listener inspects it.
+        frame.addEventListener('load', () => {
+            const mapWindow = frame.contentWindow as unknown as BigMapWindow;
+            const leaflet = makeLeaflet(mapWindow);
+            const route = new leaflet.Polyline(points, { color, weight: 2 });
+            const map = new leaflet.MapStub([route]);
+            mapWindow.mapsPlaceholder = map;
+            resolve({ frame, state: { leaflet, map, mapWindow, route } });
+        }, { once: true });
         frame.src = `https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=A&d=2414&c=${cid}&hj=0`;
-        const mapWindow = frame.contentWindow;
-        const leaflet = makeLeaflet(mapWindow);
-        const route = new leaflet.Polyline(points, { color, weight: 2 });
-        const map = new leaflet.MapStub([route]);
-        mapWindow.mapsPlaceholder = map;
-        return { leaflet, map, mapWindow, route };
-    };
-    const casingsOf = state => state.map.layers.filter(layer =>
+        mount(frame);
+    });
+    const casingsOf = (state: FrameState) => state.map.layers.filter((layer): layer is PolylineStub =>
         layer instanceof state.leaflet.Polyline && layer.options.interactive === false);
-    const dispatchTerrain = detail => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', ...detail }
+    const dispatchTerrain = (detail: Record<string, unknown>) => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...detail },
     }));
 
-    window.eval(bridgeBundle);
-    window.eval(mainBundle);
+    win.eval(bridgeBundle);
+    win.eval(mainBundle);
     assert.equal(intervals.size, 1, 'the condition backstop starts while no map exists');
     for (let tick = 0; tick < 45; tick++) {
         for (const callback of [...intervals.values()]) callback();
@@ -374,14 +496,14 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
     assert.equal(intervals.size, 1,
         'forty attempts are diagnostic history, not a point where recovery stops');
 
-    const firstFrame = window.document.createElement('iframe');
-    firstFrame.id = 'if';
-    window.document.body.append(firstFrame);
-    const first = installFrameMap(firstFrame, {
-        cid: 900001,
-        points: [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
-        color: '#d9483b'
-    });
+    const { frame: firstFrame, state: first } = await mountFrameMap(
+        frame => win.document.body.append(frame),
+        {
+            cid: 900001,
+            points: [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
+            color: '#d9483b',
+        },
+    );
     await waitFor(dom, () => first.route.options.weight === 8);
     assert.equal(casingsOf(first).length, 1);
     assert.equal(intervals.size, 0);
@@ -391,19 +513,19 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
         { color: '#225588', weight: 3 });
     const reloadedMap = new first.leaflet.MapStub([reloadedRoute]);
     first.mapWindow.mapsPlaceholder = reloadedMap;
-    firstFrame.dispatchEvent(new window.Event('load'));
+    firstFrame.dispatchEvent(new win.Event('load'));
     await waitFor(dom, () => reloadedRoute.options.weight === 8);
     assert.equal(first.route.options.weight, 2, 'reload restores the discarded native track style');
     assert.equal(casingsOf(first).length, 0, 'reload removes casings from the discarded map');
-    const reloaded = { ...first, map: reloadedMap, route: reloadedRoute };
+    const reloaded: FrameState = { ...first, map: reloadedMap, route: reloadedRoute };
     assert.equal(casingsOf(reloaded).length, 1, 'the rebuilt map receives one casing');
 
-    const toggle = window.document.getElementById('bpb-terrain-toggle');
+    const toggle = win.document.getElementById('bpb-terrain-toggle');
     await waitFor(dom, () => toggle?.disabled === false);
     toggle.click();
     await waitFor(dom, () => messages.filter(message =>
         message.__bpbTerrain === true && message.type === 'init').length === 1);
-    const firstInit = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    const firstInit = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
     assert.deepEqual(firstInit.routeSegments,
         [[[44.11, -121.71], [44.12, -121.70]]]);
     dispatchTerrain({ type: 'loaded' });
@@ -411,7 +533,7 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
     dispatchTerrain({
         type: 'peaksRequest',
         requestId: 1,
-        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
+        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 },
     });
     await waitFor(dom, () => messages.some(message =>
         message.__bpbTerrain === true && message.type === 'peaks' && message.requestId === 1));
@@ -420,14 +542,14 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
     const destroyCount = () => messages.filter(message =>
         message.__bpbTerrain === true && message.type === 'destroy').length;
     const destroysBeforeReplacement = destroyCount();
-    const replacementFrame = window.document.createElement('iframe');
-    replacementFrame.id = 'if';
-    firstFrame.replaceWith(replacementFrame);
-    const replacement = installFrameMap(replacementFrame, {
-        cid: 900002,
-        points: [{ lat: 44.21, lng: -121.68 }, { lat: 44.22, lng: -121.67 }],
-        color: '#117733'
-    });
+    const { state: replacement } = await mountFrameMap(
+        frame => firstFrame.replaceWith(frame),
+        {
+            cid: 900002,
+            points: [{ lat: 44.21, lng: -121.68 }, { lat: 44.22, lng: -121.67 }],
+            color: '#117733',
+        },
+    );
     await waitFor(dom, () => replacement.route.options.weight === 8);
     assert.equal(destroyCount(), destroysBeforeReplacement + 1,
         'replacement tears down the stale terrain view exactly once');
@@ -444,14 +566,14 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
     await waitFor(dom, () => messages.filter(message =>
         message.__bpbTerrain === true && message.type === 'init').length === 2);
     const replacementInit = messages.filter(message =>
-        message.__bpbTerrain === true && message.type === 'init').at(-1);
+        message.__bpbTerrain === true && message.type === 'init').at(-1)!;
     assert.deepEqual(replacementInit.routeSegments,
         [[[44.21, -121.68], [44.22, -121.67]]]);
     dispatchTerrain({ type: 'loaded' });
     dispatchTerrain({
         type: 'peaksRequest',
         requestId: 2,
-        bounds: { miny: 44.1, maxy: 44.3, minx: -121.8, maxx: -121.6 }
+        bounds: { miny: 44.1, maxy: 44.3, minx: -121.8, maxx: -121.6 },
     });
     await waitFor(dom, () => messages.some(message =>
         message.__bpbTerrain === true && message.type === 'peaks' && message.requestId === 2));
@@ -459,8 +581,8 @@ test('a late, reloaded, or replaced MasterMap frame rebinds every Full Screen fe
     assert.match(feedRequests[1], /cid=900002/,
         'the replacement rebuilds the peak client from its own frame URL');
 
-    window.dispatchEvent(new window.Event('pagehide'));
-    await new Promise(resolve => window.setTimeout(resolve, 0));
+    win.dispatchEvent(new win.Event('pagehide'));
+    await new Promise(resolve => win.setTimeout(resolve, 0));
     dom.window.close();
 });
 
@@ -470,7 +592,7 @@ test('Full Screen peak maps offer route-free 3D terrain without styling native l
         width: 10,
         settings: { enable3dMap: true },
         html: '<!doctype html><body><a href="../peak.aspx?pid=2414">Mount Hood</a><div id="map"></div></body>',
-        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14&c=900001&cyn=1'
+        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14&c=900001&cyn=1',
     });
     const { dom, window, messages, leaflet } = fixture;
     const line = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#555555', weight: 2 });
@@ -489,7 +611,7 @@ test('Full Screen peak maps offer route-free 3D terrain without styling native l
     assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
     toggle.click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
     assert.deepEqual(init.focus, [45.373496, -121.695937]);
     assert.equal(init.focusZoom, 13);
     assert.deepEqual(init.focusPeak, {
@@ -497,7 +619,7 @@ test('Full Screen peak maps offer route-free 3D terrain without styling native l
         name: 'Mount Hood',
         lat: 45.373496,
         lon: -121.695937,
-        state: 'climbed'
+        state: 'climbed',
     });
     assert.equal(Object.hasOwn(init, 'routeSegments'), false,
         'a summit-only map must not reinterpret unrelated native lines as a route');
@@ -550,14 +672,15 @@ test('Full Screen peak maps fail closed when the heading and subject marker do n
         type: 'P',
         settings: { enable3dMap: true },
         html: '<!doctype html><body><a href="../peak.aspx?pid=999">Wrong peak</a><div id="map"></div></body>',
-        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14'
+        query: 't=P&d=2414&cy=45.373496&cx=-121.695937&z=14',
     });
-    const { dom, window, leaflet } = fixture;
+    const { dom, window, messages, leaflet } = fixture;
     window.mapsPlaceholder = new leaflet.MapStub([
-        new leaflet.Marker({ lat: 45.373496, lng: -121.695937 }, '../image/MainPeakGreenCircle.gif')
+        new leaflet.Marker({ lat: 45.373496, lng: -121.695937 }, '../image/MainPeakGreenCircle.gif'),
     ]);
     fixture.evaluate();
     await new Promise(resolve => window.setTimeout(resolve, 20));
+    assert.equal(messages.length, 0, 'mismatched peak heading exits before requesting settings');
     assert.equal(window.document.getElementById('bpb-terrain-toggle'), null);
     dom.window.close();
 });
@@ -573,8 +696,8 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
     await waitFor(dom, () => route.options.weight === 6);
     const toggle = window.document.getElementById('bpb-terrain-toggle');
     assert.ok(toggle, 'a floating 3D toggle appears once the feature is enabled');
-    assert.equal(toggle.parentElement.id, 'bpb-map-viewport');
-    assert.ok(toggle.parentElement.classList.contains('bpb-terrain-mount-fullscreen'));
+    assert.equal(toggle.parentElement!.id, 'bpb-map-viewport');
+    assert.ok(toggle.parentElement!.classList.contains('bpb-terrain-mount-fullscreen'));
     await waitFor(dom, () => toggle.disabled === false);
     assert.equal(toggle.title, 'View this route on 3D terrain');
     assert.equal(toggle.getAttribute('aria-label'), 'Show 3D terrain');
@@ -582,7 +705,7 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
 
     toggle.click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
     assert.equal(init.dir, 'toCS');
     // The native Leaflet track becomes the 3D route, lat/lon order preserved.
     assert.deepEqual(init.routeSegments, [[[44.15, -121.78], [44.16, -121.76], [44.17, -121.75]]]);
@@ -593,45 +716,45 @@ test('Full Screen maps offer a 3D toggle that carries the native tracks into the
 
     // Simulate the extension frame reporting it is ready.
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' },
     }));
     assert.equal(toggle.textContent, '2D');
     assert.equal(toggle.getAttribute('aria-pressed'), 'true');
     assert.equal(window.document.getElementById('map').style.visibility, 'hidden');
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
         data: {
             __bpbTerrain: true,
             dir: 'toPage',
             type: 'camera',
-            camera: { center: [44.22, -121.69], zoom: 14.5 }
-        }
+            camera: { center: [44.22, -121.69], zoom: 14.5 },
+        },
     }));
 
     // Toggling back applies the settled terrain camera before revealing 2D.
     toggle.click();
-    assert.equal(messages.at(-1).type, 'cameraRequest');
-    const cameraRequestId = messages.at(-1).requestId;
+    assert.equal(messages.at(-1)!.type, 'cameraRequest');
+    const cameraRequestId = messages.at(-1)!.requestId;
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
         data: {
             __bpbTerrain: true,
             dir: 'toPage',
             type: 'camera',
             requestId: cameraRequestId,
-            camera: { center: [44.22, -121.69], zoom: 14.5 }
-        }
+            camera: { center: [44.22, -121.69], zoom: 14.5 },
+        },
     }));
-    assert.equal(messages.at(-1).type, 'destroy');
+    assert.equal(messages.at(-1)!.type, 'destroy');
     assert.deepEqual(window.map.setViewCalls, [{
         center: [44.22, -121.69],
         zoom: 15.5,
-        options: { animate: false }
+        options: { animate: false },
     }]);
     assert.equal(window.document.getElementById('map').style.visibility, 'visible');
     assert.equal(toggle.textContent, '3D');
@@ -644,7 +767,7 @@ test('Full Screen 3D loading can be canceled and renderer failures are announced
     const fixture = await loadBigMap({ type: 'A', settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;
     window.map = new leaflet.MapStub([
-        new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 })
+        new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 }),
     ]);
     fixture.evaluate();
 
@@ -655,21 +778,21 @@ test('Full Screen 3D loading can be canceled and renderer failures are announced
     assert.equal(toggle.disabled, false);
     assert.equal(toggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
     toggle.click();
-    assert.equal(messages.at(-1).type, 'destroy');
+    assert.equal(messages.at(-1)!.type, 'destroy');
     assert.equal(toggle.textContent, '3D');
 
     toggle.click();
     await waitFor(dom, () => messages.filter(message => message.__bpbTerrain === true && message.type === 'init').length === 2);
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' },
     }));
     assert.equal(window.document.getElementById('map').style.visibility, 'hidden');
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' },
     }));
     const failure = window.document.getElementById('bpb-terrain-failure');
     assert.equal(failure.getAttribute('role'), 'status');
@@ -696,10 +819,10 @@ test('Full Screen 3D group routes carry only validated native ascent-link metada
         route.on('click', () => {});
     }
     routeA._popup = {
-        getContent: () => "<a href='../climber/ascent.aspx?aid=3230293' target='_blank'> 2026-06-12 - Fei   (Kautz Glacier) TR-98 </a>"
+        getContent: () => "<a href='../climber/ascent.aspx?aid=3230293' target='_blank'> 2026-06-12 - Fei   (Kautz Glacier) TR-98 </a>",
     };
     routeB._popup = {
-        getContent: () => "<a href='https://example.com/climber/ascent.aspx?aid=7'>Untrusted destination</a>"
+        getContent: () => "<a href='https://example.com/climber/ascent.aspx?aid=7'>Untrusted destination</a>",
     };
     window.map = new leaflet.MapStub([routeA, routeB]);
     fixture.evaluate();
@@ -707,11 +830,11 @@ test('Full Screen 3D group routes carry only validated native ascent-link metada
     await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
     window.document.getElementById('bpb-terrain-toggle').click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
     assert.deepEqual(init.routeColors, ['#e34a33', '#3182bd']);
     assert.deepEqual(init.routeLinks, [
         { id: 3230293, label: '2026-06-12 - Fei (Kautz Glacier) TR-98' },
-        null
+        null,
     ], 'page-owned markup is reduced to a same-origin ascent id and plain-text label');
     assert.deepEqual(init.routeTracks, [0, 1],
         'each segment names the native track it came from, so 3D can hover a whole climber’s route');
@@ -726,7 +849,7 @@ test('Full Screen 3D keeps every segment of one native track under a single hove
     // single-part track: hovering the first must highlight both of its parts.
     const split = new leaflet.Polyline([
         [{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }],
-        [{ lat: 44.17, lng: -121.75 }, { lat: 44.18, lng: -121.74 }]
+        [{ lat: 44.17, lng: -121.75 }, { lat: 44.18, lng: -121.74 }],
     ], { color: '#e34a33', weight: 3 });
     const single = new leaflet.Polyline(
         [{ lat: 44.14, lng: -121.77 }, { lat: 44.13, lng: -121.79 }],
@@ -741,8 +864,8 @@ test('Full Screen 3D keeps every segment of one native track under a single hove
     await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
     window.document.getElementById('bpb-terrain-toggle').click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
-    assert.equal(init.routeSegments.length, 3);
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
+    assert.equal(init.routeSegments!.length, 3);
     assert.deepEqual(init.routeTracks, [0, 0, 1],
         'both halves of the split track share one identity; the second track gets its own');
 
@@ -761,7 +884,7 @@ test('single-ascent Full Screen maps carry no track identity to hover apart', as
     await waitFor(dom, () => window.document.getElementById('bpb-terrain-toggle')?.disabled === false);
     window.document.getElementById('bpb-terrain-toggle').click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
-    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init');
+    const init = messages.find(message => message.__bpbTerrain === true && message.type === 'init')!;
     assert.deepEqual(init.routeTracks, [null],
         'one route has no sibling to tell it apart from, so there is nothing to highlight');
 
@@ -781,7 +904,7 @@ test('Full Screen 3D shows a compass that tracks the view and resets north', asy
     const compass = window.document.getElementById('bpb-terrain-compass');
     const disc = compass.querySelector('.bpb-map-compass-disc');
     assert.ok(compass, 'the compass lives next to the toggle in the fullscreen mount');
-    assert.equal(compass.parentElement.id, 'bpb-map-viewport');
+    assert.equal(compass.parentElement!.id, 'bpb-map-viewport');
     assert.equal(compass.getAttribute('type'), 'button');
     assert.equal(compass.getAttribute('aria-label'), 'Reset the view to north, looking straight down');
     assert.equal(disc.querySelectorAll('svg polygon').length, 2,
@@ -793,9 +916,9 @@ test('Full Screen 3D shows a compass that tracks the view and resets north', asy
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
     assert.equal(compass.hidden, true, 'still hidden while the frame loads');
 
-    const dispatchPage = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window, origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', ...data }
+    const dispatchPage = (data: Record<string, unknown>) => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window as unknown as Window, origin: window.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', ...data },
     }));
     dispatchPage({ type: 'loaded' });
     assert.equal(compass.hidden, false, 'the compass appears with the terrain view');
@@ -808,21 +931,21 @@ test('Full Screen 3D shows a compass that tracks the view and resets north', asy
     assert.equal(disc.style.transform, 'rotateX(85deg) rotateZ(30deg)');
 
     dispatchPage({ type: 'view', bearing: 350, pitch: 60 });
-    const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    const beforeNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)![1]);
     dispatchPage({ type: 'view', bearing: 10, pitch: 60 });
-    const afterNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)[1]);
+    const afterNorth = Number(/rotateZ\((-?[\d.]+)deg\)/.exec(disc.style.transform)![1]);
     assert.ok(Math.abs(afterNorth - beforeNorth) < 180,
         'crossing north advances the transformed needle along the short arc');
 
     // Clicking the compass posts a resetNorth command toward the frame.
     compass.click();
-    assert.equal(messages.at(-1).type, 'resetNorth');
-    assert.equal(messages.at(-1).dir, 'toCS');
+    assert.equal(messages.at(-1)!.type, 'resetNorth');
+    assert.equal(messages.at(-1)!.dir, 'toCS');
 
     // Returning to 2D hides the compass — the moment a stop is pending, and after.
     toggle.click();
     assert.equal(compass.hidden, true, 'hidden the moment a stop is pending');
-    const cameraRequestId = messages.at(-1).requestId;
+    const cameraRequestId = messages.at(-1)!.requestId;
     dispatchPage({ type: 'camera', requestId: cameraRequestId, camera: { center: [44.22, -121.69], zoom: 14.5 } });
     assert.equal(compass.hidden, true, 'stays hidden after returning to 2D');
     await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -835,7 +958,7 @@ test('hovering the idle 3D toggle prefetches the route DEM tiles once per window
     const route = new leaflet.Polyline([
         { lat: 44.15, lng: -121.78 },
         { lat: 44.16, lng: -121.76 },
-        { lat: 44.17, lng: -121.75 }
+        { lat: 44.17, lng: -121.75 },
     ], { color: '#d9483b', weight: 3 });
     window.map = new leaflet.MapStub([route]);
     fixture.evaluate();
@@ -855,8 +978,8 @@ test('hovering the idle 3D toggle prefetches the route DEM tiles once per window
     assert.equal(prefetch.dir, 'toCS');
     assert.deepEqual(prefetch.bounds, { minLat: 44.15, minLon: -121.78, maxLat: 44.17, maxLon: -121.75 },
         'the route bounds seed the prefetch');
-    assert.equal(Number.isFinite(prefetch.viewport.width) && prefetch.viewport.width > 0, true);
-    assert.equal(Number.isFinite(prefetch.viewport.height) && prefetch.viewport.height > 0, true);
+    assert.equal(Number.isFinite(prefetch.viewport!.width) && prefetch.viewport!.width > 0, true);
+    assert.equal(Number.isFinite(prefetch.viewport!.height) && prefetch.viewport!.height > 0, true);
 
     // A second hover inside the throttle window posts nothing more.
     toggle.dispatchEvent(new window.Event('focus'));
@@ -870,16 +993,20 @@ test('hovering the idle 3D toggle prefetches the route DEM tiles once per window
 test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', async () => {
     const fixture = await loadBigMap({ type: 'A', width: 6, settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;
-    window.document.body.insertAdjacentHTML('beforeend',
-        '<iframe id="if" src="https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=A&d=2414&c=900001&hj=0"></iframe>');
+    const frame = window.document.createElement('iframe');
+    frame.id = 'if';
+    const frameLoaded = new Promise<void>(resolve => frame.addEventListener('load', () => resolve(), { once: true }));
+    frame.src = 'https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=A&d=2414&c=900001&hj=0';
+    window.document.body.append(frame);
+    await frameLoaded;
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], { color: '#d9483b', weight: 3 });
     window.map = new leaflet.MapStub([route]);
-    const feedRequests = [];
-    window.fetch = async url => {
+    const feedRequests: string[] = [];
+    (window as unknown as { fetch: (url: string) => Promise<{ ok: boolean; text: () => Promise<string> }> }).fetch = async url => {
         feedRequests.push(String(url));
         return {
             ok: true,
-            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>'
+            text: async () => '<ts><t i="58603" n="Iron Mountain" a="44.155" o="-121.77" c="1" r="246"/></ts>',
         };
     };
     fixture.evaluate();
@@ -890,23 +1017,23 @@ test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', a
     toggle.click();
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
 
-    const dispatchToPage = data => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+    const dispatchToPage = (data: Record<string, unknown>) => window.dispatchEvent(new window.MessageEvent('message', {
+        source: window as unknown as Window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', ...data }
+        data: { __bpbTerrain: true, dir: 'toPage', ...data },
     }));
     dispatchToPage({ type: 'loaded' });
     dispatchToPage({
         type: 'peaksRequest',
         requestId: 7,
-        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
+        bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 },
     });
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'peaks'));
 
     assert.deepEqual(feedRequests, [
-        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=44.1&maxy=44.2&minx=-121.85&maxx=-121.7&t=A&cid=900001'
+        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=44.1&maxy=44.2&minx=-121.85&maxx=-121.7&t=A&cid=900001',
     ], 'the feed request mirrors the native query built from the MasterMap iframe URL');
-    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks');
+    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks')!;
     assert.equal(reply.requestId, 7);
     assert.notEqual(reply.unavailable, true);
     assert.deepEqual(reply.peaks, [{ id: 58603, name: 'Iron Mountain', lat: 44.155, lon: -121.77, state: 'climbed' }]);
@@ -917,8 +1044,12 @@ test('Full Screen 3D maps serve peak-dot requests from the native PLLBB feed', a
 test('Full Screen 3D group maps answer peak-dot requests as unavailable, like the native map', async () => {
     const fixture = await loadBigMap({ type: 'G', width: 6, settings: { enable3dMap: true } });
     const { dom, window, messages, leaflet } = fixture;
-    window.document.body.insertAdjacentHTML('beforeend',
-        '<iframe id="if" src="https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=G&d=2414&c=900001"></iframe>');
+    const frame = window.document.createElement('iframe');
+    frame.id = 'if';
+    const frameLoaded = new Promise<void>(resolve => frame.addEventListener('load', () => resolve(), { once: true }));
+    frame.src = 'https://www.peakbagger.com/map/MasterMap.aspx?cy=44.16&cx=-121.76&z=14&t=G&d=2414&c=900001';
+    window.document.body.append(frame);
+    await frameLoaded;
     const route = new leaflet.Polyline([{ lat: 44.15, lng: -121.78 }, { lat: 44.16, lng: -121.76 }], {
         color: '#3388ff', weight: 3,
     // Group-map tracks need native hover/click handlers to be recognized.
@@ -926,7 +1057,7 @@ test('Full Screen 3D group maps answer peak-dot requests as unavailable, like th
     route.on('mouseover', () => {});
     route.on('click', () => {});
     window.map = new leaflet.MapStub([route]);
-    window.fetch = async () => { throw new Error('a group map must never hit the peak feed'); };
+    (window as unknown as { fetch: () => Promise<never> }).fetch = async () => { throw new Error('a group map must never hit the peak feed'); };
     fixture.evaluate();
 
     await waitFor(dom, () => route.options.weight === 6);
@@ -936,15 +1067,15 @@ test('Full Screen 3D group maps answer peak-dot requests as unavailable, like th
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'init'));
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
         data: {
             __bpbTerrain: true, dir: 'toPage', type: 'peaksRequest',
-            requestId: 1, bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 }
-        }
+            requestId: 1, bounds: { miny: 44.1, maxy: 44.2, minx: -121.85, maxx: -121.7 },
+        },
     }));
     await waitFor(dom, () => messages.some(message => message.__bpbTerrain === true && message.type === 'peaks'));
-    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks');
+    const reply = messages.find(message => message.__bpbTerrain === true && message.type === 'peaks')!;
     assert.equal(reply.unavailable, true);
     assert.deepEqual(reply.peaks, []);
     await new Promise(resolve => window.setTimeout(resolve, 0));
@@ -964,14 +1095,14 @@ test('Full Screen maps keep the 3D toggle visible and request consent when the f
     assert.equal(toggle.disabled, false);
     assert.ok(window.document.getElementById('bpb-map-viewport'));
     toggle.click();
-    assert.equal(messages.at(-1).type, 'requestConsent');
+    assert.equal(messages.at(-1)!.type, 'requestConsent');
     assert.equal(messages.some(message => message.__bpbTerrain === true && message.type === 'init'), false,
         'the page must not start terrain before the isolated-world confirmation succeeds');
 
     window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
+        source: window as unknown as Window,
         origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: true }
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: true },
     }));
     assert.ok(messages.some(message => message.__bpbTerrain === true && message.type === 'init'),
         'the confirmed action should continue directly into the requested 3D view');
@@ -984,27 +1115,27 @@ test('a Full Screen page whose map never resolves stops polling instead of retry
     // decides to leave native: no `mapsPlaceholder`, a renamed page global, a
     // cross-origin frame. The retry used to have no ceiling, so those pages kept
     // a 4 Hz interval alive for the life of the tab.
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = new FixtureDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=1&gt=rc',
-        runScripts: 'outside-only'
+        runScripts: 'outside-only',
     });
-    const { window } = dom;
-    const intervals = new Map();
+    const win = dom.window as unknown as BigMapWindow;
+    const intervals = new Map<number, () => void>();
     let intervalId = 0;
     let clockMs = 1_000_000;
-    window.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
-    window.Date.now = () => clockMs;
-    window.setInterval = callback => {
+    win.chrome = makeChromeStub({ bpbSettings: { mapRouteWidth: 8 } });
+    win.Date.now = () => clockMs;
+    (win as unknown as { setInterval: (callback: () => void) => number }).setInterval = callback => {
         const id = ++intervalId;
         intervals.set(id, callback);
         return id;
     };
-    window.clearInterval = id => intervals.delete(id);
-    window.postMessage = message => window.queueMicrotask(() => window.dispatchEvent(
-        new window.MessageEvent('message', { source: window, origin: window.location.origin, data: message })));
+    (win as unknown as { clearInterval: (id: number) => void }).clearInterval = id => { intervals.delete(id); };
+    (win as unknown as { postMessage: (message: MapMessage) => void }).postMessage = message => win.queueMicrotask(() => win.dispatchEvent(
+        new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin, data: message })));
 
-    window.eval(bridgeBundle);
-    window.eval(mainBundle);
+    win.eval(bridgeBundle);
+    win.eval(mainBundle);
 
     // No Leaflet map anywhere: the enhancer registers its binding retry.
     assert.equal(intervals.size, 1, 'a page with no resolvable map starts one binding retry');
@@ -1022,9 +1153,9 @@ test('a Full Screen page whose map never resolves stops polling instead of retry
 
     // Giving up is not permanent: a frame appearing later restarts the wait
     // through the shared lifecycle, with a fresh deadline.
-    const iframe = window.document.createElement('iframe');
+    const iframe = win.document.createElement('iframe');
     iframe.src = 'https://www.peakbagger.com/map/MasterMap.aspx?t=G&d=1&l=L_CT';
-    window.document.body.appendChild(iframe);
+    win.document.body.appendChild(iframe);
     await waitFor(dom, () => intervals.size === 1);
     assert.equal(intervals.size, 1, 'a later MasterMap frame starts a fresh bounded attempt');
     dom.window.close();

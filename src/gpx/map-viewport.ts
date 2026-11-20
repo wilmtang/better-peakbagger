@@ -248,7 +248,9 @@ export const createMapViewport = ({
                 // unless the requested width changes by 2 px.
                 widthScale: Number.isFinite(leftGap) && Number.isFinite(rightGap) && Math.abs(leftGap - rightGap) <= 2 ? 2 : 1
             };
-            if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            try {
+                if (handle.setPointerCapture) handle.setPointerCapture(event.pointerId);
+            } catch { /* Pointer may already be inactive or synthetic. */ }
             event.preventDefault();
         });
         handle.addEventListener('pointermove', event => {

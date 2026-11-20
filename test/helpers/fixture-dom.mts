@@ -107,9 +107,14 @@ export class FixtureDom {
         if (target.protocol !== location.protocol || siteOf(target.hostname) !== site) {
             throw new Error(`Fixture URL ${target.href} is not on the test page site ${site}; declare // @browser-origin ${target.origin}`);
         }
-        // Served fixture documents set document.domain to the site, which
-        // keeps them reachable only from a page that has set it as well.
-        if (!relaxedDomain) { document.domain = site; relaxedDomain = true; }
+        // Relax document.domain only when opening a different origin on the
+        // same site; keeping same-origin runs unrelaxed avoids breaking
+        // same-origin child iframes inside synchronous FixtureDom windows.
+        if (target.origin !== location.origin && !relaxedDomain) {
+            document.domain = site;
+            relaxedDomain = true;
+            (globalThis as { __bpbRelaxedDomain?: boolean }).__bpbRelaxedDomain = true;
+        }
         const frame = createFrame(options.width ?? 1000, options.height ?? 760);
         // The runner serves exactly the navigations FixtureDom announces and
         // reports any other fixture-frame navigation as page behavior.

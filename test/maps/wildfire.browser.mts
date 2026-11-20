@@ -1,6 +1,9 @@
+/// <reference lib="dom" />
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { wildfireBoxes, wildfireWorldCopy, readWildfireFeature, wildfireRecords, readWildfireRecords, WILDFIRE_LIMITS } from '../../src/maps/wildfire-core.ts';
 import { wildfireQuery, fetchWildfireComponent } from '../../src/maps/wildfire-client.ts';
 import { createTerrainWildfires } from '../../src/terrain/terrain-wildfires.ts';
@@ -44,7 +47,7 @@ test('fire identity, perimeter holes and source dates remain distinct; names nev
     assert.deepEqual(readWildfireRecords([{ id: 'evil:url', name: 'x' }]), []);
 });
 test('invalid points, open rings, empty polygons, prescribed burns and vertex overflow fail closed', () => {
-    for (const mutate of [(f: WireFeature) => { ringsOf(f)[0][0][0] = NaN; }, (f: WireFeature) => { ringsOf(f)[0].pop(); }, (f: WireFeature) => { f.geometry.coordinates = []; }, (f: WireFeature) => { ringsOf(f)[1] = [[0,0],[1,0],[1,1],[0,0]]; }, (f: WireFeature) => { f.properties.attr_IncidentTypeCategory = 'RX'; }]) {
+    for (const mutate of [(f: WireFeature) => { ringsOf(f)[0][0][0] = NaN; }, (f: WireFeature) => { ringsOf(f)[0].pop(); }, (f: WireFeature) => { f.geometry.coordinates = []; }, (f: WireFeature) => { ringsOf(f)[1] = [[0, 0], [1, 0], [1, 1], [0, 0]]; }, (f: WireFeature) => { f.properties.attr_IncidentTypeCategory = 'RX'; }]) {
         const f = wildfireFeature('perimeters'); mutate(f); assert.throws(() => normalize('perimeters', f));
     }
     const f: WireFeature = wildfireFeature(); positionOf(f)[0] = 181; assert.throws(() => normalize('incidents', f));
@@ -71,8 +74,8 @@ test('wildfire transactions bound deadlines, body reads, cancellation, transient
     await assert.rejects(fetchWildfireComponent('incidents', bounds, { fetchImpl: async () => reply({ error: { code: 429 } }) }), (e: { retryAt: number }) => e.retryAt > Date.now());
 });
 function session(fetchImpl: FetchImpl, options = {}) {
-    const dom = new JSDOM('', { pretendToBeVisual: true }), states: WildfireStatus[] = [], displays: WildfireDisplay[] = []; let view = { bounds, zoom: 10 };
-    const owner = createWildfireSession({ document: dom.window.document, readView: () => view, fetchImpl: fetchImpl as typeof fetch, debounceMs: 0, onStatus: status => states.push(status), onData: result => displays.push(result), ...options });
+    const dom = new FixtureDom(''), states: WildfireStatus[] = [], displays: WildfireDisplay[] = []; let view = { bounds, zoom: 10 };
+    const owner = createWildfireSession({ document: dom.window.document as unknown as Document, readView: () => view, fetchImpl: fetchImpl as typeof fetch, debounceMs: 0, onStatus: status => states.push(status), onData: result => displays.push(result), ...options });
     return { owner, states, displays, doc: dom.window.document, setView(next: typeof view) { view = next; }, close() { owner.dispose(); dom.window.close(); } };
 }
 test('fires are off by default, publish each complete component and distinguish partial from empty', async () => {
@@ -156,7 +159,7 @@ test('cancelling a pending viewport does not cache the failed attempt for five m
 
 test('terrain fire layers preserve native interaction priority and survive style replacement', async t => {
     t.mock.method(globalThis, 'fetch', async (url: string) => reply(wildfireFixture(url.includes('Interagency') ? 'perimeters' : 'incidents')));
-    const dom = new JSDOM('', { pretendToBeVisual: true }), listeners = new Map<string, (event: object) => void>(), sources = new Map<string, Record<string, unknown> & { data?: { features: unknown[] } }>(),
+    const dom = new FixtureDom(''), listeners = new Map<string, (event: object) => void>(), sources = new Map<string, Record<string, unknown> & { data?: { features: unknown[] } }>(),
         layers = new Map<string, { id: string; type?: string }>([['bpb-route-main', { id: 'bpb-route-main', type: 'line' }]]), before: unknown[] = [];
     let hits: object[] = [], popups = 0;
     const map = { getBounds: () => ({ getWest: () => -122, getSouth: () => 46, getEast: () => -121, getNorth: () => 47 }), getZoom: () => 9,

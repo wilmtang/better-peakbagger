@@ -1,8 +1,10 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { rect } from '../helpers/page-types.mts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { publicLandInfo } from '../../src/maps/map-overlay-providers.ts';
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
@@ -10,10 +12,11 @@ import { readSnowDepthLegend } from '../../src/maps/snow-depth.ts';
 import { snowDepthLegend } from '../helpers/snow-depth-fixture.mts';
 
 test('snow controls identify analysis time, preserve refresh focus and hide unavailable work', () => {
-    const dom = new JSDOM('<body></body>', { pretendToBeVisual: true }), doc = dom.window.document, retries = [];
-    const state = Schema.mapOverlayState({ snow: { enabled: true } }), statuses = { snow: { retry: true, metadataPending: true } };
-    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
-    const render = extra => control.render({ state, statuses, ...extra });
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document, retries: string[] = [];
+    const state = Schema.mapOverlayState({ snow: { enabled: true } });
+    const statuses: Record<string, Record<string, unknown>> = { snow: { retry: true, metadataPending: true } };
+    const control = createMapLayerControl({ document: doc as unknown as Document, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const render = (extra?: Record<string, unknown>) => control.render({ state, statuses, ...extra });
     try {
         render(); control.trigger.click(); doc.querySelector('[data-layer="snow"] button').click();
         const detail = doc.querySelector('[data-overlay="snow"]'), time = detail.querySelector('.bpb-snow-depth-time'), retry = detail.querySelector('.bpb-layers-retry');
@@ -32,20 +35,25 @@ test('snow controls identify analysis time, preserve refresh focus and hide unav
 });
 
 test('overlay schema bounds device-local alpha and fails closed on enablement', () => {
-    const state = Schema.mapOverlayState({ sentinel: { enabled: 'true', opacity: NaN }, slope: { enabled: true, opacity: 112 }, land: { opacity: -3 }, snotel: { enabled: true, opacity: 0 } });
+    const state = Schema.mapOverlayState({ sentinel: { enabled: 'true' as unknown as boolean, opacity: NaN }, slope: { enabled: true, opacity: 112 }, land: { opacity: -3 }, snotel: { enabled: true, opacity: 0 } });
     assert.deepEqual(state, { sentinel: { enabled: false, opacity: 100 }, snow: { enabled: false, opacity: 60 }, slope: { enabled: true, opacity: 100 }, land: { enabled: false, opacity: 0 }, snotel: { enabled: true, opacity: 100 }, wildfire: { enabled: false, opacity: 100 } });
     assert.deepEqual(Schema.mapOverlayState(state), state);
     assert.equal(Object.hasOwn(Schema.DEFAULTS, 'mapOverlays'), false, 'overlay enablement is not a synced preference');
 });
 
 test('overlay geometry retains its document anchor through scrolling and async status paints', () => {
-    const dom = new JSDOM('<body></body>'), win = dom.window, document = win.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), win = dom.window, document = win.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     const state = Schema.mapOverlayState({ slope: { enabled: true } });
-    win.scrollX = 30; win.scrollY = 500;
+    const scrollX = 30;
+    let scrollY = 500;
+    Object.defineProperties(win, {
+        scrollX: { configurable: true, get: () => scrollX },
+        scrollY: { configurable: true, get: () => scrollY },
+    });
     control.position({ left: 20, top: 40, bottom: 440, width: 800, height: 400 });
     assert.equal(control.element.style.top, '550px'); assert.equal(control.element.style.left, '60px');
-    win.scrollY = 580;
+    scrollY = 580;
     for (const status of [{ pending: true }, { error: true, retry: true }, {}]) {
         control.render({ state, statuses: { slope: status } });
         assert.equal(control.element.style.top, '550px', 'a reply before the scroll handler cannot move the anchor');
@@ -55,17 +63,17 @@ test('overlay geometry retains its document anchor through scrolling and async s
     assert.equal(control.element.style.top, '550px', 'remeasuring after scroll preserves the document coordinate');
     // Theme changes can introduce body as the positioned containing block.
     document.body.style.position = 'relative';
-    document.body.getBoundingClientRect = () => ({ left: 16 - win.scrollX, top: 100 - win.scrollY });
-    Object.defineProperty(control.element, 'offsetParent', { get: () => document.body });
+    document.body.getBoundingClientRect = () => rect({ left: 16 - scrollX, top: 100 - scrollY });
+    Object.defineProperty(control.element, 'offsetParent', { configurable: true, get: () => document.body });
     control.render({ state, theme: 'dark' });
     assert.equal(control.element.style.left, '44px'); assert.equal(control.element.style.top, '450px');
     control.dispose(); dom.window.close();
 });
 
 test('compact Overlays control separates collapse, enablement and one detail selection', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const changes = [], opacity = [];
-    const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onOpacity: (...args) => opacity.push(args) });
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const changes: [string, boolean][] = [], opacity: [string, number][] = [];
+    const control = createMapLayerControl({ document: document as unknown as Document, onToggle: (...args) => changes.push(args), onOpacity: (...args) => opacity.push(args) });
     document.body.append(control.element);
     const state = Schema.mapOverlayState({ slope: { enabled: true, opacity: 60 } });
     const model = { state };
@@ -75,7 +83,7 @@ test('compact Overlays control separates collapse, enablement and one detail sel
     const panel = document.querySelector('.bpb-layers-panel'), well = document.querySelector('.bpb-layers-details');
     assert.equal(panel.hidden, true);
     control.trigger.click(); assert.equal(panel.hidden, false); assert.equal(well.hidden, true);
-    const row = id => document.querySelector(`[data-layer='${id}']`);
+    const row = (id: string) => document.querySelector(`[data-layer='${id}']`);
     row('land').querySelector('input').click(); assert.deepEqual(changes, [['land', true]]); assert.equal(well.hidden, false);
     row('slope').querySelector('button').click(); assert.equal(well.hidden, false);
     assert.equal(document.querySelectorAll('.bpb-layers-detail:not([hidden])').length, 1);
@@ -84,7 +92,7 @@ test('compact Overlays control separates collapse, enablement and one detail sel
     slider.focus(); control.render({ ...model, statuses: { slope: { pending: true, message: 'Loading slope…' } } });
     assert.equal(document.activeElement, slider, 'async status preserves the active slider');
     row('sentinel').querySelector('button').click(); assert.equal(document.querySelectorAll('.bpb-layers-detail:not([hidden])').length, 1);
-    assert.equal(slider.closest('section').hidden, true);
+    assert.equal(slider.closest('section')!.hidden, true);
     control.trigger.click(); assert.equal(panel.hidden, true); assert.equal(state.slope.enabled, true);
     control.trigger.click(); assert.equal(well.hidden, true, 'reopen is the compact overview');
     assert.equal(panel.querySelector('[aria-label="Base map"]'), null, 'basemap stays outside the overlay menu');
@@ -94,12 +102,12 @@ test('compact Overlays control separates collapse, enablement and one detail sel
 });
 
 test('toggling a layer selects its matching details without changing other layers or following async updates', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-    const state = Schema.mapOverlayState({ slope: { enabled: true } }); let statuses = {};
-    const control = createMapLayerControl({ document: doc, onToggle(id, enabled) { state[id].enabled = enabled; control.render({ state, statuses }); } });
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document;
+    const state = Schema.mapOverlayState({ slope: { enabled: true } }); let statuses: Record<string, Record<string, unknown>> = {};
+    const control = createMapLayerControl({ document: doc as unknown as Document, onToggle(id, enabled) { state[id].enabled = enabled; control.render({ state, statuses }); } });
     doc.body.append(control.element); control.render({ state, statuses }); control.trigger.click();
     doc.querySelector('[data-layer="slope"] button').click();
-    const selected = name => {
+    const selected = (name: string) => {
         const detail = doc.querySelector('.bpb-layers-detail:not([hidden])');
         assert.equal(detail?.getAttribute('aria-label'), `${name} settings`, 'visible settings must match the layer the user just toggled');
     };
@@ -118,8 +126,8 @@ test('toggling a layer selects its matching details without changing other layer
 });
 
 test('opacity summaries name the property and sliders explain their direction', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc as unknown as Document }); doc.body.append(control.element);
     control.render({ state: Schema.mapOverlayState({ land: { opacity: 35 } }) }); control.trigger.click();
     for (const id of ['sentinel', 'slope', 'land']) assert.equal(doc.querySelector(`[data-layer="${id}"] .bpb-layers-value-label`)?.textContent, 'Opacity');
     assert.equal(doc.querySelector('[data-layer="snotel"] .bpb-layers-value-label'), null, 'station counts are not called opacity');
@@ -130,9 +138,9 @@ test('opacity summaries name the property and sliders explain their direction', 
 });
 
 test('the overlay name toggles visibility while its separate chevron only adjusts settings', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document, toggles = [];
-    const state = Schema.mapOverlayState(); let coverage = {};
-    const control = createMapLayerControl({ document: doc, onToggle(id, enabled) {
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document, toggles: [string, boolean][] = [];
+    const state = Schema.mapOverlayState(); let coverage: Record<string, boolean> = {};
+    const control = createMapLayerControl({ document: doc as unknown as Document, onToggle(id, enabled) {
         toggles.push([id, enabled]); state[id].enabled = enabled; control.render({ state, coverage });
     } }); doc.body.append(control.element); control.render({ state, coverage }); control.trigger.click();
     const row = doc.querySelector('[data-layer="land"]');
@@ -151,8 +159,8 @@ test('the overlay name toggles visibility while its separate chevron only adjust
 });
 
 test('opacity and provider updates preserve unchanged legend content', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc as unknown as Document }); doc.body.append(control.element);
     const state = Schema.mapOverlayState({ slope: { enabled: true } });
     const statuses = { slope: { legend: 'Ground slope', legendEntries: [{ label: '30–35°', color: '#f09730' }] } };
     try {
@@ -173,10 +181,10 @@ test('opacity and provider updates preserve unchanged legend content', () => {
 });
 
 test('layer rows explain loading, failure and access without hiding controls or stale off-state warnings', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
-    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document, retries: string[] = [];
+    const control = createMapLayerControl({ document: doc as unknown as Document, onRetry: id => retries.push(id) }); doc.body.append(control.element);
     const state = Schema.mapOverlayState({ land: { enabled: true } });
-    const render = status => control.render({ state, statuses: { land: status } });
+    const render = (status: Record<string, unknown>) => control.render({ state, statuses: { land: status } });
     render({ pending: true, message: 'Loading public lands' }); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
     const row = doc.querySelector('[data-layer="land"]'), button = row.querySelector('button');
     assert.equal(row.querySelector('.bpb-layers-row-status')?.textContent, 'Loading');
@@ -196,10 +204,10 @@ test('layer rows explain loading, failure and access without hiding controls or 
     control.dispose(); dom.window.close();
 });
 test('successful recovery keeps a focused action anchored as Reload until the user leaves it', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document, requests = [];
-    const control = createMapLayerControl({ document: doc, onRetry: id => requests.push(id) }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document, requests: string[] = [];
+    const control = createMapLayerControl({ document: doc as unknown as Document, onRetry: id => requests.push(id) }); doc.body.append(control.element);
     const state = Schema.mapOverlayState({ slope: { enabled: true } });
-    const render = status => control.render({ state, statuses: { slope: status } });
+    const render = (status: Record<string, unknown>) => control.render({ state, statuses: { slope: status } });
     render({ error: true, retry: true }); control.trigger.click(); doc.querySelector('[data-layer="slope"] button').click();
     const action = doc.querySelector('.bpb-layers-detail:not([hidden]) .bpb-layers-retry'); action.focus(); action.click();
     render({ pending: true, retry: true }); action.click(); assert.equal(requests.length, 1);
@@ -212,8 +220,8 @@ test('successful recovery keeps a focused action anchored as Reload until the us
 });
 
 test('Overlays stays expanded through outside interaction and only its button collapses it', () => {
-    const dom = new JSDOM('<body><button id="outside">Map action</button></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body><button id="outside">Map action</button></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     control.trigger.click(); document.querySelector('[data-layer="slope"] button').click();
     const outside = document.getElementById('outside'); outside.focus();
     outside.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true })); outside.click();
@@ -229,8 +237,8 @@ test('Overlays stays expanded through outside interaction and only its button co
 });
 
 test('Overlays includes a decorative caret beside its accessible disclosure state', () => {
-    const dom = new JSDOM('<body></body>'), control = createMapLayerControl({ document: dom.window.document });
-    const caret = control.trigger.querySelector('.bpb-layers-caret');
+    const dom = new FixtureDom('<body></body>'), control = createMapLayerControl({ document: dom.window.document as unknown as Document });
+    const caret = control.trigger.querySelector('.bpb-layers-caret')!;
     assert.ok(caret, 'a visible caret indicates that Overlays is collapsible');
     assert.equal(caret.getAttribute('aria-hidden'), 'true');
     assert.equal(control.trigger.getAttribute('aria-expanded'), 'false');
@@ -240,8 +248,8 @@ test('Overlays includes a decorative caret beside its accessible disclosure stat
 });
 
 test('Sentinel capture choices retain cloud labels and full selected metadata', () => {
-    const dom = new JSDOM('<body></body>'), selections = [];
-    const control = createMapLayerControl({ document: dom.window.document, onCapture: value => selections.push(value) });
+    const dom = new FixtureDom('<body></body>'), selections: string[] = [];
+    const control = createMapLayerControl({ document: dom.window.document as unknown as Document, onCapture: value => selections.push(value) });
     dom.window.document.body.append(control.element);
     const captures = [
         { id: 'latest', label: 'Latest · 10-07 18:27 · ☁ 3%', title: 'Latest · 2026-10-07 18:27 PDT · Clouds 3%' },
@@ -265,26 +273,26 @@ test('Sentinel capture choices retain cloud labels and full selected metadata', 
 });
 
 test('Public lands details offer official camping guidance without enlarging the overview', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-    const control = createMapLayerControl({ document: doc }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document;
+    const control = createMapLayerControl({ document: doc as unknown as Document }); doc.body.append(control.element);
     control.trigger.click();
     const guidance = doc.querySelector('a[href="https://www.blm.gov/programs/recreation/camping"]');
     assert.ok(guidance, 'BLM ownership is not a camping-permission map');
     assert.equal(guidance.textContent, 'Check camping rules');
     assert.equal(guidance.getAttribute('aria-label'), 'BLM camping rules');
-    assert.equal(guidance.closest('section').hidden, true, 'guidance stays in the collapsed detail');
+    assert.equal(guidance.closest('section')!.hidden, true, 'guidance stays in the collapsed detail');
     doc.querySelector('[data-layer="land"] button').click();
-    assert.equal(guidance.closest('section').hidden, false);
+    assert.equal(guidance.closest('section')!.hidden, false);
     assert.equal(guidance.target, '_blank');
     assert.equal(guidance.rel, 'noopener noreferrer');
     doc.querySelector('[data-layer="slope"] button').click();
-    assert.equal(guidance.closest('section').hidden, true);
+    assert.equal(guidance.closest('section')!.hidden, true);
     control.dispose(); dom.window.close();
 });
 
 test('partly loaded slope shading is described separately from an unavailable layer', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     control.render({ state: Schema.mapOverlayState({ slope: { enabled: true } }), statuses: { slope: {
         error: true, partial: true, retry: true, message: 'Some slope tiles couldn’t load. Available shading is still shown.',
     } } });
@@ -294,8 +302,8 @@ test('partly loaded slope shading is described separately from an unavailable la
     control.dispose(); dom.window.close();
 });
 test('a failed tile does not hide progress while neighboring tiles are still recovering', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     control.render({ state: Schema.mapOverlayState({ land: { enabled: true } }), statuses: { land: { pending: true, error: true, partial: true, retry: true } } });
     control.trigger.click(); document.querySelector('[data-layer="land"] button').click();
     assert.equal(document.querySelector('[data-layer="land"] .bpb-layers-row-status').textContent, 'Loading');
@@ -304,8 +312,8 @@ test('a failed tile does not hide progress while neighboring tiles are still rec
 });
 
 test('zoomed-out rasters request a closer view instead of showing stale errors, loading or Retry', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element); control.trigger.click();
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element); control.trigger.click();
     for (const id of ['slope', 'land']) {
         const state = Schema.mapOverlayState({ [id]: { enabled: true } });
         const statuses = { [id]: { pending: true, error: true, retry: true, message: 'Loading map tiles' } };
@@ -323,8 +331,8 @@ test('zoomed-out rasters request a closer view instead of showing stale errors, 
 });
 
 test('Sentinel uses its catalog zoom limit instead of reporting an unattempted search failure', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     control.trigger.click(); document.querySelector('[data-layer="sentinel"] button').click();
     const state = Schema.mapOverlayState({ sentinel: { enabled: true } });
     const statuses = { sentinel: { error: true, captureError: true, retry: true, message: 'Zoom in to load Sentinel-2 imagery.' } };
@@ -337,8 +345,8 @@ test('Sentinel uses its catalog zoom limit instead of reporting an unattempted s
 });
 
 test('unavailable regional overlays stay explained, unfocusable as toggles and immune to recovery clicks', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document, changes = [], retries = [];
-    const control = createMapLayerControl({ document, onToggle: (...args) => changes.push(args), onRetry: id => retries.push(id) });
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document, changes: [string, boolean][] = [], retries: string[] = [];
+    const control = createMapLayerControl({ document: document as unknown as Document, onToggle: (...args) => changes.push(args), onRetry: id => retries.push(id) });
     document.body.append(control.element); control.trigger.click();
     const state = Schema.mapOverlayState({ land: { enabled: true } }), statuses = { land: { error: true, retry: true } };
     const checkbox = document.querySelector('[data-layer="land"] input'), disclosure = document.querySelector('[data-layer="land"] button');
@@ -359,8 +367,8 @@ test('unavailable regional overlays stay explained, unfocusable as toggles and i
 });
 
 test('Canadian land guidance keeps focus through permission states and Allow cannot replay a tile retry', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document, retries = [];
-    const control = createMapLayerControl({ document: doc, onRetry: id => retries.push(id) }); doc.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document, retries: string[] = [];
+    const control = createMapLayerControl({ document: doc as unknown as Document, onRetry: id => retries.push(id) }); doc.body.append(control.element);
     const state = Schema.mapOverlayState({ land: { enabled: true } });
     const statuses = { land: { guidanceKeys: ['bc', 'ab', 'https://evil.example/'], permission: true, retry: true, message: 'Allow BC parcel maps.' } };
     control.render({ state, statuses }); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
@@ -379,11 +387,11 @@ test('Canadian land guidance keeps focus through permission states and Allow can
 
 
 test('land checkboxes support mixed selection, Only, empty selection and regional categories without losing focus', () => {
-    const dom = new JSDOM('<body></body>'), doc = dom.window.document;
-    let landTypes = Schema.mapLandTypes(), region = null, status = {};
+    const dom = new FixtureDom('<body></body>'), doc = dom.window.document;
+    let landTypes: string[] = Schema.mapLandTypes(), region: number[] | null = null, status: Record<string, unknown> = {};
     const state = Schema.mapOverlayState({ land: { enabled: true } });
     const paint = () => control.render({ state, landTypes, statuses: { land: { ...publicLandInfo(region), ...status } } });
-    const control = createMapLayerControl({ document: doc, onLandTypes(value) { landTypes = Schema.mapLandTypes(value); paint(); } });
+    const control = createMapLayerControl({ document: doc as unknown as Document, onLandTypes(value) { landTypes = Schema.mapLandTypes(value); paint(); } });
     doc.body.append(control.element); paint(); control.trigger.click(); doc.querySelector('[data-layer="land"] button').click();
     const all = doc.querySelector('[aria-label="All land types"]');
     assert.equal(all.checked, true);
@@ -400,7 +408,7 @@ test('land checkboxes support mixed selection, Only, empty selection and regiona
     assert.equal(doc.querySelector('[data-overlay="land"] .bpb-layers-retry').hidden, true);
     region = [-125, 53, -124, 54]; paint();
     assert.deepEqual([...doc.querySelectorAll('[data-land-type]')].map(item => item.dataset.landType), ['CROWN', 'FED', 'AGENCY', 'LOC', 'FIRST_NATIONS']);
-    all.click(); assert.equal(landTypes.includes('BLM'), false, 'select all applies to the visible region');
+    all.click(); assert.equal((landTypes as string[]).includes('BLM'), false, 'select all applies to the visible region');
     region = null; paint(); assert.equal(all.indeterminate, true, 'shared federal/local choices persist across borders');
     state.land.enabled = false; paint();
     assert.ok([...doc.querySelectorAll('.bpb-layers-land-types input, .bpb-layers-land-only')].every(input => input.disabled));
@@ -408,15 +416,15 @@ test('land checkboxes support mixed selection, Only, empty selection and regiona
 });
 
 test('wildfire details omit raster opacity and preserve open source-link focus on report updates', () => {
-    const dom = new JSDOM('<body></body>'), document = dom.window.document;
-    const control = createMapLayerControl({ document }); document.body.append(control.element);
+    const dom = new FixtureDom('<body></body>'), document = dom.window.document;
+    const control = createMapLayerControl({ document: document as unknown as Document }); document.body.append(control.element);
     const state = Schema.mapOverlayState({ wildfire: { enabled: true } });
     const fire = { id: 'nifc:incident:1', name: '<img src=x> Long Mountain Fire', incidentUpdated: Date.UTC(2026, 9, 24), perimeterObserved: null, perimeterEdited: null, acres: 12, contained: null, hasPerimeter: false };
     const model = { state, statuses: { wildfire: { count: 1, fires: [fire], retry: true } } };
     try {
         control.render(model); control.trigger.click(); document.querySelector('[data-layer="wildfire"] button').click();
         assert.equal(document.querySelector('[aria-label="Wildfires opacity"]'), null);
-        const detail = document.querySelector('.bpb-fire-list details'), source = detail.querySelector('a'); detail.open = true; source.focus();
+        const detail = document.querySelector<HTMLDetailsElement>('.bpb-fire-list details'), source = detail.querySelector('a')!; detail.open = true; source.focus();
         control.render({ ...model, statuses: { wildfire: { count: 1, fires: [{ ...fire, incidentUpdated: Date.UTC(2026, 9, 25) }], retry: true } } });
         assert.equal(document.activeElement, source); assert.equal(detail.open, true); assert.equal(source.isConnected, true);
         assert.equal(document.querySelector('.bpb-fire-list img'), null);
