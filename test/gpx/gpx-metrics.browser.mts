@@ -1,18 +1,18 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
 import { gpxParse as GpxParse } from '../../src/gpx/gpx-parse.ts';
 import { gpxMetrics as GpxMetrics } from '../../src/gpx/gpx-metrics.ts';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mts';
 
 test('geographic coordinate validation accepts only finite latitude and longitude bounds', () => {
-    for (const [lat, lon] of [[-90, -180], [0, 0], [90, 180]]) {
+    for (const [lat, lon] of [[-90, -180], [0, 0], [90, 180]] as const) {
         assert.equal(GpxMetrics.isValidCoordinate(lat, lon), true);
     }
-    for (const [lat, lon] of [[-90.01, 0], [90.01, 0], [0, -180.01], [0, 180.01], [NaN, 0], [0, Infinity]]) {
+    for (const [lat, lon] of [[-90.01, 0], [90.01, 0], [0, -180.01], [0, 180.01], [NaN, 0], [0, Infinity]] as const) {
         assert.equal(GpxMetrics.isValidCoordinate(lat, lon), false);
     }
 });
@@ -70,9 +70,9 @@ test('metrics safely sequence and join nearby chronological track segments', () 
     const metrics = GpxMetrics.computeMetrics(sourcePoints);
     const expectedOrder = [100, 110, 105, 150, 154, 135, 130, 120];
     const orderedSourcePoints = expectedOrder.map(rawEleM =>
-        sourcePoints.find(point => point.rawEleM === rawEleM));
+        sourcePoints.find(point => point.rawEleM === rawEleM)!);
     const expectedRawDistanceM = orderedSourcePoints.slice(1).reduce((sum, point, index) =>
-        sum + GpxMetrics.distanceM(orderedSourcePoints[index], point), 0);
+        sum + GpxMetrics.distanceM(orderedSourcePoints[index]!, point), 0);
 
     assert.deepEqual(metrics.points.map(point => point.rawEleM), expectedOrder,
         'non-overlapping, internally ordered segments should use chronological segment order');
@@ -86,8 +86,8 @@ test('metrics safely sequence and join nearby chronological track segments', () 
 
 test('Capitol regression keeps the full four-segment track chronological and continuous', async () => {
     const source = await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
-    const document = new JSDOM(source, { contentType: 'text/xml' }).window.document;
-    const segmentNodes = Array.from(document.querySelectorAll('trkseg'));
+    const doc = new DOMParser().parseFromString(source, 'text/xml');
+    const segmentNodes = Array.from(doc.querySelectorAll('trkseg'));
     const sourcePoints = segmentNodes.flatMap((segment, coordinateGroup) =>
         Array.from(segment.querySelectorAll('trkpt'), point => {
             const parsed = GpxParse.parseTrackPoint(point, { includeQuality: true });
@@ -102,12 +102,12 @@ test('Capitol regression keeps the full four-segment track chronological and con
             };
         }));
 
-    assert.equal(document.querySelector('metadata, wpt, name, author'), null,
+    assert.equal(doc.querySelector('metadata, wpt, name, author'), null,
         'the committed regression fixture must not retain identifying metadata');
     assert.deepEqual(segmentNodes.map(segment => segment.querySelectorAll('trkpt').length),
         [767, 553, 838, 753]);
     assert.deepEqual(segmentNodes.map(segment =>
-        segment.querySelector('trkpt time').textContent), [
+        segment.querySelector('trkpt time')!.textContent), [
         '2021-07-26T14:52:00Z',
         '2021-07-27T22:32:00Z',
         '2021-07-27T11:08:00Z',
@@ -116,7 +116,7 @@ test('Capitol regression keeps the full four-segment track chronological and con
 
     const metrics = GpxMetrics.computeMetrics(sourcePoints);
     const chronologicalSegmentStarts = [0, 767, 767 + 838, 767 + 838 + 753]
-        .map(index => new Date(metrics.points[index].ms).toISOString());
+        .map(index => new Date(metrics.points[index]!.ms).toISOString());
 
     assert.deepEqual(chronologicalSegmentStarts, [
         '2021-07-26T14:52:00.000Z',
@@ -185,13 +185,13 @@ test('unsafe segment time ranges preserve source segment order', async t => {
     const cases = [
         {
             name: 'internally reversed segment',
-            firstTimes: [start + 180_000, start + 120_000],
-            secondTimes: [start, start + 60_000],
+            firstTimes: [start + 180_000, start + 120_000] as const,
+            secondTimes: [start, start + 60_000] as const,
         },
         {
             name: 'overlapping segment ranges',
-            firstTimes: [start + 120_000, start + 300_000],
-            secondTimes: [start, start + 180_000],
+            firstTimes: [start + 120_000, start + 300_000] as const,
+            secondTimes: [start, start + 180_000] as const,
         },
     ];
 
@@ -254,7 +254,7 @@ test('missing elevation does not shortcut route distance or invent an elevation 
 
     assert.ok(metrics.distanceM > 2200 && metrics.distanceM < 2250,
         `the route must follow both legs instead of their chord: ${metrics.distanceM} m`);
-    assert.equal(metrics.points.at(-1).distM, metrics.distanceM,
+    assert.equal(metrics.points.at(-1)!.distM, metrics.distanceM,
         'the next elevation sample keeps its position on the complete route');
     assert.deepEqual(metrics.chartPoints.map(point => point.coordinateGroup), [0, 1],
         'missing elevation splits the profile instead of drawing through it');
@@ -344,13 +344,13 @@ test('metrics sort the time view without reordering route geometry', () => {
     assert.deepEqual(metrics.timePoints.map(point => point.lat), [47.001, 47.002, 47]);
     assert.deepEqual(metrics.chartPoints.map(point => point.lat), [47, 47.001, 47.002]);
     assert.deepEqual(metrics.timeChartPoints.map(point => point.lat), [47.001, 47.002, 47]);
-    assert.ok(metrics.points[1].distM >= metrics.points[0].distM,
+    assert.ok(metrics.points[1]!.distM >= metrics.points[0]!.distM,
         'distance must remain cumulative in GPX route order');
 });
 
 test('timestamp direction cannot bypass bad-jump filtering', () => {
     const start = Date.UTC(2026, 6, 10, 12);
-    const analyze = descending => GpxMetrics.computeMetrics([
+    const analyze = (descending: boolean) => GpxMetrics.computeMetrics([
         { lat: 0, lon: 0, rawEleM: 100, ms: start + (descending ? 1000 : 0) },
         { lat: 0, lon: 0.02, rawEleM: 101, ms: start + (descending ? 0 : 1000) },
     ]);
@@ -365,7 +365,7 @@ test('timestamp direction cannot bypass bad-jump filtering', () => {
 
 test('timestamp ordering permutations affect only the chronological view', async t => {
     const start = Date.UTC(2026, 6, 10, 12);
-    const buildPoints = offsets => offsets.map((offset, index) => ({
+    const buildPoints = (offsets: readonly number[]) => offsets.map((offset, index) => ({
         lat: 40 + index * 0.001,
         lon: -105 - index * 0.001,
         rawEleM: 100 + index,
@@ -382,7 +382,7 @@ test('timestamp ordering permutations affect only the chronological view', async
     for (const { name, offsets, expected } of cases) {
         await t.test(name, () => {
             const metrics = GpxMetrics.computeMetrics(buildPoints(offsets));
-            const pointIndexes = points => points.map(point => point.rawEleM - 100);
+            const pointIndexes = (points: readonly { rawEleM?: number | null }[]) => points.map(point => point.rawEleM! - 100);
 
             assert.equal(metrics.hasTime, true);
             assert.deepEqual(pointIndexes(metrics.points), [0, 1, 2, 3],
@@ -396,7 +396,7 @@ test('timestamp ordering permutations affect only the chronological view', async
                 chronologicalMetrics.points.map(point => point.distM),
                 'timestamp order must not change route-order cumulative distance');
             assert.ok(metrics.timeChartPoints.every((point, index, points) =>
-                index === 0 || point.ms >= points[index - 1].ms));
+                index === 0 || point.ms >= points[index - 1]!.ms));
         });
     }
 });
@@ -426,9 +426,9 @@ test('one absent or invalid timestamp preserves a partial time series with a vis
             assert.deepEqual(metrics.timePoints.map(point => point.rawEleM), [100, 120]);
             assert.deepEqual(metrics.timeChartPoints.map(point => point.rawEleM), [100, 120]);
             assert.notEqual(
-                metrics.timeChartPoints[0].timeCoordinateGroup,
-                metrics.timeChartPoints[1].timeCoordinateGroup,
-                'the time chart must not draw through an excluded timestamp'
+                metrics.timeChartPoints[0]!.timeCoordinateGroup,
+                metrics.timeChartPoints[1]!.timeCoordinateGroup,
+                'the time chart must not draw through an excluded timestamp',
             );
             assert.equal(metrics.points.length, 3);
             assert.ok(metrics.distanceM > 0);
@@ -492,14 +492,14 @@ test('chronological endpoints survive route-order chart sampling', () => {
         rawEleM: 100 + index,
         ms: start + offset * 60_000,
     })));
-    const pointIndexes = points => points.map(point => point.rawEleM - 100);
+    const pointIndexes = (points: readonly { rawEleM: number }[]) => points.map(point => point.rawEleM - 100);
 
     assert.deepEqual(pointIndexes(metrics.chartPoints), [0, 1, 3, 6, 8, 9, 11],
         'route sampling must add chronological endpoints without changing route order');
     assert.equal(pointIndexes(metrics.timeChartPoints)[0], 1);
     assert.equal(pointIndexes(metrics.timeChartPoints).at(-1), 8);
-    assert.equal(metrics.timeChartPoints[0].ms, metrics.startMs);
-    assert.equal(metrics.timeChartPoints.at(-1).ms, metrics.endMs);
+    assert.equal(metrics.timeChartPoints[0]!.ms, metrics.startMs);
+    assert.equal(metrics.timeChartPoints.at(-1)!.ms, metrics.endMs);
 });
 
 test('display chart sampling is pixel-bounded and retains semantic profile points', () => {
@@ -511,12 +511,12 @@ test('display chart sampling is pixel-bounded and retains semantic profile point
     }));
 
     const narrow = GpxMetrics.sampleChartPoints(points, 320, {
-        required: [points[selectedIndex]],
+        required: [points[selectedIndex]!],
     });
     const wide = GpxMetrics.sampleChartPoints(points, 1_100, {
-        required: [points[selectedIndex]],
+        required: [points[selectedIndex]!],
     });
-    const indexes = samples => new Set(samples.map(point => point.sourceIndex));
+    const indexes = (samples: readonly { sourceIndex: number }[]) => new Set(samples.map(point => point.sourceIndex));
     const narrowIndexes = indexes(narrow);
 
     assert.equal(narrow.length, 320);

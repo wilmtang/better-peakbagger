@@ -1,21 +1,17 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Unit tests for the shared pure GPX parser. Provider-specific behavior
-// (ownership, export endpoints, metadata) stays in provider-page.test.mjs.
+// (ownership, export endpoints, metadata) stays in provider-page.browser.mts.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
 import { gpxParse } from '../../src/gpx/gpx-parse.ts';
 import {
     MAX_GPX_TRACK_SEGMENTS,
     MAX_GPX_WAYPOINTS,
 } from '../../src/capture/capture-resource-limits.ts';
-
-// The parser's only platform dependency is DOMParser; give it jsdom's.
-const { DOMParser } = new JSDOM('').window;
-globalThis.DOMParser = DOMParser;
 
 const {
     parseGpxData,
@@ -25,6 +21,8 @@ const {
     noGpsError,
     preflightGpxStructure,
 } = gpxParse;
+
+type CodedError = Error & { code?: string };
 
 test('multi-track GPX flattens to segments in document order with analysis fields only', () => {
     const gpx = `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"
@@ -39,10 +37,10 @@ test('multi-track GPX flattens to segments in document order with analysis field
     </gpx>`;
     const parsed = parseGpxData(gpx);
     assert.equal(parsed.segments.length, 3);
-    assert.deepEqual(Object.keys(parsed.segments[0][0]).sort(), ['ele', 'invalidTime', 'lat', 'lon', 'time']);
-    assert.equal(parsed.segments[0][0].time, Date.UTC(2026, 6, 1, 15));
-    assert.deepEqual(parsed.segments[1][0], { lat: 47.1, lon: -121.1, ele: null, time: null, invalidTime: false });
-    assert.equal(parsed.segments[2][0].ele, 200);
+    assert.deepEqual(Object.keys(parsed.segments[0]![0]!).sort(), ['ele', 'invalidTime', 'lat', 'lon', 'time']);
+    assert.equal(parsed.segments[0]![0]!.time, Date.UTC(2026, 6, 1, 15));
+    assert.deepEqual(parsed.segments[1]![0]!, { lat: 47.1, lon: -121.1, ele: null, time: null, invalidTime: false });
+    assert.equal(parsed.segments[2]![0]!.ele, 200);
     assert.doesNotMatch(JSON.stringify(parsed), /175|hr/);
 });
 
@@ -77,14 +75,14 @@ test('prefixed GPX namespaces retain direct ownership semantics', () => {
       </g:trkseg></g:trk>
     </g:gpx>`, { retainWaypoints: true, includeTripName: true });
 
-    assert.deepEqual(parsed.segments[0].map(({ lat, lon }) => [lat, lon]), [[3, 4], [5, 6]]);
+    assert.deepEqual(parsed.segments[0]!.map(({ lat, lon }) => [lat, lon]), [[3, 4], [5, 6]]);
     assert.deepEqual(parsed.waypoints, [{ lat: 1, lon: 2, name: 'Camp' }]);
     assert.equal(parsed.trackName, 'Prefixed');
 });
 
 test('GPX structure limits reject excessive namespaced input before DOM construction', () => {
     const tooManySegments = `<g:gpx>${'<g:trkseg/>'.repeat(MAX_GPX_TRACK_SEGMENTS + 1)}</g:gpx>`;
-    assert.throws(() => preflightGpxStructure(tooManySegments), error => error.code === 'gpx-too-large');
+    assert.throws(() => preflightGpxStructure(tooManySegments), (error: CodedError) => error.code === 'gpx-too-large');
     assert.doesNotThrow(() => preflightGpxStructure(
         `<g:gpx>${'<g:trkseg/>'.repeat(MAX_GPX_TRACK_SEGMENTS)}</g:gpx>`));
 });
@@ -95,21 +93,21 @@ test('text and document entry points return the same direct-owned quality tree',
       <extensions><trkpt lat="0" lon="0"><ele>9999</ele></trkpt></extensions>
       <trkpt lat="47.1" lon="-121.1"><ele>bad</ele></trkpt>
     </trkseg></trk></gpx>`;
-    const document = new DOMParser().parseFromString(source, 'application/xml');
+    const doc = new DOMParser().parseFromString(source, 'application/xml');
     assert.deepEqual(
-        parseGpxDocument(document, { includeQuality: true }),
+        parseGpxDocument(doc, { includeQuality: true }),
         parseGpxData(source, { includeQuality: true }),
     );
-    const points = parseGpxDocument(document, { includeQuality: true }).segments[0];
+    const points = parseGpxDocument(doc, { includeQuality: true }).segments[0]!;
     assert.equal(points.length, 2);
-    assert.equal(points[0].elevationState, 'valid');
-    assert.equal(points[1].elevationState, 'invalid');
+    assert.equal(points[0]!.elevationState, 'valid');
+    assert.equal(points[1]!.elevationState, 'invalid');
 });
 
 test('a nested GPX tree under the wrong document root is not route geometry', () => {
     assert.throws(
         () => parseGpxData('<wrapper><gpx><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx></wrapper>'),
-        error => error.code === 'invalid-gpx' && /document root/i.test(error.message),
+        (error: CodedError) => error.code === 'invalid-gpx' && /document root/i.test(error.message),
     );
 });
 
@@ -120,17 +118,17 @@ test('missing and malformed coordinates, elevations, and times become null (with
       <trkpt lat="oops" lon="-121"><ele>abc</ele></trkpt>
     </trkseg></trk></gpx>`;
     const [segment] = parseGpxData(gpx).segments;
-    assert.deepEqual(segment[0], { lat: null, lon: null, ele: null, time: null, invalidTime: false });
-    assert.deepEqual(segment[1], { lat: 47, lon: -121, ele: null, time: null, invalidTime: true });
-    assert.equal(Number.isNaN(segment[2].lat), true, 'non-numeric text stays a sanitizer problem, not a parser crash');
-    assert.equal(Number.isNaN(segment[2].ele), true);
+    assert.deepEqual(segment![0], { lat: null, lon: null, ele: null, time: null, invalidTime: false });
+    assert.deepEqual(segment![1], { lat: 47, lon: -121, ele: null, time: null, invalidTime: true });
+    assert.equal(Number.isNaN(segment![2]!.lat), true, 'non-numeric text stays a sanitizer problem, not a parser crash');
+    assert.equal(Number.isNaN(segment![2]!.ele), true);
 });
 
 test('track-point parsing rejects partial numbers and non-ISO dates consistently', () => {
     const xml = new DOMParser().parseFromString(`<gpx><trk><trkseg>
       <trkpt lat="47north" lon="-121west"><ele>100m</ele><time>July 10, 2026</time></trkpt>
     </trkseg></trk></gpx>`, 'application/xml');
-    const parsed = parseTrackPoint(xml.querySelector('trkpt'), { includeQuality: true });
+    const parsed = parseTrackPoint(xml.querySelector('trkpt')!, { includeQuality: true });
 
     assert.equal(Number.isNaN(parsed.lat), true);
     assert.equal(Number.isNaN(parsed.lon), true);
@@ -142,7 +140,7 @@ test('track-point parsing rejects partial numbers and non-ISO dates consistently
 });
 
 test('timestamp parsing rejects nonexistent calendar dates without narrowing valid GPX forms', () => {
-    const parseTime = value => {
+    const parseTime = (value: string) => {
         const xml = new DOMParser().parseFromString(
             `<trkpt lat="47" lon="-121"><time>${value}</time></trkpt>`,
             'application/xml',
@@ -162,7 +160,7 @@ test('timestamp parsing rejects nonexistent calendar dates without narrowing val
         assert.equal(parsed.timeState, 'invalid', value);
     }
 
-    const valid = [
+    const valid: [string, string][] = [
         ['2024-02-29T12:34:56Z', '2024-02-29T12:34:56.000Z'],
         ['2026-07-10T12:34:56.789-07:30', '2026-07-10T20:04:56.789Z'],
         ['2026-12-31T24:00:00Z', '2027-01-01T00:00:00.000Z'],
@@ -170,7 +168,7 @@ test('timestamp parsing rejects nonexistent calendar dates without narrowing val
     ];
     for (const [value, expected] of valid) {
         const parsed = parseTime(value);
-        assert.equal(new Date(parsed.time).toISOString(), expected, value);
+        assert.equal(new Date(parsed.time!).toISOString(), expected, value);
         assert.equal(parsed.invalidTime, false, value);
         assert.equal(parsed.timeState, 'valid', value);
     }
@@ -186,12 +184,12 @@ test('quality metadata is opt-in and distinguishes absent from malformed samples
     const [missing, invalid, empty] = [...xml.querySelectorAll('trkpt')]
         .map(point => parseTrackPoint(point, { includeQuality: true }));
 
-    assert.equal(missing.elevationState, 'missing');
-    assert.equal(missing.timeState, 'missing');
-    assert.equal(invalid.elevationState, 'invalid');
-    assert.equal(invalid.timeState, 'invalid');
-    assert.equal(empty.timeState, 'invalid');
-    assert.deepEqual(Object.keys(parseGpxData(source).segments[0][0]).sort(),
+    assert.equal(missing!.elevationState, 'missing');
+    assert.equal(missing!.timeState, 'missing');
+    assert.equal(invalid!.elevationState, 'invalid');
+    assert.equal(invalid!.timeState, 'invalid');
+    assert.equal(empty!.timeState, 'invalid');
+    assert.deepEqual(Object.keys(parseGpxData(source).segments[0]![0]!).sort(),
         ['ele', 'invalidTime', 'lat', 'lon', 'time'],
         'capture/upload payloads must not gain analyzer-only quality fields');
 });
@@ -212,7 +210,7 @@ test('waypoints and the track name are extracted only when the options request t
 test('malformed XML throws a parse error, not a no-GPS state', () => {
     assert.throws(
         () => parseGpxData('<gpx><trk><trkseg></gpx'),
-        error => error.code === 'invalid-gpx' && /invalid XML/.test(error.message)
+        (error: CodedError) => error.code === 'invalid-gpx' && /invalid XML/.test(error.message),
     );
 });
 
@@ -220,9 +218,9 @@ test('trackless and waypoint-only files throw the coded no-GPS error', () => {
     for (const gpx of [
         '<gpx></gpx>',
         '<gpx><wpt lat="1" lon="2"/></gpx>',
-        '<gpx><trk><trkseg></trkseg></trk></gpx>'
+        '<gpx><trk><trkseg></trkseg></trk></gpx>',
     ]) {
-        assert.throws(() => parseGpxData(gpx), error => error.code === 'no-gps-data');
+        assert.throws(() => parseGpxData(gpx), (error: CodedError) => error.code === 'no-gps-data');
     }
     assert.equal(noGpsError().code, 'no-gps-data');
 });
@@ -231,8 +229,8 @@ test('parsing preserves more than Peakbagger\'s later 3,000-point upload budget'
     const points = Array.from({ length: 3001 }, (_, index) =>
         `<trkpt lat="${(47 + index * 1e-5).toFixed(5)}" lon="-121"><ele>${index % 500}</ele></trkpt>`).join('');
     const parsed = parseGpxData(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
-    assert.equal(parsed.segments[0].length, 3001);
-    assert.equal(parsed.segments[0][3000].lat, 47.03);
+    assert.equal(parsed.segments[0]!.length, 3001);
+    assert.equal(parsed.segments[0]![3000]!.lat, 47.03);
 });
 
 test('GPX structure rejects segment and waypoint limit plus one before retaining it', () => {
@@ -240,13 +238,13 @@ test('GPX structure rejects segment and waypoint limit plus one before retaining
         .repeat(MAX_GPX_TRACK_SEGMENTS + 1);
     assert.throws(
         () => parseGpxData(`<gpx>${segments}</gpx>`),
-        error => error.code === 'gpx-too-large' && /100,000 track points/.test(error.message),
+        (error: CodedError) => error.code === 'gpx-too-large' && /100,000 track points/.test(error.message),
     );
 
     const waypoints = '<wpt lat="1" lon="2"/>'.repeat(MAX_GPX_WAYPOINTS + 1);
     assert.throws(
         () => parseGpxData(`<gpx>${waypoints}<trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>`),
-        error => error.code === 'gpx-too-large',
+        (error: CodedError) => error.code === 'gpx-too-large',
         'unrequested waypoints are still bounded before the DOM can become a hidden resource sink',
     );
 });
@@ -257,7 +255,7 @@ test('names decode entities and normalize to 200 characters of single-spaced tex
     assert.equal(cleanName(42), '');
     const parsed = parseGpxData(
         '<gpx><trk><name>&lt;Tag&gt; &amp; &quot;quote&quot;</name><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>',
-        { includeTripName: true }
+        { includeTripName: true },
     );
     assert.equal(parsed.trackName, '<Tag> & "quote"');
 });

@@ -1,26 +1,169 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { FixtureDom, builtBundle, type FixtureWindow } from '../helpers/fixture-dom.mts';
+import { waitFor } from '../helpers/fixture-page.mts';
+import { rect } from '../helpers/page-types.mts';
 import { readCompressedGpxFixture } from '../helpers/gpx-fixtures.mts';
 import { suspectSegments, segmentsGpx } from '../helpers/suspect-gpx.mts';
-import { waitFor } from '../helpers/load-page.mts';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The MAIN-world analyzer bundle carries tz-lookup, metrics, basemap, the
 // peak-marker feed, schema, and the analyzer itself.
-const analyzerBundle = await readFile(path.join(root, 'dist', 'content', 'gpx-analyzer.js'), 'utf8');
+const analyzerBundle = await builtBundle('content/gpx-analyzer.js');
 const capitolRegressionGpx =
     await readCompressedGpxFixture('capitol-2021-segment-order.gpx.gz.b64');
-const settingsRevisions = new WeakMap();
-const bridgeSnapshot = (window, settings, detail = {}) => {
-    const revision = (settingsRevisions.get(window) || 0) + 1;
-    settingsRevisions.set(window, revision);
+
+interface BridgeSettings {
+    units?: string;
+    distanceUnits?: string;
+    elevationUnits?: string;
+    temperatureUnits?: string;
+    precipitationUnits?: string;
+    theme?: string;
+    chartDefaultSeries?: string;
+    enable3dMap?: boolean;
+    showSunMoon?: boolean;
+    mapRouteColor?: string;
+    mapRouteWidth?: number;
+    mapRouteCasingColor?: string;
+    mapRouteCasingWidth?: number;
+    mapViewportWidth?: number;
+    mapViewportHeight?: number;
+    rememberMapLayer?: boolean;
+    mapLastLayer?: string;
+}
+
+interface BridgeMessage {
+    __bpb?: boolean;
+    __bpbTerrain?: boolean;
+    dir?: string;
+    kind?: string;
+    type?: string;
+    requestId?: number;
+    ok?: boolean;
+    message?: unknown;
+    patch?: Record<string, unknown>;
+    routeSegments?: unknown[];
+    camera?: { center: number[]; zoom: number };
+    cacheLimitMb?: number;
+    basemap?: Record<string, unknown>;
+    basemaps?: { name: string; [key: string]: unknown }[];
+    coordinates?: number[] | null;
+    series?: string;
+    unavailable?: boolean;
+    peaks?: Record<string, unknown>[];
+    hoverTime?: number | null;
+    hovering?: boolean;
+    selected?: boolean;
+    selectionTime?: number | null;
+    [key: string]: unknown;
+}
+
+interface ChartPointRaw {
+    lat: number;
+    lon: number;
+    ms?: number;
+    rawEleM?: number;
+    distM?: number;
+    sourceIndex?: number;
+    sourcePointId?: string;
+}
+
+interface ChartPoint {
+    x: number;
+    y: number | null;
+    _raw: ChartPointRaw | null;
+}
+
+interface ChartDataset {
+    label: string;
+    hidden?: boolean;
+    _bpbSeries?: string;
+    data: ChartPoint[];
+    pointRadius(context: { raw: ChartPoint }): number;
+}
+
+interface ChartConfig {
+    data: { datasets: ChartDataset[] };
+    options: {
+        animation?: boolean;
+        interaction?: Record<string, unknown>;
+        plugins: { legend: { display: boolean } };
+        scales: {
+            x: { title: { text: string } };
+            y: { title: { text: string } };
+            xTime?: { position?: string; min?: number; max?: number };
+            yDistance?: { title: { text: string } };
+            yRoute?: { display: boolean };
+        };
+        onHover(event: unknown, elements: { datasetIndex: number; index: number }[]): void;
+    };
+}
+
+interface ChartStubInstance {
+    data: ChartConfig['data'];
+    options: ChartConfig['options'];
+    destroy(): void;
+    update?(mode?: string): void;
+    isDatasetVisible?(index: number): boolean;
+    setDatasetVisibility?(index: number, visible: boolean): void;
+}
+
+type AnalyzerWindow = Omit<FixtureWindow, 'Chart'> & {
+    Chart?: new (context: unknown, config: ChartConfig) => ChartStubInstance;
+};
+
+interface FetchStubResponse {
+    ok: boolean;
+    status?: number;
+    url?: string;
+    redirected?: boolean;
+    headers?: Headers;
+    text(): Promise<string>;
+}
+
+const waitForIframe = (frame: HTMLIFrameElement): Promise<void> => {
+    const isReady = () => {
+        try {
+            const doc = frame.contentDocument;
+            return Boolean(doc && doc.readyState === 'complete' && doc.location.href === frame.src);
+        } catch {
+            return false;
+        }
+    };
+    if (isReady()) return Promise.resolve();
+    return new Promise(resolve => {
+        const onLoad = () => {
+            if (!isReady()) return;
+            frame.removeEventListener('load', onLoad);
+            resolve();
+        };
+        frame.addEventListener('load', onLoad);
+    });
+};
+
+const onReparentedIframeLoad = (frame: HTMLIFrameElement, attach: () => void): Promise<void> =>
+    new Promise(resolve => {
+        const onLoad = () => {
+            try {
+                if (frame.contentDocument?.location.href !== frame.src) return;
+            } catch { /* cross-origin or already stubbed */ }
+            frame.removeEventListener('load', onLoad);
+            attach();
+            // Let the analyzer's load listener and its queued microtasks
+            // settle before returning control to the test.
+            setTimeout(resolve, 0);
+        };
+        frame.addEventListener('load', onLoad);
+    });
+
+const settingsRevisions = new WeakMap<object, number>();
+const bridgeSnapshot = (win: object, settings: BridgeSettings, detail: { kind?: string; requestId?: number; ok?: boolean } = {}) => {
+    const revision = (settingsRevisions.get(win) || 0) + 1;
+    settingsRevisions.set(win, revision);
     return {
         __bpb: true,
         dir: 'toPage',
@@ -46,7 +189,7 @@ const gpx = `<?xml version="1.0"?>
 </gpx>`;
 
 test('GPX analyzer adds a thick, segment-preserving route casing behind native Leaflet layers', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = new FixtureDom(`<!doctype html><body>
       <p>
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&d=1&c=900001&hj=0"></iframe><br><br>
         GPS Waypoints - Hover or click to see name and lat/long<br>
@@ -58,14 +201,37 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    const polylineCalls = [];
-    const sentPatches = [];
-    const sentSettingMessages = [];
-    const terrainMessages = [];
-    let chartConfig = null;
+    const win = dom.window as unknown as AnalyzerWindow;
+    const iframe = win.document.querySelector('iframe') as unknown as HTMLIFrameElement;
+    await waitForIframe(iframe);
+
+    interface PolylineLayer {
+        _map: MapStub | null;
+        broughtToBack: boolean;
+        addTo(targetMap: MapStub): this;
+        bringToBack(): this;
+    }
+    interface MapStub {
+        layers: PolylineLayer[];
+        _layers: Record<string, unknown>;
+        invalidateCalls: number;
+        center: { lat: number; lng: number };
+        zoom: number;
+        setViewCalls: { center: number[]; zoom: number; options: Record<string, unknown> }[];
+        hasLayer(layer: unknown): boolean;
+        getCenter(): { lat: number; lng: number };
+        getZoom(): number;
+        setView(center: number[], zoom: number, options: Record<string, unknown>): void;
+        invalidateSize(): void;
+        removeLayer(layer: PolylineLayer): void;
+    }
+
+    const polylineCalls: { latLngs: unknown; options: { color?: string; weight?: number; interactive?: boolean }; layer: PolylineLayer }[] = [];
+    const sentPatches: Record<string, unknown>[] = [];
+    const sentSettingMessages: BridgeMessage[] = [];
+    const terrainMessages: BridgeMessage[] = [];
+    let chartConfig: ChartConfig | null = null;
     const baseTileLayer = {
         _url: 'https://{s}.tile.example.com/{z}/{x}/{y}{r}.png',
         options: {
@@ -73,25 +239,25 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
             tileSize: 256,
             minZoom: 2,
             maxZoom: 17,
-            attribution: '<a href="https://example.com/copyright">© Example Maps</a>'
-        }
+            attribution: '<a href="https://example.com/copyright">© Example Maps</a>',
+        },
     };
     const labelTileLayer = {
         _url: 'https://labels.example.com/{z}/{x}/{y}.png',
-        options: { zIndex: -1, attribution: 'Labels' }
+        options: { zIndex: -1, attribution: 'Labels' },
     };
     // Peakbagger builds basemaps on demand with no per-layer global, so the 3D
     // picker mirrors the #selmap codes via built-in drape specs rather than
     // reading globals; every code below maps to a spec, so all four are offered.
     const calTopoLayer = {
         _url: 'https://ct.example.com/{z}/{x}/{y}.png',
-        options: { minZoom: 3, maxZoom: 16, attribution: 'CalTopo' }
+        options: { minZoom: 3, maxZoom: 16, attribution: 'CalTopo' },
     };
     const openTopoLayer = {
         _url: 'https://ot.example.com/{z}/{x}/{y}.png',
-        options: { attribution: 'OpenTopo' }
+        options: { attribution: 'OpenTopo' },
     };
-    const makeMap = () => ({
+    const makeMap = (): MapStub => ({
         layers: [],
         _layers: { labels: labelTileLayer, base: baseTileLayer },
         invalidateCalls: 0,
@@ -102,7 +268,7 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         getCenter() { return this.center; },
         getZoom() { return this.zoom; },
         setView(center, zoom, options) {
-            this.center = { lat: center[0], lng: center[1] };
+            this.center = { lat: center[0]!, lng: center[1]! };
             this.zoom = zoom;
             this.setViewCalls.push({ center: [...center], zoom, options: { ...options } });
         },
@@ -110,13 +276,13 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         removeLayer(layer) {
             this.layers = this.layers.filter(candidate => candidate !== layer);
             layer._map = null;
-        }
+        },
     });
     const map = makeMap();
     const L = {
         Browser: { retina: false },
-        polyline(latLngs, options) {
-            const layer = {
+        polyline(latLngs: unknown, options: { color?: string; weight?: number; interactive?: boolean }) {
+            const layer: PolylineLayer = {
                 _map: null,
                 broughtToBack: false,
                 addTo(targetMap) {
@@ -127,44 +293,50 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
                 bringToBack() {
                     this.broughtToBack = true;
                     return this;
-                }
+                },
             };
             polylineCalls.push({ latLngs, options, layer });
             return layer;
         },
         circleMarker() {
             throw new Error('hover marker should not be needed to install the route overlay');
-        }
+        },
     };
 
-    const iframe = window.document.querySelector('iframe');
-    const layerSelect = window.document.createElement('select');
+    const layerSelect = win.document.createElement('select');
     layerSelect.id = 'selmap';
     layerSelect.innerHTML = '<option value="L_CT">CalTopo</option><option value="L_MT">MyTopo USA/Canada</option><option value="L_OT">Open Topo Map</option><option value="L_OS">Open Street Map</option>';
     let nativeLayerChanges = 0;
     layerSelect.addEventListener('change', () => { nativeLayerChanges++; });
-    const iframeDocument = { getElementById: id => id === 'selmap' ? layerSelect : null };
-    Object.defineProperty(iframe, 'contentWindow', {
-        configurable: true,
-        value: { mapsPlaceholder: map, L, L_CT: calTopoLayer, L_MT: baseTileLayer, L_OT: openTopoLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
+    const iframeDocument = { getElementById: (id: string) => id === 'selmap' ? layerSelect : null };
+    // Wrapping the iframe into #bpb-map-viewport reloads it in a real browser;
+    // attach Leaflet globals on that settled load before the analyzer's load
+    // listener inspects it, matching how MasterMap.aspx initializes.
+    const reparentLoaded = onReparentedIframeLoad(iframe, () => {
+        Object.defineProperty(iframe, 'contentWindow', {
+            configurable: true,
+            value: { mapsPlaceholder: map, L, L_CT: calTopoLayer, L_MT: baseTileLayer, L_OT: openTopoLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } },
+        });
     });
 
-    window.matchMedia = () => ({ matches: false });
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    const peakFeedRequests = [];
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    const peakFeedRequests: string[] = [];
     const peakFeedXml = '<?xml version=\'1.0\' encoding=\'UTF-8\'?><ts>'
         + '<t i="58603" n="Iron Mountain" a="48.72" o="-121.79" c="1" r="246"/>'
         + '<t i="-114297" n="Peak 5000 (Prov)" a="48.74" o="-121.82" c="2" r="10"/>'
         + '</ts>';
-    window.fetch = async url => {
+    (win as unknown as { fetch: (url: string) => Promise<FetchStubResponse> }).fetch = async url => {
         if (String(url).includes('/Async/PLLBB.aspx')) {
             peakFeedRequests.push(String(url));
             return { ok: true, text: async () => peakFeedXml };
         }
         return { ok: true, text: async () => gpx };
     };
-    window.Chart = class ChartStub {
-        constructor(context, config) {
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        constructor(_context: unknown, config: ChartConfig) {
             chartConfig = config;
             this.data = config.data;
             this.options = config.options;
@@ -175,28 +347,28 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         isDatasetVisible() { return true; }
     };
 
-    const sendSettings = settings => window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: bridgeSnapshot(window, settings)
+    const sendSettings = (settings: BridgeSettings) => win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: bridgeSnapshot(win, settings),
     })));
-    const confirmSetting = (message, settings) => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: bridgeSnapshot(window, settings, {
+    const confirmSetting = (message: BridgeMessage, settings: BridgeSettings) => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: bridgeSnapshot(win, settings, {
             kind: 'setResult',
             requestId: message.requestId,
             ok: true,
-        })
+        }),
     }));
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         if (message && message.__bpbTerrain === true) {
             terrainMessages.push(message);
             return;
         }
         if (!message || message.dir !== 'toCS') return;
         if (message.kind === 'set') {
-            sentPatches.push(message.patch);
+            sentPatches.push(message.patch!);
             sentSettingMessages.push(message);
             return;
         }
@@ -204,25 +376,26 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    await reparentLoaded;
     await waitFor(dom, () => polylineCalls.length === 2);
 
-    const analysis = window.document.getElementById('bpb-gpx-analysis');
-    const fullScreenMapLink = window.document.querySelector('a[href*="BigMap.aspx"]');
-    const routeExplorer = window.document.getElementById('bpb-route-explorer');
-    const mapColumn = window.document.querySelector('.bpb-route-explorer__map-column');
-    const mapDetails = window.document.querySelector('.bpb-route-explorer__map-details');
+    const analysis = win.document.getElementById('bpb-gpx-analysis');
+    const fullScreenMapLink = win.document.querySelector('a[href*="BigMap.aspx"]');
+    const routeExplorer = win.document.getElementById('bpb-route-explorer');
+    const mapColumn = win.document.querySelector('.bpb-route-explorer__map-column');
+    const mapDetails = win.document.querySelector('.bpb-route-explorer__map-details');
     assert.ok(analysis, 'the analysis panel should be added');
-    assert.ok(iframe.compareDocumentPosition(analysis) & window.Node.DOCUMENT_POSITION_FOLLOWING,
+    assert.ok(iframe.compareDocumentPosition(analysis) & win.Node.DOCUMENT_POSITION_FOLLOWING,
         'the analysis should render below the map');
     assert.equal(routeExplorer.getAttribute('role'), 'region');
     assert.equal(routeExplorer.getAttribute('aria-label'), 'Route explorer');
     assert.deepEqual(Array.from(routeExplorer.children, child => child.id || child.className), [
-        'bpb-route-explorer__map-column', 'bpb-gpx-analysis'
+        'bpb-route-explorer__map-column', 'bpb-gpx-analysis',
     ]);
     assert.deepEqual(Array.from(mapColumn.children, child => child.id || child.className), [
-        'bpb-map-viewport', 'bpb-route-explorer__map-details'
+        'bpb-map-viewport', 'bpb-route-explorer__map-details',
     ]);
     assert.equal(fullScreenMapLink.parentElement, mapDetails,
         'the native map details and Full Screen link stay associated with the map');
@@ -231,20 +404,20 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         'legacy iframe spacer breaks do not become blank lines inside the block details wrapper');
     assert.match(mapDetails.firstChild?.textContent || '', /^\s*GPS Waypoints/,
         'the first visible details line follows the compact resize rail directly');
-    assert.equal(window.document.querySelector('a[href$="demo.gpx"]').closest('#bpb-route-explorer'), null,
+    assert.equal(win.document.querySelector('a[href$="demo.gpx"]').closest('#bpb-route-explorer'), null,
         'the GPX download stays in the page flow rather than being mistaken for map metadata');
 
-    const unitSelect = window.document.getElementById('bpb-gpx-units');
+    const unitSelect = win.document.getElementById('bpb-gpx-units') as unknown as HTMLSelectElement;
     assert.equal(unitSelect.getAttribute('aria-label'), 'Distance and elevation');
     assert.deepEqual(Array.from(unitSelect.options, option => [option.value, option.textContent]), [
         ['default', 'Default units'],
         ['imperial', 'mi / ft'],
         ['metric', 'km / m'],
-        ['custom', 'Custom']
+        ['custom', 'Custom'],
     ]);
     assert.equal(unitSelect.value, 'default', 'legacy users inherit their explicit global default');
-    const compactControls = analysis.querySelector('.bpb-gpx-controls');
-    const routeStyleControls = analysis.querySelector('.bpb-gpx-route-style-controls');
+    const compactControls = analysis.querySelector('.bpb-gpx-controls') as HTMLElement;
+    const routeStyleControls = analysis.querySelector('.bpb-gpx-route-style-controls') as HTMLElement;
     assert.equal(compactControls.style.flexWrap, 'wrap');
     assert.equal(compactControls.style.flexDirection, '');
     assert.equal(routeStyleControls.style.marginTop, '',
@@ -253,43 +426,43 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
     await waitFor(dom, () => unitSelect.value === 'default' && /\bkm\b/.test(analysis.textContent));
-    assert.equal(chartConfig.options.scales.x.title.text, 'Distance (km)',
+    assert.equal(chartConfig!.options.scales.x.title.text, 'Distance (km)',
         'Auto remains selected while calculations resolve against the metric page');
 
     unitSelect.value = 'imperial';
-    unitSelect.dispatchEvent(new window.Event('change'));
+    unitSelect.dispatchEvent(new win.Event('change'));
     assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'imperial' });
     assert.match(analysis.textContent, /miles\b/);
-    confirmSetting(sentSettingMessages.at(-1), {
-        units: 'auto', distanceUnits: 'imperial', elevationUnits: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    confirmSetting(sentSettingMessages.at(-1)!, {
+        units: 'auto', distanceUnits: 'imperial', elevationUnits: 'imperial', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true,
     });
 
     unitSelect.value = 'metric';
-    unitSelect.dispatchEvent(new window.Event('change'));
+    unitSelect.dispatchEvent(new win.Event('change'));
     assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'metric' });
     assert.match(analysis.textContent, /\bkm\b/);
-    confirmSetting(sentSettingMessages.at(-1), {
-        units: 'auto', distanceUnits: 'metric', elevationUnits: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    confirmSetting(sentSettingMessages.at(-1)!, {
+        units: 'auto', distanceUnits: 'metric', elevationUnits: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true,
     });
 
     unitSelect.value = 'default';
-    unitSelect.dispatchEvent(new window.Event('change'));
+    unitSelect.dispatchEvent(new win.Event('change'));
     assert.deepEqual(JSON.parse(JSON.stringify(sentPatches.at(-1))), { units: 'default' },
         'returning to the default removes only the track overrides');
     assert.equal(unitSelect.value, 'default');
     assert.match(analysis.textContent, /\bkm\b/);
-    confirmSetting(sentSettingMessages.at(-1), {
-        units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true
+    confirmSetting(sentSettingMessages.at(-1)!, {
+        units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true,
     });
     sendSettings({ units: 'imperial', distanceUnits: 'metric', elevationUnits: 'imperial', temperatureUnits: 'metric', precipitationUnits: 'metric', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
     await waitFor(dom, () => unitSelect.value === 'custom');
-    assert.equal(chartConfig.options.scales.x.title.text, 'Distance (km)');
-    assert.equal(chartConfig.options.scales.y.title.text, 'Elevation (ft)');
-    assert.equal(unitSelect.querySelector('[value="custom"]').disabled, true);
+    assert.equal(chartConfig!.options.scales.x.title.text, 'Distance (km)');
+    assert.equal(chartConfig!.options.scales.y.title.text, 'Elevation (ft)');
+    assert.equal((unitSelect.querySelector('[value="custom"]') as HTMLOptionElement).disabled, true);
     sendSettings({ units: 'auto', theme: 'light', chartDefaultSeries: 'time', enable3dMap: true });
 
-    const mapViewport = window.document.getElementById('bpb-map-viewport');
-    const mapResizeHandle = window.document.getElementById('bpb-map-resize-handle');
+    const mapViewport = win.document.getElementById('bpb-map-viewport');
+    const mapResizeHandle = win.document.getElementById('bpb-map-resize-handle');
     assert.equal(mapViewport.style.width, '450px');
     assert.equal(mapViewport.style.maxWidth, '100%');
     assert.equal(mapViewport.style.height, '466px');
@@ -298,44 +471,44 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     await waitFor(dom, () => map.invalidateCalls > 0);
 
     layerSelect.value = 'L_MT';
-    layerSelect.dispatchEvent(new window.Event('change'));
-    await new Promise(resolve => window.setTimeout(resolve, 0));
-    assert.equal(sentPatches.some(patch => patch.mapLastLayer), false,
+    layerSelect.dispatchEvent(new win.Event('change'));
+    await new Promise(resolve => win.setTimeout(resolve, 0));
+    assert.equal(sentPatches.some(patch => Boolean(patch.mapLastLayer)), false,
         'the native layer control should remain unpersisted while the setting is off');
 
     const calls = polylineCalls.map(call => ({
         latLngs: JSON.parse(JSON.stringify(call.latLngs)),
         options: call.options,
-        broughtToBack: call.layer.broughtToBack
+        broughtToBack: call.layer.broughtToBack,
     }));
 
     const expectedSegments = [
         [[48.7, -121.8], [48.71, -121.81]],
-        [[48.75, -121.82], [48.76, -121.815]]
+        [[48.75, -121.82], [48.76, -121.815]],
     ];
     assert.deepEqual(calls.map(call => call.latLngs), [expectedSegments, expectedSegments],
         'the outline and route should receive the original segments without bridging the gap');
     assert.deepEqual(calls.map(call => [call.options.color, call.options.weight]), [
         ['#ffffff', 9],
-        ['#d9483b', 5]
+        ['#d9483b', 5],
     ]);
     assert.ok(calls.every(call => call.options.interactive === false));
     assert.ok(calls.every(call => call.broughtToBack));
 
-    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
-    const terrainCompass = window.document.getElementById('bpb-terrain-compass');
-    const terrainCompassDisc = terrainCompass.querySelector('.bpb-map-compass-disc');
+    const terrainToggle = win.document.getElementById('bpb-terrain-toggle');
+    const terrainCompass = win.document.getElementById('bpb-terrain-compass');
+    const terrainCompassDisc = terrainCompass.querySelector('.bpb-map-compass-disc') as HTMLElement;
     assert.equal(terrainToggle.disabled, false);
     assert.equal(terrainCompass.hidden, true, 'the analyzer compass stays hidden in 2D and while loading');
-    assert.equal(window.document.getElementById('bpb-terrain-disclosure'), null);
+    assert.equal(win.document.getElementById('bpb-terrain-disclosure'), null);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
-    assert.equal(window.document.getElementById('bpb-terrain-message').textContent, '',
+    assert.equal(win.document.getElementById('bpb-terrain-message').textContent, '',
         'the toggle button is the only loading cue; no separate loading banner');
-    assert.equal(window.document.getElementById('bpb-terrain-message').style.display, 'none');
+    assert.equal(win.document.getElementById('bpb-terrain-message').style.display, 'none');
     assert.equal(terrainToggle.disabled, false, 'the loading state remains cancelable');
     assert.equal(terrainToggle.getAttribute('aria-label'), 'Cancel loading 3D terrain');
-    const terrainInit = terrainMessages.find(message => message.type === 'init');
+    const terrainInit = terrainMessages.find(message => message.type === 'init')!;
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.routeSegments)), expectedSegments);
     assert.deepEqual(Object.keys(terrainInit).sort(), ['__bpbTerrain', 'basemap', 'basemaps', 'cacheLimitMb', 'camera', 'dir', 'routeSegments', 'routeStyle', 'theme', 'type']);
     assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.camera)), { center: [48.72, -121.79], zoom: 14 });
@@ -350,13 +523,13 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         maxzoom: 16,
         scheme: 'xyz',
         thriftyLod: false,
-        attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>'
+        attribution: '&copy; <a href="https://mytopo.com" target="_blank" rel="noopener noreferrer">MyTopo</a>',
     });
     // The picker mirrors the full native #selmap menu of drape-able layers,
     // not just the one active layer — the core of the multi-layer picker fix.
-    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps.map(basemap => basemap.name))),
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps!.map(basemap => basemap.name))),
         ['CalTopo', 'MyTopo USA/Canada', 'Open Topo Map', 'Open Street Map']);
-    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps[3])), {
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainInit.basemaps![3])), {
         name: 'Open Street Map',
         tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
         tileSize: 256,
@@ -364,21 +537,21 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
         maxzoom: 18,
         scheme: 'xyz',
         thriftyLod: false,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors'
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
     });
     assert.equal(JSON.stringify(terrainInit).includes('<gpx'), false);
     assert.equal(JSON.stringify(terrainInit).includes('2026-07-10'), false);
 
     terrainToggle.click();
-    assert.equal(terrainMessages.at(-1).type, 'destroy', 'clicking the loading toggle cancels the frame boot');
+    assert.equal(terrainMessages.at(-1)!.type, 'destroy', 'clicking the loading toggle cancels the frame boot');
     assert.equal(terrainToggle.textContent, '3D');
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === 2);
 
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' },
     }));
     assert.equal(iframe.style.visibility, 'hidden');
     assert.equal(iframe.getAttribute('aria-hidden'), 'true');
@@ -386,157 +559,157 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     assert.equal(terrainToggle.getAttribute('aria-pressed'), 'true');
     assert.equal(terrainCompass.hidden, false, 'the analyzer exposes the same north-reset affordance once 3D is active');
     assert.equal(terrainCompass.dataset.theme, 'light');
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 30, pitch: 55 }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'view', bearing: 30, pitch: 55 },
     }));
     assert.equal(terrainCompassDisc.style.transform, 'rotateX(55deg) rotateZ(-30deg)');
-    const solarNorth = window.document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
+    const solarNorth = win.document.querySelector('.bpb-sun-calculator [data-azimuth="0"]');
     await waitFor(dom, () => /rotate\(-30deg\)/.test(solarNorth.style.transform));
     terrainCompass.click();
-    assert.equal(terrainMessages.at(-1).type, 'resetNorth');
+    assert.equal(terrainMessages.at(-1)!.type, 'resetNorth');
     // The floating toggle overlays the map, not the panel below it.
-    assert.equal(terrainToggle.parentElement.id, 'bpb-map-viewport');
+    assert.equal(terrainToggle.parentElement!.id, 'bpb-map-viewport');
 
-    assert.equal(chartConfig.data.datasets[0].hidden, true);
-    assert.equal(chartConfig.data.datasets[1].hidden, false);
-    chartConfig.options.onHover(null, [{ datasetIndex: 1, index: 0 }]);
+    assert.equal(chartConfig!.data.datasets[0]!.hidden, true);
+    assert.equal(chartConfig!.data.datasets[1]!.hidden, false);
+    chartConfig!.options.onHover(null, [{ datasetIndex: 1, index: 0 }]);
     assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1))), {
         __bpbTerrain: true,
         dir: 'toCS',
         type: 'highlight',
         coordinates: [-121.8, 48.7],
-        series: 'time'
+        series: 'time',
     }, 'hovering the blue time series identifies it to the 3D chaser');
 
     // The frame asks for peak dots; the analyzer serves them from the same
     // PLLBB feed the native map uses, parameterized from the iframe URL.
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpbTerrain: true, dir: 'toPage', type: 'peaksRequest',
-            requestId: 1, bounds: { miny: 48.65, maxy: 48.8, minx: -121.9, maxx: -121.7 }
-        }
+            requestId: 1, bounds: { miny: 48.65, maxy: 48.8, minx: -121.9, maxx: -121.7 },
+        },
     }));
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'peaks'));
     assert.deepEqual(peakFeedRequests, [
-        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=48.65&maxy=48.8&minx=-121.9&maxx=-121.7&t=A&cid=900001'
+        'https://www.peakbagger.com/Async/PLLBB.aspx?miny=48.65&maxy=48.8&minx=-121.9&maxx=-121.7&t=A&cid=900001',
     ], 'the feed request mirrors the native query: type and climber id, no pid on ascent maps');
-    const peaksReply = terrainMessages.find(message => message.type === 'peaks');
+    const peaksReply = terrainMessages.find(message => message.type === 'peaks')!;
     assert.equal(peaksReply.requestId, 1);
     assert.notEqual(peaksReply.unavailable, true);
     assert.deepEqual(JSON.parse(JSON.stringify(peaksReply.peaks)), [
         { id: 58603, name: 'Iron Mountain', lat: 48.72, lon: -121.79, state: 'climbed' },
-        { id: -114297, name: 'Peak 5000 (Prov)', lat: 48.74, lon: -121.82, state: 'unknown' }
+        { id: -114297, name: 'Peak 5000 (Prov)', lat: 48.74, lon: -121.82, state: 'unknown' },
     ]);
 
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpbTerrain: true,
             dir: 'toPage',
             type: 'camera',
-            camera: { center: [48.8, -121.7], zoom: 13.75 }
-        }
+            camera: { center: [48.8, -121.7], zoom: 13.75 },
+        },
     }));
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: false });
-    await waitFor(dom, () => terrainMessages.at(-1).type === 'cameraRequest');
-    const cameraRequestId = terrainMessages.at(-1).requestId;
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    await waitFor(dom, () => terrainMessages.at(-1)!.type === 'cameraRequest');
+    const cameraRequestId = terrainMessages.at(-1)!.requestId;
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpbTerrain: true,
             dir: 'toPage',
             type: 'camera',
             requestId: cameraRequestId,
-            camera: { center: [48.8, -121.7], zoom: 13.75 }
-        }
+            camera: { center: [48.8, -121.7], zoom: 13.75 },
+        },
     }));
-    await waitFor(dom, () => terrainMessages.at(-1).type === 'destroy');
+    await waitFor(dom, () => terrainMessages.at(-1)!.type === 'destroy');
     assert.deepEqual(JSON.parse(JSON.stringify(map.setViewCalls)), [{
         center: [48.8, -121.7],
         zoom: 14.75,
-        options: { animate: false }
+        options: { animate: false },
     }], 'the current terrain camera is applied before the native ascent map returns');
     assert.equal(terrainToggle.hidden, false, 'the 3D entry point stays visible while the feature is off');
     assert.equal(terrainToggle.disabled, false);
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(iframe.hasAttribute('aria-hidden'), false);
-    assert.equal(terrainMessages.at(-1).type, 'destroy');
+    assert.equal(terrainMessages.at(-1)!.type, 'destroy');
     assert.equal(terrainToggle.textContent, '3D');
     assert.equal(terrainCompass.hidden, true, 'the compass hides as soon as the analyzer returns to 2D');
     await waitFor(dom, () => /rotate\(0deg\)/.test(solarNorth.style.transform));
 
     const initCountBeforeConsent = terrainMessages.filter(message => message.type === 'init').length;
     terrainToggle.click();
-    assert.equal(terrainMessages.at(-1).type, 'requestConsent');
+    assert.equal(terrainMessages.at(-1)!.type, 'requestConsent');
     assert.equal(terrainMessages.filter(message => message.type === 'init').length, initCountBeforeConsent,
         'clicking while disabled must request confirmation, not start external tile requests');
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: false }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'consentResult', enabled: false },
     }));
 
     sendSettings({ units: 'imperial', theme: 'light', chartDefaultSeries: 'both', enable3dMap: true });
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.filter(message => message.type === 'init').length === initCountBeforeConsent + 1);
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' },
     }));
     assert.equal(iframe.style.visibility, 'hidden');
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'error', reason: 'maplibre' },
     }));
     assert.equal(iframe.style.visibility, 'visible');
     assert.equal(terrainToggle.textContent, '3D');
-    assert.match(window.document.getElementById('bpb-terrain-message').textContent, /could not render 3D terrain/);
+    assert.match(win.document.getElementById('bpb-terrain-message').textContent, /could not render 3D terrain/);
 
     sendSettings({
         units: 'imperial', theme: 'light', chartDefaultSeries: 'both',
         mapRouteColor: '#2457a7', mapRouteWidth: 7,
         mapRouteCasingColor: '#f1eadc', mapRouteCasingWidth: 13,
         mapViewportWidth: 700, mapViewportHeight: 600,
-        rememberMapLayer: true, mapLastLayer: 'L_OT', enable3dMap: true
+        rememberMapLayer: true, mapLastLayer: 'L_OT', enable3dMap: true,
     });
     await waitFor(dom, () => polylineCalls.length === 4);
     await waitFor(dom, () => layerSelect.value === 'L_OT');
     assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
         ['#f1eadc', 13],
-        ['#2457a7', 7]
+        ['#2457a7', 7],
     ]);
     assert.equal(mapViewport.style.width, '700px');
     assert.equal(mapViewport.style.height, '616px');
     assert.ok(nativeLayerChanges >= 2, 'the saved layer should be applied through the native change handler');
 
     layerSelect.value = 'L_OS';
-    layerSelect.dispatchEvent(new window.Event('change'));
-    assert.equal(sentPatches.at(-1).mapLastLayer, 'L_OS');
+    layerSelect.dispatchEvent(new win.Event('change'));
+    assert.equal(sentPatches.at(-1)!.mapLastLayer, 'L_OS');
     assert.equal(polylineCalls.length, 4, 'changing the native basemap should not rebuild the route overlay');
 
-    mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    mapResizeHandle.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown' }));
     assert.equal(mapViewport.style.height, '626px');
-    mapResizeHandle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowDown' }));
+    mapResizeHandle.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowDown' }));
     assert.equal(mapViewport.style.height, '636px');
     assert.equal(sentPatches.some(patch => 'mapViewportHeight' in patch), false,
         'keyboard resize must not persist on every keystroke');
     await waitFor(dom, () => sentPatches.some(patch => 'mapViewportHeight' in patch));
     assert.equal(sentPatches.filter(patch => 'mapViewportHeight' in patch).length, 1,
         'repeated keystrokes should persist once, after the last step');
-    assert.equal(sentPatches.at(-1).mapViewportHeight, 620);
+    assert.equal(sentPatches.at(-1)!.mapViewportHeight, 620);
 
-    routeExplorer.getBoundingClientRect = () => ({ left: 0, right: 800, width: 800 });
-    mapViewport.getBoundingClientRect = () => ({ left: 80, right: 720, width: 640 });
-    const dispatchPointer = (type, values) => {
-        const event = new window.Event(type, { bubbles: true, cancelable: true });
+    routeExplorer.getBoundingClientRect = () => rect({ left: 0, right: 800, width: 800 });
+    mapViewport.getBoundingClientRect = () => rect({ left: 80, right: 720, width: 640 });
+    const dispatchPointer = (type: string, values: Record<string, unknown>) => {
+        const event = new win.Event(type, { bubbles: true, cancelable: true });
         Object.defineProperties(event, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, { value }])));
         mapResizeHandle.dispatchEvent(event);
     };
@@ -545,29 +718,29 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     dispatchPointer('pointerup', { pointerId: 1 });
     assert.equal(mapViewport.style.width, '800px');
     assert.equal(mapViewport.style.height, '686px');
-    assert.equal(sentPatches.at(-1).mapViewportWidth, 800);
-    assert.equal(sentPatches.at(-1).mapViewportHeight, 670);
+    assert.equal(sentPatches.at(-1)!.mapViewportWidth, 800);
+    assert.equal(sentPatches.at(-1)!.mapViewportHeight, 670);
 
-    const routeColor = window.document.getElementById('bpb-map-route-color');
-    const casingColor = window.document.getElementById('bpb-map-route-casing-color');
+    const routeColor = win.document.getElementById('bpb-map-route-color');
+    const casingColor = win.document.getElementById('bpb-map-route-casing-color');
     assert.equal(routeColor.value, '#2457a7');
     assert.equal(casingColor.value, '#f1eadc');
-    assert.equal(casingColor.previousElementSibling.textContent, 'Outline');
+    assert.equal(casingColor.previousElementSibling!.textContent, 'Outline');
     assert.equal(casingColor.getAttribute('aria-label'), 'Outline color');
 
     routeColor.value = '#347a3f';
-    routeColor.dispatchEvent(new window.Event('change'));
+    routeColor.dispatchEvent(new win.Event('change'));
     await waitFor(dom, () => polylineCalls.length === 6);
-    assert.equal(sentPatches.at(-1).mapRouteColor, '#347a3f');
+    assert.equal(sentPatches.at(-1)!.mapRouteColor, '#347a3f');
     assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
         ['#f1eadc', 13],
-        ['#347a3f', 7]
+        ['#347a3f', 7],
     ]);
 
-    const failedColorWrite = sentSettingMessages.at(-1);
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    const failedColorWrite = sentSettingMessages.at(-1)!;
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpb: true,
             dir: 'toPage',
@@ -575,36 +748,36 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
             requestId: failedColorWrite.requestId,
             ok: false,
             message: 'Settings couldn’t be saved. Try again.',
-        }
+        },
     }));
     await waitFor(dom, () => routeColor.value === '#2457a7');
     assert.deepEqual(polylineCalls.slice(-2).map(call => [call.options.color, call.options.weight]), [
         ['#f1eadc', 13],
-        ['#2457a7', 7]
+        ['#2457a7', 7],
     ], 'a failed bridge write must roll the optimistic route color back');
 
     // ...and it says so, rather than rolling back in silence.
-    const panelMessage = window.document.getElementById('bpb-terrain-message');
+    const panelMessage = win.document.getElementById('bpb-terrain-message');
     assert.equal(panelMessage.textContent, 'Settings couldn’t be saved. Try again.');
     assert.equal(panelMessage.style.display, 'block');
     assert.equal(panelMessage.getAttribute('role'), 'status');
 
     // A malformed message from the bridge never reaches the DOM verbatim. Uses
     // the units dropdown, which does not rebuild the route overlay.
-    const unitsForFailure = window.document.getElementById('bpb-gpx-units');
+    const unitsForFailure = win.document.getElementById('bpb-gpx-units');
     unitsForFailure.value = unitsForFailure.value === 'metric' ? 'imperial' : 'metric';
-    unitsForFailure.dispatchEvent(new window.Event('change'));
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    unitsForFailure.dispatchEvent(new win.Event('change'));
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpb: true,
             dir: 'toPage',
             kind: 'setResult',
-            requestId: sentSettingMessages.at(-1).requestId,
+            requestId: sentSettingMessages.at(-1)!.requestId,
             ok: false,
             message: { toString: () => 'not a string' },
-        }
+        },
     }));
     await waitFor(dom, () => panelMessage.textContent === 'That setting couldn’t be saved.');
     assert.equal(panelMessage.textContent, 'That setting couldn’t be saved.');
@@ -612,9 +785,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
     const reloadedMap = makeMap();
     Object.defineProperty(iframe, 'contentWindow', {
         configurable: true,
-        value: { mapsPlaceholder: reloadedMap, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } }
+        value: { mapsPlaceholder: reloadedMap, L, L_MT: baseTileLayer, document: iframeDocument, location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' } },
     });
-    iframe.dispatchEvent(new window.Event('load'));
+    iframe.dispatchEvent(new win.Event('load'));
     await waitFor(dom, () => polylineCalls.length === 10);
 
     assert.equal(map.layers.length, 0, 'layers from the discarded map should be removed');
@@ -635,44 +808,47 @@ const loadOvernightAnalyzer = async ({ forceTimeZoneFailure = false, elevations 
         + `<time>2026-07-10T${String(5 + index).padStart(2, '0')}:00:00Z</time></trkpt>`).join('\n');
     const overnightGpx = `<?xml version="1.0"?><gpx version="1.1"><trk><trkseg>${points}</trkseg></trk></gpx>`;
 
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = new FixtureDom(`<!doctype html><body>
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    window.matchMedia = () => ({ matches: false });
+    const win = dom.window as unknown as AnalyzerWindow;
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
     if (forceTimeZoneFailure) {
-        const NativeDateTimeFormat = window.Intl.DateTimeFormat;
-        window.Intl.DateTimeFormat = function DateTimeFormat(locales, options) {
+        const NativeDateTimeFormat = win.Intl.DateTimeFormat;
+        const WrappedDateTimeFormat = function DateTimeFormat(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
             if (options?.timeZone) throw new RangeError('unsupported test timezone');
             return new NativeDateTimeFormat(locales, options);
         };
-        window.Intl.DateTimeFormat.prototype = NativeDateTimeFormat.prototype;
+        WrappedDateTimeFormat.prototype = NativeDateTimeFormat.prototype;
+        (win.Intl as unknown as { DateTimeFormat: typeof Intl.DateTimeFormat }).DateTimeFormat =
+            WrappedDateTimeFormat as unknown as typeof Intl.DateTimeFormat;
     }
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async () => ({ ok: true, text: async () => overnightGpx });
-    window.Chart = class ChartStub {
-        constructor(context, config) {
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    (win as unknown as { fetch: () => Promise<FetchStubResponse> }).fetch = async () => ({ ok: true, text: async () => overnightGpx });
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        constructor(_context: unknown, config: ChartConfig) {
             this.data = config.data;
             this.options = config.options;
         }
         destroy() {}
     };
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window,
-            origin: window.location.origin,
-            data: bridgeSnapshot(window, { units: 'imperial', theme: 'light' })
+        win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+            source: win as unknown as Window,
+            origin: win.location.origin,
+            data: bridgeSnapshot(win, { units: 'imperial', theme: 'light' }),
         })));
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
-    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    const analysisText = () => win.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     await waitFor(dom, () => analysisText().includes('Possible Camping'));
     return { dom, analysisText };
 };
@@ -683,7 +859,7 @@ test('a local write is not handed back to the subscriber as an external change',
     // The client owns that snapshot now; this pins the behaviour it protects —
     // writing the unit preference must not make an unrelated later change look
     // like it also touched units and rebuild the route overlay for nothing.
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = new FixtureDom(`<!doctype html><body>
       <p>
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14"></iframe><br>
         GPS Waypoints - Hover or click to see name and lat/long<br>
@@ -694,74 +870,102 @@ test('a local write is not handed back to the subscriber as an external change',
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    const polylineCalls = [];
-    const sentMessages = [];
-    const map = {
+    const win = dom.window as unknown as AnalyzerWindow;
+    const iframe = win.document.querySelector('iframe') as unknown as HTMLIFrameElement;
+    await waitForIframe(iframe);
+
+    interface SimpleLayer { _map: SimpleMap | null; addTo(target: SimpleMap): this; bringToBack(): this; }
+    interface SimpleMap {
+        layers: SimpleLayer[];
+        _layers: Record<string, unknown>;
+        hasLayer(): boolean;
+        getCenter(): { lat: number; lng: number };
+        getZoom(): number;
+        setView(): void;
+        invalidateSize(): void;
+        removeLayer(layer: SimpleLayer): void;
+    }
+
+    const polylineCalls: { latLngs: unknown; options: Record<string, unknown>; layer: SimpleLayer }[] = [];
+    const sentMessages: BridgeMessage[] = [];
+    const map: SimpleMap = {
         layers: [], _layers: {}, hasLayer: () => false,
         getCenter: () => ({ lat: 48.72, lng: -121.79 }), getZoom: () => 15,
         setView() {}, invalidateSize() {},
-        removeLayer(layer) { this.layers = this.layers.filter(l => l !== layer); }
+        removeLayer(layer) { this.layers = this.layers.filter(l => l !== layer); },
     };
     const L = {
         Browser: { retina: false },
-        polyline(latLngs, options) {
-            const layer = {
+        polyline(latLngs: unknown, options: Record<string, unknown>) {
+            const layer: SimpleLayer = {
                 _map: null,
                 addTo(target) { this._map = target; target.layers.push(this); return this; },
-                bringToBack() { return this; }
+                bringToBack() { return this; },
             };
             polylineCalls.push({ latLngs, options, layer });
             return layer;
         },
-        circleMarker() { throw new Error('not needed'); }
+        circleMarker() { throw new Error('not needed'); },
     };
-    Object.defineProperty(window.document.querySelector('iframe'), 'contentWindow', {
-        configurable: true,
-        value: {
-            mapsPlaceholder: map, L,
-            document: { getElementById: () => null },
-            location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
-        }
+    const reparentLoaded = onReparentedIframeLoad(iframe, () => {
+        Object.defineProperty(iframe, 'contentWindow', {
+            configurable: true,
+            value: {
+                mapsPlaceholder: map, L,
+                document: { getElementById: () => null },
+                location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' },
+            },
+        });
     });
-    window.matchMedia = () => ({ matches: false });
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async url => ({
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    (win as unknown as { fetch: (url: string) => Promise<FetchStubResponse> }).fetch = async url => ({
         ok: true,
-        text: async () => (String(url).includes('/Async/PLLBB.aspx') ? '<ts></ts>' : gpx)
+        text: async () => (String(url).includes('/Async/PLLBB.aspx') ? '<ts></ts>' : gpx),
     });
-    window.Chart = class ChartStub { destroy() {} update() {} setDatasetVisibility() {} isDatasetVisible() { return true; } };
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        constructor(_context: unknown, config: ChartConfig) {
+            this.data = config.data;
+            this.options = config.options;
+        }
+        destroy() {}
+        update() {}
+        setDatasetVisibility() {}
+        isDatasetVisible() { return true; }
+    };
 
-    let current = { units: 'metric', theme: 'light', mapRouteColor: '#2457a7', enable3dMap: false };
-    const push = settings => window.dispatchEvent(new window.MessageEvent('message', {
-        source: window, origin: window.location.origin,
-        data: bridgeSnapshot(window, settings)
+    let current: BridgeSettings = { units: 'metric', theme: 'light', mapRouteColor: '#2457a7', enable3dMap: false };
+    const push = (settings: BridgeSettings) => win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window, origin: win.location.origin,
+        data: bridgeSnapshot(win, settings),
     }));
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         if (!message || message.dir !== 'toCS') return;
-        if (message.kind === 'get') { window.queueMicrotask(() => push(current)); return; }
+        if (message.kind === 'get') { win.queueMicrotask(() => push(current)); return; }
         if (message.kind !== 'set') return;
         sentMessages.push(message);
-        current = { ...current, ...message.patch };
+        current = { ...current, ...(message.patch as BridgeSettings) };
         // Confirm the write the way the bridge does.
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window, origin: window.location.origin,
-            data: bridgeSnapshot(window, current, {
+        win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+            source: win as unknown as Window, origin: win.location.origin,
+            data: bridgeSnapshot(win, current, {
                 kind: 'setResult', requestId: message.requestId, ok: true,
-            })
+            }),
         })));
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    await reparentLoaded;
     await waitFor(dom, () => polylineCalls.length >= 2);
 
     // A local write of an analyzer-owned setting.
-    const unitSelect = window.document.getElementById('bpb-gpx-units');
+    const unitSelect = win.document.getElementById('bpb-gpx-units');
     unitSelect.value = 'imperial';
-    unitSelect.dispatchEvent(new window.Event('change'));
+    unitSelect.dispatchEvent(new win.Event('change'));
     await new Promise(resolve => setTimeout(resolve, 40));
     const afterLocalWrite = polylineCalls.length;
 
@@ -781,7 +985,7 @@ test('a local write is not handed back to the subscriber as an external change',
 });
 
 test('a late or replaced map frame atomically receives every analyzer map feature', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = new FixtureDom(`<!doctype html><body>
       <p>
         GPS Waypoints - Hover or click to see name and lat/long<br>
         <a href="https://www.peakbagger.com/map/BigMap.aspx">Click Here for a Full Screen Map</a><br>
@@ -791,28 +995,50 @@ test('a late or replaced map frame atomically receives every analyzer map featur
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    const polylineCalls = [];
-    const markerCalls = [];
-    const terrainMessages = [];
-    const peakFeedRequests = [];
-    let chartConfig = null;
-    window.matchMedia = () => ({ matches: false });
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async url => {
+    const win = dom.window as unknown as AnalyzerWindow;
+
+    interface FrameLayer { _map: FrameMap | null; addTo(target: FrameMap): this; bringToBack?(): this; }
+    interface HoverMarker extends FrameLayer {
+        latLng?: unknown;
+        style?: Record<string, unknown>;
+        setLatLng(next: unknown): void;
+        setStyle(style: Record<string, unknown>): void;
+        remove(): void;
+    }
+    interface FrameMap {
+        layers: FrameLayer[];
+        _layers: Record<string, unknown>;
+        invalidateCalls: number;
+        hasLayer(): boolean;
+        getCenter(): { lat: number; lng: number };
+        getZoom(): number;
+        setView(): void;
+        invalidateSize(): void;
+        removeLayer(layer: FrameLayer): void;
+    }
+
+    const polylineCalls: { latLngs: unknown; options: Record<string, unknown>; layer: FrameLayer; map: FrameMap }[] = [];
+    const markerCalls: { marker: HoverMarker; map: FrameMap; latLng: unknown }[] = [];
+    const terrainMessages: BridgeMessage[] = [];
+    const peakFeedRequests: string[] = [];
+    let chartConfig: ChartConfig | null = null;
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    (win as unknown as { fetch: (url: string) => Promise<FetchStubResponse> }).fetch = async url => {
         if (String(url).includes('/Async/PLLBB.aspx')) {
             peakFeedRequests.push(String(url));
             return {
                 ok: true,
-                text: async () => '<ts><t i="7" n="Late Peak" a="48.72" o="-121.79" c="1" r="100"/></ts>'
+                text: async () => '<ts><t i="7" n="Late Peak" a="48.72" o="-121.79" c="1" r="100"/></ts>',
             };
         }
         return { ok: true, text: async () => gpx };
     };
-    window.Chart = class ChartStub {
-        constructor(context, config) {
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        constructor(_context: unknown, config: ChartConfig) {
             chartConfig = config;
             this.data = config.data;
             this.options = config.options;
@@ -822,30 +1048,30 @@ test('a late or replaced map frame atomically receives every analyzer map featur
         setDatasetVisibility() {}
         isDatasetVisible() { return true; }
     };
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         if (message?.__bpbTerrain === true) {
             terrainMessages.push(message);
             return;
         }
         if (message?.dir === 'toCS' && message.kind === 'get') {
-            window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-                source: window,
-                origin: window.location.origin,
-                data: bridgeSnapshot(window, {
+            win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+                source: win as unknown as Window,
+                origin: win.location.origin,
+                data: bridgeSnapshot(win, {
                     units: 'metric', theme: 'light', enable3dMap: true,
-                })
+                }),
             })));
         }
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
-    await waitFor(dom, () => chartConfig);
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    await waitFor(dom, () => chartConfig !== null);
     assert.equal(polylineCalls.length, 0, 'there is no map frame to draw into yet');
-    assert.equal(window.document.getElementById('bpb-map-viewport'), null);
+    assert.equal(win.document.getElementById('bpb-map-viewport'), null);
 
-    const createFrame = climberId => {
-        const map = {
+    const createFrame = (climberId: number) => {
+        const map: FrameMap = {
             layers: [],
             _layers: {},
             invalidateCalls: 0,
@@ -857,21 +1083,21 @@ test('a late or replaced map frame atomically receives every analyzer map featur
             removeLayer(layer) {
                 this.layers = this.layers.filter(candidate => candidate !== layer);
                 layer._map = null;
-            }
+            },
         };
         const L = {
             Browser: { retina: false },
-            polyline(latLngs, options) {
-                const layer = {
+            polyline(latLngs: unknown, options: Record<string, unknown>) {
+                const layer: FrameLayer = {
                     _map: null,
                     addTo(target) { this._map = target; target.layers.push(this); return this; },
-                    bringToBack() { return this; }
+                    bringToBack() { return this; },
                 };
                 polylineCalls.push({ latLngs, options, layer, map });
                 return layer;
             },
-            circleMarker(latLng) {
-                const marker = {
+            circleMarker(latLng: unknown) {
+                const marker: HoverMarker = {
                     _map: null,
                     addTo(target) {
                         this._map = target;
@@ -880,33 +1106,49 @@ test('a late or replaced map frame atomically receives every analyzer map featur
                     },
                     setLatLng(next) { this.latLng = next; },
                     setStyle(style) { this.style = style; },
-                    remove() { this._map?.removeLayer(this); }
+                    remove() { this._map?.removeLayer(this); },
                 };
                 return marker;
-            }
+            },
         };
-        const iframe = window.document.createElement('iframe');
+        const iframe = win.document.createElement('iframe');
         iframe.src = `https://www.peakbagger.com/map/MasterMap.aspx?cy=48.7&cx=-121.8&z=14&t=A&c=${climberId}`;
+        const loaded = new Promise<void>(resolve => {
+            const onLoad = () => {
+                let ready = false;
+                try {
+                    const doc = iframe.contentDocument;
+                    ready = Boolean(doc && doc.readyState === 'complete' && doc.location?.href === iframe.src);
+                } catch {
+                    ready = false;
+                }
+                if (!ready) return;
+                iframe.removeEventListener('load', onLoad);
+                setTimeout(resolve, 0);
+            };
+            iframe.addEventListener('load', onLoad);
+        });
         Object.defineProperty(iframe, 'contentWindow', {
             configurable: true,
             value: {
                 mapsPlaceholder: map,
                 L,
                 document: { getElementById: () => null, querySelector: () => null },
-                location: { href: iframe.src }
-            }
+                location: { href: iframe.src },
+            },
         });
-        return { iframe, map };
+        return { iframe, map, loaded };
     };
 
     // No wall-clock sleep represents the old five-second budget: insertion is
     // driven by the condition itself, so test speed and machine load cannot
     // define correctness.
     const first = createFrame(900001);
-    window.document.body.appendChild(first.iframe);
+    win.document.body.appendChild(first.iframe);
+    await first.loaded;
     await waitFor(dom, () => polylineCalls.length >= 2);
     await waitFor(dom, () => first.map.invalidateCalls > 0);
-    const viewport = window.document.getElementById('bpb-map-viewport');
+    const viewport = win.document.getElementById('bpb-map-viewport');
     assert.ok(viewport);
     assert.equal(first.iframe.parentElement, viewport);
     assert.equal(viewport.querySelectorAll('#bpb-map-resize-handle').length, 1);
@@ -916,6 +1158,7 @@ test('a late or replaced map frame atomically receives every analyzer map featur
 
     const replacement = createFrame(900002);
     first.iframe.replaceWith(replacement.iframe);
+    await replacement.loaded;
     await waitFor(dom, () => replacement.iframe.parentElement === viewport
         && replacement.map.layers.length === 2);
     assert.equal(first.map.layers.length, 0, 'the discarded map loses only extension-owned layers');
@@ -925,68 +1168,68 @@ test('a late or replaced map frame atomically receives every analyzer map featur
     await waitFor(dom, () => replacement.map.invalidateCalls > 0);
 
     const callsBeforeDiscardedLoad = polylineCalls.length;
-    first.iframe.dispatchEvent(new window.Event('load'));
-    await new Promise(resolve => window.setTimeout(resolve, 0));
+    first.iframe.dispatchEvent(new win.Event('load'));
+    await new Promise(resolve => win.setTimeout(resolve, 0));
     assert.equal(polylineCalls.length, callsBeforeDiscardedLoad,
         'the old frame no longer owns a load listener');
 
-    chartConfig.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
-    assert.equal(markerCalls.at(-1).map, replacement.map,
+    chartConfig!.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+    assert.equal(markerCalls.at(-1)!.map, replacement.map,
         'the hover marker follows the replacement map identity');
 
     // Chart.js never replays onHover once the pointer leaves the plot area, so
     // the panel has to clear the map marker itself; otherwise it stays parked
     // on the last hovered point after the cursor has left the chart.
-    const chartCanvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const hoverMarker = markerCalls.at(-1).marker;
+    const chartCanvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const hoverMarker = markerCalls.at(-1)!.marker;
     assert.equal(hoverMarker.style, undefined, 'the marker is visible while the cursor is on the chart');
-    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    chartCanvas.dispatchEvent(new win.Event('mouseleave'));
     assert.deepEqual(JSON.parse(JSON.stringify(hoverMarker.style)), { opacity: 0, fillOpacity: 0 },
         'leaving the chart hides the hover marker on the map');
 
-    const terrainToggle = window.document.getElementById('bpb-terrain-toggle');
+    const terrainToggle = win.document.getElementById('bpb-terrain-toggle');
     await waitFor(dom, () => terrainToggle.disabled === false);
     terrainToggle.click();
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'init'));
     assert.deepEqual(JSON.parse(JSON.stringify(
-        terrainMessages.find(message => message.type === 'init').camera
+        terrainMessages.find(message => message.type === 'init')!.camera,
     )), { center: [48.72, -121.79], zoom: 14 });
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' }
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: { __bpbTerrain: true, dir: 'toPage', type: 'loaded' },
     }));
     assert.equal(replacement.iframe.style.visibility, 'hidden');
 
-    chartConfig.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
-    assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1).coordinates)), [-121.8, 48.7],
+    chartConfig!.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+    assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1)!.coordinates)), [-121.8, 48.7],
         'hovering the chart highlights the point in 3D');
-    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    chartCanvas.dispatchEvent(new win.Event('mouseleave'));
     assert.deepEqual(JSON.parse(JSON.stringify(terrainMessages.at(-1))), {
-        __bpbTerrain: true, dir: 'toCS', type: 'highlight', coordinates: null, series: 'distance'
+        __bpbTerrain: true, dir: 'toCS', type: 'highlight', coordinates: null, series: 'distance',
     }, 'leaving the chart clears the 3D highlight too');
     const messagesAfterClear = terrainMessages.length;
-    chartCanvas.dispatchEvent(new window.Event('mouseleave'));
+    chartCanvas.dispatchEvent(new win.Event('mouseleave'));
     assert.equal(terrainMessages.length, messagesAfterClear,
         'a second exit with nothing highlighted stays silent');
 
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
         data: {
             __bpbTerrain: true,
             dir: 'toPage',
             type: 'peaksRequest',
             requestId: 2,
-            bounds: { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 }
-        }
+            bounds: { miny: 48.6, maxy: 48.8, minx: -121.9, maxx: -121.7 },
+        },
     }));
     await waitFor(dom, () => terrainMessages.some(message => message.type === 'peaks'));
     assert.equal(peakFeedRequests.length, 1);
-    assert.match(peakFeedRequests[0], /cid=900002/,
+    assert.match(peakFeedRequests[0]!, /cid=900002/,
         'the peak client is rebuilt from the replacement frame URL');
 
-    window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
     dom.window.close();
 });
 
@@ -1015,7 +1258,7 @@ test('when the resolved timezone is unavailable, times fall back to a labelled l
 
 test('overnight camping remains visible when the track starts at its highest point', async () => {
     const { dom, analysisText } = await loadOvernightAnalyzer({
-        elevations: [2200, 2000, 1800, 1600, 1400, 1200, 1000]
+        elevations: [2200, 2000, 1800, 1600, 1400, 1200, 1000],
     });
 
     assert.doesNotMatch(analysisText(), /Summit time:/,
@@ -1027,30 +1270,34 @@ test('overnight camping remains visible when the track starts at its highest poi
 });
 
 test('a missing GPS track is reported as missing instead of a parse failure', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = new FixtureDom(`<!doctype html><body>
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    window.matchMedia = () => ({ matches: false });
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = async () => ({ ok: false, status: 404, text: async () => 'not found' });
-    window.Chart = class ChartStub { destroy() {} };
-    window.postMessage = message => {
+    const win = dom.window as unknown as AnalyzerWindow;
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    (win as unknown as { fetch: () => Promise<FetchStubResponse> }).fetch = async () => ({ ok: false, status: 404, text: async () => 'not found' });
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        constructor(_context: unknown, config: ChartConfig) { this.data = config.data; this.options = config.options; }
+        destroy() {}
+    };
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window,
-            origin: window.location.origin,
-            data: bridgeSnapshot(window, { units: 'imperial', theme: 'light' })
+        win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+            source: win as unknown as Window,
+            origin: win.location.origin,
+            data: bridgeSnapshot(win, { units: 'imperial', theme: 'light' }),
         })));
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
-    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    const analysisText = () => win.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     await waitFor(dom, () => /could not find the requested GPS track/i.test(analysisText()));
     assert.match(analysisText(), /Peakbagger could not find the requested GPS track\./);
     assert.doesNotMatch(analysisText(), /No track points found/);
@@ -1058,135 +1305,153 @@ test('a missing GPS track is reported as missing instead of a parse failure', as
     dom.window.close();
 });
 
-const loadElevationAnalyzer = async (gpxSource, {
+interface ElevationAnalyzerOptions {
+    clipboard?: { writeText(text: string): Promise<void> };
+    theme?: string;
+    withMap?: boolean;
+    settings?: BridgeSettings;
+    fetchImpl?: (() => FetchStubResponse | Promise<FetchStubResponse>) | null;
+    ascentDate?: string;
+}
+
+const loadElevationAnalyzer = async (gpxSource: string, {
     clipboard,
     theme = 'light',
     withMap = false,
     settings = {},
     fetchImpl = null,
     ascentDate = '',
-} = {}) => {
-    const dom = new JSDOM(`<!doctype html><body>
+}: ElevationAnalyzerOptions = {}) => {
+    const dom = new FixtureDom(`<!doctype html><body>
       ${withMap ? '<iframe src="https://www.peakbagger.com/map/MasterMap.aspx?cy=47&cx=-121&z=14"></iframe>' : ''}
       ${ascentDate ? `<table><tr><td>Date:</td><td>${ascentDate}</td></tr></table>` : ''}
       <p><a href="https://www.peakbagger.com/demo.gpx">Download this GPS track</a></p>
     </body>`, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only',
-        pretendToBeVisual: true
     });
-    const { window } = dom;
-    let chartConfig = null;
-    let chartInstance = null;
+    const win = dom.window as unknown as AnalyzerWindow;
+    let chartConfig: ChartConfig | null = null;
+    let chartInstance: ChartStubInstance | null = null;
     let chartConstructions = 0;
     let chartDestructions = 0;
-    let activeElements = [];
-    const updateModes = [];
-    const eventQueries = [];
-    const polylineCalls = [];
-    const markerMoves = [];
-    const markerStyles = [];
-    const postedMessages = [];
-    let replaceMap = null;
+    let activeElements: { datasetIndex: number; index: number }[] = [];
+    const updateModes: (string | undefined)[] = [];
+    const eventQueries: { mode: string; intersect: boolean; axis: string }[] = [];
+    const polylineCalls: { latLngs: unknown[]; options: Record<string, unknown> }[] = [];
+    const markerMoves: number[][] = [];
+    const markerStyles: Record<string, unknown>[] = [];
+    const postedMessages: BridgeMessage[] = [];
+    let replaceMap: (() => unknown) | null = null;
+    let reparentLoaded: Promise<void> | null = null;
     if (withMap) {
-        const makeMap = () => ({
+        const iframe = win.document.querySelector('iframe') as unknown as HTMLIFrameElement;
+        await waitForIframe(iframe);
+        interface MinimalLayer { _map: MinimalMap | null; }
+        interface MinimalMap { layers: MinimalLayer[]; removeLayer(layer: MinimalLayer): void; }
+        const makeMap = (): MinimalMap => ({
             layers: [],
             removeLayer(layer) {
                 this.layers = this.layers.filter(candidate => candidate !== layer);
                 layer._map = null;
-            }
+            },
         });
         const map = makeMap();
         const L = {
-            polyline(latLngs, options) {
+            polyline(latLngs: unknown[], options: Record<string, unknown>) {
                 const layer = {
-                    _map: null,
-                    addTo(target) { this._map = target; target.layers.push(this); return this; },
-                    bringToBack() { return this; }
+                    _map: null as MinimalMap | null,
+                    addTo(target: MinimalMap) { this._map = target; target.layers.push(this); return this; },
+                    bringToBack() { return this; },
                 };
                 polylineCalls.push({ latLngs, options });
                 return layer;
             },
-            circleMarker(latLng, options) {
+            circleMarker(latLng: number[], options: Record<string, unknown>) {
                 return {
-                    _map: null,
+                    _map: null as MinimalMap | null,
                     latLng,
                     style: { ...options },
-                    addTo(target) {
+                    addTo(target: MinimalMap) {
                         this._map = target;
                         target.layers.push(this);
                         markerMoves.push([...latLng]);
                         return this;
                     },
-                    setLatLng(next) {
+                    setLatLng(next: number[]) {
                         this.latLng = next;
                         markerMoves.push([...next]);
                     },
-                    setStyle(style) {
+                    setStyle(style: Record<string, unknown>) {
                         this.style = { ...this.style, ...style };
                         markerStyles.push({ ...this.style });
-                    }
+                    },
                 };
-            }
+            },
         };
-        const iframe = window.document.querySelector('iframe');
-        const attachMap = nextMap => Object.defineProperty(iframe, 'contentWindow', {
+        const attachMap = (nextMap: MinimalMap) => Object.defineProperty(iframe, 'contentWindow', {
             configurable: true,
             value: {
                 mapsPlaceholder: nextMap,
                 L,
                 document: { getElementById: () => null },
-                location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' }
-            }
+                location: { href: 'https://www.peakbagger.com/map/MasterMap.aspx' },
+            },
         });
-        attachMap(map);
+        reparentLoaded = onReparentedIframeLoad(iframe, () => attachMap(map));
         replaceMap = () => {
             const nextMap = makeMap();
             attachMap(nextMap);
-            iframe.dispatchEvent(new window.Event('load'));
+            iframe.dispatchEvent(new win.Event('load'));
             return nextMap;
         };
     }
-    window.matchMedia = () => ({ matches: false });
-    window.HTMLCanvasElement.prototype.getContext = () => ({});
-    window.fetch = fetchImpl || (async () => ({ ok: true, text: async () => gpxSource }));
+    (win as unknown as { matchMedia: () => { matches: boolean } }).matchMedia = () => ({ matches: false });
+    (win.HTMLCanvasElement.prototype as unknown as { getContext: () => Record<string, unknown> }).getContext = () => ({});
+    (win as unknown as { fetch: () => FetchStubResponse | Promise<FetchStubResponse> }).fetch =
+        fetchImpl || (async () => ({ ok: true, text: async () => gpxSource }));
     if (clipboard) {
-        Object.defineProperty(window.navigator, 'clipboard', {
+        Object.defineProperty(win.navigator, 'clipboard', {
             configurable: true,
-            value: clipboard
+            value: clipboard,
         });
     }
-    window.Chart = class ChartStub {
-        constructor(context, config) {
+    const setChartInstance = (instance: ChartStubInstance) => { chartInstance = instance; };
+    win.Chart = class ChartStub implements ChartStubInstance {
+        data: ChartConfig['data'];
+        options: ChartConfig['options'];
+        visibility: boolean[];
+        constructor(_context: unknown, config: ChartConfig) {
             chartConstructions++;
             chartConfig = config;
-            chartInstance = this;
+            setChartInstance(this);
             this.data = config.data;
             this.options = config.options;
             this.visibility = config.data.datasets.map(dataset => dataset.hidden !== true);
         }
         destroy() { chartDestructions++; }
-        update(mode) { updateModes.push(mode); }
-        isDatasetVisible(index) { return this.visibility[index] === true; }
-        setDatasetVisibility(index, visible) { this.visibility[index] = visible; }
-        getElementsAtEventForMode(event, mode, options) {
+        update(mode?: string) { updateModes.push(mode); }
+        isDatasetVisible(index: number) { return this.visibility[index] === true; }
+        setDatasetVisibility(index: number, visible: boolean) { this.visibility[index] = visible; }
+        getElementsAtEventForMode(_event: unknown, mode: string, options: { intersect: boolean; axis: string }) {
             eventQueries.push({ mode, intersect: options.intersect, axis: options.axis });
             return activeElements;
         }
     };
-    window.postMessage = message => {
+    (win as unknown as { postMessage: (message: BridgeMessage) => void }).postMessage = message => {
         postedMessages.push(structuredClone(message));
         if (!message || message.dir !== 'toCS' || message.kind !== 'get') return;
-        window.queueMicrotask(() => window.dispatchEvent(new window.MessageEvent('message', {
-            source: window,
-            origin: window.location.origin,
-            data: bridgeSnapshot(window, { units: 'metric', theme, ...settings })
+        win.queueMicrotask(() => win.dispatchEvent(new win.MessageEvent('message', {
+            source: win as unknown as Window,
+            origin: win.location.origin,
+            data: bridgeSnapshot(win, { units: 'metric', theme, ...settings }),
         })));
     };
 
-    Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'complete' });
-    window.eval(analyzerBundle);
-    const analysisText = () => window.document.getElementById('bpb-gpx-analysis')?.textContent || '';
+    Object.defineProperty(win.document, 'readyState', { configurable: true, value: 'complete' });
+    win.eval(analyzerBundle);
+    if (reparentLoaded) await reparentLoaded;
+    const analysisText = () => win.document.getElementById('bpb-gpx-analysis')?.textContent || '';
     return {
         dom,
         analysisText,
@@ -1194,7 +1459,7 @@ const loadElevationAnalyzer = async (gpxSource, {
         chartInstance: () => chartInstance,
         chartConstructions: () => chartConstructions,
         chartDestructions: () => chartDestructions,
-        setActiveElements: elements => { activeElements = elements; },
+        setActiveElements: (elements: { datasetIndex: number; index: number }[]) => { activeElements = elements; },
         updateModes,
         eventQueries,
         polylineCalls,
@@ -1209,24 +1474,24 @@ test('GPX graph publishes hover time separately from clicked and keyboard select
     const { dom, chartConfig, setActiveElements, postedMessages } = await loadElevationAnalyzer(gpx);
     try {
         await waitFor(dom, () => chartConfig() !== null);
-        const { window } = dom, canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+        const { window: win } = dom, canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
         const latest = () => postedMessages.filter(message => message.type === 'bpb:gpx-time-cursor').at(-1);
-        const points = chartConfig().data.datasets[0].data;
+        const points = chartConfig()!.data.datasets[0]!.data;
         setActiveElements([{ datasetIndex: 0, index: 0 }]);
-        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-        chartConfig().options.onHover({ type: 'click' }, [{ datasetIndex: 0, index: 0 }]);
-        await waitFor(dom, () => latest()?.selectionTime === points[0]._raw.ms);
-        assert.equal(latest().hovering, false, 'Chart.js click must not become transient hover');
-        chartConfig().options.onHover(null, [{ datasetIndex: 0, index: 1 }]);
-        await waitFor(dom, () => latest()?.hoverTime === points[1]._raw.ms);
-        assert.equal(latest().selectionTime, points[0]._raw.ms);
-        assert.deepEqual(Object.keys(latest()).sort(), ['hoverTime', 'hovering', 'selected', 'selectionTime', 'type']);
-        canvas.dispatchEvent(new window.MouseEvent('mouseleave'));
+        canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+        chartConfig()!.options.onHover({ type: 'click' }, [{ datasetIndex: 0, index: 0 }]);
+        await waitFor(dom, () => latest()?.selectionTime === points[0]!._raw!.ms);
+        assert.equal(latest()!.hovering, false, 'Chart.js click must not become transient hover');
+        chartConfig()!.options.onHover(null, [{ datasetIndex: 0, index: 1 }]);
+        await waitFor(dom, () => latest()?.hoverTime === points[1]!._raw!.ms);
+        assert.equal(latest()!.selectionTime, points[0]!._raw!.ms);
+        assert.deepEqual(Object.keys(latest()!).sort(), ['hoverTime', 'hovering', 'selected', 'selectionTime', 'type']);
+        canvas.dispatchEvent(new win.MouseEvent('mouseleave'));
         await waitFor(dom, () => latest()?.hovering === false);
-        assert.equal(latest().selectionTime, points[0]._raw.ms);
-        canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
-        await waitFor(dom, () => latest()?.selectionTime === points[1]._raw.ms);
-        const legend = window.document.querySelectorAll('#bpb-gpx-chart-legend button');
+        assert.equal(latest()!.selectionTime, points[0]!._raw!.ms);
+        canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+        await waitFor(dom, () => latest()?.selectionTime === points[1]!._raw!.ms);
+        const legend = win.document.querySelectorAll('#bpb-gpx-chart-legend button');
         for (const button of legend) if (button.getAttribute('aria-pressed') === 'true') button.click();
         await waitFor(dom, () => latest()?.selected === false);
     } finally { dom.window.close(); }
@@ -1238,13 +1503,13 @@ test('GPX hover and selection do not invent time for missing or constant timesta
         try {
             await waitFor(dom, () => chartConfig() !== null);
             const latest = () => postedMessages.filter(message => message.type === 'bpb:gpx-time-cursor').at(-1);
-            chartConfig().options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
+            chartConfig()!.options.onHover(null, [{ datasetIndex: 0, index: 0 }]);
             await waitFor(dom, () => latest()?.hovering === true);
-            assert.equal(latest().hoverTime, null);
+            assert.equal(latest()!.hoverTime, null);
             setActiveElements([{ datasetIndex: 0, index: 0 }]);
             dom.window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
             await waitFor(dom, () => latest()?.selected === true);
-            assert.equal(latest().selectionTime, null);
+            assert.equal(latest()!.selectionTime, null);
         } finally { dom.window.close(); }
     }
 });
@@ -1254,7 +1519,7 @@ const analyzerResponse = ({
     body = '',
     headers = {},
     url = 'https://www.peakbagger.com/demo.gpx',
-} = {}) => ({
+}: { status?: number; body?: string; headers?: Record<string, string>; url?: string } = {}): FetchStubResponse => ({
     ok: status >= 200 && status < 300,
     status,
     url,
@@ -1263,22 +1528,22 @@ const analyzerResponse = ({
     text: async () => body,
 });
 
-const assertUnavailableAnalyzer = (dom, { retryable }) => {
+const assertUnavailableAnalyzer = (dom: FixtureDom, { retryable }: { retryable: boolean }) => {
     const panel = dom.window.document.getElementById('bpb-gpx-analysis');
-    const canvas = panel.querySelector('canvas');
-    const stats = panel.querySelector('.bpb-gpx-stats');
-    const retry = panel.querySelector('.bpb-gpx-retry');
-    const visibleFocusable = [...panel.querySelectorAll('button, select, input, [tabindex]')]
-        .filter(element => !element.disabled && !element.closest('[hidden]') && element.tabIndex >= 0);
+    const canvas = panel.querySelector('canvas') as HTMLCanvasElement;
+    const stats = panel.querySelector('.bpb-gpx-stats') as HTMLElement;
+    const retry = panel.querySelector('.bpb-gpx-retry') as HTMLButtonElement;
+    const visibleFocusable = [...panel.querySelectorAll<HTMLElement>('button, select, input, [tabindex]')]
+        .filter(element => !(element as HTMLButtonElement).disabled && !element.closest('[hidden]') && element.tabIndex >= 0);
 
-    assert.equal(canvas.parentElement.hidden, true);
+    assert.equal(canvas.parentElement!.hidden, true);
     assert.equal(canvas.tabIndex, -1);
     assert.equal(canvas.hasAttribute('role'), false);
     assert.equal(canvas.hasAttribute('aria-keyshortcuts'), false);
     assert.doesNotMatch(canvas.getAttribute('aria-label') || '', /Arrow/);
-    assert.equal(panel.querySelector('.bpb-gpx-controls').hidden, true);
-    assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
-    assert.equal(panel.querySelector('.bpb-gpx-chart-legend').hidden, true);
+    assert.equal((panel.querySelector('.bpb-gpx-controls') as HTMLElement).hidden, true);
+    assert.equal((panel.querySelector('.bpb-gpx-coordinate-controls') as HTMLElement).hidden, true);
+    assert.equal((panel.querySelector('.bpb-gpx-chart-legend') as HTMLElement).hidden, true);
     assert.equal(stats.getAttribute('role'), 'status');
     assert.equal(stats.getAttribute('aria-live'), 'polite');
     assert.equal(retry.hidden, !retryable);
@@ -1286,7 +1551,7 @@ const assertUnavailableAnalyzer = (dom, { retryable }) => {
 };
 
 test('terminal GPX outcomes remove chart semantics and expose only real retry actions', async t => {
-    const cases = [
+    const cases: [string, () => FetchStubResponse | Promise<FetchStubResponse>, RegExp, boolean][] = [
         ['signed out', () => analyzerResponse({ status: 401, body: '<html>Log In</html>' }), /sign in/i, true],
         ['missing', () => analyzerResponse({ status: 404, body: 'not found' }), /could not find/i, false],
         ['challenge HTML', () => analyzerResponse({
@@ -1334,16 +1599,16 @@ test('a retryable GPX failure can recover into one fully interactive chart', asy
     await waitFor(dom, () => chartConfig() !== null);
 
     const panel = dom.window.document.getElementById('bpb-gpx-analysis');
-    const canvas = panel.querySelector('canvas');
+    const canvas = panel.querySelector('canvas') as HTMLCanvasElement;
     assert.equal(fetchCalls, 2);
-    assert.equal(canvas.parentElement.hidden, false);
+    assert.equal(canvas.parentElement!.hidden, false);
     assert.equal(canvas.tabIndex, 0);
     assert.equal(canvas.getAttribute('role'), 'application');
     assert.equal(canvas.getAttribute('aria-keyshortcuts'), 'ArrowLeft ArrowRight');
-    assert.match(canvas.getAttribute('aria-label'), /Interactive elevation chart/);
-    assert.equal(panel.querySelector('.bpb-gpx-controls').hidden, false);
-    assert.equal(panel.querySelector('.bpb-gpx-retry').hidden, true);
-    assert.equal(panel.querySelector('.bpb-gpx-stats').dataset.state, undefined);
+    assert.match(canvas.getAttribute('aria-label')!, /Interactive elevation chart/);
+    assert.equal((panel.querySelector('.bpb-gpx-controls') as HTMLElement).hidden, false);
+    assert.equal((panel.querySelector('.bpb-gpx-retry') as HTMLElement).hidden, true);
+    assert.equal((panel.querySelector('.bpb-gpx-stats') as HTMLElement).dataset.state, undefined);
 
     dom.window.close();
 });
@@ -1358,12 +1623,12 @@ test('GPX analyzer drops points whose elevation is missing or invalid', async ()
     const { dom, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
-    const chartPoints = chartConfig().data.datasets[0].data;
+    const chartPoints = chartConfig()!.data.datasets[0]!.data;
     assert.deepEqual(Array.from(chartPoints, point => point._raw?.rawEleM ?? null), [100, null, 110]);
     assert.ok(chartPoints.every(point => point.y === null || point.y > 0),
         'missing elevation must not become a charted dip to sea level');
-    assert.ok(chartPoints.at(-1)._raw.distM > 1800,
-        `distance must follow the coordinate-only bend, got ${chartPoints.at(-1)._raw.distM} m`);
+    assert.ok(chartPoints.at(-1)!._raw!.distM! > 1800,
+        `distance must follow the coordinate-only bend, got ${chartPoints.at(-1)!._raw!.distM} m`);
     assert.match(dom.window.document.getElementById('bpb-gpx-analysis').textContent,
         /Elevation: 2 of 4 route points \(50%\); 1 missing, 1 malformed\. Gaps mark unavailable data\./);
 
@@ -1387,17 +1652,17 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     assert.match(analysisText(), /Mountain time/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.doesNotMatch(analysisText(), /0 (?:m|ft) gain/);
-    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
-        'Distance over Time'
+    assert.deepEqual(Array.from(chartConfig()!.data.datasets, dataset => dataset.label), [
+        'Distance over Time',
     ]);
-    assert.equal(chartConfig().options.scales.xTime.position, 'bottom');
-    assert.equal(chartConfig().options.scales.yDistance.title.text, 'Distance traveled (km)');
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, false);
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.style.height, '260px');
+    assert.equal(chartConfig()!.options.scales.xTime!.position, 'bottom');
+    assert.equal(chartConfig()!.options.scales.yDistance!.title.text, 'Distance traveled (km)');
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!.hidden, false);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!.style.height, '260px');
     assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, false);
     assert.match(
-        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label'),
-        /route progress chart/i
+        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label')!,
+        /route progress chart/i,
     );
     const progressCanvas = dom.window.document.querySelector('#bpb-gpx-analysis canvas');
     progressCanvas.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
@@ -1406,15 +1671,15 @@ test('GPX analyzer renders timed coordinate-only data as route progress', async 
     assert.match(progressStatus, /Time: /);
     assert.match(progressStatus, /Distance traveled: 0\.00 km/);
     assert.doesNotMatch(progressStatus, /Elevation|Grade|Recorded route position/);
-    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
-        [47, -121], [47, -121.001], [47, -121.002]
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0]!.latLngs)), [
+        [47, -121], [47, -121.001], [47, -121.002],
     ]);
 
     const units = dom.window.document.getElementById('bpb-gpx-units');
     units.value = 'imperial';
     units.dispatchEvent(new dom.window.Event('change'));
     assert.match(analysisText(), /Route Progress: 0\.09 miles/);
-    assert.equal(chartConfig().options.scales.yDistance.title.text, 'Distance traveled (miles)');
+    assert.equal(chartConfig()!.options.scales.yDistance!.title.text, 'Distance traveled (miles)');
     assert.match(dom.window.document.getElementById('bpb-gpx-coordinate-status').textContent, /Distance traveled: 0\.00 miles/);
 
     dom.window.close();
@@ -1433,17 +1698,17 @@ test('GPX analyzer renders an untimed coordinate-only route as a distance scrubb
     assert.match(dom.window.document.querySelector('.bpb-gpx-stats').textContent, / · 3 points$/);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\./);
     assert.match(analysisText(), /Time data is unavailable in this GPX/);
-    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
-        'Route Position'
+    assert.deepEqual(Array.from(chartConfig()!.data.datasets, dataset => dataset.label), [
+        'Route Position',
     ]);
-    assert.equal(chartConfig().data.datasets[0]._bpbSeries, 'distance');
-    assert.equal(chartConfig().options.scales.x.title.text, 'Distance (km)');
-    assert.equal(chartConfig().options.scales.yRoute.display, false);
-    assert.equal(chartConfig().options.plugins.legend.display, false);
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.style.height, '110px');
+    assert.equal(chartConfig()!.data.datasets[0]!._bpbSeries, 'distance');
+    assert.equal(chartConfig()!.options.scales.x.title.text, 'Distance (km)');
+    assert.equal(chartConfig()!.options.scales.yRoute!.display, false);
+    assert.equal(chartConfig()!.options.plugins.legend.display, false);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!.style.height, '110px');
     assert.match(
-        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label'),
-        /route position chart/i
+        dom.window.document.querySelector('#bpb-gpx-analysis canvas').getAttribute('aria-label')!,
+        /route position chart/i,
     );
     const canvas = dom.window.document.querySelector('#bpb-gpx-analysis canvas');
     canvas.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
@@ -1463,8 +1728,8 @@ test('GPX analyzer excludes impossible elevations and falls back to recorded rou
     const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
-    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
-        'Distance over Time'
+    assert.deepEqual(Array.from(chartConfig()!.data.datasets, dataset => dataset.label), [
+        'Distance over Time',
     ]);
     assert.match(analysisText(), /Elevation data is unavailable in this GPX\. 2 outside the plausible elevation range\./);
     assert.doesNotMatch(analysisText(), /999999|-999999/);
@@ -1481,7 +1746,7 @@ test('GPX analyzer hides the chart when no track point has valid coordinates', a
 
     await waitFor(dom, () => analysisText().includes('No valid track points found.'));
     assert.equal(chartConfig(), null);
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!.hidden, true);
     assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
 
     dom.window.close();
@@ -1501,16 +1766,16 @@ test('GPX analyzer geometry and metrics exclude descendant-owned fake points', a
         await loadElevationAnalyzer(source, { withMap: true });
 
     await waitFor(dom, () => chartConfig() !== null && polylineCalls.length >= 1);
-    const recorded = chartConfig().data.datasets[0].data
+    const recorded = chartConfig()!.data.datasets[0]!.data
         .map(point => point._raw)
-        .filter(Boolean);
+        .filter((raw): raw is ChartPointRaw => Boolean(raw));
     assert.deepEqual(JSON.parse(JSON.stringify(recorded.map(point => [point.lat, point.lon]))), [
         [47, -121],
         [47.001, -121.001],
     ]);
-    assert.ok(recorded.at(-1).distM < 200,
-        `direct points are about 135 m apart, got ${recorded.at(-1).distM} m`);
-    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
+    assert.ok(recorded.at(-1)!.distM! < 200,
+        `direct points are about 135 m apart, got ${recorded.at(-1)!.distM} m`);
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0]!.latLngs)), [
         [47, -121],
         [47.001, -121.001],
     ]);
@@ -1525,7 +1790,7 @@ test('GPX analyzer hides the chart when the GPX contains no track points', async
 
     await waitFor(dom, () => analysisText().includes('No track points found.'));
     assert.equal(chartConfig(), null);
-    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement.hidden, true);
+    assert.equal(dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!.hidden, true);
     assert.equal(dom.window.document.querySelector('.bpb-gpx-coordinate-controls').hidden, true);
 
     dom.window.close();
@@ -1540,10 +1805,10 @@ test('GPX analyzer omits time UI when every point has the same timestamp', async
     const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
-    assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
-        'Elevation by Distance'
+    assert.deepEqual(Array.from(chartConfig()!.data.datasets, dataset => dataset.label), [
+        'Elevation by Distance',
     ]);
-    assert.equal(chartConfig().options.scales.xTime, undefined);
+    assert.equal(chartConfig()!.options.scales.xTime, undefined);
     assert.doesNotMatch(analysisText(), /Time: 0m/);
     assert.equal(dom.window.document.querySelector('.bpb-gpx-timing'), null);
 
@@ -1559,15 +1824,15 @@ test('GPX analyzer sorts a combined track only for the time series', async () =>
     const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
-    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw.lat), [47, 47.001, 47.002],
+    const [distanceSeries, timeSeries] = chartConfig()!.data.datasets;
+    assert.deepEqual(Array.from(distanceSeries!.data, point => point._raw!.lat), [47, 47.001, 47.002],
         'the distance series must retain GPX route order');
-    assert.deepEqual(Array.from(timeSeries.data, point => point._raw.lat), [47.001, 47.002, 47],
+    assert.deepEqual(Array.from(timeSeries!.data, point => point._raw!.lat), [47.001, 47.002, 47],
         'the time series must use chronological order');
-    assert.deepEqual(Array.from(timeSeries.data, point => point.x), [
+    assert.deepEqual(Array.from(timeSeries!.data, point => point.x), [
         Date.parse('2026-07-10T12:00:00Z'),
         Date.parse('2026-07-10T12:00:30Z'),
-        Date.parse('2026-07-10T12:01:00Z')
+        Date.parse('2026-07-10T12:01:00Z'),
     ]);
     assert.match(analysisText(), /Time: 0h 1m/);
 
@@ -1590,23 +1855,23 @@ test('GPX analyzer safely sequences reversed multi-day segments without reorderi
 
     await waitFor(dom, () => chartConfig() !== null);
     await waitFor(dom, () => polylineCalls.length === 2);
-    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.deepEqual(Array.from(distanceSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
+    const [distanceSeries, timeSeries] = chartConfig()!.data.datasets;
+    assert.deepEqual(Array.from(distanceSeries!.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
         'distance analysis must use safe chronological whole-segment order');
-    assert.ok(distanceSeries.data.at(-1)._raw.distM > 25_000
-        && distanceSeries.data.at(-1)._raw.distM < 30_000,
-    `distance analysis must not bridge the segment gap, got ${distanceSeries.data.at(-1)._raw.distM} m`);
-    assert.deepEqual(Array.from(timeSeries.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
+    assert.ok(distanceSeries!.data.at(-1)!._raw!.distM! > 25_000
+        && distanceSeries!.data.at(-1)!._raw!.distM! < 30_000,
+    `distance analysis must not bridge the segment gap, got ${distanceSeries!.data.at(-1)!._raw!.distM} m`);
+    assert.deepEqual(Array.from(timeSeries!.data, point => point._raw?.lat ?? null), [47, 47.1, null, 40, 40.1],
         'time analysis must span the segments chronologically');
-    assert.equal(chartConfig().options.scales.xTime.min, Date.parse('2026-07-10T16:00:00Z'));
-    assert.equal(chartConfig().options.scales.xTime.max, Date.parse('2026-07-11T17:00:00Z'));
+    assert.equal(chartConfig()!.options.scales.xTime!.min, Date.parse('2026-07-10T16:00:00Z'));
+    assert.equal(chartConfig()!.options.scales.xTime!.max, Date.parse('2026-07-11T17:00:00Z'));
     assert.match(analysisText(), /Mountain time \(PDT\)/,
         'mountain time must come from the earliest route point, not the first appended segment');
     assert.doesNotMatch(analysisText(), /Possible Camping/,
         'disconnected recordings do not establish a campsite between them');
-    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0].latLngs)), [
+    assert.deepEqual(JSON.parse(JSON.stringify(polylineCalls[0]!.latLngs)), [
         [[40, -105], [40.1, -105.1]],
-        [[47, -121], [47.1, -121.1]]
+        [[47, -121], [47.1, -121.1]],
     ], 'the map overlay must retain GPX segment order and boundaries');
 
     dom.window.close();
@@ -1630,15 +1895,15 @@ test('GPX analyzer connects nearby track-segment boundaries in both chart series
     const { dom, chartConfig } = await loadElevationAnalyzer(source);
 
     await waitFor(dom, () => chartConfig() !== null);
-    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.equal(distanceSeries.data.some(point => point._raw === null), false,
+    const [distanceSeries, timeSeries] = chartConfig()!.data.datasets;
+    assert.equal(distanceSeries!.data.some(point => point._raw === null), false,
         'the distance profile should not force breaks at plausible recorder boundaries');
-    assert.equal(timeSeries.data.some(point => point._raw === null), false,
+    assert.equal(timeSeries!.data.some(point => point._raw === null), false,
         'the time profile should not force breaks at plausible recorder boundaries');
     assert.deepEqual(
-        Array.from(distanceSeries.data, point => point._raw.lat),
-        Array.from(timeSeries.data, point => point._raw.lat),
-        'distance and time series should share the same chronological segment sequence'
+        Array.from(distanceSeries!.data, point => point._raw!.lat),
+        Array.from(timeSeries!.data, point => point._raw!.lat),
+        'distance and time series should share the same chronological segment sequence',
     );
 
     dom.window.close();
@@ -1647,32 +1912,34 @@ test('GPX analyzer connects nearby track-segment boundaries in both chart series
 test('shipped GPX analyzer renders the full Capitol regression without artificial breaks', async () => {
     const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(
         capitolRegressionGpx,
-        { settings: { units: 'imperial' } }
+        { settings: { units: 'imperial' } },
     );
 
     await waitFor(dom, () => chartConfig() !== null);
-    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
+    const [distanceSeries, timeSeries] = chartConfig()!.data.datasets;
+    const canvasContainer = dom.window.document.querySelector('#bpb-gpx-analysis canvas').parentElement!;
+    const canvasBudget = Math.max(256, Math.min(1200, Math.ceil(canvasContainer.getBoundingClientRect().width || 640)));
 
     assert.match(analysisText(),
         /Interactive Stats: 17\.53 miles \| 5735 ft gain \| Time: 36h 20m/);
     assert.match(analysisText(), /Adjusted GPX metrics \(raw GPX \+15824 ft gain\)/);
     const sourceCount = (capitolRegressionGpx.match(/<trkpt\b/g) || []).length;
     assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${sourceCount.toLocaleString()} points`);
-    assert.ok(distanceSeries.data.length <= 640 && distanceSeries.data.length >= 256,
-        `the distance series must honor the fallback canvas budget, got ${distanceSeries.data.length}`);
-    assert.ok(timeSeries.data.length <= 640 && timeSeries.data.length >= 256,
-        `the time series must honor the fallback canvas budget, got ${timeSeries.data.length}`);
-    assert.equal(chartConfig().options.animation, false,
+    assert.ok(distanceSeries!.data.length <= canvasBudget && distanceSeries!.data.length >= 256,
+        `the distance series must honor the canvas budget (${canvasBudget}), got ${distanceSeries!.data.length}`);
+    assert.ok(timeSeries!.data.length <= canvasBudget && timeSeries!.data.length >= 256,
+        `the time series must honor the canvas budget (${canvasBudget}), got ${timeSeries!.data.length}`);
+    assert.equal(chartConfig()!.options.animation, false,
         'large charts must not queue a long default Chart.js animation');
-    assert.equal(distanceSeries.data.some(point => point._raw === null), false,
+    assert.equal(distanceSeries!.data.some(point => point._raw === null), false,
         'the shipped distance chart must not reintroduce a break at any Capitol segment boundary');
-    assert.equal(timeSeries.data.some(point => point._raw === null), false,
+    assert.equal(timeSeries!.data.some(point => point._raw === null), false,
         'the shipped time chart must not reintroduce a break at any Capitol segment boundary');
-    assert.ok(distanceSeries.data.every((point, index, points) =>
-        index === 0 || point.x >= points[index - 1].x),
+    assert.ok(distanceSeries!.data.every((point, index, points) =>
+        index === 0 || point.x >= points[index - 1]!.x),
     'the shipped distance chart must use the safely sequenced route');
-    assert.ok(timeSeries.data.every((point, index, points) =>
-        index === 0 || point.x >= points[index - 1].x),
+    assert.ok(timeSeries!.data.every((point, index, points) =>
+        index === 0 || point.x >= points[index - 1]!.x),
     'the shipped time chart must remain chronological');
 
     dom.window.close();
@@ -1689,46 +1956,48 @@ test('a 20,000-point analyzer stays canvas-bounded and updates settings in place
     }).join('');
     const source = `<?xml version="1.0"?><gpx><trk><trkseg>${samples}</trkseg></trk></gpx>`;
     const {
-        dom, chartConfig, chartConstructions, chartDestructions, setActiveElements, updateModes
+        dom, chartConfig, chartConstructions, chartDestructions, setActiveElements, updateModes,
     } = await loadElevationAnalyzer(source, {
         ascentDate: 'Jul 10, 2026',
         settings: { chartDefaultSeries: 'both' },
     });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null, 10_000);
-    const [distanceSeries, timeSeries] = chartConfig().data.datasets;
-    assert.ok(distanceSeries.data.length <= 640,
-        `distance data exceeded the fallback canvas budget: ${distanceSeries.data.length}`);
-    assert.ok(timeSeries.data.length <= 640,
-        `time data exceeded the fallback canvas budget: ${timeSeries.data.length}`);
-    assert.equal(chartConfig().options.animation, false);
-    assert.ok(distanceSeries.data.some(point => point._raw?.sourceIndex === 0));
-    assert.ok(distanceSeries.data.some(point => point._raw?.sourceIndex === 19_999));
-    assert.ok(distanceSeries.data.some(point => point._raw?.rawEleM === 200));
-    assert.ok(distanceSeries.data.some(point => point._raw?.rawEleM === 3_000));
+    const [distanceSeries, timeSeries] = chartConfig()!.data.datasets;
+    const canvasContainer = win.document.querySelector('#bpb-gpx-analysis canvas').parentElement!;
+    const canvasBudget = Math.max(256, Math.min(1200, Math.ceil(canvasContainer.getBoundingClientRect().width || 640)));
+    assert.ok(distanceSeries!.data.length <= canvasBudget,
+        `distance data exceeded the canvas budget (${canvasBudget}): ${distanceSeries!.data.length}`);
+    assert.ok(timeSeries!.data.length <= canvasBudget,
+        `time data exceeded the canvas budget (${canvasBudget}): ${timeSeries!.data.length}`);
+    assert.equal(chartConfig()!.options.animation, false);
+    assert.ok(distanceSeries!.data.some(point => point._raw?.sourceIndex === 0));
+    assert.ok(distanceSeries!.data.some(point => point._raw?.sourceIndex === 19_999));
+    assert.ok(distanceSeries!.data.some(point => point._raw?.rawEleM === 200));
+    assert.ok(distanceSeries!.data.some(point => point._raw?.rawEleM === 3_000));
 
-    const selectedDatasetIndex = distanceSeries.data.findIndex(point => point._raw?.sourceIndex > 10_000);
-    const selected = distanceSeries.data[selectedDatasetIndex]._raw;
+    const selectedDatasetIndex = distanceSeries!.data.findIndex(point => (point._raw?.sourceIndex ?? -1) > 10_000);
+    const selected = distanceSeries!.data[selectedDatasetIndex]!._raw;
     setActiveElements([{ datasetIndex: 0, index: selectedDatasetIndex }]);
-    window.document.querySelector('#bpb-gpx-analysis canvas')
-        .dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-    assert.match(window.document.querySelector('.bpb-sun-calculator__summary').textContent, /°/,
+    win.document.querySelector('#bpb-gpx-analysis canvas')
+        .dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    assert.match(win.document.querySelector('.bpb-sun-calculator__summary').textContent, /°/,
         'a sampled point remains available to Sun synchronization');
 
-    window.dispatchEvent(new window.MessageEvent('message', {
-        source: window,
-        origin: window.location.origin,
-        data: bridgeSnapshot(window, {
+    win.dispatchEvent(new win.MessageEvent('message', {
+        source: win as unknown as Window,
+        origin: win.location.origin,
+        data: bridgeSnapshot(win, {
             units: 'imperial', theme: 'dark', chartDefaultSeries: 'both', enable3dMap: true,
         }),
     }));
-    await waitFor(dom, () => window.document.getElementById('bpb-gpx-analysis').dataset.theme === 'dark');
+    await waitFor(dom, () => win.document.getElementById('bpb-gpx-analysis').dataset.theme === 'dark');
 
     assert.equal(chartConstructions(), 1, 'settings changes reuse the live Chart.js instance');
     assert.equal(chartDestructions(), 0, 'settings changes do not destroy the live chart');
     assert.ok(updateModes.includes('none'), 'the in-place rebuild skips animation');
-    assert.ok(chartConfig().data.datasets[0].data.some(point => point._raw === selected),
+    assert.ok(chartConfig()!.data.datasets[0]!.data.some(point => point._raw === selected),
         'the deliberate selection is retained across the in-place rebuild');
 
     dom.window.close();
@@ -1751,16 +2020,16 @@ test('GPX analyzer shows partial time runs without drawing through an invalid ti
             const { dom, analysisText, chartConfig } = await loadElevationAnalyzer(source);
 
             await waitFor(dom, () => chartConfig() !== null);
-            assert.deepEqual(Array.from(chartConfig().data.datasets, dataset => dataset.label), [
+            assert.deepEqual(Array.from(chartConfig()!.data.datasets, dataset => dataset.label), [
                 'Elevation by Distance',
-                'Elevation by Time'
+                'Elevation by Time',
             ]);
             assert.deepEqual(
-                Array.from(chartConfig().data.datasets[1].data, point => point._raw?.rawEleM ?? null),
+                Array.from(chartConfig()!.data.datasets[1]!.data, point => point._raw?.rawEleM ?? null),
                 [100, null, 120],
-                'the missing or invalid timestamp must become a visible chart break'
+                'the missing or invalid timestamp must become a visible chart break',
             );
-            assert.ok(chartConfig().options.scales.xTime);
+            assert.ok(chartConfig()!.options.scales.xTime);
             assert.match(analysisText(), /Known time span: 0h 1m/);
             assert.match(analysisText(), /Time: 2 of 3 route points \(67%\)/);
             assert.match(analysisText(), /Gaps mark unavailable timestamps\./);
@@ -1806,52 +2075,52 @@ test('GPX analyzer exposes every chart series as a semantic keyboard toggle', as
       <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-10T13:00:00Z</time></trkpt>
     </trkseg></trk></gpx>`;
     const { dom, chartConfig, chartInstance } = await loadElevationAnalyzer(source, {
-        settings: { chartDefaultSeries: 'distance' }
+        settings: { chartDefaultSeries: 'distance' },
     });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const legend = window.document.getElementById('bpb-gpx-chart-legend');
-    const buttons = [...legend.querySelectorAll('button')];
+    const legend = win.document.getElementById('bpb-gpx-chart-legend');
+    const buttons = [...legend.querySelectorAll<HTMLButtonElement>('button')];
     assert.equal(legend.getAttribute('role'), 'group');
     assert.equal(legend.getAttribute('aria-label'), 'Chart series');
     assert.deepEqual(buttons.map(button => button.textContent), [
         'Elevation by Distance',
-        'Elevation by Time'
+        'Elevation by Time',
     ]);
     assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'false']);
-    assert.equal(chartConfig().options.plugins.legend.display, false,
+    assert.equal(chartConfig()!.options.plugins.legend.display, false,
         'the inaccessible canvas legend must not duplicate the semantic controls');
 
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const status = window.document.getElementById('bpb-gpx-coordinate-status');
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = win.document.getElementById('bpb-gpx-coordinate-status');
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
     assert.match(status.textContent, /Elevation by Distance:/);
     assert.doesNotMatch(status.textContent, /Elevation by Time:/);
     assert.match(status.textContent, /Distance: .*\. Time: /);
 
-    buttons[1].focus();
-    buttons[1].click();
-    assert.equal(window.document.activeElement, buttons[1]);
+    buttons[1]!.focus();
+    buttons[1]!.click();
+    assert.equal(win.document.activeElement, buttons[1]);
     assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'true']);
     assert.match(status.textContent, /Elevation by Distance:/);
     assert.match(status.textContent, /Elevation by Time:/);
-    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance().options.interaction)),
+    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance()!.options.interaction)),
         { mode: 'nearest', intersect: true, axis: 'xy' });
 
-    buttons[0].click();
+    buttons[0]!.click();
     assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['false', 'true']);
     assert.doesNotMatch(status.textContent, /Elevation by Distance:/);
     assert.match(status.textContent, /Elevation by Time:/);
-    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance().options.interaction)),
+    assert.deepEqual(JSON.parse(JSON.stringify(chartInstance()!.options.interaction)),
         { mode: 'index', intersect: false });
 
     // Each real button can be toggled in either direction. The hidden series
     // disappears from the same semantic value owner the tooltip uses.
-    buttons[1].click();
+    buttons[1]!.click();
     assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['false', 'false']);
     assert.equal(status.textContent, 'Click the chart or use ←/→ to select a point');
-    buttons[0].click();
+    buttons[0]!.click();
     assert.deepEqual(buttons.map(button => button.getAttribute('aria-pressed')), ['true', 'false']);
 
     dom.window.close();
@@ -1864,32 +2133,32 @@ test('GPX analyzer announces only trustworthy active values across a time gap', 
       <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele><time>2026-07-10T13:00:00Z</time></trkpt>
     </trkseg></trk></gpx>`;
     const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
-        settings: { chartDefaultSeries: 'distance' }
+        settings: { chartDefaultSeries: 'distance' },
     });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const distanceData = chartConfig().data.datasets[0].data;
+    const distanceData = chartConfig()!.data.datasets[0]!.data;
     const missingTimeIndex = distanceData.findIndex(point => point._raw?.lat === 47.1);
     assert.notEqual(missingTimeIndex, -1);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = win.document.getElementById('bpb-gpx-coordinate-status');
     setActiveElements([{ datasetIndex: 0, index: missingTimeIndex }]);
-    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     assert.match(status.textContent, /47\.10000, -121\.10000/);
     assert.match(status.textContent, /Elevation by Distance:/);
     assert.doesNotMatch(status.textContent, /Time:/,
         'an absent timestamp must not become a clock value in the live region');
 
-    const [distanceButton, timeButton] = window.document.querySelectorAll(
-        '#bpb-gpx-chart-legend button'
+    const [distanceButton, timeButton] = win.document.querySelectorAll(
+        '#bpb-gpx-chart-legend button',
     );
-    timeButton.click();
-    distanceButton.click();
+    timeButton!.click();
+    distanceButton!.click();
     assert.equal(status.textContent, 'Click the chart or use ←/→ to select a point',
         'a point absent from the remaining series must not survive as a ghost selection');
 
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight' }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight' }));
     assert.match(status.textContent, /47\.20000, -121\.20000/);
     assert.match(status.textContent, /Elevation by Time:/);
     assert.match(status.textContent, /Time: /);
@@ -1900,21 +2169,21 @@ test('GPX analyzer announces only trustworthy active values across a time gap', 
 
 test('GPX Sun display preference hides only the calculator and updates without rebuilding the chart', async () => {
     const { dom, chartConfig, chartInstance, chartConstructions } = await loadElevationAnalyzer(gpx, { settings: { showSunMoon: false } });
-    const { window } = dom;
+    const { window: win } = dom;
     try {
         await waitFor(dom, () => chartConfig() !== null);
-        const calculator = window.document.querySelector('.bpb-sun-calculator'), chart = chartInstance();
+        const calculator = win.document.querySelector('.bpb-sun-calculator'), chart = chartInstance();
         assert.equal(calculator.hidden, true);
         for (const showSunMoon of [true, false, true]) {
-            window.dispatchEvent(new window.MessageEvent('message', {
-                source: window, origin: window.location.origin,
-                data: bridgeSnapshot(window, { units: 'metric', theme: 'light', showSunMoon }),
+            win.dispatchEvent(new win.MessageEvent('message', {
+                source: win as unknown as Window, origin: win.location.origin,
+                data: bridgeSnapshot(win, { units: 'metric', theme: 'light', showSunMoon }),
             }));
             await waitFor(dom, () => calculator.hidden === !showSunMoon);
             assert.equal(chartInstance(), chart); assert.equal(chartConstructions(), 1);
         }
-        assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
-    } finally { window.dispatchEvent(new window.PageTransitionEvent('pagehide')); window.close(); }
+        assert.equal(win.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    } finally { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); }
 });
 
 test('GPX Sun previews chart hover and restores timed selections across mountain-local midnight', async () => {
@@ -1926,77 +2195,77 @@ test('GPX Sun previews chart hover and restores timed selections across mountain
     const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
         ascentDate: 'Jul 4, 2026',
     });
-    const { window } = dom;
+    const { window: win } = dom;
     await waitFor(dom, () => chartConfig() !== null);
-    const calculator = window.document.querySelector('.bpb-sun-calculator');
-    const legend = window.document.getElementById('bpb-gpx-chart-legend');
-    const controls = window.document.querySelector('.bpb-gpx-coordinate-controls');
-    const canvasContainer = window.document.querySelector('#bpb-gpx-analysis canvas').parentElement;
-    const button = calculator.querySelector('.bpb-sun-calculator__toggle');
-    const slider = calculator.querySelector('input[type="range"]');
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const calculator = win.document.querySelector('.bpb-sun-calculator');
+    const legend = win.document.getElementById('bpb-gpx-chart-legend');
+    const controls = win.document.querySelector('.bpb-gpx-coordinate-controls');
+    const canvasContainer = win.document.querySelector('#bpb-gpx-analysis canvas').parentElement!;
+    const button = calculator.querySelector('.bpb-sun-calculator__toggle') as HTMLButtonElement;
+    const slider = calculator.querySelector('input[type="range"]') as HTMLInputElement;
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
     assert.ok(calculator);
     assert.equal(calculator.querySelector('input[type="date"]'), null);
-    assert.ok(controls.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
-    assert.ok(legend.compareDocumentPosition(calculator) & window.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(controls.compareDocumentPosition(calculator) & win.Node.DOCUMENT_POSITION_FOLLOWING);
+    assert.ok(legend.compareDocumentPosition(calculator) & win.Node.DOCUMENT_POSITION_FOLLOWING);
     assert.equal(canvasContainer.nextElementSibling, controls,
         'coordinate feedback follows the chart so it cannot move its pointer target');
     assert.equal(controls.nextElementSibling, calculator,
         'the Sun card follows chart feedback so expanding a preview cannot move its pointer target');
     assert.equal(button.disabled, false, 'the disclosure explains how to choose its route subject');
-    const initialSummary = calculator.querySelector('.bpb-sun-calculator__summary').textContent;
-    const initialEvents = calculator.querySelector('.bpb-sun-calculator__header-events').textContent;
+    const initialSummary = calculator.querySelector('.bpb-sun-calculator__summary')!.textContent!;
+    const initialEvents = calculator.querySelector('.bpb-sun-calculator__header-events')!.textContent!;
     assert.match(initialSummary, /Jul 9 · Trailhead/);
     assert.match(initialEvents, /Sunrise.*\d{2}:\d{2} AM.*Sunset.*\d{2}:\d{2} PM/);
-    assert.equal(calculator.querySelector('.bpb-sun-calculator__panel').hidden, true);
-    assert.equal(window.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
+    assert.equal((calculator.querySelector('.bpb-sun-calculator__panel') as HTMLElement).hidden, true);
+    assert.equal(win.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
 
-    const distance = chartConfig().data.datasets[0].data;
+    const distance = chartConfig()!.data.datasets[0]!.data;
     const firstIndex = distance.findIndex(point => point._raw?.lat === 47.1);
     const lastIndex = distance.findIndex(point => point._raw?.lat === 47.3);
 
-    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
+    chartConfig()!.options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
     await waitFor(dom, () => slider.value === String(1 * 60 + 30)
         && /2026-07-11/.test(calculator.textContent));
-    assert.match(calculator.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 11 · Hovered point/);
-    assert.notEqual(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, initialEvents);
-    assert.equal(calculator.querySelector('.bpb-sun-calculator__panel').hidden, true,
+    assert.match(calculator.querySelector('.bpb-sun-calculator__summary')!.textContent!, /Jul 11 · Hovered point/);
+    assert.notEqual(calculator.querySelector('.bpb-sun-calculator__header-events')!.textContent, initialEvents);
+    assert.equal((calculator.querySelector('.bpb-sun-calculator__panel') as HTMLElement).hidden, true,
         'hover exposes rise/set times without opening the disclosure');
-    assert.equal(window.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
-    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: distance[firstIndex] }), 0,
+    assert.equal(win.document.getElementById('bpb-gpx-copy-coordinates').disabled, true);
+    assert.equal(chartConfig()!.data.datasets[0]!.pointRadius({ raw: distance[firstIndex]! }), 0,
         'hover previews the Sun without replacing deliberate chart selection');
-    canvas.dispatchEvent(new window.Event('mouseleave'));
-    await waitFor(dom, () => calculator.querySelector('.bpb-sun-calculator__summary').textContent
+    canvas.dispatchEvent(new win.Event('mouseleave'));
+    await waitFor(dom, () => calculator.querySelector('.bpb-sun-calculator__summary')!.textContent
         === initialSummary);
-    assert.equal(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, initialEvents);
+    assert.equal(calculator.querySelector('.bpb-sun-calculator__header-events')!.textContent, initialEvents);
 
     setActiveElements([{ datasetIndex: 0, index: firstIndex }]);
-    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     assert.equal(button.disabled, false);
     assert.match(calculator.textContent, /GPX point/);
     assert.match(calculator.textContent, /Recorded at selected GPX point/);
     assert.match(calculator.textContent, /2026-07-09/);
     assert.equal(slider.value, String(23 * 60 + 30));
 
-    chartConfig().options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
+    chartConfig()!.options.onHover(null, [{ datasetIndex: 0, index: lastIndex }]);
     await waitFor(dom, () => slider.value === String(1 * 60 + 30)
         && /2026-07-11/.test(calculator.textContent));
-    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: distance[firstIndex] }), 5,
+    assert.equal(chartConfig()!.data.datasets[0]!.pointRadius({ raw: distance[firstIndex]! }), 5,
         'hover leaves the selected chart point intact');
-    canvas.dispatchEvent(new window.Event('mouseleave'));
+    canvas.dispatchEvent(new win.Event('mouseleave'));
     await waitFor(dom, () => slider.value === String(23 * 60 + 30)
         && /2026-07-09/.test(calculator.textContent));
 
     slider.value = String(10 * 60);
-    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    slider.dispatchEvent(new win.Event('input', { bubbles: true }));
 
     setActiveElements([{ datasetIndex: 0, index: lastIndex }]);
-    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     assert.match(calculator.textContent, /2026-07-11/,
         'the displayed date follows the point across mountain-local midnight');
     assert.equal(slider.value, String(1 * 60 + 30));
-    window.dispatchEvent(new window.PageTransitionEvent('pagehide'));
-    assert.equal(window.document.querySelector('.bpb-sun-calculator'), null);
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
+    assert.equal(win.document.querySelector('.bpb-sun-calculator'), null);
     dom.window.close();
 });
 
@@ -2009,34 +2278,34 @@ test('manual Sun time is one-way and cannot move chart, Leaflet, route identity,
     const {
         dom, chartConfig, updateModes, markerMoves, markerStyles, postedMessages,
     } = await loadElevationAnalyzer(source, { withMap: true, ascentDate: 'Jul 4, 2026' });
-    const { window } = dom;
+    const { window: win } = dom;
     await waitFor(dom, () => chartConfig() !== null);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    const calculator = window.document.querySelector('.bpb-sun-calculator');
-    const slider = calculator.querySelector('input[type="range"]');
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const calculator = win.document.querySelector('.bpb-sun-calculator');
+    const slider = calculator.querySelector('input[type="range"]') as HTMLInputElement;
     assert.equal(slider.value, String(12 * 60), 'the first untimed point starts as an explicit noon preview');
     assert.match(calculator.textContent, /Peakbagger ascent date/);
     assert.match(calculator.textContent, /Preview time/);
 
-    const status = window.document.getElementById('bpb-gpx-coordinate-status').textContent;
+    const status = win.document.getElementById('bpb-gpx-coordinate-status').textContent;
     const updates = updateModes.length;
     const moves = markerMoves.length;
     const styles = markerStyles.length;
     await waitFor(dom, () => postedMessages.some(message => message.type === 'bpb:gpx-time-cursor' && message.selected));
     const messages = postedMessages.length;
     slider.value = String(16 * 60 + 10);
-    slider.dispatchEvent(new window.Event('input', { bubbles: true }));
+    slider.dispatchEvent(new win.Event('input', { bubbles: true }));
     await waitFor(dom, () => slider.value === String(16 * 60 + 10)
         && /4:10\s*PM PDT/i.test(slider.getAttribute('aria-valuetext') || ''));
-    assert.equal(window.document.getElementById('bpb-gpx-coordinate-status').textContent, status);
+    assert.equal(win.document.getElementById('bpb-gpx-coordinate-status').textContent, status);
     assert.equal(updateModes.length, updates, 'manual solar time does not update Chart.js');
     assert.equal(markerMoves.length, moves, 'manual solar time does not move the Leaflet marker');
     assert.equal(markerStyles.length, styles, 'manual solar time does not restyle the Leaflet marker');
     assert.equal(postedMessages.length, messages, 'manual solar time posts no terrain highlight or map message');
-    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: chartConfig().data.datasets[0].data[0] }), 5,
+    assert.equal(chartConfig()!.data.datasets[0]!.pointRadius({ raw: chartConfig()!.data.datasets[0]!.data[0]! }), 5,
         'the same selected route identity remains active');
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     assert.equal(slider.value, String(16 * 60 + 10),
         'another untimed point retains the current preview clock');
     dom.window.close();
@@ -2044,27 +2313,27 @@ test('manual Sun time is one-way and cannot move chart, Leaflet, route identity,
 
 test('persisted history traversal preserves and refreshes the analyzer surface', async () => {
     const { dom, chartConfig, postedMessages } = await loadElevationAnalyzer(gpx, { withMap: true });
-    const { window } = dom;
+    const { window: win } = dom;
     await waitFor(dom, () => chartConfig() !== null);
-    const panel = window.document.getElementById('bpb-gpx-analysis');
-    const calculator = panel.querySelector('.bpb-sun-calculator');
+    const panel = win.document.getElementById('bpb-gpx-analysis');
+    const calculator = panel.querySelector('.bpb-sun-calculator')!;
     const initialGets = postedMessages.filter(message =>
         message?.dir === 'toCS' && message.kind === 'get').length;
 
-    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide', { persisted: true }));
     assert.equal(panel.isConnected, true);
     assert.equal(calculator.isConnected, true);
-    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    win.dispatchEvent(new win.PageTransitionEvent('pageshow', { persisted: true }));
     await waitFor(dom, () => postedMessages.filter(message =>
         message?.dir === 'toCS' && message.kind === 'get').length === initialGets + 1);
-    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: true }));
-    window.dispatchEvent(new window.PageTransitionEvent('pageshow', { persisted: true }));
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide', { persisted: true }));
+    win.dispatchEvent(new win.PageTransitionEvent('pageshow', { persisted: true }));
     await waitFor(dom, () => postedMessages.filter(message =>
         message?.dir === 'toCS' && message.kind === 'get').length === initialGets + 2);
 
-    assert.equal(window.document.querySelectorAll('#bpb-gpx-analysis').length, 1);
-    assert.equal(window.document.querySelectorAll('.bpb-sun-calculator').length, 1);
-    window.dispatchEvent(new window.PageTransitionEvent('pagehide', { persisted: false }));
+    assert.equal(win.document.querySelectorAll('#bpb-gpx-analysis').length, 1);
+    assert.equal(win.document.querySelectorAll('.bpb-sun-calculator').length, 1);
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide', { persisted: false }));
     assert.equal(calculator.isConnected, false, 'ordinary teardown still disposes the calculator');
     dom.window.close();
 });
@@ -2079,20 +2348,20 @@ test('GPX Sun admits valid timestamps point by point but rejects all-equal gener
         const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, {
             ascentDate: 'Jul 4, 2026', settings: { chartDefaultSeries: 'distance' },
         });
-        const { window } = dom;
+        const { window: win } = dom;
         await waitFor(dom, () => chartConfig() !== null);
-        const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-        const data = chartConfig().data.datasets[0].data;
-        const calculator = window.document.querySelector('.bpb-sun-calculator');
-        assert.match(calculator.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 4 · Trailhead/);
-        assert.match(calculator.querySelector('.bpb-sun-calculator__header-events').textContent, /Sunrise.*Sunset/);
-        assert.equal(calculator.querySelector('input[type="range"]').value, '720',
+        const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+        const data = chartConfig()!.data.datasets[0]!.data;
+        const calculator = win.document.querySelector('.bpb-sun-calculator');
+        assert.match(calculator.querySelector('.bpb-sun-calculator__summary')!.textContent!, /Jul 4 · Trailhead/);
+        assert.match(calculator.querySelector('.bpb-sun-calculator__header-events')!.textContent!, /Sunrise.*Sunset/);
+        assert.equal((calculator.querySelector('input[type="range"]') as HTMLInputElement).value, '720',
             'an untimed trailhead uses the saved ascent date and noon before any selection');
         setActiveElements([{ datasetIndex: 0, index: data.findIndex(point => point._raw?.lat === 47.1) }]);
-        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
         assert.match(calculator.textContent, /Peakbagger ascent date/);
         setActiveElements([{ datasetIndex: 0, index: data.findIndex(point => point._raw?.lat === 47.3) }]);
-        canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+        canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
         assert.match(calculator.textContent, /GPX point/);
         assert.match(calculator.textContent, /Recorded at selected GPX point/);
         dom.window.close();
@@ -2105,18 +2374,18 @@ test('GPX Sun admits valid timestamps point by point but rejects all-equal gener
           <trkpt lat="40.25" lon="-105.58"><ele>3000</ele><time>2025-07-07T01:55:00Z</time></trkpt>
         </trkseg></trk></gpx>`;
         const { dom, chartConfig } = await loadElevationAnalyzer(source, { ascentDate: 'Jul 4, 2025' });
-        const { window } = dom;
+        const { window: win } = dom;
         await waitFor(dom, () => chartConfig() !== null);
-        assert.match(window.document.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 4 · Trailhead/);
-        assert.equal(window.document.querySelector('.bpb-sun-calculator__time').value, '720',
+        assert.match(win.document.querySelector('.bpb-sun-calculator__summary').textContent, /Jul 4 · Trailhead/);
+        assert.equal(win.document.querySelector('.bpb-sun-calculator__time').value, '720',
             'generated timestamps must not become the default sunrise/sunset date or clock');
-        window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
-            new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+        win.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
+            new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
         );
-        const calculator = window.document.querySelector('.bpb-sun-calculator');
+        const calculator = win.document.querySelector('.bpb-sun-calculator');
         assert.match(calculator.textContent, /Peakbagger ascent date/);
         assert.doesNotMatch(calculator.textContent, /Recorded at selected GPX point/);
-        assert.equal(calculator.querySelector('input[type="range"]').value, String(12 * 60));
+        assert.equal((calculator.querySelector('input[type="range"]') as HTMLInputElement).value, String(12 * 60));
         dom.window.close();
     });
 });
@@ -2129,13 +2398,13 @@ test('GPX Sun stays unavailable for missing or year-only ascent dates and clears
               <trkpt lat="47.2" lon="-121.2"><ele>110</ele></trkpt>
             </trkseg></trk></gpx>`;
             const { dom, chartConfig } = await loadElevationAnalyzer(source, { ascentDate });
-            const { window } = dom;
+            const { window: win } = dom;
             await waitFor(dom, () => chartConfig() !== null);
-            window.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
-                new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })
+            win.document.querySelector('#bpb-gpx-analysis canvas').dispatchEvent(
+                new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
             );
-            const calculator = window.document.querySelector('.bpb-sun-calculator');
-            assert.equal(calculator.querySelector('button').disabled, false,
+            const calculator = win.document.querySelector('.bpb-sun-calculator');
+            assert.equal((calculator.querySelector('button') as HTMLButtonElement).disabled, false,
                 'the selected point failure remains openable so its cause is visible');
             assert.match(calculator.textContent, /No track or ascent date is available/);
             assert.doesNotMatch(calculator.textContent, /sunrise|sunset/i);
@@ -2150,18 +2419,18 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
       <trkpt lat="47.20000" lon="-121.20000"><ele>110</ele></trkpt>
       <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
     </trkseg></trk></gpx>`;
-    const writes = [];
-    const clipboard = { writeText: async text => { writes.push(text); } };
+    const writes: string[] = [];
+    const clipboard = { writeText: async (text: string) => { writes.push(text); } };
     const {
-        dom, chartConfig, setActiveElements, updateModes, eventQueries
+        dom, chartConfig, setActiveElements, updateModes, eventQueries,
     } = await loadElevationAnalyzer(source, { clipboard });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const copyButton = window.document.getElementById('bpb-gpx-copy-coordinates');
-    const status = window.document.getElementById('bpb-gpx-coordinate-status');
-    const points = chartConfig().data.datasets[0].data;
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const copyButton = win.document.getElementById('bpb-gpx-copy-coordinates');
+    const status = win.document.getElementById('bpb-gpx-coordinate-status');
+    const points = chartConfig()!.data.datasets[0]!.data;
     assert.equal(points.length, 3, 'a chart below its display budget keeps every source point');
 
     assert.equal(canvas.tabIndex, 0);
@@ -2170,24 +2439,24 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     assert.equal(copyButton.disabled, true);
 
     setActiveElements([{ datasetIndex: 0, index: 0 }]);
-    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     assert.equal(copyButton.disabled, false);
     assert.match(status.textContent,
         /^Selected point 1 of 3: 47\.10000, -121\.10000\. Distance: 0\.00 km\./);
     assert.match(status.textContent, /Elevation by Distance: 110 m/);
     assert.deepEqual(eventQueries[0], { mode: 'nearest', intersect: false, axis: 'xy' });
-    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[0] }), 5);
-    assert.equal(chartConfig().data.datasets[0].pointRadius({ raw: points[1] }), 0);
+    assert.equal(chartConfig()!.data.datasets[0]!.pointRadius({ raw: points[0]! }), 5);
+    assert.equal(chartConfig()!.data.datasets[0]!.pointRadius({ raw: points[1]! }), 0);
     assert.deepEqual(updateModes, ['none']);
 
     canvas.focus();
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     assert.match(status.textContent, /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     assert.match(status.textContent, /^Selected point 3 of 3: 47\.30000, -121\.30000\./);
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     assert.match(status.textContent, /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     assert.match(status.textContent, /^Selected point 1 of 3: 47\.10000, -121\.10000\./);
 
     copyButton.click();
@@ -2199,13 +2468,13 @@ test('GPX analyzer selects coordinates by click and keyboard before copying them
     // Mobile browsers synthesize the same click activation after a tap. The
     // double-click shortcut also delegates to the shared selection/copy path.
     setActiveElements([{ datasetIndex: 0, index: 2 }]);
-    canvas.dispatchEvent(new window.Event('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.Event('click', { bubbles: true }));
     assert.match(status.textContent, /^Selected point 3 of 3: 47\.30000, -121\.30000\./);
-    canvas.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('dblclick', { bubbles: true }));
     await waitFor(dom, () => writes.length === 2 && status.dataset.state === 'success');
     assert.deepEqual(writes, [
         '47.10000, -121.10000',
-        '47.30000, -121.30000'
+        '47.30000, -121.30000',
     ]);
 
     dom.window.close();
@@ -2218,37 +2487,38 @@ test('GPX analyzer moves the route scrubber with keyboard selection', async () =
       <trkpt lat="47.30000" lon="-121.30000"><ele>120</ele></trkpt>
     </trkseg></trk></gpx>`;
     const {
-        dom, chartConfig, markerMoves, markerStyles, replaceMap
+        dom, chartConfig, markerMoves, markerStyles, replaceMap,
     } = await loadElevationAnalyzer(source, { withMap: true, ascentDate: 'Jul 4, 2026' });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
     canvas.focus();
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    const sunSummary = window.document.querySelector('.bpb-sun-calculator__summary').textContent;
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    const sunSummary = win.document.querySelector('.bpb-sun-calculator__summary').textContent;
     assert.match(sunSummary, /°/, 'the selected point has a calculated Sun reading before replacement');
 
     assert.deepEqual(markerMoves, [
         [47.1, -121.1],
         [47.2, -121.2],
-        [47.3, -121.3]
+        [47.3, -121.3],
     ], 'the map marker follows the same points selected on the chart');
 
-    chartConfig().options.onHover({}, []);
-    canvas.dispatchEvent(new window.MouseEvent('mouseleave'));
-    assert.equal(markerStyles.at(-1).opacity, 1);
-    assert.equal(markerStyles.at(-1).fillOpacity, 1,
+    chartConfig()!.options.onHover({}, []);
+    canvas.dispatchEvent(new win.MouseEvent('mouseleave'));
+    assert.equal(markerStyles.at(-1)!.opacity, 1);
+    assert.equal(markerStyles.at(-1)!.fillOpacity, 1,
         'ending a hover restores the persistent keyboard selection');
 
-    replaceMap();
-    await waitFor(dom, () => markerMoves.length >= 3);
+    const movesBeforeReplace = markerMoves.length;
+    replaceMap!();
+    await waitFor(dom, () => markerMoves.length > movesBeforeReplace);
     assert.deepEqual(markerMoves.at(-1), [47.3, -121.3],
         'replacing the native map replays the persistent selection');
-    assert.equal(window.document.querySelector('.bpb-sun-calculator button').disabled, false);
-    assert.equal(window.document.querySelector('.bpb-sun-calculator__summary').textContent, sunSummary,
+    assert.equal(win.document.querySelector('.bpb-sun-calculator button').disabled, false);
+    assert.equal(win.document.querySelector('.bpb-sun-calculator__summary').textContent, sunSummary,
         'an iframe identity replacement replays the persistent Sun selection');
 
     dom.window.close();
@@ -2262,26 +2532,26 @@ test('GPX analyzer keyboard traversal follows chronological time-series order', 
     </trkseg></trk></gpx>`;
     const { dom, chartConfig, markerMoves, markerStyles } = await loadElevationAnalyzer(source, {
         withMap: true,
-        settings: { chartDefaultSeries: 'time' }
+        settings: { chartDefaultSeries: 'time' },
     });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const status = win.document.getElementById('bpb-gpx-coordinate-status');
     canvas.focus();
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
-    canvas.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    canvas.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
 
     assert.deepEqual(markerMoves, [
         [47.1, -121.1],
-        [47.2, -121.2]
+        [47.2, -121.2],
     ], 'time-only traversal starts at the earliest timestamp rather than route order');
     assert.match(status.textContent,
         /^Selected point 2 of 3: 47\.20000, -121\.20000\./);
     assert.match(status.textContent, /Elevation by Time: 110 m/);
     assert.match(status.textContent, /Time: /);
-    assert.equal(markerStyles.at(-1).fillColor, '#0055FF',
+    assert.equal(markerStyles.at(-1)!.fillColor, '#0055FF',
         'the route marker retains the time-series identity');
 
     dom.window.close();
@@ -2293,24 +2563,24 @@ test('GPX analyzer exposes a selected-text fallback when clipboard copy fails', 
       <trkpt lat="47.22345" lon="-121.64321"><ele>110</ele></trkpt>
     </trkseg></trk></gpx>`;
     const clipboard = {
-        writeText: async () => { throw new Error('permission denied'); }
+        writeText: async () => { throw new Error('permission denied'); },
     };
     const { dom, chartConfig, setActiveElements } = await loadElevationAnalyzer(source, { clipboard });
-    const { window } = dom;
+    const { window: win } = dom;
 
     await waitFor(dom, () => chartConfig() !== null);
-    const canvas = window.document.querySelector('#bpb-gpx-analysis canvas');
-    const copyButton = window.document.getElementById('bpb-gpx-copy-coordinates');
-    const fallback = window.document.querySelector('.bpb-gpx-coordinate-fallback');
-    const status = window.document.getElementById('bpb-gpx-coordinate-status');
+    const canvas = win.document.querySelector('#bpb-gpx-analysis canvas');
+    const copyButton = win.document.getElementById('bpb-gpx-copy-coordinates');
+    const fallback = win.document.querySelector('.bpb-gpx-coordinate-fallback') as unknown as HTMLInputElement;
+    const status = win.document.getElementById('bpb-gpx-coordinate-status');
 
     setActiveElements([{ datasetIndex: 0, index: 0 }]);
-    canvas.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    canvas.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
     copyButton.click();
 
     await waitFor(dom, () => fallback.hidden === false);
     assert.equal(fallback.value, '47.12345, -121.54321');
-    assert.equal(window.document.activeElement, fallback);
+    assert.equal(win.document.activeElement, fallback);
     assert.equal(fallback.selectionStart, 0);
     assert.equal(fallback.selectionEnd, fallback.value.length);
     assert.equal(status.dataset.state, 'error');
@@ -2349,16 +2619,15 @@ test('GPX analyzer coordinate focus styles use readable light and dark theme tok
     dom.window.close();
 });
 
-
 test('healthy GPX includes the source point count on the existing metrics note', async () => {
     const { dom, chartConfig } = await loadElevationAnalyzer(gpx);
     await waitFor(dom, () => chartConfig() !== null);
     const note = dom.window.document.querySelector('.bpb-gpx-metric-note');
     assert.match(note.textContent, /^Adjusted GPX metrics.* · 4 points$/);
-    assert.equal(note.querySelector('.bpb-gpx-point-count').title, 'Track points in the source GPX');
+    assert.equal((note.querySelector('.bpb-gpx-point-count') as HTMLElement).title, 'Track points in the source GPX');
     assert.equal(note.querySelector('br'), null);
-    assert.equal(note.querySelector('.bpb-gpx-metric-note-text').title,
-        note.querySelector('.bpb-gpx-metric-note-text').textContent);
+    assert.equal((note.querySelector('.bpb-gpx-metric-note-text') as HTMLElement).title,
+        note.querySelector('.bpb-gpx-metric-note-text')!.textContent);
     dom.window.close();
 });
 
@@ -2372,7 +2641,7 @@ test('compact timing keeps clocks, leg durations and mountain timezone together'
         'Back to car: 06:30 AM (0h 30m back)',
         'Mountain time (PDT)',
     ]);
-    assert.equal(timing.querySelector('.bpb-gpx-timezone').title, 'Times in the mountain’s local time');
+    assert.equal((timing.querySelector('.bpb-gpx-timezone') as HTMLElement).title, 'Times in the mountain’s local time');
     dom.window.close();
 });
 
@@ -2380,7 +2649,7 @@ test('source point count includes excluded coordinates and uses singular for one
     for (const [points, expected] of [
         ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt>', '1 point'],
         ['<trkpt lat="47" lon="-121"><ele>100</ele></trkpt><trkpt lat="bad" lon="-121"><ele>110</ele></trkpt>', '2 points'],
-    ]) {
+    ] as const) {
         const { dom, chartConfig } = await loadElevationAnalyzer(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`);
         await waitFor(dom, () => chartConfig() !== null);
         assert.equal(dom.window.document.querySelector('.bpb-gpx-point-count').textContent, ` · ${expected}`);
@@ -2392,81 +2661,81 @@ test('suspect segments are reversible across metrics, source identities, overlay
     const source = segmentsGpx(suspectSegments());
     const { dom, chartConfig, setActiveElements, polylineCalls, postedMessages } =
         await loadElevationAnalyzer(source, { withMap: true, settings: { enable3dMap: true } });
-    const { window } = dom;
-    const doc = window.document;
+    const { window: win } = dom;
+    const doc = win.document;
     try {
         await waitFor(dom, () => chartConfig() !== null && polylineCalls.length > 0);
         const panel = doc.querySelector('#bpb-gpx-analysis');
-        const stats = panel.querySelector('.bpb-gpx-stats');
-        const disclosure = panel.querySelector('.bpb-gpx-segment-disclosure');
-        const details = panel.querySelector('#bpb-gpx-segment-details');
-        const toggle = details.querySelector('button');
-        const canvas = panel.querySelector('canvas');
-        assert.match(stats.textContent, /Time: 12h 32m/);
+        const stats = panel.querySelector('.bpb-gpx-stats') as HTMLElement;
+        const disclosure = panel.querySelector('.bpb-gpx-segment-disclosure') as HTMLButtonElement;
+        const details = panel.querySelector('#bpb-gpx-segment-details') as HTMLElement;
+        const toggle = details.querySelector('button') as HTMLButtonElement;
+        const canvas = panel.querySelector('canvas') as HTMLCanvasElement;
+        assert.match(stats.textContent!, /Time: 12h 32m/);
         assert.equal(disclosure.textContent, '2 segments excluded ▾');
-        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+        assert.match(panel.querySelector('.bpb-gpx-point-count')!.textContent!, /113 points/);
         assert.equal(details.hidden, true);
         disclosure.click();
         assert.equal(disclosure.getAttribute('aria-expanded'), 'true');
         assert.equal(details.hidden, false);
-        assert.match(details.textContent, /56 points used; 57 points excluded/);
-        assert.match(details.textContent, /GPX download and files sent to map providers are unchanged/);
-        assert.equal(polylineCalls.at(-1).latLngs.length, 56);
+        assert.match(details.textContent!, /56 points used; 57 points excluded/);
+        assert.match(details.textContent!, /GPX download and files sent to map providers are unchanged/);
+        assert.equal(polylineCalls.at(-1)!.latLngs.length, 56);
         doc.querySelector('#bpb-terrain-toggle').click();
-        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
-        const selectId = id => {
-            const index = chartConfig().data.datasets[0].data.findIndex(p => p._raw?.sourcePointId === id);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1)!.routeSegments!.length, 1);
+        const selectId = (id: string) => {
+            const index = chartConfig()!.data.datasets[0]!.data.findIndex(p => p._raw?.sourcePointId === id);
             assert.ok(index >= 0, `missing source point ${id}`);
             setActiveElements([{ datasetIndex: 0, index }]);
-            canvas.dispatchEvent(new window.MouseEvent('click'));
+            canvas.dispatchEvent(new win.MouseEvent('click'));
         };
         selectId('1:20');
         toggle.click();
-        assert.match(stats.textContent, /Time: 68h 28m/);
-        assert.match(canvas.getAttribute('aria-label'), /46.01000/);
-        assert.match(details.textContent, /113 points used; 0 points excluded/);
-        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 2);
-        assert.doesNotMatch(panel.querySelector('.bpb-gpx-substats').textContent, /Possible Camping/);
+        assert.match(stats.textContent!, /Time: 68h 28m/);
+        assert.match(canvas.getAttribute('aria-label')!, /46.01000/);
+        assert.match(details.textContent!, /113 points used; 0 points excluded/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1)!.routeSegments!.length, 2);
+        assert.doesNotMatch(panel.querySelector('.bpb-gpx-substats')!.textContent!, /Possible Camping/);
         assert.equal(toggle.textContent, 'Use interpreted view');
         selectId('2:20');
         toggle.click();
-        assert.match(stats.textContent, /Time: 12h 32m/);
-        assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, true);
-        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
-        assert.match(panel.querySelector('.bpb-sun-calculator').textContent, /Trailhead/);
-        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1).routeSegments.length, 1);
-        window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
-            data: bridgeSnapshot(window, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
-        await waitFor(dom, () => /miles/.test(stats.textContent));
-        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/,
+        assert.match(stats.textContent!, /Time: 12h 32m/);
+        assert.equal((panel.querySelector('.bpb-gpx-coordinate-controls button') as HTMLButtonElement).disabled, true);
+        assert.match(panel.querySelector('.bpb-gpx-hint')!.textContent!, /selected point is excluded/);
+        assert.match(panel.querySelector('.bpb-sun-calculator')!.textContent!, /Trailhead/);
+        assert.equal(postedMessages.filter(m => m.type === 'init').at(-1)!.routeSegments!.length, 1);
+        win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin,
+            data: bridgeSnapshot(win, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
+        await waitFor(dom, () => /miles/.test(stats.textContent!));
+        assert.match(panel.querySelector('.bpb-gpx-hint')!.textContent!, /selected point is excluded/,
             'rebuilding the chart must preserve why its selection was cleared');
         selectId('1:20');
-        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /Selected point/);
-        assert.equal(panel.querySelector('.bpb-gpx-coordinate-controls button').disabled, false);
+        assert.match(panel.querySelector('.bpb-gpx-hint')!.textContent!, /Selected point/);
+        assert.equal((panel.querySelector('.bpb-gpx-coordinate-controls button') as HTMLButtonElement).disabled, false);
         toggle.click();
         selectId('2:20');
         toggle.click();
-        assert.match(panel.querySelector('.bpb-gpx-hint').textContent, /selected point is excluded/);
+        assert.match(panel.querySelector('.bpb-gpx-hint')!.textContent!, /selected point is excluded/);
         toggle.click();
-        assert.doesNotMatch(panel.querySelector('.bpb-gpx-hint').textContent, /excluded/,
+        assert.doesNotMatch(panel.querySelector('.bpb-gpx-hint')!.textContent!, /excluded/,
             'a new analysis view must clear the prior exclusion explanation');
         toggle.click();
         for (let i = 0; i < 4; i++) toggle.click();
-        assert.match(details.textContent, /56 points used; 57 points excluded/);
+        assert.match(details.textContent!, /56 points used; 57 points excluded/);
         assert.equal(doc.querySelectorAll('.bpb-gpx-segment-disclosure').length, 1);
         assert.equal(doc.querySelector('a').href, 'https://www.peakbagger.com/demo.gpx');
         assert.equal(source, segmentsGpx(suspectSegments()));
-        window.dispatchEvent(new window.MessageEvent('message', { source: window, origin: window.location.origin,
-            data: bridgeSnapshot(window, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
-        await waitFor(dom, () => /miles/.test(stats.textContent));
-        assert.match(stats.textContent, /Time: 12h 32m/);
-        assert.match(panel.querySelector('.bpb-gpx-point-count').textContent, /113 points/);
+        win.dispatchEvent(new win.MessageEvent('message', { source: win as unknown as Window, origin: win.location.origin,
+            data: bridgeSnapshot(win, { units: 'imperial', theme: 'dark', enable3dMap: true }) }));
+        await waitFor(dom, () => /miles/.test(stats.textContent!));
+        assert.match(stats.textContent!, /Time: 12h 32m/);
+        assert.match(panel.querySelector('.bpb-gpx-point-count')!.textContent!, /113 points/);
     } finally { dom.window.close(); }
 });
 
 test('warning-only segment disclosure never claims to exclude source points', async () => {
     const segments = suspectSegments().slice(1);
-    segments.push(structuredClone(segments[0]));
+    segments.push(structuredClone(segments[0]!));
     const { dom, chartConfig } = await loadElevationAnalyzer(segmentsGpx(segments));
     try {
         await waitFor(dom, () => chartConfig() !== null);

@@ -1347,12 +1347,6 @@ const run = async () => {
             const activeMetrics = metrics;
             const selectedBeforeRebuild = retainedSelection;
             const disclosureFocused = document.activeElement === segmentDetailsButton;
-            sampleChartData(activeMetrics, selectedBeforeRebuild);
-            selectedCoordinateIndex = selectedBeforeRebuild
-                ? chartData.indexOf(selectedBeforeRebuild)
-                : -1;
-            clearHoverSunPreview();
-            if (selectedBeforeRebuild) showDefaultSun();
             const p = panelPalette();
             applyPanelTheme();
             controlsContainer.hidden = false;
@@ -1361,6 +1355,14 @@ const run = async () => {
             canvasContainer.hidden = false;
             canvasContainer.style.height = chartMode === 'route' ? '110px'
                 : chartMode === 'progress' ? '260px' : '300px';
+            // Measure after unhiding the canvas container so ResizeObserver
+            // does not immediately trigger a redundant rebuild on first paint.
+            sampleChartData(activeMetrics, selectedBeforeRebuild);
+            selectedCoordinateIndex = selectedBeforeRebuild
+                ? chartData.indexOf(selectedBeforeRebuild)
+                : -1;
+            clearHoverSunPreview();
+            if (selectedBeforeRebuild) showDefaultSun();
             canvas.tabIndex = 0;
             canvas.setAttribute('role', 'application');
             canvas.setAttribute('aria-describedby', hintText.id);
