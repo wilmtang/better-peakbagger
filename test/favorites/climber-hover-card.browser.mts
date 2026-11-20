@@ -4,7 +4,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { loadPage, PAGE_FIXTURES, waitFor, trustedInput, accelerateTimeout, type LoadedPage } from '../helpers/fixture-page.mts';
-import { rect as domRect } from '../helpers/page-types.mts';
+import { rect as domRect, type StubMessage } from '../helpers/page-types.mts';
+import { favoritesStore } from '../../src/background/favorites-store.ts';
+
+const FAVORITES_MESSAGE = favoritesStore.MESSAGE_TYPE;
 
 interface VisualViewportStub { offsetTop: number; offsetLeft: number; width: number; height: number }
 const rectList = (...rects: DOMRect[]) => rects as unknown as DOMRectList;
@@ -244,7 +247,17 @@ test('favorite and Ignore changes use operation APIs and confirmed reverse actio
     await waitFor(dom, () => !favorite.disabled);
     favorite.click();
     assert.equal(dom.chrome._favoriteMutations.length, 0, 'synthetic page clicks cannot write');
+    // Hold the favorite write so the pending state stays observable.
+    let releaseFavorite!: () => void;
+    const favoriteHeld = new Promise<void>(resolve => { releaseFavorite = resolve; });
+    const send = dom.chrome.runtime.sendMessage.bind(dom.chrome.runtime);
+    Object.defineProperty(dom.chrome.runtime, 'sendMessage', { configurable: true, value: async (message: StubMessage, reply?: (response: unknown) => void) => {
+        if (message?.type === FAVORITES_MESSAGE) await favoriteHeld;
+        return send(message, reply);
+    } });
     await trustedInput(favorite, { type: 'click' });
+    await waitFor(dom, () => favorite.textContent === 'Saving…');
+    releaseFavorite();
     await waitFor(dom, () => favorite.textContent === 'Remove favorite climber');
     assert.equal(ignore.disabled, true);
     assert.equal((dom.chrome._favoriteMutations[0] as { kind: string }).kind, 'add');
@@ -313,10 +326,13 @@ test('inline Buddy saves wait for confirmation, reject synthetic activation and 
     const dom = await load();
     t.after(() => dom.window.close());
     let included = false, posts = 0, failedConfirmation = false, gets = 0;
+    // Hold the first Buddy POST so the pending state stays observable.
+    let releasePost!: () => void;
+    const postHeld = new Promise<void>(resolve => { releasePost = resolve; });
     const form = () => included ? buddyForm.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
         .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : buddyForm;
     (dom.window as { fetch: unknown }).fetch = async (url: string, init: RequestInit) => {
-        if (init.method === 'POST') { posts++; included = new URLSearchParams(init.body as string).has('AddBuddy'); }
+        if (init.method === 'POST') { posts++; await postHeld; included = new URLSearchParams(init.body as string).has('AddBuddy'); }
         else if (++gets === 2 && failedConfirmation) throw new Error('offline');
         return { status: 200, headers: {}, url: String(url), text: async () => form() };
     };
@@ -326,6 +342,8 @@ test('inline Buddy saves wait for confirmation, reject synthetic activation and 
     assert.equal(posts, 0);
     failedConfirmation = true;
     await trustedInput(buddy, { type: 'click' });
+    await waitFor(dom, () => buddy.textContent === 'Adding…');
+    releasePost();
     await waitFor(dom, () => buddy.textContent === 'Check buddy status' && !buddy.disabled);
     assert.equal(card.querySelector('#bpb-climber-card-ignore').disabled, true);
     assert.match(card.querySelector('.bpb-climber-card-feedback').textContent ?? '', /not confirmed/);

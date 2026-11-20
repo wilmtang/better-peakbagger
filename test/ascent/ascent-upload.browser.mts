@@ -211,11 +211,15 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), true,
         'the native button stays in the DOM (the form post needs it) but is hidden');
 
-    // Clearing the selection restores Peakbagger's plain upload path.
-    const input = dom.window.document.getElementById('GPXUpload');
-    await trustedInput(input, { type: 'files', files: [] });
-    assert.equal(processButton(dom), null);
-    assert.equal(native.classList.contains('bpb-native-preview-hidden'), false);
+    // A user cannot empty the input through the picker (cancelling keeps the
+    // selection in Chromium and Firefox); clearing comes from page script,
+    // whose untrusted change must not drive the swap. Peakbagger's Remove,
+    // covered below, is how a user returns to the plain upload path.
+    const input = dom.window.document.getElementById('GPXUpload') as unknown as HTMLInputElement;
+    input.files = new dom.window.DataTransfer().files;
+    input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    assert.ok(processButton(dom), 'an untrusted clearing change leaves the Process button');
+    assert.equal(native.classList.contains('bpb-native-preview-hidden'), true);
 });
 
 test('a non-gpx selection and Peakbagger’s Remove both restore the native button', async () => {
@@ -532,10 +536,6 @@ test('B selection supersedes an A Apply that settles late', async () => {
 
 test('clearing, replacing, removing, or navigating invalidates a delayed A result', async () => {
     const cases: [string, (dom: EditorPage) => Promise<unknown>][] = [
-        ['cleared selection', async dom => {
-            const input = dom.window.document.getElementById('GPXUpload');
-            await trustedInput(input, { type: 'files', files: [] });
-        }],
         ['non-GPX replacement', dom => chooseGpx(dom, { name: 'photo.jpeg', content: 'not gpx' })],
         ['native Remove', async dom => {
             dom.window.document.getElementById('GPXRemove').dispatchEvent(

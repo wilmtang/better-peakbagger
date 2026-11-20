@@ -22,6 +22,14 @@ interface MapStub { invalidateCalls: number; invalidateSize(): void; }
 const domHandle = { window: globalThis };
 const makePointerEvent = (type: string, init: PointerEventInit = {}) =>
     pointerEvent(domHandle, type, init);
+// These synthetic pointer events have no browser pointer behind them, so the
+// real setPointerCapture would throw NotFoundError for their ids. A trusted
+// pointerdown always has an active pointer to capture.
+const resizeHandle = () => {
+    const handle = document.getElementById('bpb-map-resize-handle')!;
+    handle.setPointerCapture = () => {};
+    return handle;
+};
 const nextAnimationFrames = () => new Promise<void>(resolve =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
@@ -77,7 +85,7 @@ test('the viewport wraps the map frame and exposes a resize handle', () => {
     try {
         assert.equal(viewport.element!.id, 'bpb-map-viewport');
         assert.equal(iframe.parentElement, viewport.element, 'the frame moves inside the wrapper');
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         assert.ok(handle, 'a resize affordance exists');
         assert.match(handle.getAttribute('aria-label')!, /Use arrow keys for small steps/,
             'the handle is reachable and described for keyboard users');
@@ -99,7 +107,7 @@ test('the viewport wraps the map frame and exposes a resize handle', () => {
 test('a coarse-pointer configuration keeps a full touch target below the map', () => {
     const { viewport, iframe, restore } = setup({ railHeight: 44, targetSize: 44 });
     try {
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         assert.equal(handle.style.width, '44px');
         assert.equal(handle.style.height, '44px');
         assert.equal(iframe.style.height, 'calc(100% - 44px)');
@@ -133,7 +141,7 @@ for (const [name, preferredHeight, wrapperHeightCap, effectiveHeight] of [
             await waitFor(domHandle, () => invalidated.length > before);
             assert.equal(viewport.size.height, preferredHeight, 'the untouched preference is retained');
             assert.equal(viewport.effectiveSize.height, effectiveHeight);
-            assert.match(document.getElementById('bpb-map-resize-handle')!
+            assert.match(resizeHandle()
                 .getAttribute('aria-label')!, new RegExp(`by ${effectiveHeight} pixels high`));
         } finally { restore(); }
     });
@@ -149,7 +157,7 @@ test('the first keyboard and pointer deltas start from visible short-window heig
         const before = invalidated.length;
         viewport.scheduleInvalidate();
         await waitFor(domHandle, () => invalidated.length > before);
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         assert.equal(viewport.effectiveSize.height, 568);
 
         handle.dispatchEvent(new KeyboardEvent('keydown', {
@@ -207,7 +215,7 @@ test('window growth restores only an untouched preferred height', async () => {
         before = invalidated.length;
         window.dispatchEvent(new Event('resize'));
         await waitFor(domHandle, () => invalidated.length > before);
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
         assert.equal(viewport.size.height, 558);
         wrapperHeightCap = 1200;
@@ -239,7 +247,7 @@ test('pointer resizing can use a wider layout boundary than the viewport column'
         });
         boundary.getBoundingClientRect = () => rect({ left: 0, right: 1000, width: 1000 });
         viewport.element!.getBoundingClientRect = () => rect({ left: 0, right: 450, width: 450 });
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         handle.dispatchEvent(makePointerEvent('pointerdown', {
             button: 0, clientX: 450, clientY: 400,
         }));
@@ -257,7 +265,7 @@ test('pointer resizing can use a wider layout boundary than the viewport column'
 test('touch cancellation and capture loss commit the visible map size once', () => {
     const { viewport, persists, restore } = setup();
     try {
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         const boundary = viewport.element!.parentElement!;
         boundary.getBoundingClientRect = () => rect({ left: 0, right: 1000, width: 1000 });
         viewport.element!.getBoundingClientRect = () => rect({ left: 0, right: 600, width: 600 });
@@ -285,7 +293,7 @@ test('a keyboard resize persists once after the last keystroke, not per repeat',
     // write-per-minute quota and the final size could silently fail to stick.
     const { viewport, persists, restore } = setup({ persistDelayMs: 30 });
     try {
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         for (let i = 0; i < 6; i++) {
             handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
         }
@@ -301,7 +309,7 @@ test('a keyboard resize persists once after the last keystroke, not per repeat',
 test('an unhandled key is left alone', () => {
     const { viewport, restore } = setup();
     try {
-        const handle = document.getElementById('bpb-map-resize-handle')!;
+        const handle = resizeHandle();
         const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
         handle.dispatchEvent(event);
         assert.equal(event.defaultPrevented, false, 'Tab must still move focus');

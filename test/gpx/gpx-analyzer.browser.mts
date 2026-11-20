@@ -463,6 +463,9 @@ test('GPX analyzer adds a thick, segment-preserving route casing behind native L
 
     const mapViewport = win.document.getElementById('bpb-map-viewport');
     const mapResizeHandle = win.document.getElementById('bpb-map-resize-handle');
+    // The synthetic pointers below have no browser pointer to capture; the
+    // real setPointerCapture rejects their ids (Firefox throws NotFoundError).
+    mapResizeHandle.setPointerCapture = () => {};
     assert.equal(mapViewport.style.width, '450px');
     assert.equal(mapViewport.style.maxWidth, '100%');
     assert.equal(mapViewport.style.height, '466px');

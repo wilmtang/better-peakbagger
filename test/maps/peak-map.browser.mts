@@ -306,6 +306,9 @@ test('Peak map resize supports keyboard, centered pointer drags, persistence, an
         const mount = window.document.getElementById('bpb-map-viewport');
         const iframe = window.document.getElementById('Gmap');
         const handle = window.document.getElementById('bpb-map-resize-handle');
+        // The synthetic pointers here have no browser pointer to capture; the
+        // real setPointerCapture rejects their ids (Firefox throws NotFoundError).
+        handle.setPointerCapture = () => {};
         let invalidations = 0;
         let cameraChanges = 0;
         const syncBefore = await window.chrome.storage.sync.get(null);
@@ -364,6 +367,9 @@ test('Peak map remains resizable with blocked storage and reserves a touch targe
     try {
         const mount = window.document.getElementById('bpb-map-viewport');
         const handle = window.document.getElementById('bpb-map-resize-handle');
+        // The synthetic pointers here have no browser pointer to capture; the
+        // real setPointerCapture rejects their ids (Firefox throws NotFoundError).
+        handle.setPointerCapture = () => {};
         assert.equal(handle.style.height, '44px');
         assert.equal(mount.style.height, '469px');
         handle.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));

@@ -210,8 +210,10 @@ async function performTrustedInput(page: Page, action: TrustedAction, stageFiles
             // IPC (DOM.setFileInputFiles / Page.setFileInputFiles) so the input
             // dispatches a real trusted `change` event; in-memory payloads would
             // fall back to a synthetic untrusted JS Event.
-            const paths = action.files.length ? await stageFiles(action.files) : [];
-            await element.setInputFiles(paths);
+            // Playwright empties an input with a synthetic, untrusted change,
+            // and no browser lets a user empty it through the picker.
+            if (!action.files.length) throw new Error('A trusted file selection needs at least one file.');
+            await element.setInputFiles(await stageFiles(action.files));
             break;
         }
         default: throw new Error(`Unknown trusted input ${JSON.stringify(action satisfies never)}`);
