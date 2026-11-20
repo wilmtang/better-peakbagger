@@ -6,6 +6,9 @@
 // trip-report editor bundles, and helpers that edit through the editors' own
 // transaction paths.
 
+// The report editor's commands come from the starter kit and @tiptap/extensions.
+/// <reference types="@tiptap/starter-kit" />
+/// <reference types="@tiptap/extensions" />
 import type { Editor } from '@tiptap/core';
 import type { createMarkdownEditor } from '../../src/reports/report-md-editor.ts';
 import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES, type LoadedPage } from './fixture-page.mts';

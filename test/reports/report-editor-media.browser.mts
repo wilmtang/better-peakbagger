@@ -3,19 +3,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
-import { pointerEvent as untypedPointerEvent } from '../helpers/pointer-event.mts';
-import { loadEditor as untypedLoadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/fixture-page.mts';
+import { checkoutFileUrl } from '../helpers/fixture-dom.mts';
+import { pointerEvent } from '../helpers/pointer-event.mts';
+import { loadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY, type EditorPage } from '../helpers/report-editor-page.mts';
 import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 
-// The editor helpers hand back jsdom page objects, which ship no types.
-import type { PageDom, StubMessage } from '../helpers/page-types.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 type Listener = (message: StubMessage, sender: object, respond: (value: unknown) => void) => unknown;
-interface EditorLoadOptions { url?: string; prepare?: (dom: PageDom) => void; [option: string]: unknown }
-// Their option bags are inferred from JavaScript defaults, not their contract.
-const loadEditor = untypedLoadEditor as unknown as (options?: EditorLoadOptions) => Promise<PageDom>;
-const pointerEvent = untypedPointerEvent as unknown as (dom: PageDom, type: string, init?: PointerEventInit) => PointerEvent;
 
 const returnContext = (url = EDITOR_URL) => {
     const parsed = new URL(url);
@@ -81,7 +77,7 @@ test('the image popover validates the source and inserts an optional caption', a
     ]);
     const guideLink = ui.querySelectorAll('.bpb-re-image-hosting')[0].querySelector('a');
     assert.equal(guideLink.textContent, 'How it works');
-    assert.match(guideLink.getAttribute('href'), /photos\/guide\.html$/);
+    assert.match(guideLink.getAttribute('href') ?? '', /photos\/guide\.html$/);
 
     src.value = 'javascript:alert(1)';
     ui.querySelector('.bpb-re-imagebox .bpb-re-linkapply').click();
@@ -108,7 +104,7 @@ test('Instagram image help explains the report paste flow and dismisses without 
     assert.equal(info.type, 'button', 'help cannot submit the ascent form');
     assert.equal(info.textContent, 'Instagram posts', 'the inline label itself opens help');
     assert.equal(info.querySelector('svg'), null, 'help does not need a second boxed icon');
-    const tip = doc.getElementById(info.getAttribute('aria-describedby'));
+    const tip = doc.getElementById(info.getAttribute('aria-describedby')!);
     assert.equal(tip.getAttribute('role'), 'tooltip');
     assert.equal(tip.hidden, true);
     assert.match(tip.textContent, /post or Reel link on its own line in the report/);
@@ -292,7 +288,7 @@ test('Markdown and Plain open Photo Topos on its own, from a trusted click, with
     const messages: StubMessage[] = [];
     let reply: Record<string, unknown> = { ok: false };
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.sendMessage = (message: StubMessage) => {
                 messages.push(message);
                 if (message?.type === 'TRUSTED_ACTION_ISSUE') return Promise.resolve({ ok: true, token: 'topo-token' });
@@ -314,7 +310,7 @@ test('Markdown and Plain open Photo Topos on its own, from a trusted click, with
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(messages.filter(message => message.type === 'PHOTO_STANDALONE_OPEN').length, 0,
         'a synthetic host-page click opens nothing');
-    fireTrustedEvent(launch, 'click');
+    await fireTrustedEvent(launch);
     await waitFor(dom, () => !status.hidden);
     const open = messages.find(message => message.type === 'PHOTO_STANDALONE_OPEN');
     const issue = messages.find(message => message.type === 'TRUSTED_ACTION_ISSUE');
@@ -326,7 +322,7 @@ test('Markdown and Plain open Photo Topos on its own, from a trusted click, with
     assert.match(status.textContent, /Couldn’t open Photo Topos/);
 
     reply = { ok: true, tabId: 9 };
-    fireTrustedEvent(launch, 'click');
+    await fireTrustedEvent(launch);
     await waitFor(dom, () => status.hidden && !launch.hasAttribute('aria-busy'));
     modeButton(doc, 'Plain').click();
     assert.equal(launch.hidden, false);
@@ -340,7 +336,7 @@ test('the image popover launches editor and library modes with the report identi
     let release!: (value: unknown) => void;
     const dom = await loadEditor({
         url: `${EDITOR_URL}&aid=1234&pid=2296`,
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.sendMessage = (message: StubMessage) => {
                 if (message?.type === 'TRUSTED_ACTION_ISSUE') {
                     messages.push(message);
@@ -359,7 +355,7 @@ test('the image popover launches editor and library modes with the report identi
     launcher.click();
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.deepEqual(messages, [], 'a synthetic host-page click must not open an editor');
-    fireTrustedEvent(launcher, 'click');
+    await fireTrustedEvent(launcher);
     await waitFor(dom, () => launcher.disabled);
     assert.equal((messages as StubMessage[])[0].type, 'TRUSTED_ACTION_ISSUE');
     assert.equal((messages as StubMessage[])[0].action, 'photo-editor');
@@ -373,7 +369,7 @@ test('the image popover launches editor and library modes with the report identi
     release({ ok: true, tabId: 44 });
     await waitFor(dom, () => !launcher.disabled);
 
-    fireTrustedEvent(launcher, 'click');
+    await fireTrustedEvent(launcher);
     await waitFor(dom, () => messages.length === 4);
     assert.equal((messages as StubMessage[])[3].mode, 'edit');
     release(null);
@@ -385,7 +381,7 @@ test('the image popover launches editor and library modes with the report identi
 test('a validated photo result is inserted only while the rich editor is available', async () => {
     const listeners: Listener[] = [];
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.onMessage = {
                 addListener: (listener: Listener) => listeners.push(listener),
                 removeListener: (listener: Listener) => {
@@ -438,7 +434,7 @@ test('a validated photo result is inserted only while the rich editor is availab
 test('a photo result carries a bounded display width without fixing its height', async () => {
     const listeners: Listener[] = [];
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.onMessage = {
                 addListener: (listener: Listener) => listeners.push(listener),
                 removeListener: () => {}
@@ -476,7 +472,7 @@ test('a photo result carries a bounded display width without fixing its height',
 test('a photo result cannot cross into a different report document', async () => {
     const listeners: Listener[] = [];
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.onMessage = {
                 addListener: (listener: Listener) => listeners.push(listener),
                 removeListener: () => {},
@@ -516,7 +512,7 @@ test('a photo result cannot cross into a different report document', async () =>
 test('an inserted photo keeps the full description the library allows', async () => {
     const listeners: Listener[] = [];
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.onMessage = {
                 addListener: (listener: Listener) => listeners.push(listener),
                 removeListener: () => {}
@@ -556,7 +552,7 @@ test('an inserted photo keeps the full description the library allows', async ()
 test('an inserted photo without a description is still accepted', async () => {
     const listeners: Listener[] = [];
     const dom = await loadEditor({
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             d.chrome.runtime.onMessage = {
                 addListener: (listener: Listener) => listeners.push(listener),
                 removeListener: () => {}
@@ -675,7 +671,7 @@ test('a Rich video resize stays proportional and persists its dimensions', async
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(video.style.width, '600px');
     assert.equal(video.style.height, '338px');
-    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
+    assert.equal(handle.closest('[data-resize-container]')!.dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -724,7 +720,7 @@ test('a Rich YouTube iframe resize stays proportional and persists its dimension
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(iframe.style.width, '600px');
     assert.equal(iframe.style.height, '338px');
-    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
+    assert.equal(handle.closest('[data-resize-container]')!.dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -766,7 +762,7 @@ test('a Rich image resize stays proportional and persists its dimensions', async
     await waitFor(dom, () => doc.getElementById('JournalText').value === resized);
     assert.equal(image.style.width, '600px');
     assert.equal(image.style.height, '450px');
-    assert.equal(handle.closest('[data-resize-container]').dataset.resizeState, 'false');
+    assert.equal(handle.closest('[data-resize-container]')!.dataset.resizeState, 'false');
 
     handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
         bubbles: true, key: 'ArrowLeft', shiftKey: true
@@ -823,7 +819,7 @@ for (const mediaCase of [
         const doc = dom.window.document;
         const media = ui.querySelector(mediaCase.selector);
         const handle = ui.querySelector(`[aria-label="${mediaCase.label}"]`);
-        const container = handle.closest('[data-resize-container]');
+        const container = handle.closest('[data-resize-container]')!;
         Object.defineProperties(media, {
             offsetWidth: { configurable: true, get: () => Number.parseFloat(media.style.width) || 800 },
             offsetHeight: { configurable: true, get: () => Number.parseFloat(media.style.height) || mediaCase.startHeight },
@@ -1048,10 +1044,12 @@ test('literal bracketed prose opens in the preferred editor and survives edits b
 test('double-click opens the exact report image and replaces only that occurrence on return', async () => {
     const listeners: Listener[] = [];
     const opened: StubMessage[] = [];
-    const src = 'https://images.example/ridge.png';
+    // A loadable image gives the editor real layout: an unloaded one is a
+    // tiny alt-text box that its own selection controls cover.
+    const src = checkoutFileUrl('icons/icon-128.png');
     const dom = await loadEditor({
         report: `[img src="${src}" alt="First" width="240"]\n\n[figure][img src="${src}" alt="Second" width="320"][figcaption]Second photo caption[/figcaption][/figure]`,
-        prepare: (d: PageDom) => {
+        prepare: (d: EditorPage) => {
             (d.chrome.runtime.onMessage as { addListener: (listener: Listener) => void }).addListener = (listener: Listener) => listeners.push(listener);
             d.chrome.runtime.sendMessage = async (message: StubMessage) => {
                 if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'image-activation' };
@@ -1066,7 +1064,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     images[1].dispatchEvent(new dom.window.MouseEvent('dblclick', { bubbles: true }));
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(opened.length, 0, 'synthetic double-clicks have no authority');
-    fireTrustedEvent(images[1], 'dblclick', { bubbles: true });
+    await fireTrustedEvent(images[1], { type: 'dblclick' });
     await waitFor(dom, () => opened.length === 1);
     assert.equal(opened[0].imageUrl, src);
     assert.equal(opened[0].imageCaption, 'Second photo caption');
@@ -1093,7 +1091,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
     assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 2);
     for (const caption of ['Caption revised in Photo Topos', '']) {
         const count = opened.length;
-        fireTrustedEvent(ui.querySelectorAll('.bpb-re-image-resize img')[1], 'dblclick', { bubbles: true });
+        await fireTrustedEvent(ui.querySelectorAll('.bpb-re-image-resize img')[1], { type: 'dblclick' });
         await waitFor(dom, () => opened.length === count + 1);
         const returned = { ...message, imageEditId: opened.at(-1)!.imageEditId,
             returnToken: `caption-return-${count}`, caption };
@@ -1103,7 +1101,7 @@ test('double-click opens the exact report image and replaces only that occurrenc
         assert.equal(ui.querySelectorAll('.bpb-re-image-resize img').length, 2);
         if (!caption) assert.equal(!!ui.querySelector('figure'), false);
     }
-    fireTrustedEvent(current[0], 'dblclick', { bubbles: true });
+    await fireTrustedEvent(ui.querySelectorAll('.bpb-re-image-resize img')[0], { type: 'dblclick' });
     await waitFor(dom, () => opened.length === 4);
     editors(dom).rich.commands.setContent('<p>The image was removed.</p>', { emitUpdate: true });
     const stale = { ...message, imageEditId: opened[3].imageEditId, returnToken: 'stale-image-return' };

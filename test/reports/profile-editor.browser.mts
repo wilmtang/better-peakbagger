@@ -1,11 +1,19 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
-import { editorReady, editors, typeRich, typeMarkdown, modeButton } from '../helpers/report-editor-helpers.mjs';
+import { loadPage, PAGE_FIXTURES, waitFor, type LoadedPage } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
+import { editorReady, editors, typeRich, typeMarkdown, modeButton } from '../helpers/report-editor-page.mts';
 
-const loadProfile = async (t, { text = '', settings = {}, prepare, url } = {}) => {
+interface ProfileOptions {
+    text?: string;
+    settings?: Record<string, unknown>;
+    prepare?: (page: LoadedPage) => void;
+    url?: string;
+}
+
+const loadProfile = async (t: TestContext, { text = '', settings = {}, prepare, url }: ProfileOptions = {}) => {
     const dom = await loadPage('climber-climberedit.html', {
         url: url || 'https://www.peakbagger.com/climber/climberedit.aspx?cid=900001',
         fixtures: PAGE_FIXTURES,
@@ -28,7 +36,7 @@ test('profile biography mounts the shared editor in its native form with profile
     const textarea = doc.getElementById('ClimberText');
     assert.equal(ui.dataset.mode, 'rich');
     assert.ok(ui.classList.contains('bpb-re-profile'));
-    assert.equal(textarea.form.id, 'Form1');
+    assert.equal(textarea.form!.id, 'Form1');
     assert.equal(textarea.name, 'ClimberText');
     assert.ok(textarea.classList.contains('bpb-re-hidden'));
     assert.ok(doc.getElementById('native-hints').classList.contains('bpb-re-hidden'));
@@ -49,30 +57,30 @@ test('profile rich edits flush before native Save and other account postbacks', 
     const doc = dom.window.document;
     const textarea = doc.getElementById('ClimberText');
     assert.match(editors(dom).rich.getHTML(), /<strong>biography<\/strong>/);
-    let submitted;
-    textarea.form.addEventListener('submit', event => {
+    let submitted: FormData | undefined;
+    textarea.form!.addEventListener('submit', event => {
         event.preventDefault();
-        submitted = new dom.window.FormData(textarea.form);
+        submitted = new dom.window.FormData(textarea.form!);
     });
     typeRich(dom, '<p>I enjoy <strong>mountains</strong>.</p>');
     doc.getElementById('CreateUpdateAccount').click();
-    assert.equal(submitted.get('ClimberText'), 'I enjoy [b]mountains[/b].');
-    assert.equal(submitted.get('NewEmail'), 'fixture@example.invalid');
-    assert.equal(submitted.get('NewPassword'), '');
-    assert.equal(submitted.get('NewFirstName'), 'Fixture');
-    assert.equal(submitted.get('RecentAscentCheckbox'), 'on');
+    assert.equal(submitted!.get('ClimberText'), 'I enjoy [b]mountains[/b].');
+    assert.equal(submitted!.get('NewEmail'), 'fixture@example.invalid');
+    assert.equal(submitted!.get('NewPassword'), '');
+    assert.equal(submitted!.get('NewFirstName'), 'Fixture');
+    assert.equal(submitted!.get('RecentAscentCheckbox'), 'on');
     typeRich(dom, '<p>Before a country postback</p>');
     doc.getElementById('NationDD').dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(textarea.value, 'Before a country postback');
     typeRich(dom, '<p>Implicit save</p>');
-    textarea.form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
-    assert.equal(submitted.get('ClimberText'), 'Implicit save');
+    textarea.form!.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    assert.equal(submitted!.get('ClimberText'), 'Implicit save');
 });
 
 test('biography text mentioning Hints never hides the editor host as a native hint', async t => {
     const dom = await loadProfile(t, { text: 'Hints: these are my favorite climbs.' });
     const ui = await editorReady(dom);
-    assert.equal(ui.parentElement.classList.contains('bpb-re-hidden'), false);
+    assert.equal(ui.parentElement!.classList.contains('bpb-re-hidden'), false);
     assert.ok(dom.window.document.getElementById('native-hints').classList.contains('bpb-re-hidden'));
 });
 
@@ -114,7 +122,7 @@ test('unsupported profile markup including hidden blocks is preserved until expl
 });
 
 test('profile edits never read or overwrite ascent drafts, upload photos, or snapshot account fields', async t => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const key = 'bpbReportDraft:900001:new';
     const draft = { text: 'Unrelated ascent report', mode: 'rich', savedAt: Date.now() };
     let autosaveTimers = 0;
@@ -122,20 +130,20 @@ test('profile edits never read or overwrite ascent drafts, upload photos, or sna
     const dom = await loadProfile(t, {
         settings: { addReportCredit: true, enableGithubBackup: true },
         prepare: d => {
-            d.chrome._localStore[key] = draft;
+            Object.assign(d.chrome._localStore, { [key]: draft });
             const readLocal = d.chrome.storage.local.get;
-            d.chrome.storage.local.get = async keys => {
+            d.chrome.storage.local.get = async (keys?: string | string[] | null) => {
                 if (keys == null || (Array.isArray(keys) ? keys : [keys]).some(name => name.startsWith('bpbReportDraft:'))) {
                     localReads++; throw new Error('Profile must not read local report drafts');
                 }
                 return readLocal(keys);
             };
-            d.chrome.runtime.sendMessage = async message => { messages.push(message); return { ok: true }; };
+            d.chrome.runtime.sendMessage = async (message: StubMessage) => { messages.push(message); return { ok: true }; };
             const nativeTimeout = d.window.setTimeout.bind(d.window);
-            d.window.setTimeout = (callback, delay, ...args) => {
+            d.window.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
                 if (delay === 800) autosaveTimers++;
                 return nativeTimeout(callback, delay, ...args);
-            };
+            }) as typeof d.window.setTimeout;
         },
     });
     const ui = await editorReady(dom);
@@ -143,9 +151,9 @@ test('profile edits never read or overwrite ascent drafts, upload photos, or sna
     assert.equal(doc.getElementById('ClimberText').value, '', 'report credit must not seed biographies');
     assert.equal(ui.querySelector('.bpb-re-draft').hidden, true);
     typeRich(dom, '<p>New biography</p>');
-    doc.getElementById('ClimberText').form.addEventListener('submit', event => event.preventDefault());
+    doc.getElementById('ClimberText').form!.addEventListener('submit', event => event.preventDefault());
     doc.getElementById('CreateUpdateAccount').click();
-    doc.getElementById('ClimberText').form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
+    doc.getElementById('ClimberText').form!.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.deepEqual(messages, [], 'no draft, backup, or photo request should leave a profile editor');

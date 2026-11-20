@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEditor, editorReady, editors, modeButton, waitFor } from '../helpers/report-editor-helpers.mjs';
+import { loadEditor, editorReady, editors, modeButton, waitFor } from '../helpers/report-editor-page.mts';
 
 const image = '[img src="https://example.com/ridge.jpg" alt="Ridge" width="320" height="200"]';
 
@@ -104,15 +104,13 @@ test('the keyboard copies and applies without painting a selection still being e
     const t = await open('[b]Source[/b] target');
     try {
         t.select('Source');
-        t.key({ key: 'c', code: 'KeyC', keyCode: 67, ctrlKey: true, metaKey: true, altKey: true });
-        if (t.painter.getAttribute('aria-pressed') !== 'true') {
-            t.key({ key: 'c', code: 'KeyC', keyCode: 67, ctrlKey: true, altKey: true });
-        }
+        // TipTap's Mod is Cmd on macOS and Ctrl elsewhere.
+        const mod = /Mac/.test(t.dom.window.navigator.platform) ? { metaKey: true } : { ctrlKey: true };
+        t.key({ key: 'c', code: 'KeyC', keyCode: 67, altKey: true, ...mod });
         assert.equal(t.painter.getAttribute('aria-pressed'), 'true');
         t.select('target');
         assert.equal(t.ui.querySelectorAll('.bpb-re-surface strong').length, 1, 'selection alone must not apply');
-        t.key({ key: 'v', code: 'KeyV', keyCode: 86, ctrlKey: true, altKey: true });
-        if (t.painter.getAttribute('aria-pressed') === 'true') t.key({ key: 'v', code: 'KeyV', keyCode: 86, metaKey: true, altKey: true });
+        t.key({ key: 'v', code: 'KeyV', keyCode: 86, altKey: true, ...mod });
         assert.equal(t.painter.getAttribute('aria-pressed'), 'false');
         assert.equal(t.saved(), '[b]Source[/b] [b]target[/b]');
     } finally { t.dom.window.close(); }

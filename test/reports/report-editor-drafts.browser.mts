@@ -3,11 +3,26 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
-import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/fixture-page.mts';
+import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, DRAFT_KEY, type EditorPage, type LoadEditorOptions } from '../helpers/report-editor-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 import { createReportDraftRoutes } from '../../src/background/report-draft-routes.ts';
 
-const sharedEditor = (first, options = {}) => loadEditor({ ...options, prepare: second => {
+// A stored or patched report draft, as these tests read and write it.
+interface DraftRecord {
+    text?: string;
+    mode?: string;
+    deletedGeneration?: string;
+    label?: { peak?: unknown };
+    pendingSave?: { attemptId?: string; identity?: unknown };
+}
+const draftIn = (patch: Record<string, unknown>, key = DRAFT_KEY) => patch[key] as DraftRecord | undefined;
+const pendingSaveOf = (dom: EditorPage, key = DRAFT_KEY) => (dom.chrome._localStore[key] as DraftRecord).pendingSave!;
+// A worker reply, as these tests read it.
+type WorkerReply = { ok?: boolean; written?: boolean; reason?: string; generation?: string; finalized?: boolean };
+type TimerCallback = (...args: unknown[]) => void;
+
+const sharedEditor = (first: EditorPage, options: LoadEditorOptions = {}) => loadEditor({ ...options, prepare: second => {
     second.chrome.storage.local = first.chrome.storage.local;
     second.chrome._localStore = first.chrome._localStore;
     // Both documents must use one production worker queue, as real tabs do.
@@ -33,11 +48,11 @@ test('startup pruning of an unrelated expired draft does not reject this editor�
 test('an untouched old editor leaves another editor’s newer draft intact on page exit', async () => {
     for (const report of ['', 'Old report']) for (const persisted of [false, true]) {
         const first = await loadEditor({ report, settings: { addReportCredit: false } });
-        let second;
+        let second: EditorPage | undefined;
         try {
             await editorReady(first); await waitFor(first, () => editors(first).rich);
             second = await sharedEditor(first, { report, settings: { addReportCredit: false }, accelerateAutosave: true });
-            await editorReady(second); await waitFor(second, () => editors(second).rich);
+            await editorReady(second!); await waitFor(second!, () => editors(second!).rich);
             typeRich(second, '<p>Newer work</p>');
             await waitFor(second, () => first.chrome._localStore[DRAFT_KEY]?.text === 'Newer work');
             const saved = structuredClone(first.chrome._localStore[DRAFT_KEY]);
@@ -50,11 +65,11 @@ test('an untouched old editor leaves another editor’s newer draft intact on pa
 
 test('conflicting edits preserve the other editor’s version and expose a recovery copy', async () => {
     const first = await loadEditor({ report: 'Original', settings: { addReportCredit: false }, accelerateAutosave: true });
-    let second;
+    let second: EditorPage | undefined;
     try {
         await editorReady(first); await waitFor(first, () => editors(first).rich);
         second = await sharedEditor(first, { report: 'Original', settings: { addReportCredit: false }, accelerateAutosave: true });
-        await editorReady(second); await waitFor(second, () => editors(second).rich);
+        await editorReady(second!); await waitFor(second!, () => editors(second!).rich);
         typeRich(second, '<p>Other editor wins</p>');
         await waitFor(second, () => first.chrome._localStore[DRAFT_KEY]?.text === 'Other editor wins');
         for (const html of ['<p>Keep my conflicting text</p>', '<p></p>']) {
@@ -67,11 +82,11 @@ test('conflicting edits preserve the other editor’s version and expose a recov
 });
 
 test('queued edits in one editor adopt the completing writer’s version', async () => {
-    let release;
+    let release: (() => void) | undefined;
     const dom = await loadEditor({ accelerateAutosave: true, prepare: page => {
         const set = page.chrome.storage.local.set;
         page.chrome.storage.local.set = async patch => {
-            if (patch[DRAFT_KEY]?.text === 'First snapshot') await new Promise(resolve => { release = resolve; });
+            if (draftIn(patch)?.text === 'First snapshot') await new Promise<void>(resolve => { release = resolve; });
             return set(patch);
         };
     } });
@@ -81,7 +96,7 @@ test('queued edits in one editor adopt the completing writer’s version', async
         await waitFor(dom, () => release);
         typeRich(dom, '<p>Latest snapshot</p>');
         dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: true }));
-        release();
+        release!();
         await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === 'Latest snapshot');
         assert.doesNotMatch(dom.window.document.querySelector('.bpb-re-status').textContent, /The saved draft changed/);
     } finally { dom.window.close(); }
@@ -91,10 +106,12 @@ test('retired deletion barriers still reject an older editor that originally saw
     const dom = await loadEditor({ settings: { addReportCredit: false }, accelerateAutosave: true });
     try {
         await editorReady(dom); await waitFor(dom, () => editors(dom).rich);
-        const removal = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_REMOVE', draftKey: DRAFT_KEY });
+        const removal = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_REMOVE', draftKey: DRAFT_KEY }) as WorkerReply;
         const managerRoutes = createReportDraftRoutes({ ext: dom.chrome, now: Date.now,
-            isPeakbaggerSender: () => false, isExtensionPage: () => true, mutateMap: () => {} });
-        const finalized = await managerRoutes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey: DRAFT_KEY, generation: removal.generation }, {});
+            isPeakbaggerSender: () => false, isExtensionPage: () => true,
+            // Finalizing a deletion never reaches the shared map.
+            mutateMap: (() => {}) as unknown as Parameters<typeof createReportDraftRoutes>[0]['mutateMap'] });
+        const finalized = await managerRoutes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey: DRAFT_KEY, generation: removal.generation }, {}) as WorkerReply;
         assert.equal(finalized.finalized, true);
         typeRich(dom, '<p>Work from the older tab</p>');
         await waitFor(dom, () => /The saved draft changed/.test(dom.window.document.querySelector('.bpb-re-status').textContent));
@@ -104,7 +121,7 @@ test('retired deletion barriers still reject an older editor that originally saw
 });
 
 test('editor expiry cleanup cannot remove a save newer than its read', async () => {
-    let releaseRead;
+    let releaseRead: (() => void) | undefined;
     let reads = 0;
     const fresh = { text: 'newer report from another tab', mode: 'rich', savedAt: Date.now() };
     const dom = await loadEditor({
@@ -118,7 +135,7 @@ test('editor expiry cleanup cannot remove a save newer than its read', async () 
                 if (readsDraft) reads++;
                 if (readsDraft && !held) {
                     held = true;
-                    await new Promise(resolve => { releaseRead = resolve; });
+                    await new Promise<void>(resolve => { releaseRead = resolve; });
                 }
                 return result;
             };
@@ -126,7 +143,7 @@ test('editor expiry cleanup cannot remove a save newer than its read', async () 
     });
     await waitFor(dom, () => releaseRead);
     await dom.chrome.storage.local.set({ [DRAFT_KEY]: fresh });
-    releaseRead();
+    releaseRead!();
     await waitFor(dom, () => reads >= 2);
     // Drain the worker mutation queue after cleanup has re-read its expectation.
     await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
@@ -168,12 +185,12 @@ test('page fixtures enforce worker identity and reject stale writes after remova
     const wrongKey = 'bpbReportDraft:900001:a999';
     const denied = await dom.chrome.runtime.sendMessage({
         type: 'REPORT_DRAFT_WRITE', draftKey: wrongKey, record,
-    });
+    }) as WorkerReply;
     assert.equal(denied.ok, false);
     assert.equal(dom.chrome._localStore[wrongKey], undefined);
-    const removed = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_REMOVE', draftKey: DRAFT_KEY });
+    const removed = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_REMOVE', draftKey: DRAFT_KEY }) as WorkerReply;
     assert.equal(removed.ok, true);
-    const stale = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_WRITE', draftKey: DRAFT_KEY, record });
+    const stale = await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_WRITE', draftKey: DRAFT_KEY, record }) as WorkerReply;
     assert.equal(stale.written, false);
     assert.equal(stale.reason, 'superseded');
     assert.ok(dom.chrome._localStore[DRAFT_KEY].deletedGeneration);
@@ -191,20 +208,20 @@ test('autosave does not depend on the optional peak label control', async () => 
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]);
     const draft = dom.chrome._localStore[DRAFT_KEY];
     assert.equal(draft.text, 'safe without a peak select');
-    assert.equal(draft.label?.peak, undefined);
+    assert.equal((draft as DraftRecord).label?.peak, undefined);
 });
 
 test('autosave reports Unsaved, Saving, failure, and recovery for the latest edit', async () => {
-    let releaseFirst;
+    let releaseFirst: (() => void) | undefined;
     let writeCount = 0;
     const dom = await loadEditor({
         accelerateAutosave: true,
         prepare: d => {
             const nativeSet = d.chrome.storage.local.set;
             d.chrome.storage.local.set = async patch => {
-                if (typeof patch[DRAFT_KEY]?.text === 'string') {
+                if (typeof draftIn(patch)?.text === 'string') {
                     writeCount++;
-                    if (writeCount === 1) await new Promise(resolve => { releaseFirst = resolve; });
+                    if (writeCount === 1) await new Promise<void>(resolve => { releaseFirst = resolve; });
                     if (writeCount === 2) throw new Error('QUOTA_BYTES quota exceeded');
                 }
                 return nativeSet(patch);
@@ -219,7 +236,7 @@ test('autosave reports Unsaved, Saving, failure, and recovery for the latest edi
     assert.equal(status.textContent, 'Unsaved changes');
     await waitFor(dom, () => releaseFirst);
     assert.equal(status.textContent, 'Saving…');
-    releaseFirst();
+    releaseFirst!();
     await waitFor(dom, () => /^Draft saved on this device/.test(status.textContent));
     assert.equal(recovery.hidden, true);
 
@@ -243,6 +260,10 @@ test('a first autosave failure keeps live content and exposes selected Markdown 
         accelerateAutosave: true,
         prepare: d => {
             d.chrome.storage.local.set = async () => { throw new Error('storage unavailable'); };
+            // A real browser may grant or prompt for the clipboard; this case
+            // covers the clipboard refusing.
+            Object.defineProperty(d.window.navigator, 'clipboard', { configurable: true,
+                value: { writeText: async () => { throw new DOMException('Write permission denied.', 'NotAllowedError'); } } });
         },
     });
     await editorReady(dom);
@@ -273,7 +294,7 @@ test('a failed empty-draft removal discloses that the older device copy remains'
             const nativeSet = d.chrome.storage.local.set;
             let failed = false;
             d.chrome.storage.local.set = async patch => {
-                if (!failed && patch[DRAFT_KEY]?.deletedGeneration) {
+                if (!failed && draftIn(patch)?.deletedGeneration) {
                     failed = true;
                     throw new Error('storage unavailable');
                 }
@@ -292,14 +313,14 @@ test('a failed empty-draft removal discloses that the older device copy remains'
 });
 
 test('switching saved draft modes marks and persists the latest recovery mode', async () => {
-    let releaseMarkdownWrite;
+    let releaseMarkdownWrite: (() => void) | undefined;
     const dom = await loadEditor({
         accelerateAutosave: true,
         prepare: d => {
             const nativeSet = d.chrome.storage.local.set;
             d.chrome.storage.local.set = async patch => {
-                if (patch[DRAFT_KEY]?.mode === 'markdown') {
-                    await new Promise(resolve => { releaseMarkdownWrite = resolve; });
+                if (draftIn(patch)?.mode === 'markdown') {
+                    await new Promise<void>(resolve => { releaseMarkdownWrite = resolve; });
                 }
                 return nativeSet(patch);
             };
@@ -315,7 +336,7 @@ test('switching saved draft modes marks and persists the latest recovery mode', 
     assert.equal(dom.chrome._localStore[DRAFT_KEY].mode, 'rich',
         'the prior saved draft is still Rich until the new mode write finishes');
     assert.equal(dom.window.document.querySelector('.bpb-re-status').textContent, 'Saving…');
-    releaseMarkdownWrite();
+    releaseMarkdownWrite!();
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.mode === 'markdown'
         && /^Draft saved on this device/.test(
             dom.window.document.querySelector('.bpb-re-status').textContent));
@@ -390,7 +411,7 @@ test('Markdown autosave keeps content plus the generated credit, then removes th
 });
 
 test('a differing stored draft offers management, and Restore applies it in its saved mode', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadEditor({
         report: 'server copy',
         drafts: {
@@ -417,7 +438,7 @@ test('a differing stored draft offers management, and Restore applies it in its 
     assert.deepEqual(actions.map(button => button.textContent), [
         'Restore draft', 'Delete draft', 'Manage drafts'
     ]);
-    fireTrustedEvent(actions[2], 'click');
+    await fireTrustedEvent(actions[2]);
     await waitFor(dom, () => messages.length === 2);
     assert.equal(messages[0].action, 'draft-manager');
     assert.equal(messages[1].type, 'OPEN_DRAFTS_MANAGER');
@@ -447,7 +468,7 @@ test('restoring a lossy draft keeps it in Plain until conversion is explicit', a
     const restore = [...doc.querySelectorAll('.bpb-re-draft button')]
         .find(button => button.textContent === 'Restore draft');
 
-    restore.click();
+    restore!.click();
     assert.equal(doc.getElementById('JournalText').value, source);
     assert.equal(ui.dataset.mode, 'plain');
     assert.equal(ui.querySelector('.bpb-re-conversion').hidden, false);
@@ -459,7 +480,7 @@ test('restoring a lossy draft keeps it in Plain until conversion is explicit', a
 });
 
 test('Delete draft removes it without touching the form content', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadEditor({
         report: 'server copy',
         drafts: { [DRAFT_KEY]: { text: 'stale draft', mode: 'rich', savedAt: Date.now() - 1000 } },
@@ -474,7 +495,7 @@ test('Delete draft removes it without touching the form content', async () => {
     const doc = dom.window.document;
 
     const draftBar = doc.querySelector('.bpb-re-draft');
-    [...draftBar.querySelectorAll('button')].find(b => b.textContent === 'Delete draft').click();
+    [...draftBar.querySelectorAll('button')].find(b => b.textContent === 'Delete draft')!.click();
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.deletedGeneration);
     assert.equal(draftBar.hidden, true);
     assert.equal(doc.getElementById('JournalText').value, 'server copy');
@@ -517,7 +538,7 @@ test('a whitespace-only stored draft is deleted instead of silently retained', a
 for (const saveId of ['SaveButton', 'SaveButton2']) {
     test(`${saveId} retains a tab-bound pending draft through page exit`, async () => {
         const report = 'about to be saved';
-        const messages = [];
+        const messages: StubMessage[] = [];
         const dom = await loadEditor({
             report,
             drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } },
@@ -535,21 +556,21 @@ for (const saveId of ['SaveButton', 'SaveButton2']) {
         await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
 
         assert.equal(dom.chrome._localStore[DRAFT_KEY].text, report);
-        assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[DRAFT_KEY].pendingSave.identity)), {
+        assert.deepEqual(JSON.parse(JSON.stringify(pendingSaveOf(dom).identity)), {
             cid: '900001', aid: null, pid: null,
         });
         const pending = messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_PENDING');
         assert.equal(pending.length, 1, 'the ordinary click + submit path must register once');
         assert.equal(pending[0].draftKey, DRAFT_KEY);
         assert.deepEqual(pending[0].identity, { cid: '900001', aid: null, pid: null });
-        assert.equal(pending[0].attemptId, dom.chrome._localStore[DRAFT_KEY].pendingSave.attemptId);
+        assert.equal(pending[0].attemptId, pendingSaveOf(dom).attemptId);
         dom.window.close();
     });
 }
 
 test('an implicit Save submission retains recovery when no success arrives', async () => {
     const report = 'save by pressing Enter';
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadEditor({
         report,
         drafts: { [DRAFT_KEY]: { text: report, mode: 'rich', savedAt: Date.now() } },
@@ -561,7 +582,7 @@ test('an implicit Save submission retains recovery when no success arrives', asy
         },
     });
     await editorReady(dom);
-    const form = dom.window.document.getElementById('JournalText').form;
+    const form = dom.window.document.getElementById('JournalText').form!;
 
     form.dispatchEvent(new dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
@@ -580,7 +601,7 @@ test('a server validation round-trip offers the still-pending recovery copy', as
     const retained = structuredClone(dom.chrome._localStore[DRAFT_KEY]);
     dom.window.close();
 
-    const messages = [];
+    const messages: StubMessage[] = [];
     const returned = await loadEditor({
         report: 'server copy after validation failure',
         drafts: { [DRAFT_KEY]: retained },
@@ -615,7 +636,7 @@ test('Delete draft removes the recovery copy after pending Save metadata is deta
     const doc = dom.window.document;
     await waitFor(dom, () => !doc.querySelector('.bpb-re-draft').hidden);
     [...doc.querySelectorAll('.bpb-re-draft button')]
-        .find(button => button.textContent === 'Delete draft').click();
+        .find(button => button.textContent === 'Delete draft')!.click();
     await dom.chrome.runtime.sendMessage({ type: 'REPORT_DRAFT_PRUNE', keepKey: DRAFT_KEY });
     assert.equal(dom.chrome._localStore[DRAFT_KEY].text, undefined);
     assert.ok(dom.chrome._localStore[DRAFT_KEY].deletedGeneration);
@@ -625,19 +646,19 @@ test('Delete draft removes the recovery copy after pending Save metadata is deta
 
 test('a Save flushes a pending autosave and even a late callback retains recovery', async () => {
     const AUTOSAVE_TIMER_ID = 8675309;
-    let autosaveCallback;
+    let autosaveCallback: (() => void) | undefined;
     let autosaveCancelled = false;
     const dom = await loadEditor({
         prepare: d => {
             const originalSetTimeout = d.window.setTimeout.bind(d.window);
             const originalClearTimeout = d.window.clearTimeout.bind(d.window);
-            d.window.setTimeout = (callback, delay = 0, ...args) => {
+            d.window.setTimeout = ((callback: TimerCallback, delay = 0, ...args: unknown[]) => {
                 if (delay === 800) {
                     autosaveCallback = () => callback(...args);
                     return AUTOSAVE_TIMER_ID;
                 }
                 return originalSetTimeout(callback, delay, ...args);
-            };
+            }) as typeof d.window.setTimeout;
             d.window.clearTimeout = timer => {
                 if (timer === AUTOSAVE_TIMER_ID) {
                     autosaveCancelled = true;
@@ -653,7 +674,7 @@ test('a Save flushes a pending autosave and even a late callback retains recover
     await waitFor(dom, () => autosaveCallback);
     dom.window.document.getElementById('SaveButton').click();
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
-    autosaveCallback(); // Simulate a queued callback delivered despite cancellation.
+    autosaveCallback!(); // Simulate a queued callback delivered despite cancellation.
     await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.pendingSave);
 
     assert.equal(autosaveCancelled, true);
@@ -662,22 +683,22 @@ test('a Save flushes a pending autosave and even a late callback retains recover
 });
 
 test('only worker-confirmed success makes in-flight autosaves terminal', async () => {
-    const releases = [];
-    const completions = [];
+    const releases: (() => void)[] = [];
+    const completions: number[] = [];
     let cleanupCount = 0;
     const dom = await loadEditor({
         accelerateAutosave: true,
         prepare: d => {
             const originalSet = d.chrome.storage.local.set;
             d.chrome.storage.local.set = async patch => {
-                if (typeof patch[DRAFT_KEY]?.text === 'string') {
+                if (typeof draftIn(patch)?.text === 'string') {
                     const index = releases.length;
-                    await new Promise(resolve => { releases[index] = resolve; });
+                    await new Promise<void>(resolve => { releases[index] = resolve; });
                     await originalSet(patch);
                     completions.push(index);
                 } else {
                     await originalSet(patch);
-                    if (patch[DRAFT_KEY]?.deletedGeneration && completions.length) cleanupCount++;
+                    if (draftIn(patch)?.deletedGeneration && completions.length) cleanupCount++;
                 }
             };
         }
@@ -696,7 +717,7 @@ test('only worker-confirmed success makes in-flight autosaves terminal', async (
     }));
     dom.window.dispatchEvent(new dom.window.Event('pagehide'));
 
-    releases[0]();
+    releases[0]!();
     await waitFor(dom, () => cleanupCount >= 1);
     assert.deepEqual(completions, [0],
         'the worker-owned draft queue must serialize writes before terminal cleanup');
@@ -727,7 +748,7 @@ test('a named non-Save submission keeps page-exit draft recovery active', async 
     await editorReady(dom);
     typeRich(dom, '<p>keep this after cancelling</p>');
     const doc = dom.window.document;
-    const form = doc.getElementById('JournalText').form;
+    const form = doc.getElementById('JournalText').form!;
 
     form.dispatchEvent(new dom.window.SubmitEvent('submit', {
         bubbles: true,
@@ -790,21 +811,21 @@ test('disabling the setting live hands the form back to the native textarea', as
 for (const reportEditorMode of ['rich', 'markdown']) {
     test(`live disable makes native text authoritative after ${reportEditorMode} editing`, async () => {
         const AUTOSAVE_TIMER_ID = 20260913;
-        const messages = [];
-        let autosaveCallback;
+        const messages: StubMessage[] = [];
+        let autosaveCallback: (() => void) | undefined;
         let autosaveCancelled = false;
         const dom = await loadEditor({
             settings: { reportEditorMode, enableGithubBackup: true },
             prepare: d => {
                 const originalSetTimeout = d.window.setTimeout.bind(d.window);
                 const originalClearTimeout = d.window.clearTimeout.bind(d.window);
-                d.window.setTimeout = (callback, delay = 0, ...args) => {
+                d.window.setTimeout = ((callback: TimerCallback, delay = 0, ...args: unknown[]) => {
                     if (delay === 800) {
                         autosaveCallback = () => callback(...args);
                         return AUTOSAVE_TIMER_ID;
                     }
                     return originalSetTimeout(callback, delay, ...args);
-                };
+                }) as typeof d.window.setTimeout;
                 d.window.clearTimeout = timer => {
                     if (timer === AUTOSAVE_TIMER_ID) {
                         autosaveCancelled = true;
@@ -832,7 +853,7 @@ for (const reportEditorMode of ['rich', 'markdown']) {
         const textarea = dom.window.document.getElementById('JournalText');
         textarea.value = 'NEW NATIVE [b]TEXT[/b]';
         textarea.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-        autosaveCallback(); // A queued callback after cancellation must also use native ownership.
+        autosaveCallback!(); // A queued callback after cancellation must also use native ownership.
         dom.window.document.getElementById('SaveButton').click();
         dom.window.dispatchEvent(new dom.window.Event('pagehide'));
         await waitFor(dom, () => dom.chrome._localStore[DRAFT_KEY]?.text === textarea.value
@@ -842,8 +863,9 @@ for (const reportEditorMode of ['rich', 'markdown']) {
         assert.equal(stored.mode, 'plain');
         assert.equal(stored.source, undefined);
         assert.equal(stored.text, 'NEW NATIVE [b]TEXT[/b]');
-        assert.equal(messages.find(message => message.type === 'GITHUB_BACKUP_SNAPSHOT')
-            ?.snapshot.report.markdown, 'NEW NATIVE **TEXT**');
+        const snapshot = messages.find(message => message.type === 'GITHUB_BACKUP_SNAPSHOT') as
+            (StubMessage & { snapshot: { report: { markdown: string } } }) | undefined;
+        assert.equal(snapshot?.snapshot.report.markdown, 'NEW NATIVE **TEXT**');
         dom.window.close();
 
         const restored = await loadEditor({
@@ -854,7 +876,7 @@ for (const reportEditorMode of ['rich', 'markdown']) {
         await waitFor(restored, () => !restored.chrome._localStore[DRAFT_KEY]?.pendingSave);
         const restore = [...restored.window.document.querySelectorAll('.bpb-re-draft button')]
             .find(button => button.textContent === 'Restore draft');
-        restore.click();
+        restore!.click();
         assert.equal(ui.dataset.mode, 'plain');
         assert.equal(restored.window.document.getElementById('JournalText').value,
             'NEW NATIVE [b]TEXT[/b]');
@@ -863,7 +885,7 @@ for (const reportEditorMode of ['rich', 'markdown']) {
 }
 
 test('draft keys distinguish editing an ascent from adding one', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadEditor({
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=123456&cid=900001',
         accelerateAutosave: true,
@@ -881,8 +903,9 @@ test('draft keys distinguish editing an ascent from adding one', async () => {
     await waitFor(dom, () => messages.some(message => message.type === 'REPORT_DRAFT_SAVE_PENDING'));
     await waitFor(dom, () => dom.chrome._localStore['bpbReportDraft:900001:a123456']?.pendingSave);
     const pending = messages.find(message => message.type === 'REPORT_DRAFT_SAVE_PENDING');
+    assert.ok(pending, 'the pending save was announced');
     assert.equal(pending.draftKey, 'bpbReportDraft:900001:a123456');
     assert.deepEqual(pending.identity, { cid: '900001', aid: '123456', pid: null });
     assert.equal(pending.attemptId,
-        dom.chrome._localStore['bpbReportDraft:900001:a123456'].pendingSave.attemptId);
+        pendingSaveOf(dom, 'bpbReportDraft:900001:a123456').attemptId);
 });

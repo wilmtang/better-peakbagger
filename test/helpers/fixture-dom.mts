@@ -220,6 +220,12 @@ export const fixtureDom = (html?: string, options?: FixtureDomOptions) => new Fi
 // place a test passes it where a browser global type is expected.
 export const browserWindow = <W extends TestWindow = TestWindow>(window: FixtureWindow) => window as unknown as W;
 
+// An https URL on the test page's origin that serves a checkout file, for
+// fixtures that need a real resource to load (an image with real layout).
+declare const __BPB_PROJECT_ROOT__: string;
+export const checkoutFileUrl = (file: string) =>
+    new URL(`/__bpb_fs__${`${__BPB_PROJECT_ROOT__}/${file}`.split('/').map(encodeURIComponent).join('/')}`, location.origin).href;
+
 // Built extension files, as the test page's DOM tier route serves them.
 export async function builtBundle(file: string): Promise<string> {
     const response = await fetch(`/dist/${file.split('/').map(encodeURIComponent).join('/')}`);
@@ -300,6 +306,9 @@ declare global {
 export async function trustedInput(element: Element, action: TrustedAction): Promise<void> {
     const bridge = window.__bpbTrustedInput;
     if (!bridge) throw new Error('Trusted input requires the DOM tier runner.');
+    // A user can only reach a node on the page; a stale reference to a
+    // re-rendered node would otherwise land on whatever is at its old place.
+    if (!element.isConnected) throw new Error('Trusted input target is not connected to its document.');
     const frame = element.ownerDocument === document ? null
         : [...document.querySelectorAll<HTMLIFrameElement>('iframe[data-bpb-fixture]')]
             .find(item => item.contentDocument === element.ownerDocument) ?? null;

@@ -3,8 +3,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { waitFor } from '../helpers/load-page.mts';
-import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, videoMarkup } from '../helpers/report-editor-helpers.mjs';
+import type { Editor } from '@tiptap/core';
+import { Slice, type Mark, type Node as ProseMirrorNode } from '@tiptap/pm/model';
+import { waitFor } from '../helpers/fixture-page.mts';
+import { loadEditor, editorReady, editors, typeRich, typeMarkdown, modeButton, videoMarkup } from '../helpers/report-editor-page.mts';
 
 test('markdown mode converts to bracket markup and the live preview shows the final rendering', async () => {
     const dom = await loadEditor();
@@ -48,7 +50,7 @@ test('the live Markdown preview keeps adversarial raw HTML inert at the render b
     await waitFor(dom, () => /&lt;img|<img/.test(preview.innerHTML));
     assert.equal(preview.querySelector('script'), null);
     assert.equal(preview.querySelector('img'), null);
-    assert.equal(dom.window.__bpbInjected, undefined);
+    assert.equal((dom.window as { __bpbInjected?: boolean }).__bpbInjected, undefined);
     assert.match(preview.textContent, /<img src=x onerror=/);
     assert.match(preview.textContent, /<script>/);
 });
@@ -83,7 +85,7 @@ test('Rich table lists survive Markdown edits, Plain mode, reload, and synchrono
     const reloadDoc = reloaded.window.document;
     assert.equal(reloadDoc.querySelectorAll('.bpb-re-surface td > ul > li').length, 2);
     typeRich(reloaded, editors(reloaded).rich.getHTML().replace('Walk', 'Hike'));
-    reloadDoc.getElementById('JournalText').form.dispatchEvent(
+    reloadDoc.getElementById('JournalText').form!.dispatchEvent(
         new reloaded.window.Event('submit', { bubbles: true, cancelable: true }));
     assert.equal(reloadDoc.getElementById('JournalText').value, edited.replace('Walk', 'Hike'));
 });
@@ -93,21 +95,22 @@ test('Markdown retains list continuation, undo, and context-aware URL paste', as
     await editorReady(dom);
     modeButton(dom.window.document, 'Markdown').click();
     const { view } = editors(dom).markdown;
-    const key = (name, keyCode, extra = {}) => view.contentDOM.dispatchEvent(
+    const key = (name: string, keyCode: number, extra: KeyboardEventInit = {}) => view.contentDOM.dispatchEvent(
         new dom.window.KeyboardEvent('keydown', { key: name, keyCode, bubbles: true, cancelable: true, ...extra }));
     for (const [source, expected] of [['- tent', '- tent\n- '], ['1. peak', '1. peak\n2. '], ['> Windy', '> Windy\n> ']]) {
         typeMarkdown(dom, source);
         view.dispatch({ selection: { anchor: source.length } });
         key('Enter', 13);
         assert.equal(view.state.doc.toString(), expected);
-        key('z', 90, { ctrlKey: true });
+        // CodeMirror's Mod-z is Cmd-z on macOS and Ctrl-z elsewhere.
+        key('z', 90, /Mac/.test(dom.window.navigator.platform) ? { metaKey: true } : { ctrlKey: true });
         assert.equal(view.state.doc.toString(), source);
     }
     for (const [source, from, to, expected] of [
         ['route', 0, 5, '[route](https://example.com/)'],
         ['`route`', 1, 6, '`https://example.com/`'],
         ['<span>route</span>', 6, 11, '<span>https://example.com/</span>'],
-    ]) {
+    ] as [string, number, number, string][]) {
         typeMarkdown(dom, source);
         view.dispatch({ selection: { anchor: from, head: to } });
         const paste = new dom.window.Event('paste', { bubbles: true, cancelable: true });
@@ -165,16 +168,16 @@ test('switching rich → markdown → rich keeps the content through the canonic
 
 test('typing at a link boundary starts plain text while URL autolinking remains available', async t => {
     const report = 'See [a href="https://example.com/route" target="_blank"]route[/a]';
-    const linkedTextRange = rich => {
-        let range = null;
-        rich.state.doc.descendants((node, pos) => {
-            if (!range && node.isText && node.marks.some(mark => mark.type.name === 'link')) {
+    const linkedTextRange = (rich: Editor) => {
+        let range: { from: number; to: number } | null = null;
+        rich.state.doc.descendants((node: ProseMirrorNode, pos: number) => {
+            if (!range && node.isText && node.marks.some((mark: Mark) => mark.type.name === 'link')) {
                 range = { from: pos, to: pos + node.nodeSize };
             }
             return !range;
         });
         assert.ok(range, 'the fixture should contain linked text');
-        return range;
+        return range as { from: number; to: number };
     };
 
     for (const suffix of [' next', ', next', 'X']) {
@@ -213,7 +216,7 @@ test('typing at a link boundary starts plain text while URL autolinking remains 
 
         rich.chain().focus().insertContent('https://example.com ').run();
 
-        const linkRuns = Array.from(rich.getJSON().content[0].content, node => [
+        const linkRuns = Array.from(rich.getJSON().content![0]!.content!, (node: { text?: string; marks?: { type: string }[] }) => [
             node.text,
             Boolean(node.marks?.some(mark => mark.type === 'link'))
         ].join(':'));
@@ -291,13 +294,14 @@ test('the toolbar reflects the caret: active marks, block style, and table contr
     const ui = await editorReady(dom);
     const rich = editors(dom).rich;
 
-    const posOf = needle => {
-        let hit = null;
+    const posOf = (needle: string) => {
+        let hit: number | null = null;
         rich.state.doc.descendants((node, pos) => {
-            if (hit === null && node.isText && node.text.includes(needle)) hit = pos + 1;
+            if (hit === null && node.isText && node.text!.includes(needle)) hit = pos + 1;
             return hit === null;
         });
-        return hit;
+        assert.ok(hit !== null, `${needle} is in the document`);
+        return hit as number;
     };
 
     rich.chain().focus().setTextSelection(posOf('Route')).run();
@@ -383,10 +387,10 @@ test('Instagram blocks remain ordinary saved links and can become labelled Rich 
     const dom=await loadEditor({report:`[a href="${url}"]${url}[/a]`,settings:{addReportCredit:false}});
     try{
         await editorReady(dom);await waitFor(dom,()=>editors(dom).rich);
-        assert.equal(editors(dom).rich.state.doc.firstChild.type.name,'reportInstagram');
+        assert.equal(editors(dom).rich.state.doc.firstChild!.type.name,'reportInstagram');
         assert.equal(dom.window.document.querySelectorAll('.bpb-instagram').length,1);
         assert.equal(dom.window.document.querySelector('.bpb-instagram iframe'),null);
-        [...dom.window.document.querySelectorAll('.bpb-instagram button')].find(button=>button.textContent==='Use link').click();
+        [...dom.window.document.querySelectorAll<HTMLButtonElement>('.bpb-instagram button')].find(button=>button.textContent==='Use link')!.click();
         assert.equal(dom.window.document.querySelector('.bpb-instagram'),null);
         modeButton(dom.window.document,'Plain').click();
         assert.equal(dom.window.document.getElementById('JournalText').value,`[a href="${url}" target="_blank"]Instagram post[/a]`);
@@ -400,8 +404,8 @@ test('Instagram paste extracts a post identity, and Markdown preview retains it 
     try{
         await editorReady(dom);await waitFor(dom,()=>editors(dom).rich);
         const rich=editors(dom).rich;
-        assert(rich.view.someProp('handlePaste',handler=>handler(rich.view,{clipboardData:{getData:()=>snippet}})));
-        assert.equal(rich.state.doc.firstChild.type.name,'reportInstagram');
+        assert(rich.view.someProp('handlePaste',handler=>handler(rich.view,{clipboardData:{getData:()=>snippet}} as unknown as ClipboardEvent,Slice.empty)));
+        assert.equal(rich.state.doc.firstChild!.type.name,'reportInstagram');
         modeButton(dom.window.document,'Markdown').click();
         assert.equal(editors(dom).markdown.getValue(),url);
         const card=dom.window.document.querySelector('.bpb-re-preview .bpb-instagram');assert(card);

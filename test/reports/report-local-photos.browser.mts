@@ -2,26 +2,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEditor, editorReady, editors, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
+import { loadEditor, editorReady, editors, modeButton, DRAFT_KEY } from '../helpers/report-editor-page.mts';
+import { fireTrustedEvent, waitFor, type LoadedPage } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
+
+type Reply = Record<string, unknown> | undefined;
+type Upload = (message: StubMessage) => Promise<Reply>;
+type Inserted = (message: StubMessage, dom: LoadedPage) => Promise<Reply>;
 const localId = '00000000-0000-4000-8000-000000000001';
 const src = `https://bpb-photo.invalid/${localId}`;
 const hosted = 'https://i.ibb.co/fixture/photo.png';
-const setup = async (upload, inserted = async () => ({ ok: true, recorded: true }), report = `[img src="${src}" alt="Mountain"]`) => {
-    const messages = [];
+// A test may hold the upload grant to observe the state before it arrives.
+let grantHeld: Promise<void> = Promise.resolve();
+const setup = async (upload: Upload, inserted: Inserted = async () => ({ ok: true, recorded: true }), report = `[img src="${src}" alt="Mountain"]`) => {
+    const messages: StubMessage[] = [];
     let submissions = 0;
+    grantHeld = Promise.resolve();
     const dom = await loadEditor({ report, prepare: d => {
         d.chrome.runtime.sendMessage = async message => {
             messages.push(message);
             if (message.type === 'PHOTO_REPORT_READ') return { ok: true, dataUrl: 'data:image/png;base64,eA==' };
             if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'activation' };
-            if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
+            if (message.type === 'TRUSTED_ACTION_BEGIN') { await grantHeld; return { ok: true, grantToken: 'grant' }; }
             if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
             if (message.type === 'PHOTO_REPORT_UPLOAD') return upload(message);
             if (message.type === 'PHOTO_REPORT_INSERTED') return inserted(message, d);
             return undefined; // The shared fixture owns fallback worker routes.
         };
-        d.window.document.getElementById('JournalText').form.requestSubmit = () => { submissions++; };
+        d.window.document.getElementById('JournalText').form!.requestSubmit = () => { submissions++; };
     } });
     const ui = await editorReady(dom);
     await waitFor(dom, () => editors(dom).rich);
@@ -31,7 +39,7 @@ const setup = async (upload, inserted = async () => ({ ok: true, recorded: true 
 test('local-photo fixtures delegate unhandled worker routes without recursive dispatch', async () => {
     const h = await setup(async () => { throw new Error('must not upload'); });
     const message = { type: 'GPX_PROCESS_INVALIDATE', pageSessionId: 'local-photo-page', selectionGeneration: 2 };
-    const response = await h.dom.chrome.runtime.sendMessage(message);
+    const response = await h.dom.chrome.runtime.sendMessage(message) as Record<string, unknown>;
     assert.equal(response.ok, true);
     assert.equal(response.pageSessionId, message.pageSessionId);
     assert.equal(response.selectionGeneration, message.selectionGeneration);
@@ -51,7 +59,7 @@ test('pending images show local state; synthetic Save cannot upload or submit', 
 
 test('reference persistence retries bookkeeping without sending the uploaded pixels again', async () => {
     let acknowledgements = 0;
-    const h = await setup(async () => ({ ok: true, url: hosted }), async (message, dom) => {
+    const h = await setup(async () => ({ ok: true, url: hosted }), async (message: StubMessage, dom: LoadedPage) => {
         assert.equal(message.localPhotoId, localId);
         assert.equal(message.url, hosted);
         assert.ok(dom.window.document.getElementById('JournalText').value.includes(hosted));
@@ -60,11 +68,11 @@ test('reference persistence retries bookkeeping without sending the uploaded pix
     });
     try {
         const button = h.dom.window.document.getElementById('SaveButton');
-        fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
+        await fireTrustedEvent(button);
         await waitFor(h.dom, () => /reference could not be recorded/.test(h.ui.querySelector('.bpb-re-local-photo-status').textContent));
         assert.equal(h.submissions(), 0);
         assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_UPLOAD').length, 1);
-        fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
+        await fireTrustedEvent(button);
         await waitFor(h.dom, () => h.submissions() === 1);
         assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_UPLOAD').length, 1);
         assert.equal(acknowledgements, 2);
@@ -72,24 +80,33 @@ test('reference persistence retries bookkeeping without sending the uploaded pix
 });
 
 test('Save waits for hosted URLs, blocks double submission, and retains dimensions', async () => {
-    let finish;
-    const h = await setup(() => new Promise(resolve => { finish = resolve; }));
-    const form = h.dom.window.document.getElementById('JournalText').form;
+    let finish: ((reply: Reply) => void) | undefined;
+    const h = await setup(() => new Promise<Reply>(resolve => { finish = resolve; }));
+    const form = h.dom.window.document.getElementById('JournalText').form!;
     const status = h.ui.querySelector('.bpb-re-local-photo-status');
     const button = h.dom.window.document.getElementById('SaveButton');
-    fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
-    assert.equal(status.textContent, 'Preparing photos for upload… Keep this page open.');
+    // Hold the upload grant so the preparing state stays observable.
+    let releaseGrant!: () => void;
+    grantHeld = new Promise<void>(resolve => { releaseGrant = resolve; });
+    await fireTrustedEvent(button);
+    await waitFor(h.dom, () => status.textContent === 'Preparing photos for upload… Keep this page open.');
     assert.equal(status.dataset.state, 'busy');
     assert.equal(button.value, 'Preparing photos…');
     assert.equal(button.getAttribute('aria-busy'), 'true');
     assert.equal(form.getAttribute('aria-busy'), 'true');
+    releaseGrant();
     await waitFor(h.dom, () => finish);
     assert.equal(status.textContent, 'Uploading photo 1 of 1 to ImgBB… Keep this page open.');
     assert.equal(button.value, 'Uploading 1/1…');
-    fireTrustedEvent(button, 'click', { bubbles: true, cancelable: true });
+    // The form is inert while uploading, so a user cannot press Save again.
+    assert.equal(form.inert, true);
+    // Behind inertness, the save in progress also refuses a second press.
+    form.inert = false;
+    await fireTrustedEvent(button);
+    form.inert = true;
     assert.equal(h.submissions(), 0);
     assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_UPLOAD').length, 1);
-    finish({ ok: true, url: hosted });
+    finish!({ ok: true, url: hosted });
     await waitFor(h.dom, () => h.submissions() === 1);
     assert.match(h.dom.window.document.getElementById('JournalText').value, /https:\/\/i\.ibb\.co/);
     assert.doesNotMatch(h.dom.window.document.getElementById('JournalText').value, /bpb-photo\.invalid/);
@@ -101,12 +118,12 @@ test('Save waits for hosted URLs, blocks double submission, and retains dimensio
 
 test('failed uploads preserve pending images and keep the native form open', async () => {
     const h = await setup(async () => ({ ok: false, error: { message: 'Check ImgBB before retrying.' } }));
-    fireTrustedEvent(h.dom.window.document.getElementById('SaveButton2'), 'click', { bubbles: true, cancelable: true });
+    await fireTrustedEvent(h.dom.window.document.getElementById('SaveButton2'));
     await waitFor(h.dom, () => /not been submitted/.test(h.ui.querySelector('.bpb-re-local-photo-status').textContent));
     assert.equal(h.submissions(), 0);
     assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_INSERTED').length, 0);
     assert.ok(h.dom.window.document.getElementById('JournalText').value.includes(src));
-    assert.equal(h.dom.window.document.getElementById('JournalText').form.inert, undefined);
+    assert.equal(h.dom.window.document.getElementById('JournalText').form!.inert, false);
     assert.equal(h.ui.querySelector('.bpb-re-local-photo-status').dataset.state, 'error');
     assert.equal(h.dom.window.document.getElementById('SaveButton2').value, 'Save Ascent');
     assert.equal(h.dom.window.document.getElementById('SaveButton2').hasAttribute('aria-busy'), false);
@@ -120,7 +137,7 @@ test('a later photo failure does not acknowledge any insertion from the incomple
         : { ok: false, error: { message: 'Second upload failed' } }, undefined,
     `[img src="${src}"][img src="${second}"]`);
     try {
-        fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+        await fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'));
         await waitFor(h.dom, () => h.ui.querySelector('.bpb-re-local-photo-status').textContent.includes('Second upload failed'));
         assert.equal(h.submissions(), 0);
         assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_INSERTED').length, 0);
@@ -144,7 +161,7 @@ test('upload failure stays visible beside the native textarea after live disable
     assert.equal(status.isConnected, true);
     assert.equal(status.nextElementSibling, textarea);
 
-    fireTrustedEvent(doc.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+    await fireTrustedEvent(doc.getElementById('SaveButton'));
     await waitFor(h.dom, () => /not been submitted/.test(status.textContent));
     assert.equal(h.submissions(), 0);
     assert.ok(textarea.value.includes(src));
@@ -154,7 +171,7 @@ test('upload failure stays visible beside the native textarea after live disable
 test('pending references survive Markdown mode and are replaced before Save', async () => {
     const h = await setup(async () => ({ ok: true, url: hosted }));
     modeButton(h.dom.window.document, 'Markdown').click();
-    fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+    await fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'));
     await waitFor(h.dom, () => h.submissions() === 1);
     assert.ok(h.dom.window.document.getElementById('JournalText').value.includes(hosted));
     assert.ok(editors(h.dom).markdown.getValue().includes(hosted));
@@ -162,12 +179,12 @@ test('pending references survive Markdown mode and are replaced before Save', as
 });
 
 test('a real image paste stays local and undo/redo keep its durable reference', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     let createdId;
     const dom = await loadEditor({ prepare: d => {
         const win = d.window;
         win.createImageBitmap = async () => ({ width: 800, height: 500, close() {} });
-        win.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
+        win.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage() {} })) as unknown as HTMLCanvasElement['getContext'];
         win.HTMLCanvasElement.prototype.toBlob = callback => callback(new win.Blob(['pixels'], { type: 'image/png' }));
         win.HTMLCanvasElement.prototype.toDataURL = () => 'data:image/png;base64,dGh1bWI=';
         const file = new win.File(['pixels'], 'pasted.png', { type: 'image/png' });
@@ -186,7 +203,8 @@ test('a real image paste stays local and undo/redo keep its durable reference', 
         };
     } });
     const ui = await editorReady(dom);
-    fireTrustedEvent(ui.querySelector('.bpb-re-surface'), 'paste', { bubbles: true, cancelable: true });
+    // A real paste keystroke; the capture listener above supplies the image.
+    await fireTrustedEvent(ui.querySelector('.bpb-re-surface'), { type: 'press', key: 'ControlOrMeta+v' });
     await waitFor(dom, () => /until you save the TR/.test(ui.querySelector('.bpb-re-local-photo-status').textContent));
     const rich = editors(dom).rich;
     const durable = `https://bpb-photo.invalid/${createdId}`;
@@ -206,24 +224,25 @@ test('a real image paste stays local and undo/redo keep its durable reference', 
 
 test('implicit submission uploads pending photos and resumes with a Save submitter', async () => {
     const h = await setup(async () => ({ ok: true, url: hosted }));
-    const form = h.dom.window.document.getElementById('JournalText').form;
-    let submitter = null;
+    const form = h.dom.window.document.getElementById('JournalText').form!;
+    let submitter: HTMLElement | null | undefined = null;
     form.requestSubmit = control => { submitter = control; };
-    fireTrustedEvent(form, 'submit', { bubbles: true, cancelable: true });
+    // Enter in a text field submits the form implicitly.
+    await fireTrustedEvent(form.querySelector('input[type="text"]')!, { type: 'press', key: 'Enter' });
     await waitFor(h.dom, () => submitter);
-    assert.equal(submitter.id, 'SaveButton');
+    assert.equal(submitter!.id, 'SaveButton');
     assert.equal(h.messages.filter(message => message.type === 'PHOTO_REPORT_UPLOAD').length, 1);
     h.dom.window.close();
 });
 
 test('leaving during upload never submits the old report on return', async () => {
-    let finish;
-    const h = await setup(() => new Promise(resolve => { finish = resolve; }));
-    fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+    let finish: ((reply: Reply) => void) | undefined;
+    const h = await setup(() => new Promise<Reply>(resolve => { finish = resolve; }));
+    await fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'));
     await waitFor(h.dom, () => finish);
     h.dom.window.dispatchEvent(new h.dom.window.Event('pagehide'));
     h.dom.window.dispatchEvent(new h.dom.window.Event('pageshow'));
-    finish({ ok: true, url: hosted });
+    finish!({ ok: true, url: hosted });
     await waitFor(h.dom, () => /left this report/.test(h.ui.querySelector('.bpb-re-local-photo-status').textContent));
     assert.equal(h.submissions(), 0);
     assert.equal(h.messages.filter(m => m.type === 'PHOTO_REPORT_INSERTED').length, 0);
@@ -234,7 +253,7 @@ test('leaving during upload never submits the old report on return', async () =>
 test('rate-limit advice remains visible while pending photos and native editing survive', async () => {
     const h = await setup(async () => ({ ok: false, error: { code: 'rate-limit', message: 'ImgBB request limit reached. Wait a few minutes, then try again.' } }));
     try {
-        fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+        await fireTrustedEvent(h.dom.window.document.getElementById('SaveButton'));
         await waitFor(h.dom, () => h.ui.querySelector('.bpb-re-local-photo-status').textContent.includes('ImgBB request limit reached'));
         assert.equal(h.submissions(), 0);
         assert.match(h.dom.window.document.getElementById('JournalText').value, /bpb-photo.invalid/);
@@ -250,17 +269,17 @@ test('plain-mode photo upload replaces pending URLs in an existing recovery draf
             d.chrome.runtime.sendMessage = async message => {
                 if (message.type === 'PHOTO_REPORT_READ') return { ok: true, dataUrl: 'data:image/png;base64,eA==' };
                 if (message.type === 'TRUSTED_ACTION_ISSUE') return { ok: true, token: 'activation' };
-                if (message.type === 'TRUSTED_ACTION_BEGIN') return { ok: true, grantToken: 'grant' };
+                if (message.type === 'TRUSTED_ACTION_BEGIN') { await grantHeld; return { ok: true, grantToken: 'grant' }; }
                 if (message.type === 'TRUSTED_ACTION_END') return { ok: true };
                 if (message.type === 'PHOTO_REPORT_UPLOAD') return { ok: true, url: hosted };
                 if (message.type === 'PHOTO_REPORT_INSERTED') return { ok: true, recorded: true };
             };
             // Keep the page alive as it would be after an unconfirmed/failed native POST.
-            d.window.document.getElementById('JournalText').form.requestSubmit = () => { submissions++; };
+            d.window.document.getElementById('JournalText').form!.requestSubmit = () => { submissions++; };
         } });
     try {
         await editorReady(dom);
-        fireTrustedEvent(dom.window.document.getElementById('SaveButton'), 'click', { bubbles: true, cancelable: true });
+        await fireTrustedEvent(dom.window.document.getElementById('SaveButton'));
         await waitFor(dom, () => submissions === 1);
         assert.match(dom.chrome._localStore[DRAFT_KEY].text, /https:\/\/i\.ibb\.co/);
         assert.doesNotMatch(dom.chrome._localStore[DRAFT_KEY].text, /bpb-photo\.invalid/);

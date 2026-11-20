@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-helpers.mjs';
+import type { Editor } from '@tiptap/core';
+import type { NodeSelection } from '@tiptap/pm/state';
+import { loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-page.mts';
+import type { LoadedPage } from '../helpers/fixture-page.mts';
 
 const image = '[img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320" height="200"]';
 const figure = `[figure]${image}[figcaption]North ridge[/figcaption][/figure]`;
-const selectImage = (editor, occurrence = 0) => {
-    const positions = [];
+const selectImage = (editor: Editor, occurrence = 0) => {
+    const positions: number[] = [];
     editor.state.doc.descendants((node, pos) => {
         if (node.type.name === 'image') positions.push(pos);
     });
-    editor.commands.setNodeSelection(positions[occurrence]);
+    editor.commands.setNodeSelection(positions[occurrence]!);
 };
-const pressKey = (dom, editor, key) => editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
-const captionButton = (ui, label) => [...ui.querySelectorAll('.bpb-re-captionbar button')]
-    .find(button => button.textContent === label);
-const saved = dom => {
+const pressKey = (dom: LoadedPage, editor: Editor, key: string) => editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+const captionButton = (ui: ParentNode, label: string) => [...ui.querySelectorAll<HTMLButtonElement>('.bpb-re-captionbar button')]
+    .find(button => button.textContent === label)!;
+const saved = (dom: LoadedPage) => {
     modeButton(dom.window.document, 'Plain').click();
     return dom.window.document.getElementById('JournalText').value;
 };
@@ -38,7 +41,7 @@ test('clearing caption text unwraps the image immediately and undo restores the 
     try {
         const ui = await editorReady(dom);
         const editor = editors(dom).rich;
-        let start;
+        let start = -1;
         editor.state.doc.descendants((node, pos) => { if (node.type.name === 'reportCaption') start = pos + 1; });
         editor.view.dispatch(editor.state.tr.delete(start, start + 'North ridge'.length));
         assert.equal(ui.querySelector('figure'), null);
@@ -105,12 +108,12 @@ for (const source of [image, figure]) {
             pressKey(dom, editor, 'ArrowLeft');
             assert.equal(editor.state.selection.$from.parent.textContent, 'Before');
             pressKey(dom, editor, 'ArrowRight');
-            assert.equal(editor.state.selection.node?.type.name, source === image ? 'image' : 'reportFigure');
+            assert.equal((editor.state.selection as NodeSelection).node?.type.name, source === image ? 'image' : 'reportFigure');
             pressKey(dom, editor, 'ArrowRight');
             assert.equal(editor.state.selection.$from.parent.textContent, 'After');
             assert.equal(editor.state.selection.$from.parentOffset, 0);
             pressKey(dom, editor, 'ArrowLeft');
-            assert.equal(editor.state.selection.node?.type.name, source === image ? 'image' : 'reportFigure');
+            assert.equal((editor.state.selection as NodeSelection).node?.type.name, source === image ? 'image' : 'reportFigure');
             pressKey(dom, editor, 'ArrowLeft');
             assert.equal(editor.state.selection.$from.parent.textContent, 'Before');
             assert.equal(editor.state.doc.childCount, childCount);
@@ -129,8 +132,9 @@ test('typing Markdown delimiters in captions preserves literal text', async () =
         const literal = '*asterisks* **bold** _underscores_ `code` ~~strike~~ [brackets] | pipe';
         for (const character of literal) {
             const { from, to } = editor.state.selection;
+            const insert = () => editor.state.tr.insertText(character, from, to);
             const handled = editor.view.someProp('handleTextInput', handler =>
-                handler(editor.view, from, to, character));
+                handler(editor.view, from, to, character, insert));
             if (!handled) editor.view.dispatch(editor.state.tr.insertText(character, from, to));
         }
         assert.equal(ui.querySelector('figcaption').textContent, literal);
@@ -225,7 +229,7 @@ test('caption keyboard boundaries allow exit without deleting the photo', async 
         selectImage(editor);
         captionButton(ui, 'Edit caption').click();
         editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
-        assert.equal(editor.state.selection.node.type.name, 'reportFigure');
+        assert.equal((editor.state.selection as NodeSelection).node.type.name, 'reportFigure');
         assert.equal(ui.querySelector('figcaption').textContent, 'North ridge');
         captionButton(ui, 'Edit caption').click();
         editor.view.dom.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
@@ -255,9 +259,9 @@ test('formatting and deleting caption text cannot discard its image', async () =
         editor.commands.toggleHeading({ level: 1 });
         editor.commands.toggleBulletList();
         assert.ok(ui.querySelector('.bpb-re-surface figure img'));
-        const positions = [];
+        const positions: [number, number][] = [];
         editor.state.doc.descendants((node, pos) => { if (node.type.name === 'reportCaption') positions.push([pos, node.nodeSize]); });
-        const [pos, size] = positions[0];
+        const [pos, size] = positions[0]!;
         editor.commands.setTextSelection({ from: pos + 1, to: pos + size - 1 });
         editor.commands.deleteSelection();
         assert.ok(ui.querySelector('.bpb-re-surface img'));
@@ -302,9 +306,9 @@ test('copying the selected photo carries its caption through the clipboard HTML 
         const ui = await editorReady(dom);
         const editor = editors(dom).rich;
         ui.querySelector('.bpb-re-image-resize img').dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-        assert.equal(editor.state.selection.node.type.name, 'reportFigure');
+        assert.equal((editor.state.selection as NodeSelection).node.type.name, 'reportFigure');
         const clipboard = editor.view.serializeForClipboard(editor.state.selection.content());
-        assert.equal(clipboard.dom.querySelector('figcaption').textContent, 'North ridge');
+        assert.equal(clipboard.dom.querySelector('figcaption')!.textContent, 'North ridge');
         editor.commands.setContent(clipboard.dom.innerHTML, { emitUpdate: true });
         assert.equal(saved(dom), figure);
     } finally { dom.window.close(); }

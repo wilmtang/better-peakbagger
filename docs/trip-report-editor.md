@@ -655,6 +655,16 @@ someone reads the report. Direct videos retain no-referrer in saved markup;
 remote images use Peakbagger's page policy. These policies do not hide the
 requesting browser's IP address or ordinary request metadata.
 
+## Known gaps
+
+- A remote image that fails to load cannot be double-clicked into the photo
+  editor. A broken inline image renders as a small alt-text box, and selecting
+  it on the first click shows its resize handle over that box, so the second
+  click lands on the handle. A loaded image keeps the handle at its corner.
+  Older reports whose image hosts have gone away are the likely case. Found
+  when the editor tests moved to real browsers; the editor behavior is
+  unchanged.
+
 ## Device-local trip report draft lifecycle
 
 Trip report drafts are recovery snapshots for the trip-report field. They are separate
@@ -1040,10 +1050,10 @@ shows the exact bracket source.
 - `test/reports/report-markup.test.mts` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
-- `test/reports/report-editor-mount.test.mjs`,
-  `test/reports/report-editor-modes.test.mjs`,
-  `test/reports/report-editor-media.test.mts`, and
-  `test/reports/report-editor-drafts.test.mjs` pin the native-textarea source of
+- `test/reports/report-editor-mount.browser.mts`,
+  `test/reports/report-editor-modes.browser.mts`,
+  `test/reports/report-editor-media.browser.mts`, and
+  `test/reports/report-editor-drafts.browser.mts` pin the native-textarea source of
   truth, untouched-value preservation, expanded rich DOM, toolbar active
   states, image-source validation, hex-color preservation after Rich and
   Markdown edits, undo isolation across mode switches, mode switching

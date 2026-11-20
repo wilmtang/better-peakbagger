@@ -3,8 +3,21 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
-import { loadEditor, editorReady, editors, typeRich, modeButton, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
+import { fireTrustedEvent, waitFor } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
+
+// The backup snapshot a Save sends to the worker.
+type SnapshotMessage = StubMessage & {
+    attemptId?: string;
+    identity: unknown;
+    snapshot: { report: { markdown: string; submitted: string }; ascent: { id: number } };
+};
+const snapshotOf = (messages: StubMessage[]) => {
+    const message = messages.find(candidate => candidate.type === 'GITHUB_BACKUP_SNAPSHOT');
+    assert.ok(message, 'a backup snapshot was sent');
+    return message as SnapshotMessage;
+};
+import { loadEditor, editorReady, editors, typeRich, modeButton, DRAFT_KEY } from '../helpers/report-editor-page.mts';
 
 test('the editor mounts on the ascent form and hides the native textarea', async () => {
     const dom = await loadEditor();
@@ -17,7 +30,7 @@ test('the editor mounts on the ascent form and hides the native textarea', async
     assert.ok(textarea.form, 'textarea must stay inside the form it submits with');
 
     // The site's bracket-syntax hint is superseded while the editor is active.
-    const hints = [...doc.querySelectorAll('span')].find(s => /Hints:/.test(s.textContent));
+    const hints = [...doc.querySelectorAll('span')].find(s => /Hints:/.test(s.textContent ?? ''))!;
     assert.ok(hints.classList.contains('bpb-re-hidden'), 'native hints should be hidden');
 
     const blockStyle = ui.querySelector('.bpb-re-format');
@@ -54,11 +67,11 @@ test('the editor mounts on the ascent form and hides the native textarea', async
 });
 
 test('the editor always offers the device-wide report drafts manager', async () => {
-    const messages = [];
-    let release;
+    const messages: StubMessage[] = [];
+    let release!: (reply: unknown) => void;
     const dom = await loadEditor({
         prepare: d => {
-            d.chrome.runtime.sendMessage = message => {
+            d.chrome.runtime.sendMessage = (message: StubMessage) => {
                 if (message.type === 'TRUSTED_ACTION_ISSUE') {
                     messages.push(message);
                     return Promise.resolve({ ok: true, token: 'draft-token' });
@@ -76,8 +89,8 @@ test('the editor always offers the device-wide report drafts manager', async () 
     assert.equal(manage?.getAttribute('aria-label'), 'Manage TR drafts');
     manage.click();
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
-    assert.deepEqual(messages, [], 'a synthetic host-page click must mint no authority');
-    fireTrustedEvent(manage, 'click');
+    assert.equal(messages.length, 0, 'a synthetic host-page click must mint no authority');
+    await fireTrustedEvent(manage);
     await waitFor(dom, () => manage.disabled && manage.getAttribute('aria-busy') === 'true');
     assert.equal(messages[0].type, 'TRUSTED_ACTION_ISSUE');
     assert.equal(messages[0].action, 'draft-manager');
@@ -115,28 +128,28 @@ test('both report-drafts entry points recover visibly from every messaging failu
     ];
     for (const entryPoint of entryPoints) {
         await t.test(entryPoint.name, async () => {
-            let behavior = () => Promise.resolve(null);
+            let behavior: () => Promise<unknown> = () => Promise.resolve(null);
             let calls = 0;
-            let feedbackExpiry = null;
+            let feedbackExpiry: (() => void) | null = null;
             const dom = await loadEditor({
                 ...entryPoint.options,
                 prepare: d => {
                     const nativeSetTimeout = d.window.setTimeout.bind(d.window);
-                    d.window.setTimeout = (callback, delay = 0, ...args) => {
+                    d.window.setTimeout = ((callback: () => void, delay = 0, ...args: unknown[]) => {
                         if (delay === 6000) {
                             feedbackExpiry = callback;
                             return -6000;
                         }
                         return nativeSetTimeout(callback, delay, ...args);
-                    };
-                    d.chrome.runtime.sendMessage = message => {
+                    }) as typeof d.window.setTimeout;
+                    d.chrome.runtime.sendMessage = (message: StubMessage) => {
                         if (message.type === 'TRUSTED_ACTION_ISSUE') {
                             return Promise.resolve({ ok: true, token: `draft-token-${calls + 1}` });
                         }
                         calls++;
                         assert.equal(message.type, 'OPEN_DRAFTS_MANAGER');
                         assert.equal(message.activationToken, `draft-token-${calls}`);
-                        assert.match(message.generation, /^report-drafts-/);
+                        assert.match(String(message.generation), /^report-drafts-/);
                         return behavior();
                     };
                 },
@@ -158,7 +171,7 @@ test('both report-drafts entry points recover visibly from every messaging failu
             for (const failure of failures) {
                 behavior = failure;
                 const expectedCalls = calls + 1;
-                fireTrustedEvent(manage, 'click');
+                await fireTrustedEvent(manage);
                 await waitFor(dom, () => calls === expectedCalls
                     && !manage.disabled
                     && /Couldn’t open report drafts/.test(ui.querySelector('.bpb-re-status').textContent));
@@ -169,13 +182,13 @@ test('both report-drafts entry points recover visibly from every messaging failu
             }
 
             assert.equal(typeof feedbackExpiry, 'function');
-            feedbackExpiry();
+            feedbackExpiry!();
             assert.equal(ui.querySelector('.bpb-re-status').textContent, '',
                 'manager failure feedback must expire instead of becoming permanent editor status');
 
             behavior = () => Promise.resolve({ ok: true, tabId: 100 });
             const expectedCalls = calls + 1;
-            fireTrustedEvent(manage, 'click');
+            await fireTrustedEvent(manage);
             await waitFor(dom, () => calls === expectedCalls && !manage.disabled);
             assert.equal(ui.querySelector('.bpb-re-status').textContent, '');
         });
@@ -302,12 +315,12 @@ test('a pending rich edit is flushed synchronously when any submit control is cl
 
 test('backup snapshots are captured only for Save or implicit form submissions', async () => {
     const loadWithMessages = async () => {
-        const messages = [];
+        const messages: StubMessage[] = [];
         const dom = await loadEditor({
             settings: { enableGithubBackup: true },
             prepare: d => {
                 d.chrome.runtime.getManifest = () => ({ version: '1.2.3' });
-                d.chrome.runtime.sendMessage = async message => { messages.push(message); };
+                d.chrome.runtime.sendMessage = async (message: StubMessage) => { messages.push(message); };
             }
         });
         await editorReady(dom);
@@ -325,7 +338,7 @@ test('backup snapshots are captured only for Save or implicit form submissions',
     explicit.dom.window.close();
 
     const implicit = await loadWithMessages();
-    implicit.dom.window.document.getElementById('JournalText').form.dispatchEvent(
+    implicit.dom.window.document.getElementById('JournalText').form!.dispatchEvent(
         new implicit.dom.window.SubmitEvent('submit', { bubbles: true, cancelable: true })
     );
     assert.equal(implicit.messages.filter(message => message.type === 'GITHUB_BACKUP_SNAPSHOT').length, 1,
@@ -334,8 +347,8 @@ test('backup snapshots are captured only for Save or implicit form submissions',
 });
 
 test('Add and Edit saves capture the identities used by the backup handoff even when the editor is disabled', async () => {
-    const capture = async ({ url, saveId, peakId }) => {
-        const messages = [];
+    const capture = async ({ url, saveId, peakId }: { url: string; saveId: string; peakId?: number }) => {
+        const messages: StubMessage[] = [];
         const dom = await loadEditor({
             url,
             settings: { enableReportEditor: false, enableGithubBackup: true },
@@ -364,7 +377,7 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
             'snapshot capture must not depend on the enhanced editor UI');
         dom.window.document.getElementById(saveId).click();
         await waitFor(dom, () => messages.some(message => message.type === 'GITHUB_BACKUP_SNAPSHOT'));
-        const message = messages.find(candidate => candidate.type === 'GITHUB_BACKUP_SNAPSHOT');
+        const message = snapshotOf(messages);
         dom.window.close();
         return message;
     };
@@ -397,9 +410,9 @@ test('Add and Edit saves capture the identities used by the backup handoff even 
 
 test('a rejected Save records only an attempt with the exact submitted representation', async () => {
     for (const saveId of ['SaveButton', 'SaveButton2']) {
-        const messages = [];
+        const messages: StubMessage[] = [];
         const dom = await loadEditor({ settings: { enableGithubBackup: true },
-            prepare: d => { d.chrome.runtime.sendMessage = async message => { messages.push(message); }; } });
+            prepare: d => { d.chrome.runtime.sendMessage = async (message: StubMessage) => { messages.push(message); }; } });
         await editorReady(dom);
         const doc = dom.window.document;
         typeRich(dom, 'UNSAVED attempted report');
@@ -407,11 +420,11 @@ test('a rejected Save records only an attempt with the exact submitted represent
         date.required = true;
         date.value = '';
         let submits = 0;
-        date.form.addEventListener('submit', event => { submits++; event.preventDefault(); });
+        date.form!.addEventListener('submit', event => { submits++; event.preventDefault(); });
         doc.getElementById(saveId).click();
-        assert.equal(date.form.checkValidity(), false);
+        assert.equal(date.form!.checkValidity(), false);
         assert.equal(submits, 0);
-        const attempt = messages.find(message => message.type === 'GITHUB_BACKUP_SNAPSHOT');
+        const attempt = snapshotOf(messages);
         assert.ok(attempt.attemptId);
         assert.equal(attempt.snapshot.report.submitted, doc.getElementById('JournalText').value);
         assert.match(attempt.snapshot.report.submitted, /UNSAVED attempted report/);
