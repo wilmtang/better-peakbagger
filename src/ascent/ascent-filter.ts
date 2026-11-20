@@ -593,7 +593,7 @@ const setupInstantTableSort = ({
 // so every new control needed a developer to remember a second file and
 // nothing failed when they didn't. Now dark mode is variable reassignment:
 // a control with no dark value is impossible, because there is only one
-// value to declare. test/theme/dark-contrast.test.mjs fails if any
+// value to declare. test/theme/dark-contrast.browser.mts fails if any
 // --pbaf-* token lacks a dark counterpart.
 const STYLE = `
 :root {

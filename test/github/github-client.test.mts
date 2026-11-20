@@ -9,22 +9,21 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
-import { JSDOM } from 'jsdom';
 
-const browserDom = new JSDOM('');
-globalThis.DOMParser = browserDom.window.DOMParser;
-const markedContext = vm.createContext({});
-vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
-globalThis.marked = markedContext.marked;
+import { githubClient as Client } from '../../src/github/github-client.ts';
+import type { AscentBackupSnapshot } from '../../src/github/github-client.ts';
+import { githubBackup as Backup } from '../../src/github/github-backup.ts';
+import { githubErrors as GithubErrors } from '../../src/github/github-errors.ts';
+import type { GithubFetch, GithubFetchResponse } from '../../src/github/github-api.ts';
 
-const { githubClient: Client } = await import('../../src/github/github-client.ts');
-const { githubBackup: Backup } = await import('../../src/github/github-backup.ts');
-const { githubErrors: GithubErrors } = await import('../../src/github/github-errors.ts');
 const { ERROR_CODES } = GithubErrors;
 
-const snapshot = (overrides = {}) => ({
+const snapshot = (overrides: {
+    ascent?: Record<string, unknown>;
+    peak?: Record<string, unknown>;
+    report?: Record<string, unknown>;
+    backup?: Record<string, unknown>;
+} = {}): AscentBackupSnapshot => ({
     ascent: { id: 1234567, date: '2026-07-12', suffix: '', route: 'DC', gainFt: '9000', ...overrides.ascent },
     peak: { id: 2296, name: 'Mount Rainier', elevationFt: '14411', location: 'Washington, USA', ...overrides.peak },
     report: { markdown: '**nice**', ...overrides.report },
@@ -32,24 +31,76 @@ const snapshot = (overrides = {}) => ({
 });
 
 // A Response-like object for the scripted fetch stub.
-const respond = (status, body, headers = {}) => ({
+const respond = (
+    status: number,
+    body?: unknown,
+    headers: Record<string, string> = {},
+): GithubFetchResponse => ({
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: name => headers[name.toLowerCase()] ?? null },
+    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
+
+interface TreeEntryRecord {
+    path: string;
+    mode?: string;
+    type?: string;
+    sha?: string | null;
+    content?: string;
+}
+
+interface RecordedBody {
+    base_tree?: string;
+    tree: TreeEntryRecord[];
+    message?: string;
+    parents?: string[];
+    content?: string;
+    branch?: string;
+    sha?: string;
+    force?: boolean;
+    [key: string]: unknown;
+}
+
+interface RecordedCall {
+    method: string;
+    path: string;
+    key: string;
+    body: RecordedBody;
+    url: string;
+    headers: Record<string, string>;
+    cache: string | undefined;
+}
+
+type RouteHandler =
+    | GithubFetchResponse
+    | Error
+    | ((count: number, body: RecordedBody | undefined) => GithubFetchResponse | Error);
+
+const hasErrorCode = (error: unknown, code: string, pattern?: RegExp): boolean => {
+    const record = error as { code?: unknown; message?: unknown };
+    return record.code === code && (!pattern || pattern.test(String(record.message ?? '')));
+};
 
 // Build a fetch stub from a route table keyed by "METHOD path-without-query".
 // Handlers receive the parsed request and return respond(...). A thrown value
 // is surfaced as a rejected fetch (simulating a network failure).
-const makeFetch = routes => {
-    const calls = [];
-    const fetch = async (url, init = {}) => {
+const makeFetch = (routes: Record<string, RouteHandler>) => {
+    const calls: RecordedCall[] = [];
+    const fetch: GithubFetch = async (url: string, init: Parameters<GithubFetch>[1] = {}) => {
         const method = init.method || 'GET';
         const path = url.replace('https://api.github.com', '').split('?')[0];
         const key = `${method} ${path}`;
-        const body = init.body ? JSON.parse(init.body) : undefined;
-        calls.push({ method, path, key, body, url, headers: init.headers, cache: init.cache });
+        const body = typeof init.body === 'string' ? (JSON.parse(init.body) as RecordedBody) : undefined;
+        calls.push({
+            method,
+            path,
+            key,
+            body: body as RecordedBody,
+            url,
+            headers: (init.headers as Record<string, string>) ?? {},
+            cache: init.cache,
+        });
         const handler = routes[key];
         if (!handler) throw new Error(`unrouted request: ${key}`);
         const result = typeof handler === 'function'
@@ -62,8 +113,8 @@ const makeFetch = routes => {
 };
 
 const REPO_OK = () => respond(200, { default_branch: 'main', archived: false, size: 1, permissions: { push: true } });
-const REF = sha => () => respond(200, { object: { sha } });
-const COMMIT = (sha, treeSha) => () => respond(200, { sha, tree: { sha: treeSha } });
+const REF = (sha: string) => () => respond(200, { object: { sha } });
+const COMMIT = (sha: string, treeSha: string) => () => respond(200, { sha, tree: { sha: treeSha } });
 const MARKER = { path: Client.REPOSITORY_MARKER_PATH, type: 'blob', sha: 'marker' };
 const MARKER_BLOB = () => respond(200, {
     encoding: 'base64',
@@ -95,7 +146,7 @@ test('an Add inlines files into one tree, creates one commit, and fast-forwards 
     const blobCalls = calls.filter(c => c.key === 'POST /repos/me/backup/git/blobs');
     assert.equal(blobCalls.length, 0);
 
-    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees')!;
     assert.equal(treeCall.body.base_tree, 'T0');
     assert.deepEqual(treeCall.body.tree.map(e => e.path).sort(), [
         '.better-peakbagger.json',
@@ -105,7 +156,7 @@ test('an Add inlines files into one tree, creates one commit, and fast-forwards 
     ]);
     assert.ok(treeCall.body.tree.every(e => typeof e.content === 'string'));
 
-    const commitCall = calls.find(c => c.key === 'POST /repos/me/backup/git/commits');
+    const commitCall = calls.find(c => c.key === 'POST /repos/me/backup/git/commits')!;
     assert.equal(commitCall.body.message, 'Add ascent and TR: Mount Rainier, 2026-07-12');
     assert.deepEqual(commitCall.body.parents, ['C0']);
     // Authorization is the injected token as a bearer.
@@ -138,7 +189,7 @@ test('ten ascents share one atomic tree, commit, and branch update', async () =>
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits').length, 1);
     assert.equal(calls.filter(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').length, 1);
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/blobs').length, 0);
-    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body.tree;
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!.body.tree;
     assert.equal(tree.length, 21, 'ten two-file ascents plus the ownership marker');
     assert.equal(new Set(tree.map(entry => entry.path)).size, tree.length);
 });
@@ -228,8 +279,8 @@ test('an unusually large file keeps the explicit blob upload path', async () => 
     await client.pushAscentBackup(snapshot(), { gpx: `<gpx>${'x'.repeat(2048)}</gpx>` });
 
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/blobs').length, 1);
-    const track = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')
-        .body.tree.find(entry => entry.path.endsWith('/track.gpx'));
+    const track = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!
+        .body.tree.find(entry => entry.path.endsWith('/track.gpx'))!;
     assert.equal(track.sha, 'large-blob');
     assert.equal('content' in track, false);
 });
@@ -303,7 +354,7 @@ test('repository inspection rejects a truncated Git tree instead of treating it 
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
     await assert.rejects(client.inspectRepository(),
-        error => error.code === ERROR_CODES.INVALID && /truncated/.test(error.message));
+        error => hasErrorCode(error, ERROR_CODES.INVALID, /truncated/));
 });
 
 test('an empty repository is initialized with the first backup commit', async () => {
@@ -325,16 +376,16 @@ test('an empty repository is initialized with the first backup commit', async ()
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
     const result = await client.pushAscentBackup(snapshot(), {});
     assert.equal(result.folder, '2026-07-12-mount-rainier-a1234567');
-    const initializeCall = calls.find(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json');
+    const initializeCall = calls.find(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json')!;
     assert.deepEqual(initializeCall.body, {
         message: 'Initialize Better Peakbagger backup',
         content: 'ewogICJzY2hlbWFWZXJzaW9uIjogMSwKICAidHlwZSI6ICJiZXR0ZXItcGVha2JhZ2dlci1iYWNrdXAiLAogICJsYXlvdXQiOiAicmVwb3NpdG9yeS1yb290Igp9Cg==',
         branch: 'main',
     });
-    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!;
     assert.equal(treeCall.body.base_tree, 'T0');
     assert.ok(!treeCall.body.tree.some(entry => entry.path === Client.REPOSITORY_MARKER_PATH));
-    const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits');
+    const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits')!;
     assert.deepEqual(commitCall.body.parents, ['C0']);
     assert.ok(!calls.some(call => call.key === 'POST /repos/me/backup/git/refs'));
 });
@@ -349,7 +400,7 @@ test('an unmarked root backup collision is rejected before any write', async () 
         ] }),
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.inspectRepository(), error => error.code === ERROR_CODES.REPO_CONFLICT);
+    await assert.rejects(client.inspectRepository(), error => hasErrorCode(error, ERROR_CODES.REPO_CONFLICT));
     assert.ok(calls.every(call => call.method === 'GET'));
 });
 
@@ -380,7 +431,7 @@ test('a rename re-sync removes owned old paths and preserves user files', async 
     assert.equal(result.isUpdate, true);
     assert.equal(result.message, 'Update ascent and TR: Mount Rainier, 2026-07-12');
 
-    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees')!;
     const byPath = Object.fromEntries(treeCall.body.tree.map(e => [e.path, e]));
     // New folder written (report.md, ascent.json; no track.gpx this time).
     assert.equal(typeof byPath['2026-07-12-mount-rainier-a1234567/report.md'].content, 'string');
@@ -414,7 +465,7 @@ test('a same-slug re-sync prunes a now-absent GPX but keeps overwriting the rest
     });
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
     await client.pushAscentBackup(snapshot(), {}); // no gpx now
-    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(c => c.key === 'POST /repos/me/backup/git/trees')!;
     const byPath = Object.fromEntries(treeCall.body.tree.map(e => [e.path, e]));
     // report.md / ascent.json overwritten (same path, real blob), not nulled.
     assert.equal(typeof byPath[`${leaf}/report.md`].content, 'string');
@@ -425,7 +476,7 @@ test('a same-slug re-sync prunes a now-absent GPX but keeps overwriting the rest
 test('a transient ref conflict backs off before re-reading and rebuilding', async () => {
     let patchCount = 0;
     let refReads = 0;
-    const delays = [];
+    const delays: number[] = [];
     const { fetch } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => { refReads += 1; return respond(200, { object: { sha: `C${refReads - 1}` } }); },
@@ -455,7 +506,7 @@ test('a transient ref conflict backs off before re-reading and rebuilding', asyn
 
 test('a persistent ref conflict stops after the bounded retry schedule', async () => {
     let patchCount = 0;
-    const delays = [];
+    const delays: number[] = [];
     const { fetch } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': REF('C0'),
@@ -474,7 +525,7 @@ test('a persistent ref conflict stops after the bounded retry schedule', async (
     });
     await assert.rejects(
         client.pushAscentBackup(snapshot(), {}),
-        err => err.code === ERROR_CODES.CONFLICT,
+        err => hasErrorCode(err, ERROR_CODES.CONFLICT),
     );
     assert.equal(patchCount, 4);
     assert.deepEqual(delays, [500, 2000, 5000]);
@@ -526,7 +577,7 @@ test('deleting an ascent removes only owned files from exact terminal-id folders
     });
     assert.ok(!calls.some(call => call.path.endsWith('/git/trees/OTHER')),
         'a longer terminal id must not be read');
-    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!;
     assert.equal(treeCall.body.base_tree, 'T0');
     assert.deepEqual(treeCall.body.tree, [
         { path: `${first}/report.md`, mode: '100644', type: 'blob', sha: null },
@@ -538,13 +589,13 @@ test('deleting an ascent removes only owned files from exact terminal-id folders
     assert.ok(!treeCall.body.tree.some(entry =>
         entry.path.endsWith('/notes.md') || entry.path.endsWith('/photos/caption.txt')),
     'user-added files must remain in the base tree');
-    assert.deepEqual(calls.find(call => call.key === 'POST /repos/me/backup/git/commits').body, {
+    assert.deepEqual(calls.find(call => call.key === 'POST /repos/me/backup/git/commits')!.body, {
         message: 'Delete ascent and TR backup: 1234567',
         tree: 'T1',
         parents: ['C0'],
     });
     assert.deepEqual(calls.find(call =>
-        call.key === 'PATCH /repos/me/backup/git/refs/heads/main').body,
+        call.key === 'PATCH /repos/me/backup/git/refs/heads/main')!.body,
     { sha: 'C1', force: false });
 });
 
@@ -618,7 +669,7 @@ test('ascent deletion rejects a foreign ownership marker before reading or writi
 
     await assert.rejects(
         client.deleteAscentBackup(1234567),
-        error => error.code === ERROR_CODES.REPO_CONFLICT,
+        error => hasErrorCode(error, ERROR_CODES.REPO_CONFLICT),
     );
     assert.ok(calls.every(call => call.method === 'GET'));
     assert.ok(!calls.some(call => call.path.endsWith('/git/trees/F1')));
@@ -633,7 +684,7 @@ test('ascent deletion validates a positive safe integer before network access', 
     });
     for (const value of [0, -1, 1.5, NaN, Infinity, '123', Number.MAX_SAFE_INTEGER + 1]) {
         assert.throws(
-            () => client.deleteAscentBackup(value),
+            () => client.deleteAscentBackup(value as unknown as number),
             /positive integer ascent id/,
             `expected ${String(value)} to be rejected`,
         );
@@ -643,7 +694,7 @@ test('ascent deletion validates a positive safe integer before network access', 
 test('ascent deletion re-reads and rebuilds after a transient ref conflict', async () => {
     let refReads = 0;
     let patchCount = 0;
-    const delays = [];
+    const delays: number[] = [];
     const leaf = '2026-07-12-mount-rainier-a1234567';
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
@@ -727,8 +778,8 @@ test('photo recovery reads the root blob as bounded raw UTF-8 through the advert
         });
         const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
 
-        assert.equal((await client.readRootFile('photo-library.json', { maxBytes: limit })).length, size);
-        const rawCall = calls.find(call => call.path.includes('/git/blobs/photo-'));
+        assert.equal((await client.readRootFile('photo-library.json', { maxBytes: limit }))!.length, size);
+        const rawCall = calls.find(call => call.path.includes('/git/blobs/photo-'))!;
         assert.equal(rawCall.headers.Accept, 'application/vnd.github.raw+json');
         assert.equal(calls.some(call => call.path.includes('/contents/')), false);
     }
@@ -747,7 +798,7 @@ test('photo recovery rejects oversized and dishonest root blob sizes before pars
     await assert.rejects(
         Client.createGithubClient({ fetch: oversized.fetch, token: 't', owner: 'me', repo: 'backup' })
             .readRootFile('photo-library.json', { maxBytes: limit }),
-        error => error.code === ERROR_CODES.INVALID && /larger/.test(error.message),
+        error => hasErrorCode(error, ERROR_CODES.INVALID, /larger/),
     );
     assert.equal(oversized.calls.some(call => call.path.includes('/git/blobs/')), false);
 
@@ -763,7 +814,7 @@ test('photo recovery rejects oversized and dishonest root blob sizes before pars
     await assert.rejects(
         Client.createGithubClient({ fetch: dishonest.fetch, token: 't', owner: 'me', repo: 'backup' })
             .readRootFile('photo-library.json', { maxBytes: limit }),
-        error => error.code === ERROR_CODES.INVALID && /size did not match/.test(error.message),
+        error => hasErrorCode(error, ERROR_CODES.INVALID, /size did not match/),
     );
 });
 
@@ -786,17 +837,17 @@ test('a root file commit preserves the base tree, adopts the repo, and fast-forw
 
     assert.equal(result.path, 'favorite-climbers.json');
     assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
-    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees');
+    const treeCall = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!;
     assert.equal(treeCall.body.base_tree, 'T0');
     assert.deepEqual(treeCall.body.tree.map(entry => entry.path).sort(), [
         '.better-peakbagger.json', 'favorite-climbers.json',
     ]);
-    assert.equal(treeCall.body.tree.find(entry => entry.path === 'favorite-climbers.json').content,
+    assert.equal(treeCall.body.tree.find(entry => entry.path === 'favorite-climbers.json')!.content,
         '{"schemaVersion":1}\n');
-    const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits');
+    const commitCall = calls.find(call => call.key === 'POST /repos/me/backup/git/commits')!;
     assert.deepEqual(commitCall.body.parents, ['C0']);
     assert.equal(commitCall.body.message, 'Back up favorite climbers');
-    assert.deepEqual(calls.find(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').body,
+    assert.deepEqual(calls.find(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main')!.body,
         { sha: 'C1', force: false });
 });
 
@@ -823,13 +874,13 @@ test('several root files commit as one tree, one commit, and one ref update', as
     assert.equal(result.commitUrl, 'https://github.com/me/backup/commit/C1');
     assert.equal(calls.filter(call => call.key === 'POST /repos/me/backup/git/commits').length, 1);
     assert.equal(calls.filter(call => call.key === 'PATCH /repos/me/backup/git/refs/heads/main').length, 1);
-    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body;
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!.body;
     assert.equal(tree.base_tree, 'T0');
     assert.deepEqual(tree.tree, [
         { path: 'settings.json', mode: '100644', type: 'blob', content: '{"settings":1}\n' },
         { path: 'favorite-climbers.json', mode: '100644', type: 'blob', content: '{"schemaVersion":1}\n' },
     ]);
-    assert.equal(calls.find(call => call.key === 'POST /repos/me/backup/git/commits').body.message,
+    assert.equal(calls.find(call => call.key === 'POST /repos/me/backup/git/commits')!.body.message,
         'Back up settings; Back up favorite climbers');
 });
 
@@ -851,7 +902,7 @@ test('a root file batch refuses a repeated path instead of guessing which write 
 test('a root file conflict retries from the newly read head', async () => {
     let refReads = 0;
     let patches = 0;
-    const delays = [];
+    const delays: number[] = [];
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => {
@@ -889,8 +940,8 @@ test('a root file conflict retries from the newly read head', async () => {
 test('a semantic root update rereads and remerges after a branch conflict', async () => {
     let refReads = 0;
     let patches = 0;
-    const seen = [];
-    const blob = text => respond(200, text);
+    const seen: (string | null)[] = [];
+    const blob = (text: string) => respond(200, text);
     const { fetch, calls } = makeFetch({
         'GET /repos/me/backup': REPO_OK(),
         'GET /repos/me/backup/git/ref/heads/main': () => {
@@ -928,12 +979,12 @@ test('a semantic root update rereads and remerges after a branch conflict', asyn
 
     await client.updateRootFile('photo-library.json', current => {
         seen.push(current);
-        return `${current.trim()} local\n`;
+        return `${current!.trim()} local\n`;
     }, 'Back up photo library', { maxBytes: 8 * 1024 * 1024 });
 
     assert.deepEqual(seen, ['{"remote":0}\n', '{"remote":1}\n']);
     assert.deepEqual(calls.filter(call => call.key === 'POST /repos/me/backup/git/trees')
-        .map(call => call.body.tree.find(entry => entry.path === 'photo-library.json').content), [
+        .map(call => call.body.tree.find(entry => entry.path === 'photo-library.json')!.content), [
         '{"remote":0} local\n',
         '{"remote":1} local\n',
     ]);
@@ -970,7 +1021,7 @@ test('root file writes fail closed on a foreign marker or path collision', async
     await assert.rejects(
         Client.createGithubClient({ fetch: foreign.fetch, token: 't', owner: 'me', repo: 'backup' })
             .putRootFile('favorite-climbers.json', '{}', 'Back up favorite climbers'),
-        error => error.code === ERROR_CODES.REPO_CONFLICT,
+        error => hasErrorCode(error, ERROR_CODES.REPO_CONFLICT),
     );
     assert.ok(foreign.calls.every(call => call.method === 'GET'));
 
@@ -986,7 +1037,7 @@ test('root file writes fail closed on a foreign marker or path collision', async
     await assert.rejects(
         Client.createGithubClient({ fetch: collision.fetch, token: 't', owner: 'me', repo: 'backup' })
             .putRootFile('favorite-climbers.json', '{}', 'Back up favorite climbers'),
-        error => error.code === ERROR_CODES.REPO_CONFLICT,
+        error => hasErrorCode(error, ERROR_CODES.REPO_CONFLICT),
     );
     assert.ok(collision.calls.every(call => call.method === 'GET'));
 });
@@ -1010,39 +1061,40 @@ test('an empty repository is initialized before its first root file commit', asy
     await client.putRootFile('favorite-climbers.json', '{}\n', 'Back up favorite climbers');
 
     assert.ok(calls.some(call => call.key === 'PUT /repos/me/backup/contents/.better-peakbagger.json'));
-    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees').body;
+    const tree = calls.find(call => call.key === 'POST /repos/me/backup/git/trees')!.body;
     assert.equal(tree.base_tree, 'T0');
     assert.deepEqual(tree.tree.map(entry => entry.path), ['favorite-climbers.json']);
 });
 
 // ---- error taxonomy -------------------------------------------------------
 
-const failingRepoFetch = repoResponse => makeFetch({ 'GET /repos/me/backup': () => repoResponse }).fetch;
+const failingRepoFetch = (repoResponse: GithubFetchResponse) =>
+    makeFetch({ 'GET /repos/me/backup': () => repoResponse }).fetch;
 
 test('an invalid token maps to auth', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(401, { message: 'Bad credentials' })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.AUTH);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.AUTH));
 });
 
 test('a withdrawn repository (404) maps to no-access', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(404, { message: 'Not Found' })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NO_ACCESS);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.NO_ACCESS));
 });
 
 test('an archived repository is caught pre-flight', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(200, { default_branch: 'main', archived: true, permissions: { push: true } })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.ARCHIVED);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.ARCHIVED));
 });
 
 test('a read-only permission is caught pre-flight as no-access', async () => {
     const client = Client.createGithubClient({ fetch: failingRepoFetch(respond(200, { default_branch: 'main', archived: false, permissions: { push: false } })), token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NO_ACCESS);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.NO_ACCESS));
 });
 
 test('a 403 with an exhausted rate limit maps to rate-limit, not no-access', async () => {
     const fetch = makeFetch({ 'GET /repos/me/backup': () => respond(403, { message: 'API rate limit exceeded' }, { 'x-ratelimit-remaining': '0' }) }).fetch;
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.RATE_LIMIT);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.RATE_LIMIT));
 });
 
 test('branch protection on the ref update maps to branch-protected', async () => {
@@ -1057,17 +1109,17 @@ test('branch protection on the ref update maps to branch-protected', async () =>
         'PATCH /repos/me/backup/git/refs/heads/main': () => respond(422, { message: 'Required status check is expected. Protected branch update failed.' }),
     }).fetch;
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.BRANCH_PROTECTED);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.BRANCH_PROTECTED));
 });
 
 test('a thrown fetch maps to network', async () => {
     const fetch = async () => { throw new TypeError('Failed to fetch'); };
     const client = Client.createGithubClient({ fetch, token: 't', owner: 'me', repo: 'backup' });
-    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => err.code === ERROR_CODES.NETWORK);
+    await assert.rejects(client.pushAscentBackup(snapshot(), {}), err => hasErrorCode(err, ERROR_CODES.NETWORK));
 });
 
 test('the factory validates its required config', () => {
     assert.throws(() => Client.createGithubClient({ token: 't', owner: 'me', repo: 'b' }), /injected fetch/);
-    assert.throws(() => Client.createGithubClient({ fetch: () => {}, owner: 'me', repo: 'b' }), /token/);
-    assert.throws(() => Client.createGithubClient({ fetch: () => {}, token: 't', repo: 'b' }), /owner and repo/);
+    assert.throws(() => Client.createGithubClient({ fetch: (() => {}) as unknown as GithubFetch, owner: 'me', repo: 'b' }), /token/);
+    assert.throws(() => Client.createGithubClient({ fetch: (() => {}) as unknown as GithubFetch, token: 't', repo: 'b' }), /owner and repo/);
 });

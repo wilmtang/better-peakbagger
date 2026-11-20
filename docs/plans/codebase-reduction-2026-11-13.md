@@ -195,7 +195,7 @@ roughly 16–20 other test files that read authored source, CSS or HTML (not the
      bearing…", "Chrome terrain verification waits out…" and "Chrome
      tilted-peak verification…" pin GPU-verifier text, with the same trade-off
      against `verify -- terrain`.
-  3. `sun-calculator.test.mjs` (lines 696–704) pins exact `block-size`
+  3. `sun-calculator.browser.mts` (lines 696–704) pins exact `block-size`
      values, and `photo-page.test.mts` (lines 244–247) pins `height` and
      `min-height` on `.editor-body`. The surviving checks are browser geometry
      probes: `readSunCalculatorGeometry` in both extension verifiers for the

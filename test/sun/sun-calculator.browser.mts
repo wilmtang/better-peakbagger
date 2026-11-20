@@ -1,39 +1,81 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
 
 import { sunCalculator as SunCalculator } from '../../src/sun/sun-calculator.ts';
+import type {
+    SunCalculator as SunCalculatorInstance,
+    SunCalculatorOptions,
+    SunCalculatorResult,
+    SunCalculatorState,
+} from '../../src/sun/sun-calculator.ts';
 import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
+import type { MountainZone } from '../../src/time/mountain-time.ts';
 import { sunPosition as SunPosition } from '../../src/sun/sun-position.ts';
+import type { PageDocument, PageElement, TestWindow } from '../helpers/page-types.mts';
 
 const css = await readFile(new URL('../../src/sun/sun-calculator.css', import.meta.url), 'utf8');
 
-function withDom(callback, { width = 798 } = {}) {
-    const dom = new JSDOM('<!doctype html><body><main id="mount"></main></body>', {
-        url: 'https://www.peakbagger.com/Peak.aspx?pid=1',
-        pretendToBeVisual: true,
-    });
-    Object.defineProperty(dom.window, 'innerWidth', { configurable: true, value: width });
-    const previous = {
-        window: globalThis.window,
-        document: globalThis.document,
-        Element: globalThis.Element,
-    };
-    globalThis.window = dom.window;
-    globalThis.document = dom.window.document;
-    globalThis.Element = dom.window.Element;
+type SunTestResult = SunCalculatorResult & {
+    solarNoonMs?: number | null;
+    moonPhase?: number | null;
+    moonIsAboveHorizon?: boolean | null;
+    moonScreenAzimuthDeg?: number | null;
+    screenAzimuthDeg?: number | null;
+    sunriseDate?: string | null;
+    sunsetDate?: string | null;
+    moonriseDate?: string | null;
+    moonsetDate?: string | null;
+    moonVisibleMidpointMs?: number | null;
+    moonVisibilityIntervals?: readonly unknown[];
+    moonVisibilityIntervalIndex?: number | null;
+};
+type SunTestState = Omit<SunCalculatorState, 'result'> & {
+    mode?: string;
+    result?: SunTestResult | null;
+};
+type SunDom = { window: Omit<TestWindow, 'document'> & { document: PageDocument } };
+type SunView = Omit<SunCalculatorInstance, 'element' | 'render'> & {
+    readonly element: PageElement;
+    readonly render: (state: SunTestState | null | undefined) => void;
+};
+
+const createCalculator = <FrameHandle = number, StatusHandle = ReturnType<typeof setTimeout>>(
+    options: SunCalculatorOptions<FrameHandle, StatusHandle>,
+): SunView => SunCalculator.create(options) as unknown as SunView;
+
+function withDom<T>(callback: (dom: SunDom) => T, _options: { width?: number } = {}): T {
+    const mount = document.createElement('main');
+    mount.id = 'mount';
+    document.body.append(mount);
     try {
-        return callback(dom);
+        return callback({
+            window: window as unknown as SunDom['window'],
+        });
     } finally {
-        globalThis.window = previous.window;
-        globalThis.document = previous.document;
-        globalThis.Element = previous.Element;
-        dom.window.close();
+        mount.remove();
     }
+}
+
+interface OrdinaryStateOptions {
+    elevationDeg?: number;
+    azimuthDeg?: number;
+    directionLabel?: string;
+    mapBearing?: number;
+    zone?: MountainZone | null;
+    date?: string;
+    minute?: number;
+    daylightState?: string;
+    moonAzimuthDeg?: number;
+    moonDirectionLabel?: string;
+    moonElevationDeg?: number;
+    moonIlluminationFraction?: number;
+    moonPhaseIndex?: number;
+    moonPhaseLabel?: string;
 }
 
 const ordinaryState = ({
@@ -51,7 +93,10 @@ const ordinaryState = ({
     moonIlluminationFraction = 0.186,
     moonPhaseIndex = 7,
     moonPhaseLabel = 'Waning Crescent',
-} = {}) => {
+}: OrdinaryStateOptions = {}): SunTestState & {
+    mode: string;
+    result: SunTestResult;
+} => {
     const instant = MountainTime.civilToInstant(zone, date, minute);
     return {
         mode: 'peak',
@@ -72,33 +117,33 @@ const ordinaryState = ({
             moonIsAboveHorizon: moonElevationDeg >= 0,
             moonScreenAzimuthDeg: ((moonAzimuthDeg - mapBearing) % 360 + 360) % 360,
             solarNoonAzimuthDeg: 180,
-            sunriseMs: MountainTime.civilToInstant(zone, date, 5 * 60 + 30).ms,
+            sunriseMs: MountainTime.civilToInstant(zone, date, 5 * 60 + 30)!.ms,
             sunriseAzimuthDeg: 60,
             sunriseDate: date,
             sunriseDayRelation: 'same-day',
-            sunsetMs: MountainTime.civilToInstant(zone, date, 20 * 60 + 30).ms,
+            sunsetMs: MountainTime.civilToInstant(zone, date, 20 * 60 + 30)!.ms,
             sunsetAzimuthDeg: 300,
             sunsetDate: date,
             sunsetDayRelation: 'same-day',
             daylightState,
-            moonriseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30).ms,
+            moonriseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30)!.ms,
             moonriseAzimuthDeg: 60,
             moonriseDate: date,
             moonriseDayRelation: 'same-day',
-            moonVisibleMidpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15).ms,
+            moonVisibleMidpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15)!.ms,
             moonVisibleMidpointAzimuthDeg: 180,
-            moonsetMs: MountainTime.civilToInstant(zone, date, 17 * 60).ms,
+            moonsetMs: MountainTime.civilToInstant(zone, date, 17 * 60)!.ms,
             moonsetAzimuthDeg: 300,
             moonsetDate: date,
             moonsetDayRelation: 'same-day',
             moonVisibilityIntervals: Object.freeze([Object.freeze({
-                riseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30).ms,
+                riseMs: MountainTime.civilToInstant(zone, date, 1 * 60 + 30)!.ms,
                 riseAzimuthDeg: 60,
                 riseDate: date,
                 riseDayRelation: 'same-day',
-                midpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15).ms,
+                midpointMs: MountainTime.civilToInstant(zone, date, 9 * 60 + 15)!.ms,
                 midpointAzimuthDeg: 180,
-                setMs: MountainTime.civilToInstant(zone, date, 17 * 60).ms,
+                setMs: MountainTime.civilToInstant(zone, date, 17 * 60)!.ms,
                 setAzimuthDeg: 300,
                 setDate: date,
                 setDayRelation: 'same-day',
@@ -116,16 +161,17 @@ const ordinaryState = ({
     };
 };
 
-const timeValueText = root => root.querySelector('.bpb-sun-calculator__clock').textContent;
-const rotationAngle = element => Number(
+const timeValueText = (root: PageElement) =>
+    root.querySelector('.bpb-sun-calculator__clock').textContent;
+const rotationAngle = (element: PageElement | null) => Number(
     /^rotate\((-?[\d.]+)deg\)$/.exec(element?.style.transform || '')?.[1],
 );
 
 test('Peak calculator opens once by default, stays user-collapsible, and emits only time actions', () => withDom(dom => {
-    const dates = [];
-    const minutes = [];
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const dates: string[] = [];
+    const minutes: number[] = [];
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'),
         mode: 'peak',
         onDateChange: value => dates.push(value),
@@ -141,7 +187,7 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
 
     const state = ordinaryState();
     calculator.render(state);
-    frames.shift()();
+    frames.shift()!();
     assert.equal(button.disabled, false);
     assert.match(button.textContent, /Sun & Moon/);
     assert.match(button.textContent, /282° WNW · 17° above horizon/);
@@ -152,7 +198,7 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
     assert.equal(button.getAttribute('aria-expanded'), 'false');
     assert.equal(panel.hidden, true);
     calculator.render(ordinaryState({ minute: 13 * 60 + 1 }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(button.getAttribute('aria-expanded'), 'false',
         'a later render must not override the user collapsing the calculator');
     button.click();
@@ -170,11 +216,11 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
     assert.deepEqual(minutes, [], 'slider astronomy waits for the next frame');
     assert.match(timeValueText(calculator.element), /1:45\s*PM/i,
         'the visible wall clock follows the thumb immediately');
-    frames.shift()();
+    frames.shift()!();
     assert.deepEqual(minutes, [825]);
     assert.equal(slider.min, '0');
     assert.equal(slider.max, '1439');
-    assert.match(slider.getAttribute('aria-valuetext'), /1:45\s*PM/i);
+    assert.match(slider.getAttribute('aria-valuetext')!, /1:45\s*PM/i);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__direction strong').textContent,
         '282° WNW');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__elevation strong').textContent,
@@ -213,7 +259,7 @@ test('Peak calculator opens once by default, stays user-collapsible, and emits o
 }));
 
 test('slider value text follows authoritative ordinary, gap, fold, and estimated clocks', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -227,8 +273,8 @@ test('slider value text follows authoritative ordinary, gap, fold, and estimated
         ['2026-07-10', 13 * 60, 13 * 60, /1:00\s*PM MDT/i],
         ['2026-03-08', 2 * 60 + 30, 3 * 60, /3:00\s*AM MDT/i],
         ['2026-11-01', 1 * 60 + 30, 1 * 60 + 30, /1:30\s*AM MDT/i],
-    ]) {
-        const instant = MountainTime.civilToInstant(denver, date, requestedMinute);
+    ] as const) {
+        const instant = MountainTime.civilToInstant(denver, date, requestedMinute)!;
         const result = SunPosition.calculate({
             lat: 39.7392, lon: -104.9903, ms: instant.ms, date: instant.date, zone: denver,
         });
@@ -237,19 +283,19 @@ test('slider value text follows authoritative ordinary, gap, fold, and estimated
             instant, result,
         });
         assert.equal(slider.value, String(expectedMinute));
-        assert.match(slider.getAttribute('aria-valuetext'), expected);
+        assert.match(slider.getAttribute('aria-valuetext')!, expected);
     }
 
     const estimated = Object.freeze({ timeZone: null, offsetMs: -8 * 3_600_000, estimated: true });
     calculator.render(ordinaryState({ zone: estimated, minute: 9 * 60 + 15 }));
-    assert.match(slider.getAttribute('aria-valuetext'), /9:15\s*AM UTC−8, estimated from longitude/i);
+    assert.match(slider.getAttribute('aria-valuetext')!, /9:15\s*AM UTC−8, estimated from longitude/i);
 }));
 
 test('live status cancels stale text before duplicate checks and disposal', () => withDom(dom => {
     let nextTimer = 1;
-    const timers = new Map();
-    const cancelled = [];
-    const calculator = SunCalculator.create({
+    const timers = new Map<number, () => void>();
+    const cancelled: number[] = [];
+    const calculator = createCalculator<number, number>({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
         scheduleStatus: callback => {
@@ -265,7 +311,7 @@ test('live status cancels stale text before duplicate checks and disposal', () =
     const status = calculator.element.querySelector('[role="status"]');
     const publishOnlyTimer = () => {
         assert.equal(timers.size, 1);
-        const [id, callback] = timers.entries().next().value;
+        const [id, callback] = timers.entries().next().value!;
         timers.delete(id);
         callback();
     };
@@ -294,17 +340,17 @@ test('live status cancels stale text before duplicate checks and disposal', () =
 }));
 
 test('rapid slider input publishes only the final minute and cancels pending work on disposal', () => withDom(dom => {
-    const frames = [];
-    const cancelled = [];
-    const minutes = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const cancelled: number[] = [];
+    const minutes: number[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         onMinuteChange: minute => minutes.push(minute),
         requestFrame: callback => { frames.push(callback); return frames.length; },
         cancelFrame: handle => cancelled.push(handle),
     });
     calculator.render(ordinaryState());
-    frames.shift()();
+    frames.shift()!();
     const slider = calculator.element.querySelector('input[type="range"]');
     for (const minute of [1, 600, 825, 1439]) {
         slider.value = String(minute);
@@ -313,27 +359,27 @@ test('rapid slider input publishes only the final minute and cancels pending wor
     assert.equal(frames.length, 1, 'one calculation frame is pending');
     assert.equal(slider.value, '1439');
     assert.match(timeValueText(calculator.element), /11:59\s*PM/i);
-    frames.shift()();
+    frames.shift()!();
     assert.deepEqual(minutes, [1439], 'the final minute wins');
 
     slider.value = '300';
     slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
     calculator.dispose();
     assert.ok(cancelled.length >= 1);
-    frames.shift()();
+    frames.shift()!();
     assert.deepEqual(minutes, [1439], 'disposed calculators publish no pending minute');
 }));
 
 test('GPX calculator has no date picker and honestly renders sources, below-horizon, and polar states', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'),
         mode: 'gpx',
         requestFrame: callback => { frames.push(callback); return frames.length; },
         cancelFrame: () => {},
     });
     calculator.render(ordinaryState({ elevationDeg: -4.6, moonElevationDeg: -2.4 }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(calculator.element.querySelector('input[type="date"]'), null);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__title').textContent, 'Sun & Moon');
     assert.match(calculator.element.textContent, /5° below horizon/);
@@ -353,7 +399,7 @@ test('GPX calculator has no date picker and honestly renders sources, below-hori
 }));
 
 test('collapsed GPX rise/set summary retains event timezones and clears polar or unavailable clocks', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'gpx',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -383,7 +429,7 @@ test('collapsed GPX rise/set summary retains event timezones and clears polar or
 }));
 
 test('daylight progress is visible only from exact sunrise through exact sunset', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -394,7 +440,7 @@ test('daylight progress is visible only from exact sunrise through exact sunset'
         [13 * 60, false, '50%'],
         [20 * 60 + 30, false, '100%'],
         [20 * 60 + 31, true, null],
-    ]) {
+    ] as const) {
         calculator.render(ordinaryState({ minute }));
         assert.equal(marker.hidden, hidden, `marker visibility at minute ${minute}`);
         if (progress !== null) assert.equal(marker.style.insetInlineStart, progress);
@@ -405,8 +451,8 @@ test('daylight progress is visible only from exact sunrise through exact sunset'
 }));
 
 test('compass draws separate Sun and Moon visibility bands and rotates both with the map', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { frames.push(callback); return frames.length; },
         cancelFrame: () => {},
@@ -418,13 +464,13 @@ test('compass draws separate Sun and Moon visibility bands and rotates both with
     const moonMarker = calculator.element.querySelector('.bpb-sun-calculator__moon-marker');
 
     calculator.render(ordinaryState());
-    frames.shift()();
+    frames.shift()!();
     assert.equal(range.hidden, false);
-    assert.match(path.getAttribute('d'), / A 37 37 0 1 1 /,
+    assert.match(path.getAttribute('d')!, / A 37 37 0 1 1 /,
         'Denver daylight follows the long clockwise arc through the southern sky');
     assert.equal(range.querySelectorAll('.bpb-sun-calculator__daylight-endpoint').length, 2);
     assert.equal(moonRange.hidden, false);
-    assert.match(moonPath.getAttribute('d'), / A 28 28 0 1 1 /,
+    assert.match(moonPath.getAttribute('d')!, / A 28 28 0 1 1 /,
         'the Moon visibility band follows its rise-to-set direction through the visible midpoint');
     assert.equal(moonRange.querySelectorAll('.bpb-sun-calculator__moon-visibility-endpoint').length, 2);
     assert.ok(Math.abs(rotationAngle(moonMarker) - 315.2) < 0.001);
@@ -434,7 +480,7 @@ test('compass draws separate Sun and Moon visibility bands and rotates both with
         azimuthDeg: 10,
         directionLabel: 'N',
     }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(range.style.transform, 'rotate(-25deg)');
     assert.equal(moonRange.style.transform, 'rotate(-25deg)');
     assert.ok(Math.abs(rotationAngle(moonMarker) - 290.2) < 0.001);
@@ -449,8 +495,8 @@ test('compass draws separate Sun and Moon visibility bands and rotates both with
             sunsetAzimuthDeg: 294,
         },
     });
-    frames.shift()();
-    assert.match(path.getAttribute('d'), / A 37 37 0 0 0 /,
+    frames.shift()!();
+    assert.match(path.getAttribute('d')!, / A 37 37 0 0 0 /,
         'a northern midday Sun chooses the counterclockwise arc across north');
 
     const unavailable = ordinaryState();
@@ -468,27 +514,28 @@ test('compass draws separate Sun and Moon visibility bands and rotates both with
             moonVisibilityState: 'unavailable',
         },
     });
-    frames.shift()();
+    frames.shift()!();
     assert.equal(range.hidden, true);
     assert.equal(moonRange.hidden, true);
 }));
 
 test('two-overlap Moon dates select a truthful active or upcoming band and announce its times', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak', statusDelayMs: 0,
         requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
-        scheduleStatus: callback => { callback(); return 1; }, cancelStatus: () => {},
+        scheduleStatus: callback => { callback(); return 1 as unknown as ReturnType<typeof setTimeout>; },
+        cancelStatus: () => {},
     });
     const lat = 39.7392;
     const lon = -104.9903;
     const zone = MountainTime.resolve(lat, lon);
     const date = '2026-08-26';
-    const renderAt = minute => {
-        const instant = MountainTime.civilToInstant(zone, date, minute);
-        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    const renderAt = (minute: number) => {
+        const instant = MountainTime.civilToInstant(zone, date, minute)!;
+        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms })!;
         calculator.render({ ...ordinaryState({ zone, date, minute }), instant, result });
-        frames.shift()();
+        frames.shift()!();
         return result;
     };
     const moonText = () => calculator.element
@@ -519,7 +566,7 @@ test('two-overlap Moon dates select a truthful active or upcoming band and annou
 }));
 
 test('polar Moon states explain all-day visibility without inventing a band', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -529,9 +576,9 @@ test('polar Moon states explain all-day visibility without inventing a band', ()
     for (const [date, state, text] of [
         ['2026-01-01', 'always-up', /Moon stays above the level horizon all day/],
         ['2026-01-15', 'always-down', /Moon stays below the level horizon all day/],
-    ]) {
-        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
-        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    ] as const) {
+        const instant = MountainTime.civilToInstant(zone, date, 12 * 60)!;
+        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms })!;
         calculator.render({ ...ordinaryState({ zone, date }), instant, result });
         assert.equal(calculator.element.dataset.moonVisibility, state);
         assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent,
@@ -542,7 +589,7 @@ test('polar Moon states explain all-day visibility without inventing a band', ()
 }));
 
 test('event clocks own their DST labels and adjacent-day relation', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -552,11 +599,11 @@ test('event clocks own their DST labels and adjacent-day relation', () => withDo
         ['2026-03-08', 210, 'MDT', 'MDT'],
         ['2026-11-01', 30, 'MDT', 'MST'],
         ['2026-11-01', 150, 'MST', 'MST'],
-    ]) {
-        const instant = MountainTime.civilToInstant(denver, date, minute);
+    ] as const) {
+        const instant = MountainTime.civilToInstant(denver, date, minute)!;
         const result = SunPosition.calculate({
             lat: 39.7392, lon: -104.9903, ms: instant.ms, date, zone: denver,
-        });
+        })!;
         calculator.render({ ...ordinaryState({ zone: denver, date, minute }), instant, result });
         assert.match(calculator.element.querySelectorAll('.bpb-sun-calculator__meta')[1].textContent,
             new RegExp(selectedLabel));
@@ -570,17 +617,17 @@ test('event clocks own their DST labels and adjacent-day relation', () => withDo
 
     const denali = MountainTime.resolve(63.0695, -151.0074);
     const date = '2026-06-21';
-    const instant = MountainTime.civilToInstant(denali, date, 12 * 60);
+    const instant = MountainTime.civilToInstant(denali, date, 12 * 60)!;
     const result = SunPosition.calculate({
         lat: 63.0695, lon: -151.0074, ms: instant.ms, date, zone: denali,
-    });
+    })!;
     calculator.render({ ...ordinaryState({ zone: denali, date }), instant, result });
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__events-text').textContent,
         /sunset .*\(next day\).*\(AKDT\)$/);
 }));
 
 test('finite position remains visible when rise and set metadata is unavailable', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -601,8 +648,8 @@ test('finite position remains visible when rise and set metadata is unavailable'
 }));
 
 test('finite Sun and Moon positions remain visible when Moon phase metadata is unavailable', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
     });
@@ -617,7 +664,7 @@ test('finite Sun and Moon positions remain visible when Moon phase metadata is u
             moonPhaseLabel: null,
         },
     });
-    frames.shift()();
+    frames.shift()!();
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__summary').textContent, /282° WNW/);
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-direction').textContent,
         '315° NW');
@@ -629,8 +676,8 @@ test('finite Sun and Moon positions remain visible when Moon phase metadata is u
 }));
 
 test('finite Moon phase remains visible when Moon position metadata is unavailable', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
     });
@@ -646,7 +693,7 @@ test('finite Moon phase remains visible when Moon position metadata is unavailab
             moonScreenAzimuthDeg: null,
         },
     });
-    frames.shift()();
+    frames.shift()!();
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-direction').textContent,
         'Position unavailable');
     assert.equal(calculator.element.querySelector('.bpb-sun-calculator__moon-name').textContent,
@@ -658,7 +705,7 @@ test('finite Moon phase remains visible when Moon position metadata is unavailab
 }));
 
 test('GPX prompts and unavailable selections stay inspectable without retaining a stale reading', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'gpx',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -707,17 +754,17 @@ test('GPX prompts and unavailable selections stay inspectable without retaining 
 }));
 
 test('recoverable Peak failures retain controls and clear cleanly after a valid selection', () => withDom(dom => {
-    const dates = [];
-    const minutes = [];
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const dates: string[] = [];
+    const minutes: number[] = [];
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         onDateChange: date => dates.push(date),
         onMinuteChange: minute => minutes.push(minute),
         requestFrame: callback => { frames.push(callback); return frames.length; }, cancelFrame: () => {},
     });
     calculator.render(ordinaryState());
-    frames.shift()();
+    frames.shift()!();
     calculator.setExpanded(true);
     const failed = {
         ...ordinaryState(), result: null, availability: 'recoverable',
@@ -738,7 +785,7 @@ test('recoverable Peak failures retain controls and clear cleanly after a valid 
     date.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     slider.value = '825';
     slider.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-    while (frames.length) frames.shift()();
+    while (frames.length) frames.shift()!();
     assert.deepEqual(dates, ['2026-07-11']);
     assert.deepEqual(minutes, [825]);
 
@@ -749,7 +796,7 @@ test('recoverable Peak failures retain controls and clear cleanly after a valid 
 }));
 
 test('timezone formatting failure is recoverable but an invalid subject remains terminal', () => withDom(dom => {
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -766,8 +813,8 @@ test('timezone formatting failure is recoverable but an invalid subject remains 
 }));
 
 test('bearing frames coalesce and cardinal text follows the shortest arc without status spam', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak', statusDelayMs: 0,
         requestFrame: callback => { frames.push(callback); return frames.length; },
         cancelFrame: () => {},
@@ -775,22 +822,22 @@ test('bearing frames coalesce and cardinal text follows the shortest arc without
     calculator.render(ordinaryState({ azimuthDeg: 1, directionLabel: 'N', mapBearing: 359 }));
     calculator.setMapBearing(ordinaryState({ azimuthDeg: 1, directionLabel: 'N', mapBearing: 0 }));
     assert.equal(frames.length, 1, 'multiple bearing writes before paint use one frame');
-    frames.shift()();
+    frames.shift()!();
 
     calculator.setMapBearing(ordinaryState({ azimuthDeg: 1, directionLabel: 'N', mapBearing: 1 }));
-    frames.shift()();
+    frames.shift()!();
     const north = calculator.element.querySelector('[data-azimuth="0"]');
     assert.match(north.style.transform, /rotate\(-1deg\)/,
         '359 to 1 advances through north by two degrees, not backwards by 358');
     const statusText = calculator.element.querySelector('[role="status"]').textContent;
     calculator.setMapBearing(ordinaryState({ azimuthDeg: 1, directionLabel: 'N', mapBearing: 90 }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(calculator.element.querySelector('[role="status"]').textContent, statusText);
 }));
 
 test('Sun and Moon indicators follow the shortest arc when their azimuth crosses north', () => withDom(dom => {
-    const frames = [];
-    const calculator = SunCalculator.create({
+    const frames: (() => void)[] = [];
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { frames.push(callback); return frames.length; },
         cancelFrame: () => {},
@@ -801,14 +848,14 @@ test('Sun and Moon indicators follow the shortest arc when their azimuth crosses
     calculator.render(ordinaryState({
         azimuthDeg: 359, directionLabel: 'N', moonAzimuthDeg: 359, moonDirectionLabel: 'N',
     }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(sun.style.transform, 'rotate(359deg)');
     assert.equal(moon.style.transform, 'rotate(359deg)');
 
     calculator.render(ordinaryState({
         azimuthDeg: 1, directionLabel: 'N', moonAzimuthDeg: 1, moonDirectionLabel: 'N',
     }));
-    frames.shift()();
+    frames.shift()!();
     assert.equal(sun.style.transform, 'rotate(361deg)',
         '359 to 1 advances through north by two degrees instead of reversing by 358');
     assert.equal(moon.style.transform, 'rotate(361deg)',
@@ -817,7 +864,7 @@ test('Sun and Moon indicators follow the shortest arc when their azimuth crosses
 
 test('theme, long timezone fallback, cleanup, and responsive CSS preserve the narrow layout contract', () => withDom(dom => {
     const zone = Object.freeze({ timeZone: null, offsetMs: -8 * 3_600_000, estimated: true });
-    const calculator = SunCalculator.create({
+    const calculator = createCalculator({
         mount: dom.window.document.getElementById('mount'), mode: 'gpx',
         requestFrame: callback => { callback(); return 1; }, cancelFrame: () => {},
     });
@@ -853,11 +900,11 @@ test('theme, long timezone fallback, cleanup, and responsive CSS preserve the na
 }, { width: 390 }));
 
 test('distant Moon crossings show the actual local date', () => withDom(dom => {
-    const calculator = SunCalculator.create({ mount: dom.window.document.getElementById('mount'), mode: 'peak',
+    const calculator = createCalculator({ mount: dom.window.document.getElementById('mount'), mode: 'peak',
         requestFrame: callback => { callback(); return 1; }, cancelFrame() {} });
     const lat = 63, lon = 15, date = '2026-12-24', zone = MountainTime.resolve(lat, lon);
-    const instant = MountainTime.civilToInstant(zone, date, 120);
+    const instant = MountainTime.civilToInstant(zone, date, 120)!;
     calculator.render({ ...ordinaryState({ zone, date, minute: 120 }), instant,
-        result: SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms }) });
+        result: SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms })! });
     assert.match(calculator.element.querySelector('.bpb-sun-calculator__moon-events-text').textContent, /2026-12-22/);
 }));

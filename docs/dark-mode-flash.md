@@ -121,7 +121,7 @@ guarded by the `bpb-site-dark` id) and tied to **every** `apply()` — not just 
 one `document_start` pass. So the authoritative `chrome.storage` read and every
 live toggle re-assert the sheet before setting the attribute; if the initial
 injection was ever skipped or the node was removed, the next `apply()` restores
-it. `test/theme/theme-inject.test.mjs` locks in the invariant.
+it. `test/theme/theme-inject.browser.mts` locks in the invariant.
 
 The mirror stores the *preference* (`system` / `light` / `dark`), not the
 resolved color, so a `system` user whose OS theme changed between visits still

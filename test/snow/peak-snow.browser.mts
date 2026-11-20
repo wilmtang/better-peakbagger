@@ -1,53 +1,136 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom, builtBundle } from '../helpers/fixture-dom.mts';
+import { rect } from '../helpers/page-types.mts';
+import type { PageDom } from '../helpers/page-types.mts';
 import { snotelStations, snotelFixture } from '../helpers/snotel-fixture.mts';
 import { peakUnitHeadings, withPeakElevation } from '../helpers/peak-unit-fixture.mts';
 
 const [html, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
-    readFile(new URL('../../dist/content/peak-snow.js', import.meta.url), 'utf8'),
+    builtBundle('content/peak-snow.js'),
 ]);
 const NOW = Date.parse('2026-10-17T20:00:00Z');
-const waitFor = async predicate => {
+const waitFor = async (predicate: () => unknown) => {
     const deadline = Date.now() + 2500;
     while (!predicate()) {
         if (Date.now() > deadline) throw new Error('Snow card did not settle');
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 };
-const reply = url => {
+const reply = (url: string) => {
     const query = new URL(url).searchParams;
     return new Response(JSON.stringify(new URL(url).pathname.endsWith('/stations') ? snotelStations()
-        : snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW)));
+        : snotelFixture(query.get('stationTriplets') ?? undefined, query.get('duration') ?? undefined, NOW)));
 };
-function setup({ source = html, url = 'https://www.peakbagger.com/peak.aspx?pid=2296', saved = {}, fetchFn = reply, lazy = false, readSettings } = {}) {
-    const env = new JSDOM(source, { url, runScripts: 'outside-only', pretendToBeVisual: true });
-    const win = env.window, doc = win.document, listeners = [], requests = [], observers = [], local = {};
-    win.Date.now = () => NOW; win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
-    win.chrome = { storage: { sync: { get: readSettings || (async () => ({ bpbSettings: saved })) }, local: {
-        get: async () => local, set: async values => Object.assign(local, values),
-    }, onChanged: { addListener: fn => listeners.push(fn), removeListener: fn => listeners.splice(listeners.indexOf(fn), 1) } } };
-    if (lazy) win.IntersectionObserver = class {
-        constructor(callback) { this.callback = callback; observers.push(this); }
-        observe() {} disconnect() {}
-    };
-    win.fetch = (url, init) => { requests.push({ url, init }); return fetchFn(url, init); };
-    win.eval(bundle);
-    return { win, doc, requests, local, observers, listeners,
-        settings: patch => Promise.all(listeners.map(fn => fn({ bpbSettings: { newValue: { ...saved, ...patch } } }, 'sync'))),
-        close: () => { win.dispatchEvent(new win.PageTransitionEvent('pagehide')); win.close(); } };
+
+type FetchHandler = (url: string, init?: RequestInit) => Response | Promise<Response>;
+type StorageListener = (changes: Record<string, { newValue?: unknown }>, area: string) => unknown;
+interface RecordedRequest {
+    url: string;
+    init?: RequestInit;
 }
-const settled = env => waitFor(() => env.doc.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
+interface StubIntersectionObserver {
+    callback: (entries: { isIntersecting: boolean }[]) => void;
+    observe(): void;
+    disconnect(): void;
+}
+interface SetupOptions {
+    source?: string;
+    url?: string;
+    saved?: Record<string, unknown>;
+    fetchFn?: FetchHandler;
+    lazy?: boolean;
+    readSettings?: () => Promise<Record<string, unknown>>;
+}
+
+function setup({
+    source = html,
+    url = 'https://www.peakbagger.com/peak.aspx?pid=2296',
+    saved = {},
+    fetchFn = reply,
+    lazy = false,
+    readSettings,
+}: SetupOptions = {}) {
+    const env = new FixtureDom(source, { url, runScripts: 'outside-only' });
+    const win = env.window as unknown as PageDom['window'];
+    const doc = win.document;
+    const listeners: StorageListener[] = [];
+    const requests: RecordedRequest[] = [];
+    const observers: StubIntersectionObserver[] = [];
+    const local: Record<string, unknown> = {};
+    win.Date.now = () => NOW;
+    (win as unknown as Record<string, unknown>).AbortController = AbortController;
+    (win as unknown as Record<string, unknown>).TextDecoder = TextDecoder;
+    (win as unknown as Record<string, unknown>).TextEncoder = TextEncoder;
+    (win as unknown as { chrome: unknown }).chrome = {
+        storage: {
+            sync: { get: readSettings || (async () => ({ bpbSettings: saved })) },
+            local: {
+                get: async () => local,
+                set: async (values: Record<string, unknown>) => Object.assign(local, values),
+            },
+            onChanged: {
+                addListener: (fn: StorageListener) => listeners.push(fn),
+                removeListener: (fn: StorageListener) => listeners.splice(listeners.indexOf(fn), 1),
+            },
+        },
+    };
+    if (lazy) {
+        (win as unknown as { IntersectionObserver: unknown }).IntersectionObserver = class {
+            callback: (entries: { isIntersecting: boolean }[]) => void;
+            constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
+                this.callback = callback;
+                observers.push(this);
+            }
+            observe() {}
+            disconnect() {}
+        };
+    } else {
+        (win as unknown as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
+    }
+    (win as unknown as { fetch: unknown }).fetch = (requestUrl: string, init?: RequestInit) => {
+        requests.push({ url: requestUrl, init });
+        return fetchFn(requestUrl, init);
+    };
+    win.eval(bundle);
+    return {
+        win,
+        doc,
+        requests,
+        local,
+        observers,
+        listeners,
+        settings: (patch: Record<string, unknown>) =>
+            Promise.all(listeners.map(fn => fn({ bpbSettings: { newValue: { ...saved, ...patch } } }, 'sync'))),
+        close: () => {
+            win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
+            win.close();
+        },
+    };
+}
+
+type SnowEnv = ReturnType<typeof setup>;
+
+const settled = (env: SnowEnv) => waitFor(() =>
+    env.doc.querySelector('#bpb-peak-snow')?.getAttribute('aria-busy') === 'false'
     && env.doc.querySelector('.bpb-snow-status')?.textContent.includes('Hourly readings'));
-const choose = (env, id) => { const select = env.doc.querySelector('#bpb-peak-snow-station'); select.value = id; select.dispatchEvent(new env.win.Event('change')); };
-const mapMessage = (env, detail) => env.win.dispatchEvent(new env.win.MessageEvent('message', {
-    source: env.win, origin: env.win.location.origin, data: { __bpbPeakSnow: true, dir: 'toCS', ...detail },
-}));
+const choose = (env: SnowEnv, id: string) => {
+    const select = env.doc.querySelector('#bpb-peak-snow-station');
+    select.value = id;
+    select.dispatchEvent(new env.win.Event('change'));
+};
+const mapMessage = (env: SnowEnv, detail: Record<string, unknown>) =>
+    env.win.dispatchEvent(new env.win.MessageEvent('message', {
+        source: env.win as unknown as Window,
+        origin: env.win.location.origin,
+        data: { __bpbPeakSnow: true, dir: 'toCS', ...detail },
+    }));
 
 test('SNOTEL can be disabled without weather and enabled without weather; legacy opt-outs stay off', async () => {
     for (const saved of [{ showWeather: true, showSnotel: false }, { showWeather: false }]) {
@@ -65,13 +148,13 @@ test('SNOTEL can be disabled without weather and enabled without weather; legacy
 });
 
 test('disabling SNOTEL aborts catalog work for both card and map and ignores late replies', async () => {
-    const held = [];
+    const held: { url: string; init?: RequestInit; resolve: (response: Response) => void }[] = [];
     const env = setup({ fetchFn: (url, init) => new Promise(resolve => held.push({ url, init, resolve })) });
     try {
         await waitFor(() => held.length === 1);
         mapMessage(env, { type: 'get', requestId: 1 });
         await env.settings({ showSnotel: false, showWeather: true });
-        assert.ok(held.every(request => request.init.signal.aborted));
+        assert.ok(held.every(request => request.init?.signal?.aborted));
         held.forEach(request => request.resolve(reply(request.url)));
         await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(env.doc.getElementById('bpb-peak-snow').hidden, true);
@@ -88,9 +171,11 @@ test('map conditions can reveal the lazy card and select a station beyond the de
         ? new Response(JSON.stringify(catalog)) : limited ? new Response('', { status: 429 }) : failed ? new Response('', { status: 503 }) : reply(url) });
     try {
         await waitFor(() => env.observers.length === 1);
-        const messages = []; env.win.postMessage = data => messages.push(data);
+        const messages: Record<string, unknown>[] = [];
+        (env.win as unknown as { postMessage: (data: Record<string, unknown>) => void }).postMessage =
+            data => messages.push(data);
         const card = env.doc.getElementById('bpb-peak-snow'), select = env.doc.getElementById('bpb-peak-snow-station');
-        let reveals = 0; card.scrollIntoView = () => reveals++;
+        let reveals = 0; card.scrollIntoView = () => { reveals++; };
         mapMessage(env, { type: 'get', requestId: 1 });
         await waitFor(() => messages.some(data => data.type === 'stations'));
         assert.equal(env.requests.length, 1, 'map metadata does not load observations');
@@ -125,7 +210,7 @@ test('peak card uses native summit metadata without GPX and mounts once after th
     try {
         await settled(env);
         const row = env.doc.querySelector('#bpb-peak-snow-row');
-        assert.equal(row.previousElementSibling.querySelector('#Gmap')?.id, 'Gmap');
+        assert.equal(row.previousElementSibling?.querySelector('#Gmap')?.id, 'Gmap');
         assert.equal(env.requests.length, 3); assert.equal(env.doc.querySelectorAll('.bpb-snow-metric').length, 2);
         assert.match(env.doc.querySelector('#bpb-peak-snow-station').selectedOptions[0].textContent, /Paradise.*away.*5150 ft/);
         assert.match(env.doc.querySelector('.bpb-snow-metric strong').textContent, /36.0 in/);
@@ -162,7 +247,7 @@ test('snow title has a decorative SNOTEL icon and Refresh belongs beside the sta
         await settled(env);
         const card = env.doc.getElementById('bpb-peak-snow'), select = card.querySelector('select');
         const refresh = card.querySelector('.bpb-snow-refresh');
-        assert.equal(select.parentElement.contains(refresh), true, 'the selector and Refresh form one compact control row');
+        assert.equal(select.parentElement?.contains(refresh), true, 'the selector and Refresh form one compact control row');
         assert.equal(card.querySelector('header').contains(refresh), false, 'the disclosure header has no nested Refresh action');
         const icon = card.querySelector('h2 svg');
         assert.equal(icon.getAttribute('aria-hidden'), 'true'); assert.equal(icon.getAttribute('focusable'), 'false');
@@ -178,7 +263,7 @@ test('snow chart plots hourly observations with their station time instead of th
         const dots = [...env.doc.querySelectorAll('.bpb-snow-graph circle')];
         assert.equal(dots.length, 5, 'plot the five available hourly readings, not the eight daily readings');
         assert.match(dots[0].querySelector('title').textContent, /Oct 17, 7:00 AM.*UTC−08.*32\.0 in/);
-        assert.match(dots.at(-1).querySelector('title').textContent, /Oct 17, 11:00 AM.*UTC−08.*36\.0 in/);
+        assert.match(dots.at(-1)!.querySelector('title').textContent, /Oct 17, 11:00 AM.*UTC−08.*36\.0 in/);
         assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Hourly snow depth.*48 hours/);
     } finally { env.close(); }
 });
@@ -202,7 +287,7 @@ test('snow-depth chart supports keyboard readings without requests and clears se
         await settled(env);
         const chart = env.doc.querySelector('.bpb-snow-graph');
         const reading = () => env.doc.querySelector('.bpb-snow-range > span').textContent;
-        const key = name => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+        const key = (name: string) => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
         const requests = env.requests.length;
         assert.equal(chart.tabIndex, 0, 'hourly snow-depth readings must be reachable with the keyboard');
         chart.focus(); key('Home');
@@ -225,14 +310,16 @@ test('snow-depth chart supports keyboard readings without requests and clears se
 });
 
 test('snow chart hover previews restore the pinned hour through refresh and lifecycle suspension', async () => {
-    let hold = false; const held = [];
+    let hold = false;
+    const held: { url: string; resolve: (response: Response) => void }[] = [];
     const env = setup({ fetchFn: url => hold ? new Promise(resolve => held.push({ url, resolve })) : reply(url) });
     try {
         await settled(env);
         const chart = env.doc.querySelector('.bpb-snow-graph'), graph = chart.querySelector('svg');
         const reading = () => env.doc.querySelector('.bpb-snow-range > span').textContent;
-        graph.getBoundingClientRect = () => ({ left: 0, width: 320, height: 80 });
-        const pointer = (type, index) => chart.dispatchEvent(new env.win.MouseEvent(type, { clientX: 8 + index * 304 / 48, bubbles: true }));
+        graph.getBoundingClientRect = () => rect({ left: 0, width: 320, height: 80 });
+        const pointer = (type: string, index: number) =>
+            chart.dispatchEvent(new env.win.MouseEvent(type, { clientX: 8 + index * 304 / 48, bubbles: true }));
         pointer('click', 45); assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
         pointer('pointermove', 47); assert.match(reading(), /Oct 17, 11:00 AM.*36\.0 in/);
         pointer('pointerleave', 47); assert.match(reading(), /Oct 17, 9:00 AM.*34\.0 in/);
@@ -252,7 +339,7 @@ test('snow chart exposes omitted hours without bridging gaps or hiding zero dept
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;
         if (new URL(url).pathname.endsWith('/stations')) return reply(url);
-        const body = snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW);
+        const body = snotelFixture(query.get('stationTriplets') ?? undefined, query.get('duration') ?? undefined, NOW);
         if (query.get('duration') === 'HOURLY') {
             body[0].data[0].values[0].value = 0;
             body[0].data[0].values.splice(1, 1);
@@ -262,8 +349,8 @@ test('snow chart exposes omitted hours without bridging gaps or hiding zero dept
     try {
         await settled(env);
         const chart = env.doc.querySelector('.bpb-snow-graph');
-        const key = name => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true }));
-        const path = chart.querySelector('path:not(.bpb-snow-baseline)').getAttribute('d');
+        const key = (name: string) => chart.dispatchEvent(new env.win.KeyboardEvent('keydown', { key: name, bubbles: true }));
+        const path = chart.querySelector('path:not(.bpb-snow-baseline)').getAttribute('d')!;
         assert.equal(path.split('M').length, 3, 'missing readings break the trend');
         key('End'); for (let i = 0; i < 5; i++) key('ArrowLeft');
         assert.match(env.doc.querySelector('.bpb-snow-range > span').textContent, /Oct 17, 7:00 AM.*0\.0 in/);
@@ -278,7 +365,7 @@ test('missing hourly snow depth stays unavailable even when daily readings exist
     const env = setup({ fetchFn: url => {
         const query = new URL(url).searchParams;
         if (new URL(url).pathname.endsWith('/stations')) return reply(url);
-        const body = snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW);
+        const body = snotelFixture(query.get('stationTriplets') ?? undefined, query.get('duration') ?? undefined, NOW);
         if (query.get('duration') === 'HOURLY') body[0].data[0].values = [];
         return new Response(JSON.stringify(body));
     } });
@@ -301,9 +388,9 @@ test('SWE is explicitly named and keeps its own measurement, timestamp and daily
         assert.equal(metrics[1].querySelector('.bpb-snow-label').textContent, 'Water equivalent (SWE)');
         assert.equal(metrics[1].querySelector('strong').textContent, '12.30 in');
         assert.notEqual(metrics[1].querySelector('.bpb-snow-time').textContent, metrics[0].querySelector('.bpb-snow-time').textContent);
-        const table = env.doc.querySelector('.bpb-snow-details table');
-        const dailySwe = () => Array.from(table.tBodies[0].rows).at(-1).cells[2].querySelector('span').textContent;
-        assert.equal(table.querySelector('thead th:last-child').textContent, 'SWE');
+        const table = env.doc.querySelector<HTMLTableElement>('.bpb-snow-details table');
+        const dailySwe = () => Array.from(table.tBodies[0].rows).at(-1)!.cells[2].querySelector('span')!.textContent;
+        assert.equal(table.querySelector('thead th:last-child')!.textContent, 'SWE');
         assert.equal(dailySwe(), '12.70 in');
         assert.match(env.doc.querySelector('.bpb-snow-details').textContent, /Snow water equivalent \(SWE\) is the water held in the snowpack/);
         const requests = env.requests.length;
@@ -357,7 +444,8 @@ test('a queued visibility callback from a disabled generation cannot start work 
 });
 
 test('station switching uses truthful placeholders, preserves native selection and rejects stale responses', async () => {
-    let hold = false; const held = [];
+    let hold = false;
+    const held: { url: string; init?: RequestInit; resolve: (response: Response) => void }[] = [];
     const env = setup({ fetchFn: (url, init) => hold ? new Promise(resolve => held.push({ url, init, resolve })) : reply(url) });
     try {
         await settled(env); const select = env.doc.querySelector('#bpb-peak-snow-station');
@@ -366,7 +454,7 @@ test('station switching uses truthful placeholders, preserves native selection a
         assert.equal(env.doc.querySelector('.bpb-snow-metric strong').textContent, '—');
         assert.match(env.doc.querySelector('#bpb-peak-snow footer a').href, /375/);
         choose(env, '679:WA:SNTL'); await settled(env);
-        assert.equal(held[0].init.signal.aborted, true);
+        assert.equal(held[0].init?.signal?.aborted, true);
         held[0].resolve(reply(held[0].url)); await new Promise(resolve => setTimeout(resolve, 0));
         assert.equal(select.value, '679:WA:SNTL');
         hold = false; choose(env, '375:WA:SNTL');
@@ -410,7 +498,10 @@ test('a restored map station outside the nearest three remains selectable and re
     const env = setup({ fetchFn: url => new URL(url).pathname.endsWith('/stations')
         ? new Response(JSON.stringify(catalog)) : failed ? new Response('', { status: 503 }) : reply(url) });
     try {
-        await settled(env); const messages = []; env.win.postMessage = data => messages.push(data);
+        await settled(env);
+        const messages: Record<string, unknown>[] = [];
+        (env.win as unknown as { postMessage: (data: Record<string, unknown>) => void }).postMessage =
+            data => messages.push(data);
         env.doc.getElementById('bpb-peak-snow').scrollIntoView = () => {};
         mapMessage(env, { type: 'get', requestId: 1 });
         await waitFor(() => messages.some(data => data.type === 'stations'));
@@ -430,16 +521,16 @@ test('a restored map station outside the nearest three remains selectable and re
 });
 
 test('Refresh stays focused and cannot duplicate work while pending; failure retains measurements', async () => {
-    let hold = false, held, fail = false;
+    let hold = false, held: { url: string; resolve: (response: Response) => void } | undefined, fail = false;
     const env = setup({ fetchFn: url => fail ? new Response('', { status: 503 }) : hold ? new Promise(resolve => { held = { url, resolve }; }) : reply(url) });
     try {
         await settled(env); const button = env.doc.querySelector('.bpb-snow-refresh');
         const before = env.doc.querySelector('.bpb-snow-metrics').textContent;
         hold = true; button.focus(); button.click(); button.click();
-        await waitFor(() => held); assert.equal(env.requests.length, 4); assert.equal(env.doc.activeElement, button);
+        await waitFor(() => Boolean(held)); assert.equal(env.requests.length, 4); assert.equal(env.doc.activeElement, button);
         assert.equal(button.disabled, false); assert.equal(button.getAttribute('aria-disabled'), 'true');
-        await env.settings({ showSnotel: false }); assert.equal(env.requests[3].init.signal.aborted, true);
-        held.resolve(reply(held.url)); hold = false; fail = true;
+        await env.settings({ showSnotel: false }); assert.equal(env.requests[3].init?.signal?.aborted, true);
+        held!.resolve(reply(held!.url)); hold = false; fail = true;
         await env.settings({ showSnotel: true }); await settled(env);
         button.click(); await waitFor(() => env.doc.querySelector('.bpb-snow-status').textContent.includes('Could not load'));
         assert.equal(env.doc.querySelector('.bpb-snow-metrics').textContent, before);
@@ -479,8 +570,9 @@ for (const stage of ['catalog', 'hourly', 'daily', 'refresh']) {
 test('missing sensors and null readings remain unavailable, while zero remains visible', async () => {
     const env = setup({ fetchFn: url => {
         if (new URL(url).pathname.endsWith('/stations')) return reply(url);
-        const query = new URL(url).searchParams, body = snotelFixture(query.get('stationTriplets'), query.get('duration'), NOW);
-        body[0].data[0].values.forEach(reading => { reading.value = null; });
+        const query = new URL(url).searchParams;
+        const body = snotelFixture(query.get('stationTriplets') ?? undefined, query.get('duration') ?? undefined, NOW);
+        body[0].data[0].values.forEach(reading => { (reading as { value: number | null }).value = null; });
         body[0].data[1].values.forEach(reading => { reading.value = 0; });
         return new Response(JSON.stringify(body));
     } });
@@ -498,14 +590,14 @@ test('missing sensors and null readings remain unavailable, while zero remains v
 });
 
 test('no nearby station and service errors remain distinct; rate-limit cooldown blocks all duplicate activation', async () => {
-    let completeCatalog;
+    let completeCatalog: (() => void) | undefined;
     const empty = setup({ fetchFn: () => new Promise(resolve => {
         completeCatalog = () => resolve(new Response(JSON.stringify(snotelStations().map(station => ({ ...station, latitude: 40, longitude: -111 })))));
     }) });
     try {
-        await waitFor(() => completeCatalog && !empty.doc.getElementById('bpb-peak-snow').hidden);
+        await waitFor(() => Boolean(completeCatalog) && !empty.doc.getElementById('bpb-peak-snow').hidden);
         const refresh = empty.doc.querySelector('.bpb-snow-refresh'); refresh.focus();
-        assert.equal(empty.doc.activeElement, refresh); completeCatalog();
+        assert.equal(empty.doc.activeElement, refresh); completeCatalog!();
         await waitFor(() => empty.doc.querySelector('.bpb-snow-status').textContent.includes('No SNOTEL'));
         assert.equal(empty.requests.length, 1); assert.equal(empty.doc.querySelector('.bpb-snow-refresh').getAttribute('aria-disabled'), 'true');
         assert.equal(empty.doc.querySelector('.bpb-snow-observations').hidden, true);

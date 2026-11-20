@@ -1,0 +1,213 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Guards the site-wide dark theme's core invariant: whenever theme.js sets
+// data-bpb-theme, the dark stylesheet it gates is actually present in the DOM.
+// A violation (attribute set, sheet missing) is what renders the self-themed
+// GPX chart dark on an otherwise-light page — the bug this test locks out.
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { FixtureDom, builtBundle, evalBundle } from '../helpers/fixture-dom.mts';
+import { makeChromeStub, type PageChrome } from '../helpers/fixture-page.mts';
+
+const earlyThemeBundle = await builtBundle('content/theme-early.js');
+const STYLE_ID = 'bpb-site-dark';
+const FALLBACK_STYLE_ID = 'bpb-site-dark-fallback';
+
+type ThemeDom = FixtureDom & { chrome: PageChrome };
+
+// Load the bundled site-wide theme entry into a fresh fixture with the given
+// stored settings.
+const loadTheme = async (
+    settings: Record<string, unknown> = {},
+    { mirror = null, syncGetError = null }: { mirror?: string | null; syncGetError?: string | null } = {},
+): Promise<ThemeDom> => {
+    const dom = new FixtureDom('<!DOCTYPE html><html><head></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+        runScripts: 'outside-only',
+    });
+    if (mirror !== null) dom.window.localStorage.setItem('bpbThemePref', mirror);
+    const chrome = makeChromeStub({ bpbSettings: settings });
+    if (syncGetError) {
+        chrome.storage.sync.get = async () => { throw new Error(syncGetError); };
+        dom.window.console.warn = () => {};
+    }
+    dom.window.chrome = chrome;
+    await evalBundle(dom.window, 'content/theme-early.js');
+    await evalBundle(dom.window, 'content/theme.js');
+    // Let S.get().then(apply) reconcile.
+    await new Promise(r => dom.window.setTimeout(r, 20));
+    return Object.assign(dom, { chrome });
+};
+
+const attr = (dom: FixtureDom) => dom.window.document.documentElement.getAttribute('data-bpb-theme');
+const sheet = (dom: FixtureDom) => dom.window.document.getElementById(STYLE_ID);
+
+test('the first theme bundle is a small synchronous dark fallback', async () => {
+    const earlyBytes = new TextEncoder().encode(earlyThemeBundle).byteLength;
+    assert.ok(earlyBytes < 4096,
+        `the early theme grew beyond its bootstrap role (${earlyBytes} bytes)`);
+
+    const dom = new FixtureDom('<!DOCTYPE html><html><head></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+        runScripts: 'outside-only',
+    });
+    dom.window.localStorage.setItem('bpbThemePref', 'dark');
+    await evalBundle(dom.window, 'content/theme-early.js');
+
+    assert.equal(attr(dom), 'dark');
+    assert.ok(dom.window.document.getElementById(FALLBACK_STYLE_ID));
+    assert.equal(
+        dom.window.getComputedStyle(dom.window.document.documentElement).backgroundColor,
+        'rgb(24, 26, 27)',
+        'the fallback must paint a dark canvas before the full bundle runs',
+    );
+    assert.equal(sheet(dom), null, 'the complete site sheet belongs to the second bundle');
+    dom.window.close();
+});
+
+test('theme=dark sets the attribute AND injects the dark stylesheet', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        assert.equal(attr(dom), 'dark');
+        assert.ok(sheet(dom), 'the dark <style> must be present when the theme is dark');
+        assert.ok(sheet(dom)!.textContent!.includes('data-bpb-theme="dark"'));
+        assert.equal(dom.window.document.getElementById(FALLBACK_STYLE_ID), null,
+            'the broad fallback must leave after the complete theme is ready');
+    } finally { dom.window.close(); }
+});
+
+test('native map popups and basemap picker inherit the theme across changes, reloads and frame replacement', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        const mount = (frame: HTMLIFrameElement) => {
+            const doc = frame.contentDocument!;
+            doc.open();
+            doc.write('<!doctype html><html><head><style>body{background:#dce6d7}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:white;color:#333}.leaflet-control-zoom a{background:white;color:black}.leaflet-control-attribution{background:white;color:#333}.leaflet-control-attribution a{color:#0078a8}</style></head><body><div id="selboxdiv" style="background-color:white;border:2px solid black"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-control-zoom"><a href="#">+</a><a href="#" class="leaflet-disabled">−</a></div><div class="leaflet-control-attribution"><a href="https://leafletjs.com">Leaflet</a> | Credits</div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper">Station</div><div class="leaflet-popup-tip"></div></div></body></html>');
+            doc.close();
+            frame.dispatchEvent(new dom.window.Event('load'));
+            return doc;
+        };
+        const frame = dom.window.document.createElement('iframe');
+        frame.src = '/map/MasterMap.aspx';
+        dom.window.document.body.append(frame);
+        let doc = mount(frame);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        const background = () => doc.defaultView!.getComputedStyle(doc.querySelector('.leaflet-popup-content-wrapper')!).backgroundColor;
+        const picker = () => doc.defaultView!.getComputedStyle(doc.getElementById('selmap')!);
+        const container = () => doc.defaultView!.getComputedStyle(doc.getElementById('selboxdiv')!);
+        const zoom = () => doc.defaultView!.getComputedStyle(doc.querySelector('.leaflet-control-zoom a')!);
+        const credits = () => doc.defaultView!.getComputedStyle(doc.querySelector('.leaflet-control-attribution')!);
+        assert.equal(zoom().backgroundColor, 'rgb(39, 44, 41)');
+        assert.equal(zoom().color, 'rgb(226, 222, 213)');
+        assert.equal(credits().backgroundColor, 'rgba(31, 35, 33, 0.82)');
+        assert.equal(doc.defaultView!.getComputedStyle(doc.querySelector('.leaflet-disabled')!).color, 'rgb(156, 150, 140)');
+        assert.equal(doc.defaultView!.getComputedStyle(doc.querySelector('.leaflet-control-attribution a')!).color, 'rgb(170, 208, 255)');
+        assert.equal(background(), 'rgb(39, 44, 41)', 'dark mode must reach the native popup inside the iframe');
+        assert.equal(picker().backgroundColor, 'rgb(38, 54, 44)', 'the native basemap picker matches BPB dark inputs');
+        assert.equal(picker().color, 'rgb(238, 234, 222)');
+        assert.equal(picker().colorScheme, 'dark');
+        assert.equal(container().backgroundColor, 'rgb(30, 43, 35)', 'the inline white surround must also turn dark');
+        assert.equal(container().borderTopWidth, '2px', 'the native border geometry is preserved');
+        assert.equal(doc.defaultView!.getComputedStyle(doc.body).backgroundColor, 'rgb(220, 230, 215)', 'the map canvas keeps its native colors');
+        await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'light' } });
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.equal(background(), 'rgb(255, 255, 255)');
+        assert.equal(zoom().backgroundColor, 'rgb(255, 255, 255)');
+        assert.equal(credits().backgroundColor, 'rgb(255, 255, 255)');
+        assert.equal(container().backgroundColor, 'rgb(255, 255, 255)');
+        assert.equal(container().borderTopColor, 'rgb(0, 0, 0)');
+        await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } });
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        doc = mount(frame);
+        assert.equal(background(), 'rgb(39, 44, 41)', 'reload restores the scoped popup sheet');
+        assert.equal(picker().colorScheme, 'dark', 'reload restores the picker theme');
+        assert.equal(zoom().backgroundColor, 'rgb(39, 44, 41)', 'reload restores the zoom theme');
+        assert.equal(credits().backgroundColor, 'rgba(31, 35, 33, 0.82)', 'reload restores the credit theme');
+        const replacement = dom.window.document.createElement('iframe');
+        replacement.src = '/map/mastermap.aspx';
+        frame.replaceWith(replacement);
+        doc = mount(replacement);
+        await new Promise(resolve => dom.window.setTimeout(resolve, 0));
+        assert.equal(background(), 'rgb(39, 44, 41)', 'a replacement frame receives the current theme');
+        assert.equal(container().backgroundColor, 'rgb(30, 43, 35)', 'a replacement picker receives the current theme');
+        replacement.dispatchEvent(new dom.window.Event('load'));
+        assert.equal(doc.querySelectorAll('#bpb-native-map-popup-theme').length, 1);
+    } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
+});
+
+test('top-level Leaflet popups and basemap picker use their own palette without repainting their map', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        const map = dom.window.document.createElement('div');
+        map.style.backgroundColor = '#dce6d7';
+        map.innerHTML = '<div id="selboxdiv"><select id="selmap"><option>Open Topo Map</option></select></div><div class="leaflet-popup"><div class="leaflet-popup-content-wrapper"><a href="/peak.aspx?pid=2296">Summit</a></div><div class="leaflet-popup-tip"></div></div>';
+        dom.window.document.body.append(map);
+        assert.equal(dom.window.getComputedStyle(map.querySelector('.leaflet-popup-content-wrapper')!).backgroundColor, 'rgb(39, 44, 41)');
+        assert.equal(dom.window.getComputedStyle(map.querySelector('a')!).color, 'rgb(170, 208, 255)');
+        assert.equal(dom.window.getComputedStyle(map.querySelector('#selmap')!).backgroundColor, 'rgb(38, 54, 44)', 'the general form theme must not override the map picker');
+        assert.equal(dom.window.getComputedStyle(map).backgroundColor, 'rgb(220, 230, 215)');
+    } finally { dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide')); dom.window.close(); }
+});
+
+test('the sheet self-heals: a later apply() re-injects it if it went missing', async () => {
+    const dom = await loadTheme({ theme: 'dark' });
+    try {
+        assert.ok(sheet(dom));
+
+        // Simulate the sheet being lost (e.g. a page script cleared it) — the
+        // attribute stays. The next settings-driven apply() must restore it.
+        sheet(dom)!.remove();
+        assert.equal(sheet(dom), null);
+
+        await dom.chrome.storage.sync.set({ bpbSettings: { theme: 'dark' } });
+        await new Promise(r => dom.window.setTimeout(r, 20));
+
+        assert.ok(sheet(dom), 'apply() should have re-injected the missing sheet');
+        assert.equal(attr(dom), 'dark');
+    } finally { dom.window.close(); }
+});
+
+test('theme=light sets the attribute but the inert sheet is still present', async () => {
+    const dom = await loadTheme({ theme: 'light' });
+    try {
+        assert.equal(attr(dom), 'light');
+        // The sheet is scoped under [data-bpb-theme="dark"], so it is inert in light
+        // mode — but injecting it up front is what makes later toggles flash-free.
+        assert.ok(sheet(dom));
+    } finally { dom.window.close(); }
+});
+
+test('a failed authoritative read preserves the explicit pre-paint mirror', async () => {
+    const dom = await loadTheme({ theme: 'system' }, {
+        mirror: 'dark',
+        syncGetError: 'SYNC_THEME_SENTINEL',
+    });
+
+    assert.equal(attr(dom), 'dark');
+    assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'dark',
+        'a fail-soft default must not replace the last authoritative preference');
+    assert.ok(sheet(dom));
+    dom.window.close();
+});
+
+test('the bundled theme initializes without publishing globals onto the page window', async () => {
+    const dom = new FixtureDom('<!DOCTYPE html><html><head></head><body></body></html>', {
+        url: 'https://www.peakbagger.com/',
+        runScripts: 'outside-only',
+    });
+    try {
+        const chrome = makeChromeStub({ bpbSettings: { theme: 'dark' } });
+        dom.window.chrome = chrome;
+        const keysBefore = new Set(Object.getOwnPropertyNames(dom.window));
+        await evalBundle(dom.window, 'content/theme-early.js', 'content/theme.js');
+        await new Promise(resolve => dom.window.setTimeout(resolve, 20));
+
+        const addedKeys = Object.getOwnPropertyNames(dom.window).filter(key => !keysBefore.has(key));
+        assert.deepEqual(addedKeys, [], 'the self-contained theme bundles must not publish globals onto window');
+        assert.equal((dom.window as { BPBSettings?: unknown }).BPBSettings, undefined, 'the page window is untouched');
+        assert.equal(attr(dom), 'dark');
+        assert.ok(sheet(dom), 'the theme must initialize from its self-contained bundle');
+    } finally { dom.window.close(); }
+});

@@ -1,22 +1,23 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { builtBundle, fixtureDom } from '../helpers/fixture-dom.mts';
 
 interface UiMessage { type: string; [key: string]: unknown }
 type Callback = () => unknown;
 type Reply = Record<string, unknown>;
-const settingsSource = await readFile(new URL('../../dist/options/garmin.js', import.meta.url), 'utf8');
-const inboxSource = await readFile(new URL('../../dist/options/inbox.js', import.meta.url), 'utf8');
+const settingsSource = await builtBundle('options/garmin.js');
+const inboxSource = await builtBundle('options/inbox.js');
 const inboxHtml = await readFile(new URL('../../options/inbox.html', import.meta.url), 'utf8');
 const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setTimeout(resolve, 0)); };
 test('Garmin disconnect is exposed with imports off and guards retry, focus and repeat activation', async () => {
-    const dom = fixtureDom('<div data-garmin-settings hidden></div>', { url: 'chrome-extension://test/options/options.html#capture-garmin', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings hidden></div>', { url: 'https://www.peakbagger.com/options/options.html#capture-garmin', runScripts: 'outside-only' });
     let finish: (value: Reply) => void = () => {}, removals = 0;
     const calls: string[] = [];
-    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } },
+    dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {}, removeListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {
             calls.push(message.type);
             if (message.type === 'GARMIN_DISCONNECT') { removals++; return new Promise(resolve => { finish = resolve; }); }
@@ -45,11 +46,11 @@ test('Garmin disconnect is exposed with imports off and guards retry, focus and 
     } finally { dom.window.close(); }
 });
 test('Garmin setup links directly to key creation and requests permission only on Connect', async () => {
-    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'https://www.peakbagger.com/options/options.html', runScripts: 'outside-only' });
     const messages: UiMessage[] = []; let permissions = 0;
     const intervals: Callback[] = []; (dom.window as { setInterval: unknown }).setInterval = (callback: Callback) => { intervals.push(callback); return intervals.length; };
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
-        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {
             messages.push(message);
             if (message.type === 'GARMIN_CONNECT') return { ok: false, error: { message: 'Garmin didn’t accept this key.' } };
@@ -70,13 +71,13 @@ test('Garmin setup links directly to key creation and requests permission only o
     dom.window.close();
 });
 test('Garmin setup finishes on Connect and only offers a second action for revoked access', async () => {
-    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'https://www.peakbagger.com/options/options.html', runScripts: 'outside-only' });
     const messages: UiMessage[] = [], intervals: Callback[] = []; let permissions = 0;
     const state: Reply = { configured: false, enabled: false, pending: 0, cid: null, items: [] };
     (dom.window as { setInterval: unknown }).setInterval = (callback: Callback) => (intervals.push(callback), intervals.length);
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     dom.window.chrome = { permissions: { request: async () => { permissions++; return true; } },
-        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } },
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {
             messages.push(message);
             if (message.type === 'GARMIN_CONNECT') Object.assign(state, { configured: true, enabled: true });
@@ -108,12 +109,12 @@ test('Garmin setup finishes on Connect and only offers a second action for revok
     } finally { dom.window.close(); }
 });
 test('inbox keeps drafts visible during a rejected-key state', async () => {
-    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'https://www.peakbagger.com/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true, pending: 1,
         error: { code: 'key-rejected', message: 'Garmin needs a new API key. Imports paused; your drafts are safe.' },
         items: [{ id: '123', summary: { date: '2026-10-23', type: 'hiking' }, phase: 'ready', saved: [],
             analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }] } }] }) },
-    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } } };
     dom.window.eval(inboxSource); await tick();
     assert.equal(dom.window.document.querySelectorAll('.garmin-activity').length, 1);
     assert.equal(dom.window.document.querySelector('#inbox-update-key').hidden, false);
@@ -124,7 +125,7 @@ test('inbox keeps drafts visible during a rejected-key state', async () => {
 });
 
 test('review exposes refreshed results explicitly and updates handoff recovery without reopening', async () => {
-    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'https://www.peakbagger.com/options/inbox.html', runScripts: 'outside-only' });
     const intervals: Callback[] = []; (dom.window as { setInterval: unknown }).setInterval = (fn: Callback) => { intervals.push(fn); return intervals.length; };
     Object.defineProperty(dom.window.document, 'hidden', { value: false });
     const item: Reply = { id: '123', phase: 'waiting', saved: [], summary: { date: '2026-10-23', type: 'hiking' }, analysis: null };
@@ -133,7 +134,7 @@ test('review exposes refreshed results explicitly and updates handoff recovery w
         calls.push(message);
         if (message.type === 'GARMIN_OPEN_DRAFTS') item.handoff = true;
         return { ok: true, ...structuredClone(state) };
-    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } } };
     dom.window.eval(inboxSource); await tick(); const d = dom.window.document;
     d.querySelector('.garmin-activity button').click();
     item.phase = 'ready'; item.analysis = { matches: [{ id: 1, name: 'Ready Peak', classification: 'strong' }] };
@@ -150,10 +151,10 @@ test('review exposes refreshed results explicitly and updates handoff recovery w
 });
 
 test('inbox identifies queued activities and preserves them during a human check', async () => {
-    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'https://www.peakbagger.com/options/inbox.html', runScripts: 'outside-only' });
     dom.window.chrome = { runtime: { sendMessage: async () => ({ ok: true, configured: true, enabled: true,
         queued: 2, peakbaggerBlocked: { code: 'cloudflare' }, history: [], items: [1, 2].map(id => ({ id: String(id), phase: 'waiting', summary: { date: '2026-10-23', type: 'hiking' } })) }) },
-    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {} } } };
+    storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } } };
     try {
         dom.window.eval(inboxSource); await tick();
         const d = dom.window.document;
@@ -165,10 +166,10 @@ test('inbox identifies queued activities and preserves them during a human check
 });
 
 test('a bookmarked inbox stays hidden while disabled and does not poll its data', async () => {
-    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'https://www.peakbagger.com/options/inbox.html', runScripts: 'outside-only' });
     let messages = 0;
     dom.window.chrome = { runtime: { sendMessage: async () => { messages++; return { ok: true, items: [] }; } },
-        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {} } } };
+        storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {}, removeListener() {} } } };
     try {
         dom.window.eval(inboxSource); await tick();
         assert.equal(dom.window.document.querySelector('#inbox-content').hidden, true);
@@ -179,7 +180,7 @@ test('a bookmarked inbox stays hidden while disabled and does not poll its data'
 });
 
 const auditInbox = async (overrides: Reply = {}) => {
-    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(inboxHtml, { url: 'https://www.peakbagger.com/options/inbox.html', runScripts: 'outside-only' });
     const intervals: Callback[] = [], calls: UiMessage[] = [];
     const item: Reply = { id: '123', phase: 'ready', saved: [], summary: { date: '2026-10-23', type: 'hiking' },
         analysis: { matches: [{ id: 1, name: 'Example Peak', classification: 'strong' }], hasTimestamps: true } };
@@ -255,6 +256,7 @@ test('Inbox review follows phase errors even when both match snapshots are empty
 test('Inbox history offers Undo only while the worker does, and never leaves a dead control', async () => {
     const h = await auditInbox({ history: [{ id: '123', complete: true }] });
     try {
+        h.d.querySelector<HTMLDetailsElement>('#inbox-history').open = true;
         h.state.history[0] = { id: '123', dismissed: true, undoAvailable: true }; await h.refresh();
         const undo = h.d.querySelector('#history-123 button'); assert(undo);
         undo.focus(); undo.click(); await tick();
@@ -350,7 +352,7 @@ test('A failed Undo is reported without losing the control', async () => {
 });
 
 test('Garmin Settings refreshes imported credentials and leaves cancelled deletion idle', async () => {
-    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'chrome-extension://test/options/options.html', runScripts: 'outside-only' });
+    const dom = fixtureDom('<div data-garmin-settings></div>', { url: 'https://www.peakbagger.com/options/options.html', runScripts: 'outside-only' });
     let configured = false, deletes = 0;
     dom.window.chrome = { storage: { sync: { get: async () => ({}) }, local: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } },
         runtime: { sendMessage: async (message: UiMessage) => {

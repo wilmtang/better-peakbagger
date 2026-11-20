@@ -3,7 +3,7 @@
 //
 // Accessibility guard for the site-wide dark theme.
 //
-// The colors come straight out of the shipped stylesheet (src/theme/site-dark-css.js
+// The colors come straight out of the shipped stylesheet (src/theme/site-dark-css.ts
 // is parsed here — it is the single source of truth), so editing a color in the
 // theme re-runs it through these WCAG checks automatically. Each pair mirrors
 // how a color actually lands in the page: a foreground the theme sets, over the
@@ -18,116 +18,104 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
-import { loadPageWithBar } from '../helpers/load-page.mts';
+import { FixtureDom, loadPageWithBar } from '../helpers/fixture-page.mts';
 import { darkCss } from '../../src/theme/site-dark-css.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 // --- WCAG 2.1 relative luminance + contrast ratio ---
-const channel = c => {
-    c /= 255;
+const channel = (value: number) => {
+    const c = value / 255;
     return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
 };
-const luminance = hex => {
+const luminance = (hex: string) => {
     const h = hex.replace('#', '');
     const n = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
     const [r, g, b] = [0, 2, 4].map(i => parseInt(n.slice(i, i + 2), 16));
-    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    return 0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
 };
-const contrast = (a, b) => {
+const contrast = (a: string, b: string) => {
     const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-    return (hi + 0.05) / (lo + 0.05);
+    return (hi! + 0.05) / (lo! + 0.05);
 };
 
 // --- Parse the shipped dark stylesheet into { exact selector -> declarations } ---
 const CSS = darkCss.replace(/\/\*[\s\S]*?\*\//g, '');   // strip comments
 
-const RULES = new Map();
-for (const [, selText, declText] of CSS.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-    const decls = {};
-    for (const d of declText.split(';')) {
-        const i = d.indexOf(':');
-        if (i < 0) continue;
-        decls[d.slice(0, i).trim()] = d.slice(i + 1).replace(/!important/g, '').trim();
-    }
-    for (const sel of selText.split(',').map(s => s.trim()).filter(Boolean)) {
-        RULES.set(sel, { ...(RULES.get(sel) || {}), ...decls });
-    }
-}
-
-const P = 'html[data-bpb-theme="dark"]';
-const fg = sel => {
-    const d = RULES.get(`${P} ${sel}`);
-    assert.ok(d && d.color, `theme declares no color for: ${sel}`);
-    return d.color;
-};
-const bg = sel => {
-    const d = RULES.get(`${P} ${sel}`);
-    assert.ok(d, `theme has no rule for background selector: ${sel}`);
-    const v = d['background-color'] || d.background;
-    assert.ok(v, `theme declares no background for: ${sel}`);
-    return v.split(/\s+/)[0];      // first token of a `background` shorthand
-};
-
-// --- The Ascent Beta Filter bar owns its own complete theme ------------------
-//
-// Its light values and their dark counterparts both live in the STYLE block of
-// src/ascent/ascent-filter.js, as --pbaf-* tokens reassigned under the dark
-// scope. Resolving them here means the numbers checked below are the ones the
-// browser computes, from the one file that declares them.
-const filterSource = await readFile(path.join(root, 'src/ascent/ascent-filter.ts'), 'utf8');
-const BAR_CSS = filterSource
-    .match(/const STYLE = `([\s\S]*?)\n`;/)[1]
-    .replace(/\/\*[\s\S]*?\*\//g, '');
-
-const parseRules = css => {
-    const map = new Map();
+const parseRules = (css: string) => {
+    const map = new Map<string, Record<string, string>>();
     for (const [, selText, declText] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
-        const decls = {};
-        for (const d of declText.split(';')) {
+        const decls: Record<string, string> = {};
+        for (const d of declText!.split(';')) {
             const i = d.indexOf(':');
             if (i < 0) continue;
             decls[d.slice(0, i).trim()] = d.slice(i + 1).replace(/!important/g, '').trim();
         }
-        for (const sel of selText.split(',').map(s => s.trim()).filter(Boolean)) {
+        for (const sel of selText!.split(',').map(s => s.trim()).filter(Boolean)) {
             map.set(sel, { ...(map.get(sel) || {}), ...decls });
         }
     }
     return map;
 };
 
+const RULES = parseRules(CSS);
+
+const P = 'html[data-bpb-theme="dark"]';
+const fg = (sel: string) => {
+    const d = RULES.get(`${P} ${sel}`);
+    assert.ok(d && d.color, `theme declares no color for: ${sel}`);
+    return d.color;
+};
+const bg = (sel: string) => {
+    const d = RULES.get(`${P} ${sel}`);
+    assert.ok(d, `theme has no rule for background selector: ${sel}`);
+    const v = d['background-color'] || d.background;
+    assert.ok(v, `theme declares no background for: ${sel}`);
+    return v.split(/\s+/)[0]!;      // first token of a `background` shorthand
+};
+
+// --- The Ascent Beta Filter bar owns its own complete theme ------------------
+//
+// Its light values and their dark counterparts both live in the STYLE block of
+// src/ascent/ascent-filter.ts, as --pbaf-* tokens reassigned under the dark
+// scope. Resolving them here means the numbers checked below are the ones the
+// browser computes, from the one file that declares them.
+const filterSource = await readFile(path.join(root, 'src/ascent/ascent-filter.ts'), 'utf8');
+const BAR_CSS = filterSource
+    .match(/const STYLE = `([\s\S]*?)\n`;/)![1]!
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
 const BAR_RULES = parseRules(BAR_CSS);
-const barTokens = scope => Object.fromEntries(Object.entries(BAR_RULES.get(scope) || {})
+const barTokens = (scope: string): Record<string, string> => Object.fromEntries(Object.entries(BAR_RULES.get(scope) || {})
     .filter(([key]) => key.startsWith('--pbaf-')));
 const LIGHT_TOKENS = barTokens(':root');
 const DARK_TOKENS = barTokens(P);
 
-const resolveToken = (value, tokens) => {
+const resolveToken = (value: string, tokens: Record<string, string>) => {
     const match = /^var\((--pbaf-[a-z-]+)\)$/.exec((value || '').trim());
     if (!match) return value;
-    const resolved = tokens[match[1]];
+    const resolved = tokens[match[1]!];
     assert.ok(resolved, `no dark value for token ${match[1]}`);
     return resolved;
 };
-const barFg = (sel, tokens = DARK_TOKENS) => {
+const barFg = (sel: string, tokens = DARK_TOKENS) => {
     const d = BAR_RULES.get(sel);
     assert.ok(d && d.color, `the filter bar declares no color for: ${sel}`);
     return resolveToken(d.color, tokens);
 };
-const barBg = (sel, tokens = DARK_TOKENS) => {
+const barBg = (sel: string, tokens = DARK_TOKENS) => {
     const d = BAR_RULES.get(sel);
     assert.ok(d, `the filter bar has no rule for background selector: ${sel}`);
     const v = d['background-color'] || d.background;
     assert.ok(v, `the filter bar declares no background for: ${sel}`);
-    return resolveToken(v.split(/\s+/)[0], tokens);
+    return resolveToken(v.split(/\s+/)[0]!, tokens);
 };
 
 const NORMAL = 4.5;
 const LARGE = 3.0;   // >= 18pt, or >= 14pt bold — headings
 
 // name, foreground, background, threshold
-const PAIRS = [
+const PAIRS: [string, string, string, number][] = [
     ['body text',            fg('body'),                                    bg('body'),                                    NORMAL],
     ['link',                 fg('a:link'),                                  bg('body'),                                    NORMAL],
     ['visited link',         fg('a:visited'),                               bg('body'),                                    NORMAL],
@@ -162,7 +150,7 @@ const PAIRS = [
 ];
 
 // The same pairs must also hold in light mode, since one file now declares both.
-const LIGHT_PAIRS = [
+const LIGHT_PAIRS: [string, string, string, number][] = [
     ['light filter bar text', barFg('#pbaf-bar', LIGHT_TOKENS),             barBg('#pbaf-bar', LIGHT_TOKENS),              NORMAL],
     ['light chip text',       barFg('.pbaf-chip', LIGHT_TOKENS),            barBg('.pbaf-chip', LIGHT_TOKENS),             NORMAL],
     ['light chip pressed',    barFg('.pbaf-chip[aria-pressed="true"]', LIGHT_TOKENS), barBg('.pbaf-chip[aria-pressed="true"]', LIGHT_TOKENS), NORMAL],
@@ -175,7 +163,7 @@ test('every dark-theme text/background pair meets WCAG AA', () => {
         const ratio = contrast(f, b);
         assert.ok(
             ratio >= min,
-            `${name}: ${f} on ${b} = ${ratio.toFixed(2)}:1 (need ${min}:1)`
+            `${name}: ${f} on ${b} = ${ratio.toFixed(2)}:1 (need ${min}:1)`,
         );
     }
 });
@@ -184,16 +172,16 @@ test('every dark-theme text/background pair meets WCAG AA', () => {
 // boundaries need 3:1. The text table above cannot see these — an `outline` is
 // not a `color` — which is how a 2.38:1 focus ring shipped.
 const NON_TEXT = 3.0;
-const outline = (sel, tokens = DARK_TOKENS) => {
+const outline = (sel: string, tokens = DARK_TOKENS) => {
     const d = BAR_RULES.get(sel);
     assert.ok(d && d.outline, `the filter bar declares no outline for: ${sel}`);
-    return resolveToken(d.outline.trim().split(/\s+/).pop(), tokens);
+    return resolveToken(d.outline.trim().split(/\s+/).pop()!, tokens);
 };
 
 // A ring is drawn outside its control, so it is checked against the surface
 // behind it: the bar for the bar's own controls, the dark table for the column
 // controls that live in the ascent table's header.
-const FOCUS_PAIRS = [
+const FOCUS_PAIRS: [string, string, string][] = [
     ['chip focus ring',        outline('.pbaf-chip:focus-visible'),        barBg('#pbaf-bar')],
     ['reset focus ring',       outline('.pbaf-reset:focus-visible'),       barBg('#pbaf-bar')],
     ['words input focus ring', outline('.pbaf-words input:focus-visible'), barBg('#pbaf-bar')],
@@ -209,7 +197,7 @@ test('every focus indicator meets WCAG 2.1 non-text contrast', () => {
         const ratio = contrast(ring, surface);
         assert.ok(
             ratio >= NON_TEXT,
-            `${name}: ${ring} on ${surface} = ${ratio.toFixed(2)}:1 (need ${NON_TEXT}:1)`
+            `${name}: ${ring} on ${surface} = ${ratio.toFixed(2)}:1 (need ${NON_TEXT}:1)`,
         );
     }
 
@@ -226,24 +214,24 @@ test('every focus indicator meets WCAG 2.1 non-text contrast', () => {
 test('the native basemap picker keeps readable text and keyboard focus in dark mode', () => {
     assert.ok(contrast(fg('#selmap'), bg('#selmap')) >= NORMAL);
     assert.ok(contrast(fg('#selmap option'), bg('#selmap option')) >= NORMAL);
-    const ring = RULES.get(`${P} #selmap:focus-visible`).outline.split(/\s+/).pop();
+    const ring = RULES.get(`${P} #selmap:focus-visible`)!.outline!.split(/\s+/).pop()!;
     assert.ok(contrast(ring, bg('#selmap')) >= NON_TEXT);
 });
 
 test('map overlays use the BPB panel palette with readable control text in both themes', async () => {
     const panel = await readFile(path.join(root, 'src/theme/panel.css'), 'utf8');
-    const palette = new Map([...panel.matchAll(/(--(?:light|dark)-[\w-]+):\s*(#[\da-f]+);/g)].map(([, name, value]) => [name, value]));
+    const palette = new Map([...panel.matchAll(/(--(?:light|dark)-[\w-]+):\s*(#[\da-f]+);/g)].map(([, name, value]) => [name!, value!]));
     const css = await readFile(path.join(root, 'src/maps/map-layers.css'), 'utf8');
     const rules = parseRules(css.replace(/\/\*[\s\S]*?\*\//g, ''));
     assert.equal(bg('#selmap'), palette.get('--dark-input-bg'), 'the neighboring native picker follows BPB inputs');
     assert.equal(bg('#selboxdiv'), palette.get('--dark-card'));
     for (const theme of ['light', 'dark']) {
-        const tokens = rules.get(theme === 'light' ? '.bpb-map-layers' : ".bpb-map-layers[data-theme='dark']");
+        const tokens = rules.get(theme === 'light' ? '.bpb-map-layers' : ".bpb-map-layers[data-theme='dark']")!;
         for (const [mapToken, panelToken] of Object.entries({ paper: 'card', ink: 'text', muted: 'sub', border: 'border', accent: theme === 'light' ? 'accent' : 'link', 'input-bg': 'input-bg', 'input-border': 'input-border' })) {
             assert.equal(tokens[`--bpb-layer-${mapToken}`], palette.get(`--${theme}-${panelToken}`), `${theme} ${mapToken} follows BPB's palette`);
         }
-        for (const token of ['ink', 'muted', 'accent']) assert.ok(contrast(tokens[`--bpb-layer-${token}`], tokens['--bpb-layer-paper']) >= NORMAL, `${theme} ${token} contrast`);
-        assert.ok(contrast(tokens['--bpb-layer-focus'], tokens['--bpb-layer-paper']) >= NON_TEXT);
+        for (const token of ['ink', 'muted', 'accent']) assert.ok(contrast(tokens[`--bpb-layer-${token}`]!, tokens['--bpb-layer-paper']!) >= NORMAL, `${theme} ${token} contrast`);
+        assert.ok(contrast(tokens['--bpb-layer-focus']!, tokens['--bpb-layer-paper']!) >= NON_TEXT);
     }
 });
 
@@ -270,11 +258,11 @@ test('the GPX analyzer panel has one theming system, not two', async () => {
     assert.match(analyzer, /CHART_PALETTES/);
 
     // Text pairs the panel paints, in dark.
-    const pairs = [
-        ['panel text', dark['--bpb-gpx-text'], dark['--bpb-gpx-panel-bg'], NORMAL],
-        ['panel sub text', dark['--bpb-gpx-sub'], dark['--bpb-gpx-panel-bg'], NORMAL],
-        ['panel muted text', dark['--bpb-gpx-muted'], dark['--bpb-gpx-panel-bg'], NORMAL],
-        ['panel input text', dark['--bpb-gpx-text'], dark['--bpb-gpx-input-bg'], NORMAL],
+    const pairs: [string, string, string, number][] = [
+        ['panel text', dark['--bpb-gpx-text']!, dark['--bpb-gpx-panel-bg']!, NORMAL],
+        ['panel sub text', dark['--bpb-gpx-sub']!, dark['--bpb-gpx-panel-bg']!, NORMAL],
+        ['panel muted text', dark['--bpb-gpx-muted']!, dark['--bpb-gpx-panel-bg']!, NORMAL],
+        ['panel input text', dark['--bpb-gpx-text']!, dark['--bpb-gpx-input-bg']!, NORMAL],
     ];
     for (const [name, foreground, background, minimum] of pairs) {
         const ratio = contrast(foreground, background);
@@ -300,7 +288,7 @@ test('every filter-bar theme token has a dark counterpart', () => {
         if (selector === ':root' || selector === P) continue;
         for (const property of [
             'color', 'background', 'background-color',
-            'border', 'border-color', 'outline', 'box-shadow'
+            'border', 'border-color', 'outline', 'box-shadow',
         ]) {
             const value = declarations[property];
             if (!value || /^(?:transparent|none|0)$/.test(value)) continue;
@@ -311,18 +299,18 @@ test('every filter-bar theme token has a dark counterpart', () => {
 
     // The site-wide sheet must not take the bar's theme back over.
     assert.doesNotMatch(CSS, /\.pbaf-(?!control)/,
-        'src/theme/site-dark-css.js must not declare filter-bar rules again');
+        'src/theme/site-dark-css.ts must not declare filter-bar rules again');
 });
 
 test('the backup control light preference overrides every dark semantic color', async () => {
     const css = await readFile(path.join(root, 'src/ascent/ascent-backup.css'), 'utf8');
     const lightSelectors = new Set(Array.from(
         css.matchAll(/:root\[data-bpb-theme="light"\]\s+([^,{]+)\s*\{/g),
-        match => match[1].trim()
+        match => match[1]!.trim(),
     ));
     for (const selector of [
         '.bpb-gh-control', '.bpb-gh-ok', '.bpb-gh-err', '.bpb-gh-link',
-        '.bpb-gh-btn', '.bpb-gh-btn:hover:not(:disabled)', '.bpb-gh-btn:focus-visible'
+        '.bpb-gh-btn', '.bpb-gh-btn:hover:not(:disabled)', '.bpb-gh-btn:focus-visible',
     ]) {
         assert.ok(lightSelectors.has(selector), `${selector} must override OS-dark colors when the extension theme is light`);
     }
@@ -340,29 +328,29 @@ test('the shared panel palette keeps its text contrast in both themes', async ()
     const css = (await readFile(path.join(root, 'src/theme/panel.css'), 'utf8'))
         .replace(/\/\*[\s\S]*?\*\//g, '');
     const tokens = new Map(
-        [...css.matchAll(/(--[a-z-]+):\s*(#[0-9a-fA-F]{3,6})\s*;/g)].map(([, name, value]) => [name, value]));
+        [...css.matchAll(/(--[a-z-]+):\s*(#[0-9a-fA-F]{3,6})\s*;/g)].map(([, name, value]) => [name!, value!]));
     // Mirrors color-mix(in srgb, <a> <pct>%, <b>) for the tinted surfaces the
     // panels paint cues and pressed states on.
-    const mix = (a, b, percent) => {
-        const parse = hex => {
+    const mix = (a: string, b: string, percent: number) => {
+        const parse = (hex: string) => {
             const h = hex.replace('#', '');
             const full = h.length === 3 ? h.split('').map(x => x + x).join('') : h;
             return [0, 2, 4].map(i => parseInt(full.slice(i, i + 2), 16));
         };
         const [x, y] = [parse(a), parse(b)];
-        return `#${x.map((value, i) => Math.round(value * percent + y[i] * (1 - percent))
+        return `#${x!.map((value, i) => Math.round(value * percent + y![i]! * (1 - percent))
             .toString(16).padStart(2, '0')).join('')}`;
     };
 
     for (const theme of ['light', 'dark']) {
-        const token = name => {
+        const token = (name: string) => {
             const value = tokens.get(`--${theme}-${name}`) || tokens.get(`--${name}`);
             assert.ok(value, `the palette must declare ${theme} ${name}`);
             return value;
         };
         const confidence = { strong: token('strong'), strongBg: token('strong-bg'),
             probable: token('probable'), probableBg: token('probable-bg') };
-        const pairs = [
+        const pairs: [string, string, string, number][] = [
             ['body text', token('text'), token('bg'), NORMAL],
             ['card text', token('text'), token('card'), NORMAL],
             ['secondary text on a card', token('sub'), token('card'), NORMAL],
@@ -388,7 +376,7 @@ test('the shared panel palette keeps its text contrast in both themes', async ()
         }
         // The accent also carries meaning on its own — the focus ring and the
         // filled primary against the page — which is a non-text 3:1 boundary.
-        for (const [name, surface] of [['page', token('bg')], ['card', token('card')]]) {
+        for (const [name, surface] of [['page', token('bg')], ['card', token('card')]] as const) {
             const ratio = contrast(token('accent'), surface);
             assert.ok(ratio >= LARGE,
                 `${theme} accent against the ${name}: ${ratio.toFixed(2)}:1`);
@@ -409,15 +397,15 @@ test('no extension panel stylesheet declares a palette of its own', async () => 
 });
 
 test('dark theme preserves the native mountain motif behind page content', () => {
-    const body = RULES.get(`${P} body`);
-    const motif = RULES.get(`${P} body::before`);
+    const body = RULES.get(`${P} body`)!;
+    const motif = RULES.get(`${P} body::before`)!;
 
     assert.equal(body['background-image'], 'none', 'the opaque native tile must not paint directly');
     assert.equal(body.position, 'relative', 'the body must contain the decorative layer');
     assert.equal(body['z-index'], '0', 'the body must isolate the negative decorative layer');
     assert.equal(motif['background-image'], 'url("/image/mewallp.gif")');
     assert.equal(motif['background-repeat'], 'repeat');
-    assert.match(motif.filter, /invert\(1\).*brightness\(4\)/);
+    assert.match(motif.filter!, /invert\(1\).*brightness\(4\)/);
     assert.equal(motif['mix-blend-mode'], 'screen');
     assert.ok(Number(motif.opacity) <= 0.1, 'the motif must remain subordinate to text');
     assert.equal(motif['z-index'], '-1', 'the motif must paint behind page content');
@@ -432,24 +420,24 @@ test('dark theme preserves the native mountain motif behind page content', () =>
 test('header banner links stay dark enough for the light header.jpg photo', () => {
     const bannerLinks = [
         '.mainbanner a:link', '.mainbanner a:visited', '.mainbanner a:hover',
-        '.mainmenu a:link', '.mainmenu a:visited', '.mainmenu a:hover'
+        '.mainmenu a:link', '.mainmenu a:visited', '.mainmenu a:hover',
     ];
     for (const sel of bannerLinks) {
         const color = fg(sel);
         assert.notEqual(
             color.toLowerCase(), fg('a:link').toLowerCase(),
-            `${sel} must not use the body link color over the light banner photo`
+            `${sel} must not use the body link color over the light banner photo`,
         );
         const ratio = contrast(color, '#ffffff');
         assert.ok(
             ratio >= NORMAL,
-            `${sel}: ${color} vs white (light photo proxy) = ${ratio.toFixed(2)}:1 (need ${NORMAL}:1)`
+            `${sel}: ${color} vs white (light photo proxy) = ${ratio.toFixed(2)}:1 (need ${NORMAL}:1)`,
         );
     }
 });
 
-test('generic dark form styling preserves report-editor color samples', () => {
-    const dom = new JSDOM(`<!doctype html>
+test('generic dark form styling preserves report-editor color samples', t => {
+    const dom = new FixtureDom(`<!doctype html>
         <html data-bpb-theme="dark">
         <head><style>${darkCss}</style></head>
         <body>
@@ -457,7 +445,8 @@ test('generic dark form styling preserves report-editor color samples', () => {
             <button id="swatch" class="bpb-re-swatch" style="background:firebrick"></button>
         </body>
         </html>`);
-    const style = id => dom.window.getComputedStyle(dom.window.document.getElementById(id));
+    t.after(() => dom.window.close());
+    const style = (id: string) => dom.window.getComputedStyle(dom.window.document.getElementById(id));
 
     assert.equal(style('generic').backgroundColor, 'rgb(43, 47, 52)');
     assert.equal(style('swatch').backgroundColor, 'rgb(178, 34, 34)');
@@ -465,24 +454,28 @@ test('generic dark form styling preserves report-editor color samples', () => {
 
 // Guard against contrast-checking dead CSS: every selector the pairs target
 // must match a real element in the captured fixtures.
-test('contrast pairs are grounded in real fixtures', async () => {
-    const home = new JSDOM(
-        await readFile(path.join(root, 'test/fixtures/pages/home-default.html'), 'utf8')
-    ).window.document;
-    const climber = new JSDOM(
-        await readFile(path.join(root, 'test/fixtures/pages/climber-home.html'), 'utf8')
-    ).window.document;
-    const peak = (await loadPageWithBar('2296-rainier-default-recent-year.html', {
-        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296'
-    })).window.document;
+test('contrast pairs are grounded in real fixtures', async t => {
+    const homeDom = new FixtureDom(await readFile(path.join(root, 'test/fixtures/pages/home-default.html'), 'utf8'));
+    const climberDom = new FixtureDom(await readFile(path.join(root, 'test/fixtures/pages/climber-home.html'), 'utf8'));
+    const peakDom = await loadPageWithBar('2296-rainier-default-recent-year.html', {
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296',
+    });
+    t.after(() => {
+        homeDom.window.close();
+        climberDom.window.close();
+        peakDom.window.close();
+    });
+    const home = homeDom.window.document;
+    const climber = climberDom.window.document;
+    const peak = peakDom.window.document;
 
-    const matches = (doc, sel) => doc.querySelector(sel) !== null;
-    const anywhere = sel => matches(home, sel) || matches(climber, sel) || matches(peak, sel);
+    const matches = (doc: Pick<Document, 'querySelector'>, sel: string) => doc.querySelector(sel) !== null;
+    const anywhere = (sel: string) => matches(home, sel) || matches(climber, sel) || matches(peak, sel);
 
     // Shared site chrome + content, across either capture.
     for (const sel of [
         '.mainbanner a', '.mainmenu a', 'a', 'table.gray', 'h1', 'h2', 'th', 'input',
-        '[style*="; color: maroon" i]'
+        '[style*="; color: maroon" i]',
     ]) {
         assert.ok(anywhere(sel), `no fixture element matches "${sel}"`);
     }
@@ -492,7 +485,7 @@ test('contrast pairs are grounded in real fixtures', async () => {
     // current capture exercises — its colors are still contrast-checked above.
     for (const sel of [
         '#pbaf-bar', '.pbaf-chip', '.pbaf-label', '.pbaf-count', '.pbaf-status', '.pbaf-reset',
-        '.pbaf-date-sort', '.pbaf-table-sort', '.pbaf-control'
+        '.pbaf-date-sort', '.pbaf-table-sort', '.pbaf-control',
     ]) {
         assert.ok(matches(peak, sel), `filter bar element missing from fixture: "${sel}"`);
     }
@@ -501,7 +494,7 @@ test('contrast pairs are grounded in real fixtures', async () => {
     // creates: a `.pbaf-divider` rule outlived its element and shipped for
     // months without anything catching it.
     const RENDERED_ONLY_ON_COMPACT_VIEW = new Set(['.pbaf-note']);
-    const styled = new Set();
+    const styled = new Set<string>();
     for (const selector of BAR_RULES.keys()) {
         for (const [, className] of selector.matchAll(/\.(pbaf-[a-z-]+)/g)) styled.add(`.${className}`);
     }

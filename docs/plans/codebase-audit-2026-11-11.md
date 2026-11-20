@@ -177,7 +177,7 @@ dismissal (`garmin-imports.ts` line 391) with no countdown.
 A related defect in the same rows: once the window lapses the button is only
 marked `aria-disabled` (line 124) and is never removed, so every dismissed
 receipt keeps a dead "Undo" button permanently. A test pins that state
-(`test/garmin/garmin-ui.test.mts` lines 224–229). AGENTS.md requires that
+(`test/garmin/garmin-ui.browser.mts` lines 224–229). AGENTS.md requires that
 completion status "must not look clickable unless it has a real action".
 
 No earlier audit declined a visible Undo; the archived design only describes
