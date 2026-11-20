@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { strictWeatherDate, readWeatherSubject, readWeatherSummit } from '../../src/ascent/ascent-weather-subject.ts';
 
+const reasonOf = (subject: ReturnType<typeof readWeatherSubject>) => 'reason' in subject ? subject.reason : undefined;
 const ascentUrl = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321';
-const fixture = async name => new JSDOM(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8')).window.document;
+const fixture = async (name: string) => new FixtureDom(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8')).window.document;
 
 test('only complete calendar dates are admitted', () => {
     assert.equal(strictWeatherDate('Sunday, July 12, 2026'), '2026-07-12');
@@ -18,19 +19,20 @@ test('subject is independent of GPX and ownership, and ignores report peak links
     doc.querySelector('#gpxlinks').remove(); doc.querySelector('#owneractions').remove();
     doc.querySelector('#reportcell a').href = '/peak.aspx?pid=999';
     const subject = readWeatherSubject(doc, ascentUrl);
+    assert.ok('date' in subject, 'the subject is identified');
     assert.equal(subject.date, '2026-07-12'); assert.equal(subject.peak.id, 2296);
 });
 
 test('missing or conflicting authoritative evidence fails closed', async () => {
     const doc = await fixture('climber-ascent');
     doc.querySelector('h1').insertAdjacentHTML('beforeend', '<a href="/peak.aspx?pid=999">Wrong peak</a>');
-    assert.match(readWeatherSubject(doc, ascentUrl).reason, /identified safely/);
+    assert.match(String(reasonOf(readWeatherSubject(doc, ascentUrl))), /identified safely/);
     doc.querySelector('h1').remove();
-    assert.ok(readWeatherSubject(doc, ascentUrl).reason);
-    assert.ok(readWeatherSubject(doc, ascentUrl + '&aid=4').reason);
+    assert.ok(reasonOf(readWeatherSubject(doc, ascentUrl)));
+    assert.ok(reasonOf(readWeatherSubject(doc, ascentUrl + '&aid=4')));
     doc.querySelector('#ascentinfo tr').remove();
     doc.querySelector('#reportcell').textContent = 'Date: July 12, 2024';
-    assert.ok(readWeatherSubject(doc, ascentUrl).reason);
+    assert.ok(reasonOf(readWeatherSubject(doc, ascentUrl)));
 });
 
 test('summit metadata requires matching native name, URL and labelled WGS84 row', async () => {

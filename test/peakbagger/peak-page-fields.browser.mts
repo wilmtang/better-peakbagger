@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom } from '../helpers/fixture-dom.mts';
 import { parsePeakId, readPeakDecimalCoordinate, readPeakElevationText } from '../../src/peakbagger/peak-page-fields.ts';
 import { readPeakUnitSystem } from '../../src/peakbagger/peak-units.ts';
 import { readPeakNations } from '../../src/avalanche/avalanche-location.ts';

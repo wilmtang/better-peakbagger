@@ -2,24 +2,27 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
-import { makeChromeStub, evalBundle, waitFor } from '../helpers/load-page.mts';
+import { FixtureDom, browserWindow } from '../helpers/fixture-dom.mts';
+import { makeChromeStub, evalBundle, waitFor } from '../helpers/fixture-page.mts';
 
-const load = async bundle => {
-    const dom = new JSDOM('<!doctype html><html><body></body></html>', {
-        url: 'https://www.peakbagger.com/peak.aspx?pid=1', runScripts: 'outside-only',
+const load = async (bundle: string) => {
+    const dom = Object.assign(new FixtureDom('<!doctype html><html><body></body></html>', {
+        url: 'https://www.peakbagger.com/peak.aspx?pid=1',
+    }), {
+        chrome: makeChromeStub(),
+        // Each pending settings read, answered by the test.
+        reads: [] as ((settings: Record<string, unknown>) => void)[],
+        messages: [] as Record<string, unknown>[],
     });
-    dom.chrome = makeChromeStub();
-    dom.window.chrome = dom.chrome;
-    dom.reads = [];
+    (dom.window as { chrome?: unknown }).chrome = dom.chrome;
     dom.chrome.storage.sync.get = () => new Promise(resolve => dom.reads.push(settings => resolve({ bpbSettings: settings })));
-    dom.messages = [];
-    dom.window.postMessage = message => dom.messages.push(message);
+    dom.window.postMessage = (message: Record<string, unknown>) => dom.messages.push(message);
     await evalBundle(dom.window, bundle);
     return dom;
 };
-const request = (dom, protocol) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
-    source: dom.window, origin: dom.window.location.origin,
+type Page = Awaited<ReturnType<typeof load>>;
+const request = (dom: Page, protocol: string) => dom.window.dispatchEvent(new dom.window.MessageEvent('message', {
+    source: browserWindow(dom.window), origin: dom.window.location.origin,
     data: { [protocol]: true, dir: 'toCS', type: 'get' },
 }));
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));

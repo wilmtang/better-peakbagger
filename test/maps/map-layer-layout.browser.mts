@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
-import { browserWindow } from '../helpers/page-dom.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { browserWindow } from '../helpers/fixture-dom.mts';
 import { installMapLayers } from '../../src/maps/map-layers.ts';
 
 type OwnerWindow = NonNullable<Parameters<typeof installMapLayers>[0]>;
 function setup() {
-    const dom = new JSDOM('<main id="layout"><div id="map"></div></main>', {
-        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', pretendToBeVisual: true,
+    const dom = new FixtureDom('<main id="layout"><div id="map"></div></main>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
     });
     const win = browserWindow<OwnerWindow>(dom.window), observers = new Set<LayoutObserver>();
     class LayoutObserver implements ResizeObserver {

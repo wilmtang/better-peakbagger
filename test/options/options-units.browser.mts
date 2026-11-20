@@ -1,12 +1,15 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-helpers.mjs';
+import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-page.mts';
+
+import type { LoadedPage } from '../helpers/fixture-page.mts';
 
 registerCleanup();
-const change = (dom, id, value) => {
+const change = (dom: LoadedPage, id: string, value: string) => {
     const control = el(dom, id);
     control.value = value;
     control.dispatchEvent(new dom.window.Event('change'));

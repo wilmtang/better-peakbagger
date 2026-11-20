@@ -1,10 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
-import { loadOptions } from '../helpers/options-helpers.mjs';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { loadOptions } from '../helpers/options-page.mts';
 
 // Tabs, icon controls, repository pickers and canvas tools have their own
 // interaction shapes. Ordinary actions must not invent another button style.
@@ -24,7 +25,7 @@ const assertSharedButtons = (doc: Document, surface: string) => {
 test('all panel action markup uses the shared button component', async () => {
     for (const file of ['options/options.html', 'options/inbox.html', 'options/drafts.html',
         'options/favorites.html', 'popup/popup.html', 'photos/photos.html']) {
-        const dom = new JSDOM(await readFile(new URL(`../../${file}`, import.meta.url), 'utf8'));
+        const dom = new FixtureDom(await readFile(new URL(`../../${file}`, import.meta.url), 'utf8'));
         try { assertSharedButtons(dom.window.document, file); } finally { dom.window.close(); }
     }
 });

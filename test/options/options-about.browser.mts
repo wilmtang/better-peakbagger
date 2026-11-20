@@ -1,6 +1,7 @@
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadOptions, el, registerCleanup } from '../helpers/options-helpers.mjs';
+import { loadOptions, el, registerCleanup } from '../helpers/options-page.mts';
 
 registerCleanup();
 
@@ -18,7 +19,7 @@ test('About offers feedback on GitHub Discussions and opens external links safel
 test('About sends Chromium clients to Chrome Web Store reviews even with a browser API alias', async () => {
     const dom = await loadOptions({}, {
         prepareWindow: window => {
-            window.browser = window.chrome;
+            (window as { browser?: unknown }).browser = window.chrome;
             Object.defineProperty(window.navigator, 'userAgent', { value: 'Firefox/153.0' });
         },
     });
@@ -33,7 +34,7 @@ test('About sends Firefox clients to Firefox Add-ons reviews', async () => {
         prepareChrome: chrome => {
             chrome.runtime.getURL = path => `moz-extension://test-extension/${path}`;
         },
-        prepareWindow: window => { window.browser = window.chrome; },
+        prepareWindow: window => { (window as { browser?: unknown }).browser = window.chrome; },
     });
     assert.equal(el(dom, 'about-rate-us').href,
         'https://addons.mozilla.org/en-US/firefox/addon/better-peakbagger/reviews/');

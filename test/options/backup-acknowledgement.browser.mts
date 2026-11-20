@@ -1,11 +1,12 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
-import { loadOptions, el, waitFor, favoriteKey, favoriteStore, registerCleanup } from '../helpers/options-helpers.mjs';
+import { loadOptions, el, waitFor, favoriteKey, favoriteStore, registerCleanup } from '../helpers/options-page.mts';
 
 registerCleanup();
 
@@ -14,7 +15,7 @@ for (const kind of ['favorites', 'settings']) {
         test(`${kind} backup acknowledges its worker snapshot across ${change}`, async () => {
             const original = favoriteStore([{ cid: 900002, name: 'First', addedAt: 10, source: 'manual' }]);
             let repo = 'ada/peaks';
-            let finish;
+            let finish: ((value: unknown) => void) | null = null;
             const type = kind === 'favorites' ? 'GITHUB_FAVORITES_BACKUP' : 'GITHUB_SETTINGS_BACKUP';
             const button = kind === 'favorites' ? 'favorites-backup' : 'settings-backup-github-backup';
             const status = kind === 'favorites' ? 'favorites-github-status' : 'settings-backup-github-status';
@@ -47,7 +48,7 @@ for (const kind of ['favorites', 'settings']) {
                 await dom.chrome.storage.local.set({ bpbGithubAuth: { repo: { fullName: repo } } });
                 await waitFor(dom, () => el(dom, button).getAttribute('aria-busy') === 'true');
             }
-            finish({ ok: true, result: { commitUrl: 'https://github.com/ada/peaks/commit/old',
+            finish!({ ok: true, result: { commitUrl: 'https://github.com/ada/peaks/commit/old',
                 ...(change === 'missing identity' ? {} : { repo: 'ada/peaks', signature }),
                 superseded: change === 'superseded' } });
             await waitFor(dom, () => !el(dom, button).disabled && el(dom, button).getAttribute('aria-busy') !== 'true');
@@ -64,7 +65,7 @@ for (const kind of ['favorites', 'settings']) {
             const currentSignature = kind === 'favorites'
                 ? Favorites.backupSignature(dom.chrome._localStore[favoriteKey])
                 : Transfer.signature(dom.chrome._store.bpbSettings);
-            finish({ ok: true, result: { repo, signature: currentSignature, superseded: false,
+            finish!({ ok: true, result: { repo, signature: currentSignature, superseded: false,
                 commitUrl: `https://github.com/${repo}/commit/current` } });
             await waitFor(dom, () => /backed up ✓/.test(el(dom, status).textContent));
             assert.equal(el(dom, status).querySelector('a').href, `https://github.com/${repo}/commit/current`);

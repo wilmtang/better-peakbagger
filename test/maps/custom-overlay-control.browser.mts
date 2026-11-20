@@ -2,36 +2,36 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom, browserWindow } from '../helpers/fixture-dom.mts';
 import { createCustomOverlayControl } from '../../src/maps/custom-overlay-control.ts';
 
 test('custom menu links to Settings and reuses ordered source rows without changing selection', () => {
-    const dom = new JSDOM('<main></main>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx', pretendToBeVisual: true });
+    const dom = new FixtureDom('<main></main>', { url: 'https://www.peakbagger.com/map/MasterMap.aspx' });
     const win = dom.window, panel = win.document.querySelector('main');
-    const owner = createCustomOverlayControl({ win, panel, readView: () => ({ zoom: 12 }) });
+    const owner = createCustomOverlayControl({ win: browserWindow(win), panel, readView: () => ({ zoom: 12 }) });
     const source = { id: 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1', revision: 1, name: 'Topo', kind: 'raster',
         source: { tiles: ['https://tiles.example.com/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
         approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
     const second = { ...source, id: 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', name: 'Contours' };
-    const announce = sources => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin, data: { __bpbCustomOverlays: true,
+    const announce = (sources: unknown[]) => win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin, data: { __bpbCustomOverlays: true,
         dir: 'toPage', type: 'registry', settingsUrl: 'chrome-extension://test-extension/options/options.html#custom-map-layers', registry: { schemaVersion: 1, revision: 1, sources }, preferences: {} } }));
     try {
         announce([source, second]);
         const link = panel.querySelector('.bpb-custom-header a'); assert.equal(link.textContent, 'Add custom layer…'); assert.match(link.href, /options\/options.html#custom-map-layers$/);
         assert.equal(panel.querySelector('[data-bpb-custom-editor]'), null, 'menu has no inline editor trigger');
         const check = panel.querySelector('input[aria-label="Topo"]'); check.click(); check.focus();
-        assert(check.closest('summary').classList.contains('bpb-layers-row'), 'custom layers must reuse built-in row styles');
+        assert(check.closest('summary')!.classList.contains('bpb-layers-row'), 'custom layers must reuse built-in row styles');
         owner.status(source.id, { lower: true, message: 'Lower detail' });
-        assert.equal(check.closest('summary').textContent.includes('Lower detail'), false, 'normal overzoom must not replace the opacity with unexplained jargon');
+        assert.equal(check.closest('summary')!.textContent.includes('Lower detail'), false, 'normal overzoom must not replace the opacity with unexplained jargon');
         assert.match(panel.querySelector('.bpb-custom-feedback').textContent, /enlarged.*lower zoom/i);
         assert.equal(panel.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])').textContent, 'Reload');
         owner.status(source.id, { error: true, code: 'access' });
         assert.equal(panel.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])').textContent, 'Retry');
-        const row = check.closest('details'); announce([second, source]);
+        const row = check.closest('details')!; announce([second, source]);
         assert.strictEqual(panel.querySelectorAll('.bpb-custom-source')[1], row); assert.equal(check.checked, true); assert.strictEqual(win.document.activeElement, check);
         assert.equal(owner.snapshot().custom[0].id, source.id);
         const action = row.querySelector('.bpb-custom-actions button:not([data-bpb-private-layer])');
-        const sendRefresh = (type, intent = action.dataset.intent, ok = true) => win.dispatchEvent(new win.MessageEvent('message', { source: win, origin: win.location.origin,
+        const sendRefresh = (type: string, intent = action.dataset.intent, ok = true) => win.dispatchEvent(new win.MessageEvent('message', { source: browserWindow(win), origin: win.location.origin,
             data: { __bpbCustomOverlays: true, dir: 'toPage', type, mapId: owner.mapId, id: source.id, revision: 1, requestId: 'request', intent, reply: { ok } } }));
         sendRefresh('refreshPending'); assert.equal(action.getAttribute('aria-disabled'), 'true');
         const intent = action.dataset.intent; check.click(); check.click();

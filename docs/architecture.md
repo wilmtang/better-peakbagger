@@ -1716,7 +1716,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/favorites/favorites-store.test.mjs` covers serialized concurrent
   operations, stale-signature replacement rejection, bounds, and queue recovery
   after a failed storage write.
-- `test/profile/profile-backup-core.test.mjs` covers Buddy/climber response acceptance
+- `test/profile/profile-backup-core.browser.mts` covers Buddy/climber response acceptance
   and rejection of wrong or challenged content.
 - `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
   response classification, typed failures, and document parsing.

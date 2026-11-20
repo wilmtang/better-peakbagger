@@ -11,14 +11,14 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { ascentPage as AscentPage } from '../../src/ascent/ascent-page.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const loadDoc = async () => {
     const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
-    return new JSDOM(html).window.document;
+    return new FixtureDom(html).window.document;
 };
 
 test('read extracts the ascent identity, peak, GPX link, and date', async () => {
@@ -26,10 +26,10 @@ test('read extracts the ascent identity, peak, GPX link, and date', async () => 
     const info = AscentPage.read({ doc, search: '?aid=7654321' });
     assert.equal(info.ascentId, 7654321);
     assert.equal(info.isOwner, true);
-    assert.match(info.editUrl, /ascentedit\.aspx\?aid=7654321/i);
+    assert.match(String(info.editUrl), /ascentedit\.aspx\?aid=7654321/i);
     assert.deepEqual(info.peak, { id: 2296, name: 'Mount Rainier' });
     assert.equal(info.date, '2026-07-12');
-    assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);
+    assert.match(String(info.gpxUrl), /GPXFile\.aspx\?aid=7654321&sep=1/);
 });
 
 test('the GPX link is found by its href even when the link text is reworded', async () => {
@@ -37,7 +37,7 @@ test('the GPX link is found by its href even when the link text is reworded', as
     // A future rewording that no longer prefix-matches "Download this GPS track".
     doc.querySelector('a[href*="GPXFile.aspx"]').textContent = 'Get the track';
     const info = AscentPage.read({ doc, search: '?aid=7654321' });
-    assert.match(info.gpxUrl, /GPXFile\.aspx\?aid=7654321&sep=1/);
+    assert.match(String(info.gpxUrl), /GPXFile\.aspx\?aid=7654321&sep=1/);
 });
 
 test('ownership fails closed without an edit link for this ascent', async () => {

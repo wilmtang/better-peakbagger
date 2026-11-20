@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES } from '../helpers/load-page.mts';
-import { editorReady, modeButton } from '../helpers/report-editor-helpers.mjs';
+import { loadPage, PAGE_FIXTURES } from '../helpers/fixture-page.mts';
+import { editorReady, modeButton } from '../helpers/report-editor-page.mts';
 
 // A climber biography has no trip report photos, so the standalone Photo
 // Topos button never appears there, in any mode.

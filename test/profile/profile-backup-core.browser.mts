@@ -4,13 +4,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { profileBackupCore as Core } from '../../src/profile/profile-backup-core.ts';
 
 const fixture = await readFile(new URL('../fixtures/pages/climber-ascents.html', import.meta.url), 'utf8');
 
 test('parses an owned ClimbListC fixture into stable ascent work records', () => {
-    const dom = new JSDOM(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' });
+    const dom = new FixtureDom(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001&j=-1&y=9999' });
     const parsed = Core.parseAscentList(dom.window.document);
 
     assert.equal(parsed.isOwner, true);
@@ -29,12 +29,12 @@ test('parses an owned ClimbListC fixture into stable ascent work records', () =>
 });
 
 test('requires the signed-in owner identity and per-row edit affordance', () => {
-    const publicDom = new JSDOM(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=123' });
+    const publicDom = new FixtureDom(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=123' });
     assert.deepEqual(Core.parseAscentList(publicDom.window.document), {
         isOwner: false, climberId: null, ascents: [],
     });
 
-    const ownedDom = new JSDOM(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
+    const ownedDom = new FixtureDom(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
     ownedDom.window.document.querySelector('a[href*="AscentEdit.aspx?aid="]').remove();
     assert.equal(Core.parseAscentList(ownedDom.window.document).isOwner, false);
 });
@@ -44,12 +44,13 @@ test('detects GPS markers independent of table column order', () => {
         '<a href="https://www.peakbagger.com/climber/AscentEdit.aspx?aid=9100002">Edit</a>',
         '<a href="https://www.peakbagger.com/climber/AscentEdit.aspx?aid=9100002">Edit</a><img src="/image/GPS.gif" title="Ascent has GPS track">',
     );
-    const dom = new JSDOM(html, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
+    const dom = new FixtureDom(html, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
     assert.equal(Core.parseAscentList(dom.window.document).ascents[0].hasGpx, true);
 });
 
 test('work-list diff skips exact existing ascent ids and refresh-all keeps all', () => {
-    const ascents = [{ aid: 12 }, { aid: 123 }, { aid: 123 }, { aid: null }];
+    // A missing id is malformed input the work list must drop.
+    const ascents = [{ aid: 12 }, { aid: 123 }, { aid: 123 }, { aid: null }] as unknown as { aid: number }[];
     const folders = ['2026-01-01-one-a12', '2026-01-02-other-a999'];
     assert.deepEqual(Core.buildWorkList(ascents, folders).work.map(a => a.aid), [123]);
     assert.deepEqual(Core.buildWorkList(ascents, folders).skipped.map(a => a.aid), [12]);
@@ -66,7 +67,7 @@ test('full-list URL preserves climber and units while forcing complete coverage'
 });
 
 test('exports shared numeric and signed-in owner identity parsing', () => {
-    const dom = new JSDOM(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
+    const dom = new FixtureDom(fixture, { url: 'https://www.peakbagger.com/climber/ClimbListC.aspx?cid=900001' });
     assert.equal(Core.numericParam('/climber/climber.aspx?cid=900002', 'cid'), 900002);
     assert.equal(Core.numericParam('/climber/climber.aspx?cid=not-a-number', 'cid'), null);
     assert.equal(Core.ownerClimberId(dom.window.document), 900001);

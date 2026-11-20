@@ -1,10 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mts';
+import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-page.mts';
+import { waitFor } from '../helpers/fixture-page.mts';
 import type { LoadPage, StubMessage } from '../helpers/page-types.mts';
 
 registerCleanup();

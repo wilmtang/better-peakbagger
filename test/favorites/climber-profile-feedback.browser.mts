@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { climberProfileFeedback } from '../../src/favorites/climber-profile-feedback.ts';
 
 test('profile feedback has one owner outside the heading and does not auto-expand errors', t => {
-    const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1></span>');
+    const dom = new FixtureDom('<span id="TitleLabel"><h1>Name</h1></span>');
     t.after(() => dom.window.close());
     const doc = dom.window.document, ui = climberProfileFeedback(doc);
     assert.equal(climberProfileFeedback(doc), ui);
@@ -39,7 +39,7 @@ test('profile feedback has one owner outside the heading and does not auto-expan
     assert.equal(doc.getElementById('bpb-climber-membership-note').hidden, true);
 });
 test('new failures supersede old feedback and unavailable recovery never acts clickable', t => {
-    const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1></span>'); t.after(() => dom.window.close());
+    const dom = new FixtureDom('<span id="TitleLabel"><h1>Name</h1></span>'); t.after(() => dom.window.close());
     const doc = dom.window.document, ui = climberProfileFeedback(doc);
     const old = { text: 'Old failure', error: 'old', retry() {}, priority: 80 };
     ui.set('favorite', old); ui.set('ignore', { text: 'New failure', error: 'new', retry() {}, priority: 80 });
@@ -50,7 +50,7 @@ test('new failures supersede old feedback and unavailable recovery never acts cl
 });
 
 test('idle feedback is hidden, dismissal persists through identical paints, and new states reappear', t => {
-    const dom = new JSDOM('<span id="TitleLabel"><h1>Name</h1><button id="action">Ignore</button></span>');
+    const dom = new FixtureDom('<span id="TitleLabel"><h1>Name</h1><button id="action">Ignore</button></span>');
     t.after(() => dom.window.close());
     const doc = dom.window.document, ui = climberProfileFeedback(doc);
     const region = doc.getElementById('bpb-climber-profile-feedback');

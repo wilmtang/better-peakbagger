@@ -3,9 +3,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { selectedReportTable, ascentReport } from '../../src/favorites/report-adapters.ts';
-const fixture = async name => new JSDOM(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8'),
+const fixture = async (name: string) => new FixtureDom(await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8'),
     { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1' });
 test('peak adapter selects the nested reports, preserving native totals and other tables', async () => {
     for (const name of ['peak-rainier', 'peak-garibaldi']) {
@@ -14,7 +14,7 @@ test('peak adapter selects the nested reports, preserving native totals and othe
         assert.ok(target?.records.length);
         assert.equal(target.table.rows[0].cells.length, 6);
         assert.ok(target.records.some(record => record.climberId));
-        target.table.parentElement.append(target.table.cloneNode(true));
+        target.table.parentElement!.append(target.table.cloneNode(true));
         assert.equal(selectedReportTable(dom.window.document), null);
         dom.window.close();
     }
@@ -22,7 +22,7 @@ test('peak adapter selects the nested reports, preserving native totals and othe
 test('detail adapter requires the independent author and conceals only the dedicated report cell', async () => {
     const dom = await fixture('ascent-ignored-report');
     const doc = dom.window.document;
-    const report = ascentReport(doc);
+    const report = ascentReport(doc)!;
     assert.equal(report.cid, 900002);
     assert.ok(report.cell.querySelector('video'));
     assert.equal(report.cell.contains(doc.querySelector('#Gmap')), false);
@@ -38,7 +38,7 @@ test('legacy detail fixture without author evidence remains untouched', async ()
 test('detail adapter permits its climber actions but rejects native interactive ambiguity', async () => {
     for (const html of ['<button>Native</button>', '<form></form>', '<input>']) {
         const dom = await fixture('ascent-ignored-report');
-        const cell = ascentReport(dom.window.document).cell;
+        const cell = ascentReport(dom.window.document)!.cell;
         cell.insertAdjacentHTML('beforeend', '<button data-bpb-climber-ui>Climber actions</button>');
         assert.ok(ascentReport(dom.window.document));
         cell.insertAdjacentHTML('beforeend', html);

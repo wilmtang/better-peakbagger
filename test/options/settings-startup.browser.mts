@@ -1,15 +1,16 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-helpers.mjs';
+import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-page.mts';
 
 registerCleanup();
 
 for (const scenario of ['external update', 'local save', 'first save failure']) {
     test(`Settings startup does not supersede ${scenario}`, async () => {
-        let release;
+        let release: (() => void) | undefined;
         const dom = await loadOptions({ theme: 'light', retainWaypoints: true }, {
             prepareChrome: chrome => {
                 let reads = 0;
@@ -17,7 +18,7 @@ for (const scenario of ['external update', 'local save', 'first save failure']) 
                 chrome.storage.sync.get = async key => {
                     const snapshot = await get(key);
                     // Two panel-theme bundle copies read before the Settings controller.
-                    if (++reads === 3) await new Promise(resolve => { release = resolve; });
+                    if (++reads === 3) await new Promise<void>(resolve => { release = resolve; });
                     return snapshot;
                 };
                 if (scenario === 'first save failure') {
@@ -36,7 +37,7 @@ for (const scenario of ['external update', 'local save', 'first save failure']) 
             el(dom, 'theme').dispatchEvent(new dom.window.Event('change'));
             if (scenario === 'local save') await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'dark');
         }
-        release();
+        release!();
         // A subsequent rejected save is a visible completion barrier and also
         // proves which confirmed snapshot the controller retained for rollback.
         if (scenario !== 'first save failure') {

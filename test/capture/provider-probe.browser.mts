@@ -1,9 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://www.strava.com
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { JSDOM, type TestWindow } from '../helpers/test-dom.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import type { TestWindow } from '../helpers/page-types.mts';
 
 // The built page bundle, evaluated in the activity page's realm as injected.
 const source = await fs.readFile(new URL('../../dist/provider-page.js', import.meta.url), 'utf8');
@@ -34,7 +36,7 @@ const streamOf = (text: string, chunkSize = 1024) => {
 };
 
 const capture = async (response: Record<string, unknown>) => {
-    const dom = new JSDOM(stravaPage, { url: 'https://www.strava.com/activities/123', runScripts: 'outside-only' });
+    const dom = new FixtureDom(stravaPage, { url: 'https://www.strava.com/activities/123' });
     const window = dom.window as unknown as ProviderWindow;
     (window as unknown as { eval(code: string): unknown }).eval(source);
     window.fetch = async () => response;
