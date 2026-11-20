@@ -21,7 +21,7 @@ interface FixtureMessage { type: string; patch?: Record<string, unknown>; [key: 
 interface GarminUiState { configured: boolean; enabled: boolean; pending: number; queued?: number; cid: string | null;
     items: GarminUiRow[]; history?: unknown[]; connectedDate?: string; checking?: boolean; error?: { code: string; message?: string } | null;
     peakbaggerBlocked?: { code: string } | null; manual?: boolean }
-interface GarminUiRow { id: string; owner: string; cid: string; phase: string; saved: unknown[]; summary: { date: string; type: string };
+interface GarminUiRow { id: string; owner: string; cid: string; phase: string; saved: unknown[]; summary: { date: string; type: string; name?: string; localStart?: string };
     analysis: { matches: { id: number; name: string; classification: string }[]; hasTimestamps?: boolean } | null; handoff?: unknown }
 interface GarminUiFixture { mode: string; checks: number; connects: number; accesses: number; opens: number; captures: number; statuses: number;
     closed?: number; state: GarminUiState; holdSettings?: boolean; readGate?: Promise<unknown>; releaseSettings?: (value?: unknown) => void;
@@ -76,6 +76,14 @@ try {
                 window.fixture.holdSettings = true;
                 window.fixture.readGate = new Promise(resolve => { window.fixture.releaseSettings = resolve; });
             }
+            // Several activities, listed out of order, in each state a row can show.
+            if (window.location.search.includes('list')) window.fixture.state.queued = 1;
+            if (window.location.search.includes('list')) window.fixture.state.items = [
+                { ...row, id: '201', phase: 'no-matches', analysis: null, summary: { date: '2026-11-02', localStart: '2026-11-02 07:30:00', type: 'mountaineering' } },
+                { ...row, id: '204', phase: 'waiting', analysis: null, summary: { date: '2026-11-04', localStart: '2026-11-04 06:15:00', type: 'hiking', name: 'Lake Serene and Bridal Veil Falls with a very long Garmin activity title' } },
+                { ...row, id: '203', summary: { date: '2026-11-03', localStart: '2026-11-03 14:10:00', type: 'hiking', name: 'Snohomish County Hiking' } },
+                { ...row, id: '202', handoff: true, summary: { date: '2026-11-02', localStart: '2026-11-02 13:00:00', type: 'mountaineering', name: 'Mount Pilchuck' } },
+            ];
             if (window.location.search.includes('queued')) {
                 row.analysis = null; row.phase = 'waiting';
                 window.fixture.state.queued = 1;
@@ -95,7 +103,11 @@ try {
                     window.fixture.opens++;
                     return new Promise(resolve => { window.fixture.finishOpen = resolve; });
                 }
-                if (message!.type === 'GARMIN_DISMISS') { window.fixture.state.items = []; window.fixture.state.history = [{ id: row.id, date: row.summary.date, dismissed: true, undoAvailable: true }]; }
+                if (message!.type === 'GARMIN_DISMISS') {
+                    const dismissed = window.fixture.state.items.find(item => item.id === message!.id)!;
+                    window.fixture.state.items = window.fixture.state.items.filter(item => item !== dismissed);
+                    window.fixture.state.history = [{ id: dismissed.id, date: dismissed.summary.date, dismissed: true, undoAvailable: true }];
+                }
                 if (message!.type === 'GARMIN_UNDO') { window.fixture.state.items = [row]; window.fixture.state.history = []; }
                 if (message!.type === 'GARMIN_OPEN_DRAFTS') { window.fixture.opens++; await new Promise(resolve => setTimeout(resolve, 350)); row.handoff = true; }
                 if (message!.type === 'GARMIN_CONNECT') { window.fixture.connects++; await new Promise(resolve => setTimeout(resolve, 350));
@@ -330,6 +342,54 @@ try {
             await page.locator('#inbox-status').filter({ hasText: 'asked us to wait' }).waitFor();
             stable(queuedGeometry, await geometry(['#inbox-check', 'h1', '#inbox-list', 'footer']));
             if (name === 'chromium') await page.screenshot({ path: path.join(output, `queued-${width}-${theme}.png`) });
+            // The list is newest first, one compact row per activity, with every
+            // row's Review in the same column whether or not it can be dismissed.
+            await page.goto(`${origin}/options/inbox.html?list`);
+            await page.locator('#inbox-list .garmin-activity').nth(3).waitFor();
+            await page.evaluate(value => window.fixture.setTheme(value), theme);
+            assert.deepEqual(await page.locator('#inbox-list .garmin-activity h2').allTextContents(),
+                ['Lake Serene and Bridal Veil Falls with a very long Garmin activity title', 'Snohomish County Hiking', 'Mount Pilchuck', 'Mountaineering']);
+            const rowBoxes = await page.locator('#inbox-list .garmin-activity').evaluateAll(rows => rows.map(row => {
+                const box = row.getBoundingClientRect(), review = row.querySelector('.garmin-activity-review')!.getBoundingClientRect();
+                const title = row.querySelector('h2')!.getBoundingClientRect();
+                return { height: box.height, reviewRight: review.right, reviewHeight: review.height, titleRight: title.right, right: box.right };
+            }));
+            // Desktop rows hold a title and one detail line beside their actions.
+            if (width > 550) assert(rowBoxes.slice(1).every(box => box.height <= 72), `${name} rows are not compact: ${JSON.stringify(rowBoxes)}`);
+            assert(rowBoxes.every(box => box.titleRight <= box.right && box.reviewRight <= box.right + 0.5), `${name} row content overflows`);
+            assert.equal(new Set(rowBoxes.map(box => Math.round(box.reviewRight))).size, 1, `${name} Review buttons are not aligned`);
+            assert(await page.locator('#inbox-list .garmin-activity-dismiss[data-unavailable]').evaluate(dismiss => getComputedStyle(dismiss).visibility === 'hidden'));
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `list-${width}-${theme}.png`) });
+            // Dismiss from the list by keyboard, before any peak check: the
+            // heading, Check now and status rows hold still; focus moves to the
+            // next activity's Review.
+            await page.evaluate(() => scrollTo(0, 0));
+            const listRows = ['.garmin-heading', '#inbox-check', '.garmin-feedback'];
+            const beforeListDismiss = await geometry(listRows);
+            await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-list .garmin-activity-dismiss')!.focus({ preventScroll: true }));
+            await page.keyboard.press('Enter');
+            await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 3);
+            await page.locator('#inbox-status').filter({ hasText: /^Lake Serene and Bridal Veil Falls with a very long Garmin activity title, .+ dismissed\.$/ }).waitFor();
+            assert(await page.locator('#inbox-undo').isVisible());
+            await page.waitForFunction(() => document.activeElement === document.querySelector('#inbox-list .garmin-activity-review'));
+            assert(await page.locator('#inbox-review').isHidden(), 'Dismiss from the list does not open the review');
+            stable(beforeListDismiss, await geometry(listRows));
+            if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `list-dismissed-${width}-${theme}.png`) });
+            // The history shares the grouped rows; its Undo must fit at every width.
+            await page.locator('#inbox-history summary').click();
+            await page.locator('#inbox-history-list .garmin-activity button').waitFor();
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            if (name === 'chromium') await page.locator('#inbox-history').screenshot({ path: path.join(output, `history-${width}-${theme}.png`) });
+            // At 200% zoom rows wrap without clipping or a horizontal scroll.
+            await page.evaluate(() => { document.documentElement.style.zoom = '2'; });
+            assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+            const clipped = await page.locator('#inbox-list .garmin-activity').evaluateAll(rows => rows.filter(row => row.scrollWidth > row.clientWidth + 1)
+                .map(row => ({ title: row.querySelector('h2')!.textContent, scroll: row.scrollWidth, client: row.clientWidth,
+                    parts: [...row.querySelectorAll('*')].map(el => [el.className || el.tagName, Math.round(el.getBoundingClientRect().right)]) })));
+            assert.deepEqual(clipped, [], `${name} rows overflow at 200%`);
+            if (name === 'chromium') await page.locator('#inbox-content .garmin-workspace').screenshot({ path: path.join(output, `list-${width}-${theme}-2x.png`) });
+            await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
             await page.goto(`${origin}/options/inbox.html`);
             await page.locator('.garmin-activity').waitFor();
             await page.evaluate(value => window.fixture.setTheme(value), theme);
@@ -349,7 +409,7 @@ try {
                 window.fixture.holdSettings = true;
                 window.fixture.readGate = new Promise(resolve => { window.fixture.releaseSettings = resolve; });
             });
-            await page.locator('.garmin-activity button').click();
+            await page.locator('.garmin-activity-review').click();
             const firstReview = await geometry(['#inbox-open', '#inbox-review-title', '#inbox-history', 'footer']);
             await page.evaluate(() => { window.fixture.holdSettings = false; window.fixture.releaseSettings!(); });
             await page.locator('#inbox-timestamp-row').waitFor();
@@ -376,7 +436,7 @@ try {
                 if (await page.locator('#inbox-review').isVisible()) await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-back')!.click());
                 await page.locator('#inbox-list .garmin-activity').waitFor();
                 const listIdle = await geometry(dismissSelectors);
-                await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-list .garmin-activity button')!.click());
+                await page.evaluate(() => document.querySelector<HTMLElement>('#inbox-list .garmin-activity-review')!.click());
                 await page.locator('#inbox-review').waitFor();
                 await page.evaluate(() => { const dismiss = document.querySelector<HTMLElement>('#inbox-dismiss')!; dismiss.focus({ preventScroll: true }); dismiss.click(); });
                 await page.waitForFunction(() => document.querySelectorAll('#inbox-list .garmin-activity').length === 0);
@@ -403,7 +463,7 @@ try {
                 stable(dismissed, await geometry(dismissSelectors));
             }
             await page.evaluate(() => { document.documentElement.style.zoom = '1'; });
-            await page.locator('#inbox-list .garmin-activity button').click();
+            await page.locator('#inbox-list .garmin-activity-review').click();
             const beforeUpdatedMatches = await geometry(['#inbox-refresh', '#inbox-open', '#inbox-history']);
             await page.evaluate(() => { window.fixture.state.items[0].analysis!.matches[0].name = 'Updated Mountain'; });
             await page.locator('#inbox-refresh').filter({ hasText: 'Review updated matches' }).waitFor();

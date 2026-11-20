@@ -26,14 +26,36 @@
 .garmin-workspace { max-width:900px; margin:48px auto; padding:0 24px; }
 .garmin-heading { display:flex; align-items:center; justify-content:space-between; gap:24px; }
 .garmin-heading p { color:var(--sub); }
-.garmin-activity { padding:22px; margin:16px 0; background:var(--card); border:1px solid var(--border); border-radius:10px; display:flex; align-items:center; justify-content:space-between; gap:18px; }
-.garmin-activity h2 { font-size:18px; margin:8px 0; }
-.garmin-activity p { color:var(--sub); font-size:13px; line-height:1.5; }
+/* Activities and history read as one grouped list: compact rows on a single
+   card, divided by hairlines, newest first. */
+.garmin-activity { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 16px; margin:0; padding:12px 16px;
+    background:var(--card); border:1px solid var(--border); border-top-width:0; }
+.garmin-activity:first-of-type { margin-top:8px; border-top-width:1px; border-radius:10px 10px 0 0; }
+.garmin-activity:last-of-type { border-radius:0 0 10px 10px; }
+.garmin-activity:only-of-type { border-radius:10px; }
+.garmin-activity p { margin:0; color:var(--sub); font-size:13px; line-height:1.45; }
+.garmin-activity-body { flex:1 1 min(240px, 100%); min-width:0; }
+.garmin-activity h2 { margin:0 0 2px; font-size:15px; font-weight:650; line-height:1.35; overflow-wrap:anywhere; }
+.garmin-activity-body p > span:empty { display:none; }
+.garmin-activity-body p > span:not(:empty) + .garmin-activity-status:not(:empty)::before { content:" · "; color:var(--sub); font-weight:400; }
+.garmin-activity-status [data-tone="strong"] { color:var(--strong); font-weight:600; }
+.garmin-activity-status [data-tone="probable"] { color:var(--probable); font-weight:600; }
+.garmin-activity-actions { display:flex; flex:0 1 auto; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:4px; max-width:100%; margin-left:auto; }
+.garmin-activity-dismiss { color:var(--sub); }
+.garmin-activity-dismiss:hover:not([aria-disabled="true"]) { color:var(--text); }
+/* Reserved, not shown: keeps Review aligned on rows that cannot be dismissed. */
+.garmin-activity-dismiss[data-unavailable] { visibility:hidden; height:0; min-height:0; padding-block:0; border-block-width:0; overflow:hidden; }
+#inbox-history-list .garmin-activity a { margin-left:auto; font-size:13px; }
+#inbox-list { margin-bottom:20px; }
+#inbox-review-title { margin-bottom:2px; }
+#inbox-review-detail { margin:0 0 8px; }
 .garmin-match { display:flex; gap:12px; align-items:start; padding:18px 0; border-bottom:1px solid var(--border); }
 .garmin-match span { display:block; font-size:13px; color:var(--sub); padding-top:5px; }
 .garmin-match input { margin-top:4px; }
 .garmin-inbox footer { color:var(--sub); font-size:13px; margin-top:36px; line-height:1.7; }
 .garmin-recovery-link { min-height:1.6em; line-height:1.6; margin:0 0 14px; }
+/* The inbox's recovery actions share one reserved line. */
+.garmin-recovery-links { display:flex; flex-wrap:wrap; column-gap:20px; }
 /* The in-page confirmation Settings and the drafts page use, for the two
    Garmin actions that cannot be undone. Shown on request, below its trigger. */
 .garmin-confirmation { display:flex; align-items:center; justify-content:space-between; gap:18px; margin-top:14px; padding:12px 18px;
@@ -43,4 +65,4 @@
 .garmin-confirmation-detail { margin:3px 0 0; font-size:12.5px; line-height:1.45; }
 .garmin-confirmation-actions { display:flex; flex:0 0 auto; align-items:center; gap:7px; }
 @media(max-width:550px) { .garmin-confirmation { flex-direction:column; align-items:stretch; gap:10px; } .garmin-confirmation-actions { justify-content:flex-end; } }
-@media(max-width:550px) { .garmin-workspace { margin:28px auto; padding:0 18px; } .garmin-heading,.garmin-activity { flex-direction:column; align-items:flex-start; } .garmin-heading { gap:12px; } .garmin-brand { padding:18px; } }
+@media(max-width:550px) { .garmin-workspace { margin:28px auto; padding:0 18px; } .garmin-heading { flex-direction:column; align-items:flex-start; } .garmin-heading { gap:12px; } .garmin-brand { padding:18px; } }

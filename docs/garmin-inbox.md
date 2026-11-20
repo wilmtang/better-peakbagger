@@ -72,6 +72,11 @@ are not prepared again.
 
 ## Review and recover
 
+- The inbox lists the newest activity first, under its Garmin title. Activities
+  without a title show their type.
+- **Dismiss** on any activity removes it from the inbox right away, even before
+  its peak check. Undo is available for one minute. Activities whose draft forms
+  are open are finished with **Mark activity done** instead.
 - Strong matches start selected. Review Probable matches before selecting them.
 - **Open selected drafts** opens Peakbagger forms. Verify each ascent and Save.
 - **Refresh from Garmin** keeps the existing snapshot while preparing new results.
@@ -79,8 +84,8 @@ are not prepared again.
 - Drafts do not expire in the inbox. The separate form handoff lasts 30 minutes.
   If its outcome is uncertain, review the existing forms and saved ascents before
   marking the activity done; the extension does not automatically replay it.
-- **Dismiss activity** offers Undo for one minute. **Mark activity done** removes
-  it from the inbox and prevents another import.
+- **Mark activity done** removes an activity from the inbox and prevents another
+  import.
 - If Garmin rejects a key, imports pause and drafts remain available. Use
   **Update key**. The error cannot reliably distinguish expiry from revocation.
 - Unsupported or damaged FIT recordings need Garmin’s GPX export. Legacy FIT

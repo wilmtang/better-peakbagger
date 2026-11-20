@@ -259,7 +259,7 @@ test('Inbox history offers Undo only while the worker does, and never leaves a d
         const undo = h.d.querySelector('#history-123 button'); assert(undo);
         undo.focus(); undo.click(); await tick();
         assert.equal(h.d.querySelector('#history-123 button'), null, 'a used Undo is removed');
-        assert.equal(h.d.activeElement.textContent, 'Review activity', 'focus moves to the restored activity');
+        assert.equal(h.d.activeElement.textContent, 'Review', 'focus moves to the restored activity');
         h.state.history[0] = { id: '123', dismissed: true, undoAvailable: true }; await h.refresh();
         h.d.querySelector('#history-123 button').focus();
         h.state.history[0].undoAvailable = false; await h.refresh();
@@ -270,6 +270,15 @@ test('Inbox history offers Undo only while the worker does, and never leaves a d
     } finally { h.dom.window.close(); }
 });
 
+// Activity times are Garmin's local wall clock, shown in the reader's locale
+// without the current year; build expectations the same way.
+const localDay = (date: string) => {
+    const moment = new Date(`${date}T00:00:00Z`);
+    return moment.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
+        ...(moment.getUTCFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+};
+const localTime = (time: string) => new Date(`2026-01-01T${time}:00Z`).toLocaleTimeString(undefined, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' });
+const dismissedHike = `Hike, ${localDay('2026-10-23')} dismissed.`;
 const dismissFromReview = async (h: Awaited<ReturnType<typeof auditInbox>>) => {
     h.d.querySelector('#inbox-list button').click();
     h.d.querySelector('#inbox-dismiss').focus(); h.d.querySelector('#inbox-dismiss').click(); await tick();
@@ -279,11 +288,11 @@ test('Dismiss is confirmed in the list status with an Undo that outlasts polling
     try {
         await dismissFromReview(h);
         const status = h.d.querySelector('#inbox-status'), undo = h.d.querySelector('#inbox-undo');
-        assert.equal(status.textContent, 'Hike · 2026-10-23 dismissed.');
+        assert.equal(status.textContent, dismissedHike);
         assert.equal(undo.hidden, false);
         assert.equal(h.d.activeElement.id, 'inbox-check', 'focus stays on a stable list action');
         await h.refresh(); await h.refresh();
-        assert.equal(status.textContent, 'Hike · 2026-10-23 dismissed.', 'polling does not overwrite the confirmation');
+        assert.equal(status.textContent, dismissedHike, 'polling does not overwrite the confirmation');
         assert.equal(undo.hidden, false);
         undo.focus(); undo.click(); await tick();
         assert.deepEqual(h.calls.filter((call: UiMessage) => call.type === 'GARMIN_UNDO').map((call: UiMessage) => call.id), ['123']);
@@ -313,13 +322,13 @@ test('Dismissing from a full inbox still confirms the dismissal with Undo', asyn
     try {
         assert.equal(h.d.querySelector('#inbox-status').textContent, full.message);
         await dismissFromReview(h);
-        assert.equal(h.d.querySelector('#inbox-status').textContent, 'Hike · 2026-10-23 dismissed.', 'an error already showing does not hide the confirmation');
+        assert.equal(h.d.querySelector('#inbox-status').textContent, dismissedHike, 'an error already showing does not hide the confirmation');
         assert.equal(h.d.querySelector('#inbox-undo').hidden, false);
         await h.refresh();
         assert.equal(h.d.querySelector('#inbox-undo').hidden, false, 'polling with the same error keeps the notice');
         h.state.error = null; await h.refresh();
         assert.equal(h.d.querySelector('#inbox-undo').hidden, false, 'the earlier error clearing does not retire the notice');
-        assert.equal(h.d.querySelector('#inbox-status').textContent, 'Hike · 2026-10-23 dismissed.');
+        assert.equal(h.d.querySelector('#inbox-status').textContent, dismissedHike);
     } finally { h.dom.window.close(); }
 });
 test('An expired dismissal Undo leaves the status row and returns focus to Check now', async () => {
@@ -366,4 +375,110 @@ test('Garmin Settings refreshes imported credentials and leaves cancelled deleti
         dom.window.document.querySelector('#garmin-delete').click(); await tick();
         assert.equal(status.textContent, before); assert.equal(deletes, 0);
     } finally { dom.window.close(); }
+});
+
+const listInbox = async (items: Reply[]) => {
+    const dom = fixtureDom(inboxHtml, { url: 'chrome-extension://test/options/inbox.html', runScripts: 'outside-only' });
+    const intervals: Callback[] = [], calls: UiMessage[] = [];
+    const state: { items: Reply[]; history: Reply[]; [key: string]: unknown } = { configured: true, enabled: true, cid: '456', items, history: [] };
+    (dom.window as { setInterval: unknown }).setInterval = (fn: Callback) => (intervals.push(fn), intervals.length);
+    Object.defineProperty(dom.window.document, 'hidden', { value: false });
+    dom.window.chrome = { runtime: { sendMessage: async (message: UiMessage) => {
+        calls.push(message);
+        if (message.type === 'GARMIN_DISMISS') {
+            const dismissed = state.items.find(item => item.id === message.id)!;
+            state.items = state.items.filter(item => item !== dismissed);
+            state.history = [{ id: message.id, dismissed: true, undoAvailable: true, date: (dismissed.summary as Reply).date }];
+        }
+        return { ok: true, ...structuredClone(state) };
+    } }, storage: { local: { get: async () => ({}) }, sync: { get: async () => ({}) }, onChanged: { addListener() {}, removeListener() {} } } };
+    dom.window.eval(inboxSource); await tick();
+    const d = dom.window.document;
+    const titles = () => [...d.querySelectorAll('#inbox-list .garmin-activity h2')].map(title => title.textContent);
+    return { dom, d, state, calls, titles, refresh: async () => { intervals[0](); await tick(); } };
+};
+const activity = (id: string, summary: Reply, extra: Reply = {}): Reply =>
+    ({ id, phase: 'no-matches', saved: [], analysis: null, summary: { type: 'mountaineering', ...summary }, ...extra });
+
+test('the inbox lists the newest activity first under its Garmin title', async () => {
+    const h = await listInbox([
+        activity('101', { date: '2026-11-02', localStart: '2026-11-02 07:30:00', name: 'Dawn patrol' }),
+        activity('103', { date: '2026-11-03', localStart: '2026-11-03 09:00:00' }),
+        activity('102', { date: '2026-11-02', localStart: '2026-11-02 14:10:00', name: 'Snohomish County Hiking' }, { phase: 'ready',
+            analysis: { matches: [{ id: 1, name: 'Peak A', classification: 'strong' }, { id: 2, name: 'Peak B', classification: 'probable' }] } }),
+        activity('99', { date: '2026-11-01' }),
+    ]);
+    try {
+        assert.deepEqual(h.titles(), ['Mountaineering', 'Snohomish County Hiking', 'Dawn patrol', 'Mountaineering']);
+        const row = h.d.querySelectorAll('#inbox-list .garmin-activity')[1];
+        assert.equal(row.querySelector('p > span').textContent, `Mountaineering · ${localDay('2026-11-02')}, ${localTime('14:10')}`, 'a titled row names its type and when');
+        assert.equal(row.querySelector('.garmin-activity-status').textContent, '1 Strong · 1 Probable');
+        assert.equal(row.querySelector('.garmin-activity-review').getAttribute('aria-label'), `Review Snohomish County Hiking, ${localDay('2026-11-02')}, ${localTime('14:10')}`,
+            'a repeated Garmin title is told apart by its time');
+        assert.doesNotMatch(h.d.querySelector('#inbox-list .garmin-activity p').textContent, /Mountaineering/, 'an untitled row does not repeat its type');
+        h.state.items.push(activity('104', { date: '2026-11-04', localStart: '2026-11-04 06:00:00', name: 'Newest' }));
+        await h.refresh();
+        assert.equal(h.titles().length, 4, 'a new arrival waits for the reader to accept it');
+        h.d.querySelector('#inbox-new').click(); await tick();
+        assert.equal(h.titles()[0], 'Newest', 'an accepted arrival takes its place at the top');
+        row.querySelector('.garmin-activity-review').click();
+        assert.equal(h.d.querySelector('#inbox-review-title').textContent, 'Snohomish County Hiking');
+        assert.equal(h.d.querySelector('#inbox-review-detail').textContent, `Mountaineering · ${localDay('2026-11-02')}, ${localTime('14:10')}`, 'the review says which activity it is');
+    } finally { h.dom.window.close(); }
+});
+
+test('an activity can be dismissed from the list before any peak check, with Undo', async () => {
+    const h = await listInbox([
+        activity('201', { date: '2026-11-03', localStart: '2026-11-03 10:00:00', name: 'Queued hike' }, { phase: 'waiting' }),
+        activity('200', { date: '2026-11-02', localStart: '2026-11-02 10:00:00', name: 'Older hike' }, { phase: 'waiting' }),
+    ]);
+    try {
+        const dismiss = h.d.querySelector('#inbox-list .garmin-activity-dismiss');
+        assert.equal(dismiss.getAttribute('aria-label'), `Dismiss Queued hike, ${localDay('2026-11-03')}, ${localTime('10:00')}`);
+        dismiss.focus(); dismiss.click(); await tick();
+        assert.deepEqual(h.calls.filter(call => call.type === 'GARMIN_DISMISS').map(call => call.id), ['201']);
+        assert.equal(h.d.querySelector('#inbox-review').hidden, true, 'Dismiss does not open the review');
+        assert.deepEqual(h.titles(), ['Older hike']);
+        assert.equal(h.d.querySelector('#inbox-status').textContent, `Queued hike, ${localDay('2026-11-03')}, ${localTime('10:00')} dismissed.`);
+        assert.equal(h.d.querySelector('#inbox-undo').hidden, false);
+        assert.equal(h.d.activeElement, h.d.querySelector('#inbox-list .garmin-activity-review'), 'focus moves to the next activity');
+    } finally { h.dom.window.close(); }
+});
+
+test('an activity whose draft forms are open keeps Review aligned and offers no Dismiss', async () => {
+    const h = await listInbox([activity('301', { date: '2026-11-03', name: 'Opened' }, { phase: 'ready', handoff: true,
+        analysis: { matches: [{ id: 1, name: 'Peak A', classification: 'strong' }] } })]);
+    try {
+        const dismiss = h.d.querySelector('#inbox-list .garmin-activity-dismiss');
+        assert.equal(dismiss.hasAttribute('data-unavailable'), true);
+        assert.equal(h.d.querySelector('#inbox-list .garmin-activity-status').textContent, 'Draft forms opened');
+        dismiss.click(); await tick();
+        assert.equal(h.calls.some(call => call.type === 'GARMIN_DISMISS'), false);
+    } finally { h.dom.window.close(); }
+});
+
+test('focus after a list Dismiss follows the rows as shown, not as they arrived', async () => {
+    const h = await listInbox([activity('400', { date: '2026-11-01', localStart: '2026-11-01 09:00:00', name: 'Oldest' }),
+        activity('401', { date: '2026-11-02', localStart: '2026-11-02 09:00:00', name: 'Middle' })]);
+    try {
+        h.state.items.push(activity('402', { date: '2026-11-03', localStart: '2026-11-03 09:00:00', name: 'Arrived last' }));
+        await h.refresh(); h.d.querySelector('#inbox-new').click(); await tick();
+        assert.deepEqual(h.titles(), ['Arrived last', 'Middle', 'Oldest']);
+        const dismiss = h.d.querySelector('#inbox-list .garmin-activity-dismiss');
+        dismiss.focus(); dismiss.click(); await tick();
+        assert.deepEqual(h.titles(), ['Middle', 'Oldest']);
+        assert.equal(h.d.activeElement.closest('.garmin-activity')?.querySelector('h2').textContent, 'Middle', 'focus moves to the row now on top');
+    } finally { h.dom.window.close(); }
+});
+
+test('the row summary names off-track matches as the review does, and history lists the newest first', async () => {
+    const h = await listInbox([activity('500', { date: '2026-11-01', name: 'Brushed a summit' }, { phase: 'ready',
+        analysis: { matches: [{ id: 1, name: 'Peak A', classification: 'possible' }, { id: 2, name: 'Peak B', classification: 'weak' }] } })]);
+    try {
+        assert.equal(h.d.querySelector('#inbox-list .garmin-activity-status').textContent, '2 Off track');
+        h.state.history = [{ id: '10', complete: true, date: '2026-10-01' }, { id: '11', dismissed: true, date: '2026-10-05' }];
+        await h.refresh();
+        assert.deepEqual([...h.d.querySelectorAll('#inbox-history-list > div')].map(row => row.id), ['history-11', 'history-10']);
+        assert.equal(h.d.querySelector('#history-11 p').textContent, `${localDay('2026-10-05')} · Dismissed`);
+    } finally { h.dom.window.close(); }
 });

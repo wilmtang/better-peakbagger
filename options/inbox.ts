@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { settings as Settings } from '../src/settings/settings.js';
 import { matchReading } from '../src/capture/match-reading.ts';
+import { CLASSIFICATIONS, matchLabel, matchTone } from '../src/capture/match-confidence.js';
 import { garminActivityLabel, positiveId } from '../src/garmin/garmin-api.ts';
 
 interface InboxMatch { id: number; name: string; classification: string; confidence?: number }
 interface InboxItem {
     id: string; phase: string; saved: string[]; error?: string | null; handoff?: boolean;
-    summary: { type: string; date: string };
+    summary: { type: string; date: string; name?: string; localStart?: string };
     analysis: { matches: InboxMatch[]; hasTimestamps?: boolean } | null;
 }
 interface InboxReceipt { id: string; complete?: boolean; dismissed?: boolean; date?: string; undoAvailable?: boolean }
@@ -35,7 +36,48 @@ let statusError = false, preferences: InboxPreferences | null = null, reviewStat
 // undoable from history until it expires.
 let dismissal: { id: string; text: string; error: string } | null = null;
 const errorSignature = () => JSON.stringify([current?.error?.code || null, current?.error?.message || null]);
-const activityName = (item: InboxItem) => `${garminActivityLabel(item.summary.type)} · ${item.summary.date}`;
+// Garmin's own title names the activity; items without one fall back to its type.
+const activityTitle = (item: InboxItem) => item.summary.name || garminActivityLabel(item.summary.type);
+// Garmin dates are the activity's local wall clock, so format them as UTC to keep the day and time unchanged.
+const formatWhen = (date: string, time = '') => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return '';
+    const moment = new Date(`${date}T${/^\d{2}:\d{2}$/.test(time) ? time : '00:00'}:00Z`);
+    if (Number.isNaN(moment.getTime())) return date;
+    const day = moment.toLocaleDateString(undefined, { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
+        ...(moment.getUTCFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+    return /^\d{2}:\d{2}$/.test(time) ? `${day}, ${moment.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' })}` : day;
+};
+const activityWhen = (item: InboxItem) => formatWhen(item.summary.date, (item.summary.localStart || '').slice(11, 16));
+// Garmin's default titles repeat (place + sport), so wherever the activity is
+// named without its row — status line, accessible names — its time goes with it.
+const activityName = (item: InboxItem) => [activityTitle(item), activityWhen(item)].filter(Boolean).join(', ');
+// The detail line: the type (when a title stands in for it) and when.
+const activityDetail = (item: InboxItem) => {
+    const type = garminActivityLabel(item.summary.type);
+    return [item.summary.name && type !== item.summary.name ? type : '', activityWhen(item)].filter(Boolean).join(' · ');
+};
+// The row's outcome as labelled parts; match counts carry their Strong/Probable tone.
+// Names and tones come from match-confidence, so the row agrees with the review.
+const activityStatus = (item: InboxItem): { text: string; tone?: string }[] => {
+    if (item.handoff) return [{ text: 'Draft forms opened' }];
+    const counts = new Map<string, { text: string; tone: string; count: number }>();
+    for (const classification of CLASSIFICATIONS) for (const match of item.analysis?.matches || []) if (match.classification === classification) {
+        const label = matchLabel(classification), part = counts.get(label) || { text: label, tone: matchTone(classification), count: 0 };
+        part.count++; counts.set(label, part);
+    }
+    if (counts.size) return [...counts.values()].map(({ text, tone, count }) => ({ text: `${count} ${text}`, tone }));
+    return [{ text: item.analysis || item.phase === 'no-matches' ? 'No matching summits' : item.phase === 'no-gps' ? 'No usable GPS route'
+        : item.error || 'Waiting for peak check' }];
+};
+// Newest activity first: Garmin's local start, then its date, then the larger (later) activity ID.
+const startKey = (item: InboxItem) => (item.summary.localStart || item.summary.date || '').replace('T', ' ');
+// ISO keys and same-width IDs compare exactly as strings. Local start matches the
+// times shown, even if activities were recorded in different time zones.
+const descending = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
+const newestFirst = (a: InboxItem, b: InboxItem) => descending(startKey(a), startKey(b))
+    || b.id.length - a.id.length || descending(a.id, b.id);
+// Writes only changed text, so polling keeps a selection or screen-reader position.
+const setText = (element: Element, text: string) => { if (element.textContent !== text) element.textContent = text; };
 const reviewMessage = (item: InboxItem) => item.handoff ? 'Draft forms were opened. Review their saved state before continuing.'
     : item.analysis ? 'Strong matches are selected. Review any Probable matches before opening drafts.'
         : item.error || (item.phase === 'no-gps' ? 'No usable GPS route.' : item.phase === 'no-matches' ? 'No matching summits.'
@@ -72,7 +114,8 @@ function showReview(id: string, focus = true) {
     hideDoneConfirmation(false);
     $('#inbox-timestamp-row').hidden = !preferences?.removeGpxTimestamps || !review.analysis?.hasTimestamps;
     $('#inbox-list').hidden = true; $('#inbox-review').hidden = false;
-    $('#inbox-review-title').textContent = activityName(review);
+    $('#inbox-review-title').textContent = activityTitle(review);
+    $('#inbox-review-detail').textContent = activityDetail(review);
     $('#inbox-matches').replaceChildren();
     for (const match of review.analysis?.matches || []) {
         const label = document.createElement('label'); label.className = 'garmin-match';
@@ -125,25 +168,63 @@ const removeControl = (control: HTMLElement) => {
     if (control.id === 'inbox-undo') control.hidden = true; else control.remove();
     if (focused) $('#inbox-check').focus();
 };
+// Dismiss from the list: the dismissal is stated in the status line with its
+// one-minute Undo, so it needs no confirmation and never opens the review.
+const dismissFromList = (button: HTMLElement, item: InboxItem) => busyAction(button, $('#inbox-status'), async () => {
+    // Focus follows the screen: the row below, else the row above.
+    const row = rows.get(item.id), focused = document.activeElement === button;
+    const sibling = (element: Element | null | undefined, step: 'nextElementSibling' | 'previousElementSibling') =>
+        element?.[step]?.classList.contains('garmin-activity') ? element[step] : null;
+    const next = sibling(row, 'nextElementSibling') || sibling(row, 'previousElementSibling');
+    await send({ type: 'GARMIN_DISMISS', id: item.id });
+    dismissal = { id: item.id, text: `${activityName(item)} dismissed.`, error: errorSignature() }; statusError = false;
+    await refresh();
+    if (focused && !button.isConnected) ((next?.isConnected && next.querySelector<HTMLElement>('.garmin-activity-review')) || $('#inbox-check')).focus();
+});
 function paintList() {
-    const pending = [...items.values()].filter(item => accepted.has(item.id));
+    const pending = [...items.values()].filter(item => accepted.has(item.id)).sort(newestFirst);
     for (const [id, element] of rows) if (!items.has(id)) { element.remove(); rows.delete(id); }
-    for (const item of pending) {
+    const list = $('#inbox-list'), focused = document.activeElement as HTMLElement | null;
+    pending.forEach((item, index) => {
         let element = rows.get(item.id);
         if (!element) {
             element = document.createElement('article'); element.className = 'garmin-activity';
-            const body = document.createElement('div'), date = document.createElement('p'), title = document.createElement('h2'), status = document.createElement('p');
-            body.append(date, title, status); const button = document.createElement('button'); button.className = 'panel-button secondary'; button.textContent = 'Review activity';
-            button.addEventListener('click', () => showReview(item.id)); element.append(body, button); rows.set(item.id, element); $('#inbox-list').append(element);
+            const body = document.createElement('div'); body.className = 'garmin-activity-body';
+            const title = document.createElement('h2'), meta = document.createElement('p');
+            const when = document.createElement('span'), status = document.createElement('span'); status.className = 'garmin-activity-status';
+            meta.append(when, status); body.append(title, meta);
+            const actions = document.createElement('div'); actions.className = 'garmin-activity-actions';
+            const reviewButton = document.createElement('button'); reviewButton.type = 'button'; reviewButton.className = 'panel-button secondary garmin-activity-review'; reviewButton.textContent = 'Review';
+            reviewButton.addEventListener('click', () => showReview(item.id));
+            const dismissButton = document.createElement('button'); dismissButton.type = 'button'; dismissButton.className = 'panel-button quiet garmin-activity-dismiss'; dismissButton.textContent = 'Dismiss';
+            dismissButton.addEventListener('click', () => { const live = items.get(item.id); if (live && !live.handoff) void dismissFromList(dismissButton, live); });
+            actions.append(reviewButton, dismissButton); element.append(body, actions); rows.set(item.id, element);
         }
-        element.querySelector('p')!.textContent = item.summary.date;
-        element.querySelector('h2')!.textContent = garminActivityLabel(item.summary.type);
-        element.querySelectorAll('p')[1].textContent = item.analysis
-            ? `${item.analysis.matches.filter(match => match.classification === 'strong').length} Strong · ${item.analysis.matches.filter(match => match.classification === 'probable').length} Probable`
-            : item.phase === 'no-matches' ? 'No matching summits' : item.phase === 'no-gps' ? 'No usable GPS route' : item.error || 'Queued for peak checks — visit Peakbagger to resume.';
-    }
+        const status = activityStatus(item), name = activityName(item);
+        setText(element.querySelector('h2')!, activityTitle(item));
+        setText(element.querySelector('p > span')!, activityDetail(item));
+        const statusLine = element.querySelector<HTMLElement>('.garmin-activity-status')!, signature = JSON.stringify(status);
+        if (statusLine.dataset.signature !== signature) {
+            statusLine.dataset.signature = signature;
+            statusLine.replaceChildren(...status.flatMap((part, position) => {
+                const label = document.createElement('span'); label.textContent = part.text; if (part.tone) label.dataset.tone = part.tone;
+                return position ? [' · ', label] : [label];
+            }));
+        }
+        // Visible text first, then the time that tells repeated titles apart.
+        element.querySelector('.garmin-activity-review')!.setAttribute('aria-label', `Review ${name}`);
+        const dismissButton = element.querySelector<HTMLElement>('.garmin-activity-dismiss')!;
+        dismissButton.setAttribute('aria-label', `Dismiss ${name}`);
+        // Opened draft forms cannot be dismissed (Mark done in the review finishes
+        // them). The slot stays reserved so every row's Review lines up.
+        if (item.handoff && document.activeElement === dismissButton) element.querySelector<HTMLElement>('.garmin-activity-review')!.focus();
+        dismissButton.toggleAttribute('data-unavailable', !!item.handoff);
+        // Place each row in newest-first order, moving only rows that are out of place.
+        if (list.children[index] !== element) list.insertBefore(element, list.children[index] || null);
+    });
+    if (focused && !list.contains(document.activeElement) && list.contains(focused)) focused.focus({ preventScroll: true });
     if (!pending.length && !document.querySelector('#inbox-empty')) {
-        const empty = document.createElement('p'); empty.id = 'inbox-empty'; empty.textContent = current?.configured ? 'No activities need review. Check now to look for activities.' : 'Connect Garmin in Settings to import your activities.'; $('#inbox-list').append(empty);
+        const empty = document.createElement('p'); empty.id = 'inbox-empty'; empty.textContent = current?.configured ? 'No activities need review. Check now to look for activities.' : 'Connect Garmin in Settings to import your activities.'; list.append(empty);
     } else if (pending.length) document.querySelector('#inbox-empty')?.remove();
 }
 async function refresh(initial = false) {
@@ -162,7 +243,7 @@ async function refresh(initial = false) {
             const link = document.createElement('a'); link.textContent = 'View in Garmin'; link.target = '_blank'; link.rel = 'noopener noreferrer';
             if (positiveId(receipt.id)) link.href = `https://connect.garmin.com/app/activity/${receipt.id}`;
             row.append(link);
-            $('#inbox-history-list').append(row);
+            $('#inbox-history-list').prepend(row);
         }
         // Undo exists only while the worker offers it; an expired one is removed,
         // not left behind as a dead control.
@@ -171,8 +252,15 @@ async function refresh(initial = false) {
         if (offered && !existing) { const undo = document.createElement('button'); undo.className = 'panel-button secondary'; undo.textContent = 'Undo';
             undo.addEventListener('click', () => void undoDismissal(undo, receipt.id)); row.append(undo); }
         if (!offered && existing && existing.getAttribute('aria-busy') !== 'true') removeControl(existing);
-        row.querySelector('p')!.textContent = `${receipt.date ? `${receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`;
+        setText(row.querySelector('p')!, `${receipt.date ? `${formatWhen(receipt.date) || receipt.date} · ` : ''}${receipt.dismissed ? 'Dismissed' : receipt.complete ? 'Completed' : 'Draft review in progress'}`);
     }
+    // History arrives oldest first; show the most recent at the top, moving only rows out of place.
+    const historyList = $('#inbox-history-list'), historyFocus = document.activeElement as HTMLElement | null;
+    [...history].reverse().forEach((receipt, index) => {
+        const row = document.getElementById(`history-${receipt.id}`)!;
+        if (historyList.children[index] !== row) historyList.insertBefore(row, historyList.children[index] || null);
+    });
+    if (historyFocus && historyList.contains(historyFocus) && document.activeElement !== historyFocus) historyFocus.focus({ preventScroll: true });
     for (const row of document.querySelectorAll('#inbox-history-list>div')) if (!history.some(receipt => row.id === `history-${receipt.id}`)) row.remove();
     // A Garmin error that arrives after the dismissal outranks the notice; that
     // dismissal stays undoable from history. An error already showing (a full
