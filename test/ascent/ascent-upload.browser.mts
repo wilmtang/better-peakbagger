@@ -5,7 +5,7 @@
 // fixture through the built content bundle: date autofill, the native-Preview
 // → ✦ Process swap (user-initiated file picks only), busy states, and the
 // GPX_PROCESS_START/APPLY messaging. The worker side of the pipeline lives in
-// background-gpx-process.test.mjs.
+// background-gpx-process.test.mts.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -3,279 +3,34 @@
 //
 // The local-file GPX processing pipeline in the background worker
 // (GPX_PROCESS_START / GPX_PROCESS_APPLY): capture-shaped jobs, fail-closed
-// gates, current-tab draft delivery, and — at the end — a full jsdom
-// end-to-end pass wiring the real ascentedit fixture page (built content
-// bundle) to the real built worker.
+// gates and current-tab draft delivery. The end-to-end page pass lives in
+// background-gpx-process.browser.mts.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
-import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
 import { MAX_GPX_TRACK_POINTS } from '../../src/capture/capture-resource-limits.ts';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
+import {
+    createHarness as createWorkerHarness, SEGMENTS, uploadSelection, storedCaptureGpx,
+    type DraftTab, type WorkerGlobals,
+} from '../helpers/gpx-process-harness.mts';
 
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
-const PAGE_URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77';
-const SENDER = { tab: { id: 5, windowId: 9 }, url: PAGE_URL };
-
-const SEGMENTS = [[
-    { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0), invalidTime: false },
-    { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0), invalidTime: false },
-    { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0), invalidTime: false }
-]];
-const uploadSelection = generation => ({
-    pageSessionId: 'explicit-page-session',
-    selectionGeneration: generation,
-    selectionNonce: `selection-${generation}-nonce`,
-});
-
-const createHarness = ({ peakXml = null, settings = {}, failPeakFetch = false, beforePeakFetch = null,
-    syncGetError = null, beforeSyncGet = null, setTimeoutImpl = setTimeout, faults = {},
-    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>', loginFailure = null,
-    sessionInitial = {} } = {}) => {
-    const values = structuredClone(sessionInitial);
-    const localValues = {};
-    const syncValues = { bpbSettings: structuredClone(settings) };
-    const tabs = new Map([[5, { id: 5, windowId: 9, url: PAGE_URL, active: true }]]);
-    let nextTabId = 100;
-    const tabMessages = [];
-    const fetchCalls = [];
-    const grouped = [];
-    const groupUpdates = [];
-    const navigations = [];
-    const removedTabs = [];
-    const runtimeMessages = [];
-    const workerFetchCalls = [];
-    const peakbaggerPageInjected = new Set();
-    const peakbaggerPageRequests = new Map();
-    let syncGetCalls = 0;
-    let tabCreateCalls = 0;
-    let tabNavigationCalls = 0;
-    const checkSessionWrite = createCaptureWriteFaults(faults);
-    const sessionSetPatches = [];
-
-    const browser = {
-        storage: {
-            session: {
-                get: async key => key === null
-                    ? structuredClone(values)
-                    : { [key]: structuredClone(values[key]) },
-                set: async patch => {
-                    checkSessionWrite(patch);
-                    sessionSetPatches.push(structuredClone(patch));
-                    Object.assign(values, structuredClone(patch));
-                },
-                remove: async keys => {
-                    (Array.isArray(keys) ? keys : [keys]).forEach(key => { delete values[key]; });
-                },
-            },
-            sync: {
-                get: async key => {
-                    syncGetCalls++;
-                    if (beforeSyncGet) await beforeSyncGet(syncGetCalls);
-                    if (syncGetError) throw new Error(syncGetError);
-                    return { [key]: structuredClone(syncValues[key]) };
-                },
-                set: async patch => Object.assign(syncValues, structuredClone(patch))
-            },
-            local: {
-                get: async key => ({ [key]: structuredClone(localValues[key]) }),
-                set: async patch => Object.assign(localValues, structuredClone(patch))
-            },
-            onChanged: { addListener: () => {} }
-        },
-        runtime: {
-            id: 'test-extension',
-            getURL: path => `chrome-extension://test-extension/${path}`,
-            onMessage: { listeners: [], addListener(listener) { this.listeners.push(listener); } },
-        },
-        scripting: {
-            executeScript: async details => {
-                if (details.files) {
-                    if (details.files.includes('peakbagger-page.js')) {
-                        peakbaggerPageInjected.add(details.target.tabId);
-                    }
-                    return [];
-                }
-                const functionSource = String(details.func);
-                if (functionSource.includes('BPBPeakbaggerPage?.version')) {
-                    return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
-                }
-                if (functionSource.includes('BPBPeakbaggerPage?.cancel')) {
-                    const requestId = details.args?.[0];
-                    const controller = peakbaggerPageRequests.get(requestId);
-                    controller?.abort();
-                    return [{ result: !!controller }];
-                }
-                if (functionSource.includes('api.request')
-                    && functionSource.includes('bridge')
-                    && functionSource.includes('missing')) {
-                    if (!peakbaggerPageInjected.has(details.target.tabId)) {
-                        return [{ result: { bridge: 'missing' } }];
-                    }
-                    const [, requestId, url, kind] = details.args;
-                    const controller = new AbortController();
-                    peakbaggerPageRequests.set(requestId, controller);
-                    const value = await requestPeakbaggerPage(url, { kind, signal: controller.signal });
-                    peakbaggerPageRequests.delete(requestId);
-                    return [{ result: { bridge: 'result', value } }];
-                }
-                return [];
-            },
-        },
-        action: {
-            setBadgeBackgroundColor: async () => {},
-            setBadgeText: async () => {}
-        },
-        tabs: {
-            get: async tabId => structuredClone(tabs.get(tabId)),
-            create: async details => {
-                tabCreateCalls++;
-                if (faults.tabCreateAt === tabCreateCalls) {
-                    const message = faults.tabCreateAtMessage || `tab create ${tabCreateCalls} failed`;
-                    faults.tabCreateAt = null;
-                    throw new Error(message);
-                }
-                const tab = { id: nextTabId++, windowId: details.windowId, url: details.url, active: details.active, status: 'complete' };
-                tabs.set(tab.id, tab);
-                return structuredClone(tab);
-            },
-            remove: async tabId => {
-                removedTabs.push(tabId);
-                tabs.delete(tabId);
-            },
-            update: async (tabId, patch) => {
-                if (patch.url) {
-                    tabNavigationCalls++;
-                    if (faults.tabNavigateAt === tabNavigationCalls) {
-                        const message = faults.tabNavigateAtMessage || `tab navigation ${tabNavigationCalls} failed`;
-                        faults.tabNavigateAt = null;
-                        throw new Error(message);
-                    }
-                    // Pin the invariant that a draft is registered before its
-                    // tab's URL ever changes.
-                    navigations.push({
-                        tabId,
-                        url: patch.url,
-                        draftRegistered: !!(values.bpbDraftTabs || {})[String(tabId)]
-                    });
-                }
-                Object.assign(tabs.get(tabId), patch);
-                return structuredClone(tabs.get(tabId));
-            },
-            sendMessage: async (tabId, message) => { tabMessages.push({ tabId, message: structuredClone(message) }); return true; },
-            onRemoved: { addListener: () => {} },
-            onUpdated: { addListener: () => {}, removeListener: () => {} }
-        },
-        tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
-        alarms: { create: () => {}, onAlarm: { addListener: () => {} } }
-    };
-
-    const requestPeakbaggerPage = async (url, { kind, signal }) => {
-        const value = String(url);
-        fetchCalls.push(value);
-        const cancelled = () => ({
-            kind: 'transient', requestedUrl: value, url: value, status: 0, redirected: false,
-            error: { source: 'peakbagger', code: 'cancelled', resource: kind },
-        });
-        try {
-            if (value.includes('/Default.aspx')) {
-                if (loginFailure) {
-                    return {
-                        kind: loginFailure === 'cloudflare' ? 'challenged' : 'transient',
-                        requestedUrl: value,
-                        url: value,
-                        status: loginFailure === 'cloudflare' ? 403 : 0,
-                        redirected: false,
-                        error: { source: 'peakbagger', code: loginFailure, resource: kind },
-                    };
-                }
-                return {
-                    kind: 'ok', requestedUrl: value, url: value, status: 200, redirected: false,
-                    text: loginHtml,
-                };
-            }
-            if (!value.includes('/Async/pllbb2.aspx')) throw new Error(`Unexpected page request: ${value}`);
-            if (beforePeakFetch) {
-                const pending = beforePeakFetch({
-                    options: { signal },
-                    number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length,
-                });
-                if (pending) {
-                    await Promise.race([
-                        pending,
-                        new Promise(resolve => signal.addEventListener('abort', resolve, { once: true })),
-                    ]);
-                }
-            }
-            if (signal.aborted) return cancelled();
-            if (failPeakFetch) throw new Error('network unreachable');
-            return {
-                kind: 'ok', requestedUrl: value, url: value, status: 200, redirected: false,
-                text: peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
-            };
-        } catch (_error) {
-            if (signal.aborted) return cancelled();
-            return {
-                kind: 'transient', requestedUrl: value, url: value, status: 0, redirected: false,
-                error: { source: 'peakbagger', code: 'network', resource: kind },
-            };
-        }
-    };
-
-    const fetch = async url => {
-        const value = String(url);
-        workerFetchCalls.push(value);
-        throw new Error(`Unexpected worker fetch: ${value}`);
-    };
-
-    browser.tabs.group = async details => { grouped.push(structuredClone(details)); return 3; };
-
+// The worker runs with only the globals a service worker has, so a route
+// that reaches for document, DOMParser or storage APIs fails here.
+const runWorker = (globals: WorkerGlobals) => {
     const context = vm.createContext({
-        browser, fetch, URL, URLSearchParams, Math, Date, console, structuredClone, btoa,
-        AbortController, TextEncoder, TextDecoder, setTimeout: setTimeoutImpl, clearTimeout,
+        ...globals, URL, URLSearchParams, Math, Date, console, structuredClone, btoa,
+        AbortController, TextEncoder, TextDecoder, clearTimeout,
     });
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
-    const listener = browser.runtime.onMessage.listeners[0];
-    const rawSend = (message, sender = SENDER) => new Promise(resolve => {
-        runtimeMessages.push(structuredClone(message));
-        assert.equal(listener(message, { id: 'test-extension',
-            ...(sender.tab ? { frameId: 0, documentId: `gpx-document-${sender.tab.id}` } : {}),
-            ...sender }, resolve), true);
-    });
-    let selectionGeneration = 0;
-    let currentSelection = null;
-    const send = async (message, sender = SENDER) => {
-        let routed = message;
-        if (message?.type === 'GPX_PROCESS_START' && !message.pageSessionId) {
-            currentSelection = {
-                pageSessionId: 'test-page-session',
-                selectionGeneration: ++selectionGeneration,
-                selectionNonce: `selection-${selectionGeneration}-nonce`,
-            };
-            await rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...currentSelection }, sender);
-            routed = { ...message, ...currentSelection };
-        } else if (message?.type === 'GPX_PROCESS_APPLY' && !message.pageSessionId && currentSelection) {
-            routed = { ...message, ...currentSelection };
-        }
-        return rawSend(routed, sender);
-    };
-    return {
-        send, rawSend, values, tabs, tabMessages, fetchCalls, workerFetchCalls,
-        grouped, groupUpdates, navigations, removedTabs,
-        runtimeMessages, sessionSetPatches,
-        syncGetCalls: () => syncGetCalls, faults,
-    };
 };
-
-const storedCaptureGpx = (harness, tabId = 5) => {
-    const job = harness.values.bpbCaptureJobs?.[String(tabId)];
-    return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
-};
+const createHarness = (options: Omit<Parameters<typeof createWorkerHarness>[0], 'runWorker'> = {}) =>
+    createWorkerHarness({ ...options, runWorker });
 
 test('a processed upload produces a capture-shaped job and delivers the current-tab draft', async () => {
     const harness = createHarness();
@@ -305,7 +60,7 @@ test('a processed upload produces a capture-shaped job and delivers the current-
     assert.equal(job.boundPid, 7);
     assert.equal(job.cid, '77');
     assert.equal(job.uploadGpx, undefined, 'job metadata must not embed the immutable GPX');
-    assert.match(storedCaptureGpx(harness), /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.match(storedCaptureGpx(harness) ?? '', /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
     assert.ok(job.expiresAt > Date.now(), 'the job carries the 30-minute TTL');
     assert.ok(Array.isArray(job.dayStats));
 
@@ -498,9 +253,9 @@ test('the worker rejects point and corridor limits before issuing summit request
 });
 
 test('re-processing aborts an older local corridor lookup without mutating the replacement', async () => {
-    let firstSignal;
-    let reached;
-    const firstReached = new Promise(resolve => { reached = resolve; });
+    let firstSignal: AbortSignal | undefined;
+    let reached!: () => void;
+    const firstReached = new Promise<void>(resolve => { reached = resolve; });
     const harness = createHarness({
         beforePeakFetch: ({ number, options }) => {
             if (number !== 1) return undefined;
@@ -518,7 +273,7 @@ test('re-processing aborts an older local corridor lookup without mutating the r
     const replacement = await harness.send(message);
     const abandoned = await first;
 
-    assert.equal(firstSignal.aborted, true);
+    assert.equal(firstSignal!.aborted, true);
     assert.equal(abandoned.error.code, 'capture-cancelled');
     assert.equal(replacement.phase, 'ready');
     assert.equal(harness.values.bpbCaptureJobs['5'].id, replacement.jobId);
@@ -526,14 +281,14 @@ test('re-processing aborts an older local corridor lookup without mutating the r
 });
 
 test('selection invalidation supersedes a start still waiting for capture settings', async () => {
-    let releaseSettings;
-    let reachedSettings;
-    const settingsReached = new Promise(resolve => { reachedSettings = resolve; });
+    let releaseSettings: (() => void) | undefined;
+    let reachedSettings!: () => void;
+    const settingsReached = new Promise<void>(resolve => { reachedSettings = resolve; });
     const harness = createHarness({
         beforeSyncGet: calls => {
             if (calls !== 1) return undefined;
             reachedSettings();
-            return new Promise(resolve => { releaseSettings = resolve; });
+            return new Promise<void>(resolve => { releaseSettings = resolve; });
         },
     });
     const firstSelection = uploadSelection(1);
@@ -553,7 +308,7 @@ test('selection invalidation supersedes a start still waiting for capture settin
     assert.equal((await harness.rawSend({
         type: 'GPX_PROCESS_INVALIDATE', ...secondSelection,
     })).ok, true);
-    releaseSettings();
+    releaseSettings!();
 
     const abandoned = await first;
     assert.equal(abandoned.error.code, 'superseded');
@@ -563,9 +318,9 @@ test('selection invalidation supersedes a start still waiting for capture settin
 });
 
 test('selection invalidation aborts an A corridor lookup without requiring B processing', async () => {
-    let firstSignal;
-    let reached;
-    const firstReached = new Promise(resolve => { reached = resolve; });
+    let firstSignal: AbortSignal | undefined;
+    let reached!: () => void;
+    const firstReached = new Promise<void>(resolve => { reached = resolve; });
     const harness = createHarness({
         beforePeakFetch: ({ options }) => {
             firstSignal = options.signal;
@@ -587,7 +342,7 @@ test('selection invalidation aborts an A corridor lookup without requiring B pro
     await harness.rawSend({ type: 'GPX_PROCESS_INVALIDATE', ...uploadSelection(2) });
     const abandoned = await first;
 
-    assert.equal(firstSignal.aborted, true);
+    assert.equal(firstSignal!.aborted, true);
     assert.equal(abandoned.error.code, 'capture-cancelled');
     assert.equal(harness.values.bpbCaptureJobs['5'].phase, 'selection');
     assert.equal(harness.values.bpbCaptureJobs['5'].selectionNonce,
@@ -680,8 +435,8 @@ test('B selection invalidates A ready and apply generations before any draft ope
 });
 
 test('the one total corridor deadline aborts a stalled body and reports actionable timeout copy', async () => {
-    let signal;
-    let expire;
+    let signal: AbortSignal | undefined;
+    let expire!: () => void;
     const harness = createHarness({
         setTimeoutImpl: (callback, delay, ...args) => {
             if (delay === 60_000) {
@@ -704,7 +459,7 @@ test('the one total corridor deadline aborts a stalled body and reports actionab
     assert.equal(result.phase, 'error');
     assert.equal(result.error.code, 'capture-timeout');
     assert.match(result.error.message, /shorter or less fragmented GPX/);
-    assert.equal(signal.aborted, true);
+    assert.equal(signal!.aborted, true);
     assert.equal(harness.fetchCalls.filter(url => url.includes('/Async/pllbb2.aspx')).length, 1,
         'the total deadline aborts before a retry can begin');
 });
@@ -757,7 +512,7 @@ test('capture privacy settings govern the upload flow identically', async () => 
     });
     assert.equal(ready.phase, 'ready');
     const job = harness.values.bpbCaptureJobs['5'];
-    assert.doesNotMatch(storedCaptureGpx(harness), /<wpt/);
+    assert.doesNotMatch(storedCaptureGpx(harness) ?? '', /<wpt/);
     assert.equal(job.tripName, '');
     assert.doesNotMatch(JSON.stringify(job), /Should not appear|Camp/);
 });
@@ -776,7 +531,7 @@ test('a timeless GPX keeps a blank derived date and unavailable durations', asyn
     const job = harness.values.bpbCaptureJobs['5'];
     assert.equal(job.matches[0].draftFields.upDuration, null);
     assert.equal(job.matches[0].draftFields.downDuration, null);
-    assert.doesNotMatch(storedCaptureGpx(harness), /<time>/);
+    assert.doesNotMatch(storedCaptureGpx(harness) ?? '', /<time>/);
 });
 
 test('the worker rejects an out-of-range local-upload timezone offset', async () => {
@@ -828,8 +583,8 @@ test('a multi-summit selection fills the current tab and opens grouped sibling d
     assert.deepEqual(JSON.parse(JSON.stringify(harness.grouped)), [{ tabIds: [100], createProperties: { windowId: 9 } }]);
     assert.deepEqual(JSON.parse(JSON.stringify(harness.groupUpdates)), [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
     const siblingNavigation = harness.navigations.find(entry => entry.tabId === 100);
-    assert.equal(siblingNavigation.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77');
-    assert.equal(siblingNavigation.draftRegistered, true, 'the sibling draft exists before its tab navigates');
+    assert.equal(siblingNavigation!.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77');
+    assert.equal(siblingNavigation!.draftRegistered, true, 'the sibling draft exists before its tab navigates');
     assert.deepEqual(harness.tabMessages, [{ tabId: 5, message: { type: 'DRAFT_PROCEED' } }]);
 
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' });
@@ -864,7 +619,8 @@ test('a failed sibling open restores the exact current-tab draft and upload job 
         complete: false,
         expiresAt: Date.now() + 60_000,
     };
-    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) };
+    // An older draft record, written in its own shape.
+    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) as unknown as DraftTab };
     const priorJob = structuredClone(harness.values.bpbCaptureJobs['5']);
 
     const failed = await harness.send({
@@ -901,7 +657,7 @@ test('a failed unbound current-tab navigation rolls back the sibling and restore
     });
     const unboundUrl = 'https://www.peakbagger.com/climber/ascentedit.aspx';
     const unboundSender = { tab: { id: 5, windowId: 9 }, url: unboundUrl };
-    harness.tabs.get(5).url = unboundUrl;
+    harness.tabs.get(5)!.url = unboundUrl;
     const ready = await harness.send({
         type: 'GPX_PROCESS_START', segments: SEGMENTS, waypoints: [], trackName: '', utcOffsetMinutes: 0
     }, unboundSender);
@@ -914,7 +670,8 @@ test('a failed unbound current-tab navigation rolls back the sibling and restore
         complete: false,
         expiresAt: Date.now() + 60_000,
     };
-    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) };
+    // An older draft record, written in its own shape.
+    harness.values.bpbDraftTabs = { 5: structuredClone(previousDraft) as unknown as DraftTab };
     const priorJob = structuredClone(harness.values.bpbCaptureJobs['5']);
 
     const failed = await harness.send({
@@ -926,13 +683,13 @@ test('a failed unbound current-tab navigation rolls back the sibling and restore
     assert.deepEqual(harness.values.bpbDraftTabs, { 5: previousDraft });
     assert.deepEqual(harness.values.bpbCaptureJobs['5'], priorJob);
     assert.deepEqual([...harness.tabs.keys()], [5]);
-    assert.equal(harness.tabs.get(5).url, unboundUrl);
+    assert.equal(harness.tabs.get(5)!.url, unboundUrl);
 
     const retried = await harness.send({
         type: 'GPX_PROCESS_APPLY', jobId: ready.jobId, selectedIds: [7, 8], primaryId: 7
     }, unboundSender);
     assert.equal(retried.ok, true);
-    assert.equal(harness.tabs.get(5).url,
+    assert.equal(harness.tabs.get(5)!.url,
         'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
     assert.equal(harness.values.bpbDraftTabs['101'].pid, 8);
 });
@@ -951,8 +708,8 @@ test('an unbound page registers its draft first and then navigates to the chosen
     }, unboundSender);
     assert.equal(applied.ok, true);
     const navigation = harness.navigations.find(entry => entry.tabId === 5);
-    assert.equal(navigation.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
-    assert.equal(navigation.draftRegistered, true, 'registration precedes the URL change');
+    assert.equal(navigation!.url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(navigation!.draftRegistered, true, 'registration precedes the URL change');
     assert.equal(harness.tabMessages.length, 0, 'the reloaded page runs its own ready handshake');
 
     // The reloaded page (now bound) delivers through the standard handshake.
@@ -1045,7 +802,7 @@ test('a bound page can only ever fill itself for its own peak', async () => {
     });
     assert.equal(rejected.ok, false);
     assert.equal(rejected.error.code, 'identity-mismatch');
-    assert.equal(harness.values.bpbDraftTabs, undefined, 'nothing may be registered on a refused apply');
+    assert.equal(harness.values.bpbDraftTabs === undefined, true, 'nothing may be registered on a refused apply');
 
     // Without a primary, the same selection opens sibling drafts only and the
     // current page keeps its native path.
@@ -1055,127 +812,14 @@ test('a bound page can only ever fill itself for its own peak', async () => {
     assert.equal(applied.ok, true);
     assert.deepEqual(JSON.parse(JSON.stringify(applied.tabIds)), [100]);
     assert.equal(harness.values.bpbDraftTabs['5'], undefined);
-    assert.equal(harness.values.bpbDraftTabs['100'].pid, 8);
-    assert.equal(harness.values.bpbDraftTabs['100'].focusOnReady, true,
+    assert.equal(harness.values.bpbDraftTabs['100']!.pid, 8);
+    assert.equal(harness.values.bpbDraftTabs['100']!.focusOnReady, true,
         'with no primary, the first sibling draft takes focus when ready');
     const sibling = await harness.send(
         { type: 'DRAFT_READY', pid: '8', cid: '77' },
         { tab: { id: 100 }, url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' },
     );
     assert.equal(sibling.action, 'apply');
-});
-
-// ---- End to end: real fixture page + built content bundle + built worker ----
-
-// The sink carries worker→page delivery outside the harness's tab objects,
-// which must stay structuredClone-able for the worker's tabs.get stub.
-const wireWorkerToPage = (harness, sink) => dom => {
-    const pageListeners = [];
-    dom.chrome.runtime.sendMessage = message =>
-        harness.send(structuredClone(message), { tab: { id: 5, windowId: 9 }, url: dom.window.location.href });
-    dom.chrome.runtime.onMessage = { addListener: listener => pageListeners.push(listener) };
-    sink.deliver = (tabId, message) => {
-        if (tabId === 5) pageListeners.forEach(listener => listener(message));
-    };
-    class DataTransferMock {
-        constructor() {
-            this.files = [];
-            this.items = { add: file => this.files.push(file) };
-        }
-    }
-    dom.window.DataTransfer = DataTransferMock;
-    const upload = dom.window.document.getElementById('GPXUpload');
-    Object.defineProperty(upload, 'files', { value: [], configurable: true, writable: true });
-};
-
-test('end to end: user file pick → Process → filled form → exactly one GPS Preview', async () => {
-    const harness = createHarness();
-    // Route worker→tab messages to the page's runtime listeners.
-    const sink = {};
-    const dom = await loadPage('climber-ascentedit.html', {
-        url: PAGE_URL,
-        bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'],
-        fixtures: PAGE_FIXTURES,
-        prepare: wireWorkerToPage(harness, sink)
-    });
-    // Deliver DRAFT_PROCEED (recorded by the harness) into the page.
-    const pump = () => {
-        while (harness.tabMessages.length) {
-            const { tabId, message } = harness.tabMessages.shift();
-            sink.deliver?.(tabId, message);
-        }
-    };
-    const pumpTimer = setInterval(pump, 5);
-
-    let previewClicks = 0;
-    const preview = dom.window.document.getElementById('GPXPreview');
-    preview.addEventListener('click', event => {
-        previewClicks++;
-        event.preventDefault();
-    });
-
-    const gpx = `<?xml version="1.0"?><gpx creator="SourceApp" xmlns="http://www.topografix.com/GPX/1/1"
-      xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">
-      <trk><name>Secret name</name><trkseg>
-        <trkpt lat="0" lon="-0.001"><ele>100</ele><time>2026-07-01T15:00:00Z</time>
-          <extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>171</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions></trkpt>
-        <trkpt lat="0" lon="0"><ele>130</ele><time>2026-07-01T16:00:00Z</time></trkpt>
-        <trkpt lat="0" lon="0.001"><ele>100</ele><time>2026-07-01T17:00:00Z</time></trkpt>
-      </trkseg></trk></gpx>`;
-    const input = dom.window.document.getElementById('GPXUpload');
-    input.files = [new dom.window.File([gpx], 'myclimb.gpx', { type: 'application/gpx+xml' })];
-    fireTrustedEvent(input, 'change', { bubbles: true });
-    await waitFor(dom, () => dom.window.document.querySelector('.bpb-process-button'));
-
-    const button = dom.window.document.querySelector('.bpb-process-button');
-    assert.ok(button, 'the Process button replaces native Preview');
-    button.click();
-
-    try {
-        await waitFor(dom, () => previewClicks === 1);
-    } catch (error) {
-        const status = dom.window.document.querySelector('.bpb-upload-status')?.textContent || '';
-        const job = harness.values.bpbCaptureJobs?.['5'];
-        throw new Error(`${error.message}; upload status=${status}; job phase=${job?.phase || 'none'}; messages=${JSON.stringify(harness.runtimeMessages)}`);
-    } finally {
-        clearInterval(pumpTimer);
-    }
-
-    assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
-    assert.equal(dom.window.document.getElementById('StartM').value, '100');
-    assert.equal(dom.window.document.getElementById('EndM').value, '100');
-
-    const uploaded = input.files[0];
-    assert.equal(uploaded.name, 'track.gpx', 'the upload field holds the newly serialized copy');
-    const uploadedText = await uploaded.text();
-    assert.match(uploadedText, /creator="Better Peakbagger"/);
-    assert.doesNotMatch(uploadedText, /SourceApp|extensions|hr>|Secret name/,
-        'the cleaned serialization carries nothing from the source XML');
-
-    assert.equal(previewClicks, 1);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /confidence/);
-
-    // The native peak picker is empty on this pid-bound fixture. The prepared
-    // match name must still reach report autosave so the manager can render a
-    // human title while retaining the pid-based storage key.
-    const richEditor = dom.window.document.getElementById('bpb-report-editor')._bpbEditors.rich;
-    richEditor.commands.setContent('<p>Summit report</p>', { emitUpdate: true });
-    const reportKey = 'bpbReportDraft:77:p7';
-    await waitFor(dom, () => dom.chrome._localStore[reportKey]);
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[reportKey].label)), {
-        peak: 'Test Peak',
-        date: '2026-07-01'
-    });
-
-    // Simulated post-Preview reload: the second DRAFT_READY yields the banner,
-    // never a second Preview.
-    const afterReload = await harness.send({
-        type: 'DRAFT_READY', pid: '7', cid: '77',
-        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
-    });
-    assert.equal(afterReload.action, 'banner');
-    assert.equal(afterReload.peakName, 'Test Peak');
-    assert.equal(previewClicks, 1);
 });
 
 test('local Process removes upload timestamps by default and honors only an explicit per-file exception', async () => {

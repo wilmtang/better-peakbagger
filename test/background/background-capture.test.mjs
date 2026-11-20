@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
-import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mjs';
+import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mts';
 
 // The worker ships as one bundle (gpx-metrics + capture-core + settings-schema
 // + settings + background). Boot the built bundle in a worker-like vm context,

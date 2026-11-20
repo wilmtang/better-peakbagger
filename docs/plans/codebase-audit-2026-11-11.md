@@ -766,7 +766,7 @@ helper tab.
 
 The repository treats the bare host as live: `peakbagger-origin.js` says
 "Peakbagger serves both", and bare-host draft senders are tested
-(`test/background/background-gpx-process.test.mjs` lines 838 and 1063), so
+(`test/background/background-gpx-process.test.mts`), so
 draft delivery is deliberately supported there while Process is not. Whether
 the live site serves or redirects the bare host was not checked; if it
 redirects, this is dormant. **Direction:** make one read-only check of the bare
