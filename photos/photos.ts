@@ -3899,6 +3899,10 @@ const bindEvents = () => {
     ui.imgbbClose.addEventListener('click', closeKeyDialog);
     ui.imgbbCancel.addEventListener('click', closeKeyDialog);
     ui.imgbbDialog.addEventListener('close', () => {
+        // The close event arrives a task after close(). If the dialog has
+        // already reopened (a key ImgBB refused at once), this close belongs
+        // to the earlier session and must not clear the new one.
+        if (ui.imgbbDialog.open) return;
         // Esc closes natively, past closeKeyDialog: a permission answer still
         // pending must not start an upload or leave Connect busy.
         keySubmission += 1;
