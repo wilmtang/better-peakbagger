@@ -79,15 +79,18 @@ independent of the existing targets.
 - [firefox-verifier-processes.mts](firefox-verifier-processes.mts)
 - [image-download-completion.mts](image-download-completion.mts)
 - [layout-verification-plan.mts](layout-verification-plan.mts) — Exact-once browser/theme/viewport partitions and focused preflight selection.
+- [page-probes.mts](page-probes.mts) — The verifiers' page-side probes, free of Node dependencies so browser tests load the same functions.
 - [peak-map-links-verification.mts](peak-map-links-verification.mts)
 - [probe-chrome-extension-load.mts](probe-chrome-extension-load.mts) — Manual diagnostic probe comparing command-line and pipe-CDP (`Extensions.loadUnpacked`) unpacked-extension loading in Chrome for Testing against a disposable HTTPS Peakbagger fixture.
 - [resource-stack.mts](resource-stack.mts)
+- [terrain-frame-instrumentation.mts](terrain-frame-instrumentation.mts) — The terrain verifiers' frame and module instrumentation, shared with the browser tests.
 - [verification-launch.mts](verification-launch.mts) — The one launch definition for hidden Playwright verifiers: disposable root, Seatbelt preflight, Chrome for Testing or an exact binary, exclusive extension and host-resolver flags, Firefox local DNS and deferred teardown.
 - [verification-browser-identity.mts](verification-browser-identity.mts)
 - [verification-repetitions.mts](verification-repetitions.mts)
 - [verify.mts](verify.mts)
 - [verify-dom.mts](verify-dom.mts) — `npm run verify -- dom`: runs the browser DOM tier (orchestrated suites, then in-page browser tests) in Chromium and Firefox.
 - [verify-fixture-preflight.mts](verify-fixture-preflight.mts) — Early locale, evidence, worker authorization and shipped-fixture checks.
+- [wait-for-condition.mts](wait-for-condition.mts) — The verifiers' dependency-free polling helper.
 
 ## Complete extension and package verification
 

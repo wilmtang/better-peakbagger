@@ -9,6 +9,9 @@ import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { verificationScreenshots } from './browser-verification-evidence.mts';
 import { waitForCondition } from './browser-verification-fixtures.mts';
+import { readSnowCardPlacement } from './page-probes.mts';
+
+export { readSnowCardPlacement };
 
 interface SnowRect {
     x: number;
@@ -67,16 +70,6 @@ export interface VerifyPeakSnowOptions {
     firefoxMode: boolean;
 }
 
-export const readSnowCardPlacement = () => {
-    const weather = document.getElementById('bpb-peak-weather-row');
-    const snow = document.getElementById('bpb-peak-snow-row');
-    const rows = Array.from(snow?.parentElement?.children || []);
-    return {
-        sameStack: !!weather && !!snow && weather.parentElement === snow.parentElement,
-        followsWeather: weather !== null && snow !== null && rows.indexOf(weather) >= 0 && rows.indexOf(weather) < rows.indexOf(snow),
-        order: rows.map(row => row.id).filter(Boolean),
-    };
-};
 
 // Shared Chrome/Firefox cases exercise the real manifest and isolated bundle.
 // Only provider responses and native fixture pages are substituted.

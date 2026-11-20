@@ -6,12 +6,7 @@
 
 /* global chrome, document, window */
 
-import { waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
-
-const waitForCondition = untypedWaitForCondition as unknown as <T>(
-    read: () => T | Promise<T>,
-    options: { description?: string; intervalMs?: number; timeoutMs?: number; isReady?: (value: T) => boolean },
-) => Promise<T>;
+import { waitForCondition } from './wait-for-condition.mts';
 
 export interface RichTableSelectionTarget {
     tabId: number;
