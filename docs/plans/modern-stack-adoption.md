@@ -775,6 +775,26 @@ is a separate test skipped in Firefox. Disposable bundles without the
 trusted-click guard and without the keyboard click's `detail === 0` check
 failed their cases (the latter in both engines).
 
+**Ledger of what the browser ports pin or drop.** Recorded so the exit's
+"ported or dropped with a reason" can be checked:
+
+- Dropped: the ascent-upload "cleared selection" invalidation case. It fired
+  a trusted change on an emptied file input, which no browser lets a user
+  produce (cancelling the picker keeps the selection in Chromium and Firefox,
+  and DevTools' empty `DOM.setFileInputFiles` dispatches nothing). Native
+  Remove and a non-GPX replacement still cover invalidation, and a new case
+  asserts that an untrusted clearing change leaves the swap in place.
+- Pinned: the photo editor's viewport. Most cases keep the page's fallback
+  view (1148 × 873, unpadded, at the origin) because their exact arithmetic
+  assumes it. One case fits a photo into the real laid-out viewport and
+  fails when the padding subtraction is removed; the user-set viewport size
+  (`applyViewportSize`) is still exercised only against the pinned view.
+- Modelled: pointer capture for the photo editor's synthetic gestures, which
+  the real capture API rejects. The model releases capture after `pointerup`
+  or `pointercancel` and then fires `lostpointercapture`, as browsers do; a
+  disposable build in which `pointerup` no longer ends a text resize fails
+  two cases through that trailing event.
+
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
    and additional tests reach it through helpers. Pure logic that needs no DOM

@@ -1,29 +1,29 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 //
 // Drives the real photo page (photos.html + the built photos.js bundle) in
-// jsdom against fake-indexeddb, so the editor's gestures — placing a mark,
+// a real browser against fake-indexeddb, so the editor's gestures — placing a mark,
 // dragging a slider, holding an arrow key, moving a route vertex — are
 // exercised the way a user performs them rather than asserted from source.
 
 import test from 'node:test';
-import { browserWindow } from '../helpers/page-dom.mts';
 import type { TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { evalBundle, makeChromeStub, waitFor } from '../helpers/load-page.mts';
+import { evalBundle, fireTrustedEvent, makeChromeStub, waitFor } from '../helpers/fixture-page.mts';
+import { FixtureDom, browserWindow } from '../helpers/fixture-dom.mts';
+import { OPTIONS_ORIGIN } from '../helpers/options-page.mts';
 import { photoArchive as Archive } from '../../src/photos/photo-archive.ts';
 import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 import { photoProject as Project } from '../../src/photos/photo-project.ts';
 import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.ts';
 import { photoStore as Store } from '../../src/photos/photo-store.ts';
 
-import { JSDOM } from '../helpers/test-dom.mts';
-import type { TestWindow } from '../helpers/test-dom.mts';
-import type { ChromeStub, PageDocument, PageElement, StubMessage } from '../helpers/page-types.mts';
+import type { ChromeStub, PageDocument, PageElement, StubMessage, TestWindow } from '../helpers/page-types.mts';
 
 // What these tests read back from the page's IndexedDB stores. The catalog and
 // project shapes come from their cleaners; journal rows are read by state.
@@ -59,10 +59,11 @@ interface EditorOptions {
     fileName?: string; fileType?: string;
     onStoreReady?: ((context: { indexedDB: IDBFactory; win: EditorWindow }) => unknown) | null;
     startMode?: string | null; fixedNow?: string | null; confirmImpl?: ((message?: string) => boolean) | null;
-    clipboard?: object; clipboardItem?: boolean;
+    clipboard?: object | null; clipboardItem?: boolean;
     storageEstimate?: (() => Promise<{ usage?: number; quota?: number }>) | null;
     subtle?: Pick<SubtleCrypto, 'digest'>; imageSize?: { width: number; height: number };
     localPreferences?: Record<string, unknown>; syncedPreferences?: Record<string, unknown>;
+    pinViewport?: boolean;
 }
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -79,6 +80,18 @@ const VIEW = { width: 800, height: 600 };
 // already-resolved autosave/render microtasks drain before an assertion reads
 // the DOM, and never carries the weight of an await that has real work behind it.
 const settle = (win: TestWindow) => new Promise(resolve => win.setTimeout(resolve, 0));
+
+// The page's fallback view, which most cases' exact arithmetic assumes:
+// 1148 × 873, unpadded, at the page origin.
+const pinFallbackViewport = (viewportElement: PageElement) => {
+    Object.defineProperty(viewportElement, 'clientWidth', { value: 1148, configurable: true });
+    Object.defineProperty(viewportElement, 'clientHeight', { value: 873, configurable: true });
+    viewportElement.style.padding = '0px';
+    viewportElement.getBoundingClientRect = () => {
+        const { clientWidth: width, clientHeight: height } = viewportElement;
+        return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() { return this; } };
+    };
+};
 
 const loadEditor = async ({
     returnToReport = false,
@@ -103,6 +116,7 @@ const loadEditor = async ({
     subtle = globalThis.crypto.subtle,
     imageSize = IMAGE,
     localPreferences = {}, syncedPreferences = {},
+    pinViewport = true,
 }: EditorOptions = {}) => {
     const params = new URLSearchParams();
     if (returnToReport) params.set('returnToken', 'return-test');
@@ -110,11 +124,7 @@ const loadEditor = async ({
     if (localPhotoId) params.set('localPhotoId', localPhotoId);
     if (imageCaption !== null) params.set('imageCaption', imageCaption);
     if (startMode) params.set('mode', startMode);
-    const dom = new JSDOM(html, {
-        url: `chrome-extension://test/photos/photos.html${params.size ? `?${params}` : ''}`,
-        runScripts: 'outside-only',
-        pretendToBeVisual: true,
-    });
+    const dom = await FixtureDom.open(html, { url: `${OPTIONS_ORIGIN}/photos/photos.html${params.size ? `?${params}` : ''}` });
     const win = browserWindow<EditorWindow>(dom.window);
     if (nativeBlobs) win.Blob = Blob as typeof win.Blob;
     const doc = win.document as unknown as PageDocument;
@@ -140,15 +150,15 @@ const loadEditor = async ({
             constructor(items: Record<string, Promise<Blob> | Blob>) { this.items = items; this.types = Object.keys(items); }
         } as unknown as typeof win.ClipboardItem;
     }
+    // null removes the browser's Clipboard API; an object stands in for it.
     if (clipboard !== undefined) {
         Object.defineProperty(win.navigator, 'clipboard', {
-            value: clipboard,
+            value: clipboard ?? undefined,
             configurable: true,
         });
     }
     Object.defineProperty(win, 'indexedDB', { value: indexedDB, configurable: true });
     win.IDBKeyRange = IDBKeyRange as typeof win.IDBKeyRange;
-    win.structuredClone = globalThis.structuredClone;
     if (storageEstimate !== undefined) {
         Object.defineProperty(win.navigator, 'storage', {
             value: storageEstimate === null ? {} : { estimate: storageEstimate },
@@ -157,8 +167,8 @@ const loadEditor = async ({
     }
     let ids = 0;
     win.crypto.randomUUID = (() => `mark-${++ids}`) as typeof win.crypto.randomUUID;
-    // jsdom exposes no SubtleCrypto; the page hashes the picked file with it.
-    Object.defineProperty(win.crypto, 'subtle', { value: subtle, configurable: true });
+    // Tests may substitute the digest the page hashes the picked file with.
+    if (subtle !== globalThis.crypto.subtle) Object.defineProperty(win.crypto, 'subtle', { value: subtle, configurable: true });
     // Decoding and thumbnailing are the browser's, not the editor's, so the
     // harness answers for them with the fixture's dimensions.
     const decodedBitmaps: { width: number; height: number; closed: boolean; close(): void }[] = [];
@@ -200,16 +210,27 @@ const loadEditor = async ({
         }
     }
     Object.defineProperty(win, 'Image', { value: OverlayImage, configurable: true });
+    // These gestures are synthetic pointer events with no browser pointer
+    // behind them, which the real capture API rejects; track capture per
+    // element instead, as a trusted pointer would have it. Like a browser,
+    // `pointer` below releases it after pointerup or pointercancel and then
+    // fires lostpointercapture at the element that held it.
+    const captured = new Map<Element, Set<number>>();
+    const captures = (element: Element) => captured.get(element) ?? captured.set(element, new Set()).get(element)!;
+    Object.assign(win.Element.prototype, {
+        setPointerCapture(this: Element, id: number) { captures(this).add(id); },
+        releasePointerCapture(this: Element, id: number) { captures(this).delete(id); },
+        hasPointerCapture(this: Element, id: number) { return captures(this).has(id); },
+    });
+    const releaseImplicitCapture = (id: number) => {
+        for (const [element, held] of captured) {
+            if (!held.delete(id)) continue;
+            element.dispatchEvent(new win.PointerEvent('lostpointercapture', { bubbles: true, pointerId: id, isPrimary: true }));
+        }
+    };
     win.URL.createObjectURL = () => 'blob:test';
     win.URL.revokeObjectURL = () => {};
     if (fetchImpl) win.fetch = fetchImpl as unknown as typeof win.fetch;
-    // jsdom has HTMLDialogElement but neither showModal() nor close().
-    win.HTMLDialogElement.prototype.showModal = function showModal(this: HTMLDialogElement) { this.open = true; };
-    win.HTMLDialogElement.prototype.close = function close(this: HTMLDialogElement) {
-        if (!this.open) return;
-        this.open = false;
-        this.dispatchEvent(new win.Event('close'));
-    };
     const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences) as unknown as ChromeStub;
     chrome.runtime.sendMessage = async (message: StubMessage) => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
@@ -227,6 +248,15 @@ const loadEditor = async ({
     win.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
         errors.push(String(event.reason?.stack || event.reason));
     });
+    // Images that failed to load, recorded from boot onward.
+    const imageErrors: Element[] = [];
+    doc.addEventListener('error', (event: Event) => {
+        if ((event.target as Element).tagName === 'IMG') imageErrors.push(event.target as Element);
+    }, true);
+    const viewportElement = doc.getElementById('photo-viewport');
+    // Pinned so the frame's own size and the panel padding do not move the
+    // stage; cases may override either, or measure the real layout instead.
+    if (pinViewport) pinFallbackViewport(viewportElement);
     await evalBundle(win, 'photos/photos.js');
     // The page paints its empty library last, so this is the boot finishing —
     // in particular the IndexedDB handle the first autosave needs.
@@ -239,8 +269,15 @@ const loadEditor = async ({
         x: 0, y: 0, left: 0, top: 0, right: VIEW.width, bottom: VIEW.height, ...VIEW, toJSON() { return this; },
     });
     const click = (node: EventTarget) => node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
-    const pointer = (type: string, x: number, y: number, node: EventTarget = overlay) => node.dispatchEvent(
-        new win.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+    // Gestures arrive as pointer events, which keep fractional coordinates
+    // (a mouse event's are whole pixels); other mouse events stay mouse events.
+    const pointer = (type: string, x: number, y: number, node: EventTarget = overlay) => {
+        const result = node.dispatchEvent(type.startsWith('pointer')
+            ? new win.PointerEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y, pointerId: 1, isPrimary: true })
+            : new win.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+        if (type === 'pointerup' || type === 'pointercancel') releaseImplicitCapture(1);
+        return result;
+    };
     // The secondary button, both halves of it: the press the editor must ignore
     // and the context menu the browser raises from it.
     const rightClick = (x: number, y: number) => {
@@ -258,6 +295,7 @@ const loadEditor = async ({
     const harness = {
         dom,
         win,
+        imageErrors,
         chrome,
         doc,
         errors,
@@ -1363,6 +1401,23 @@ test('a report size resizes only the stage preview and is remembered across both
     assert.deepEqual(page.errors, []);
 });
 
+test('the photo fits the real viewport content box of the laid-out page', async () => {
+    const page = await loadEditor({ pinViewport: false });
+    const { doc, win } = page;
+    const viewport = doc.getElementById('photo-viewport');
+    const stage = doc.getElementById('photo-stage');
+    const style = win.getComputedStyle(viewport);
+    const availableWidth = viewport.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const availableHeight = viewport.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    assert.ok(availableWidth > 0 && availableHeight > 0, 'the stylesheet lays the viewport out');
+    const width = parseFloat(stage.style.width);
+    assert.ok(Math.abs(width - Math.min(availableWidth, 1100, availableHeight * IMAGE.width / IMAGE.height)) < 0.01,
+        `the standalone photo fits within ${availableWidth} × ${availableHeight}, got ${width}`);
+    const box = stage.getBoundingClientRect(), frame = viewport.getBoundingClientRect();
+    assert.ok(box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5, 'the fitted photo stays inside the viewport');
+    assert.deepEqual(page.errors, []);
+});
+
 test('a portrait photo fits the viewport height without changing its source dimensions', async () => {
     const page = await loadEditor({ imageSize: { width: 900, height: 1600 } });
     const { doc, win } = page;
@@ -1458,7 +1513,8 @@ test('with no key the editor shows no key form until Upload asks for one', async
     const actions = [...doc.getElementById('finish-actions').querySelectorAll('button')].map((button: PageElement) => button.id);
     assert.deepEqual(actions, ['upload-insert', 'copy-image', 'export-image'], 'standalone ends on Export');
 
-    page.click(upload);
+    // A real press focuses Upload, which the dialog returns focus to.
+    await fireTrustedEvent(upload);
     assert.equal(dialog.open, true);
     assert.equal(doc.activeElement, doc.getElementById('imgbb-key'));
     // Keys typed while the dialog is open never reach the editor behind it.
@@ -1577,7 +1633,10 @@ test('Esc while the browser asks for ImgBB access leaves Connect usable and star
     submitKey(page, 'first-key');
     assert.equal(connect.getAttribute('aria-busy'), 'true');
     // Esc closes a modal dialog natively, without going through Cancel.
-    dialog.close();
+    const closed = new Promise(resolve => dialog.addEventListener('close', resolve, { once: true }));
+    await fireTrustedEvent(doc.getElementById('imgbb-key'), { type: 'press', key: 'Escape' });
+    await closed;
+    assert.equal(dialog.open, false);
     assert.equal(connect.hasAttribute('aria-busy'), false);
     page.click(doc.getElementById('upload-insert'));
     assert.equal(dialog.open, true);
@@ -1589,6 +1648,25 @@ test('Esc while the browser asks for ImgBB access leaves Connect usable and star
     assert.equal(dialog.open, true);
     answers[1](true);
     await waitFor(page.dom, () => uploads === 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a dialog reopened before its earlier close event keeps the new session intact', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const dialog = doc.getElementById('imgbb-dialog');
+    const field = doc.getElementById('imgbb-key');
+    await fireTrustedEvent(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    // Cancel queues the close event a task later; reopen before it lands.
+    page.click(doc.getElementById('imgbb-cancel'));
+    page.click(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    field.value = 'typed-after-reopen';
+    await page.settle();
+    assert.equal(dialog.open, true);
+    assert.equal(field.value, 'typed-after-reopen', 'the earlier close must not clear the reopened dialog');
+    assert.equal(doc.activeElement, field, 'focus stays in the reopened dialog');
     assert.deepEqual(page.errors, []);
 });
 
@@ -2073,20 +2151,19 @@ test('remote thumbnail presentation failures never rewrite catalog health or bac
 
     const page = await loadEditor({ indexedDB, pickPhoto: false });
     const before = await readPhotoStore(page.win, 'photos');
-    let previous: Element | null = null;
-    for (const simulatedFailure of ['offline', 'CSP refusal', 'timeout', 'transient 5xx']) {
-        await waitFor(page.dom, () => {
-            const candidate = page.doc.querySelector('.photo-card img[src^="https://i.ibb.co/"]');
-            return candidate && candidate !== previous ? candidate : false;
-        });
-        const image = page.doc.querySelector('.photo-card img[src^="https://i.ibb.co/"]');
-        previous = image;
-        image.dispatchEvent(new page.win.Event('error'));
-        assert.equal(image.isConnected, false, simulatedFailure);
+    // The fixture serves no ImgBB host, so each library view's thumbnail
+    // fails to load in the browser itself, as offline, blocked, timed-out and
+    // 5xx loads all do.
+    const failed = page.imageErrors;
+    for (const view of [1, 2, 3, 4]) {
+        await waitFor(page.dom, () => failed.length === view);
+        const image = failed[view - 1]!;
+        assert.match(image.getAttribute('src') ?? '', /^https:\/\/i\.ibb\.co\//);
+        await waitFor(page.dom, () => !image.isConnected);
         assert.match(page.doc.querySelector('.photo-card .photo-placeholder').textContent,
             /Preview unavailable/);
         assert.deepEqual(await readPhotoStore(page.win, 'photos'), before,
-            `${simulatedFailure} must not mutate durable catalog truth`);
+            `failed view ${view} must not mutate durable catalog truth`);
         page.doc.getElementById('show-library').click();
     }
     assert.deepEqual(page.errors, []);
@@ -2282,11 +2359,11 @@ test('removing a photo needs no confirmation and states the 30-day editing-data 
 test('library URL copy falls back to the complete selected value for every clipboard failure', async t => {
     const longUrl = `https://i.ibb.co/a/topo.jpg?token=${'x'.repeat(3500)}`;
     const cases = [
-        ['missing API', undefined],
+        ['missing API', null],
         ['synchronous throw', { writeText: () => { throw new Error('blocked'); } }],
         ['rejected promise', { writeText: async () => { throw new Error('denied'); } }],
     ];
-    for (const [name, clipboard] of cases as [string, object | undefined][]) {
+    for (const [name, clipboard] of cases as [string, object | null][]) {
         await t.test(name, async () => {
             const indexedDB = new IDBFactory();
             await seedUploadedLibraryPhoto(indexedDB, { url: longUrl });
@@ -2361,6 +2438,8 @@ test('a failed report insertion keeps the real page catalog at its committed Img
     const indexedDB = new IDBFactory();
     const page = await loadEditor({
         returnToReport: true,
+        // The recovery copy starts from the fallback for a missing Clipboard API.
+        clipboard: null,
         imgbbStatus: { ok: true, configured: true, permissionGranted: true },
         indexedDB,
         runtimeHandler: async (message: StubMessage) => {
@@ -4273,7 +4352,14 @@ test('library pagination keeps a usable control when Next becomes disabled', asy
 for (const placement of ['photo', 'center']) {
     test(`narrow ${placement} label editing reuses one field and preserves focus across resizing`, async t => {
         const page = await loadEditor(); t.after(() => page.dom.window.close());
-        Object.defineProperty(page.win, 'innerWidth', { value: 390, writable: true });
+        // Resize the page's own frame: the editor follows its media query and
+        // the browser's resize event, as on a phone or a resized window.
+        const resizeFrame = async (width: number) => {
+            const resized = new Promise(resolve => page.win.addEventListener('resize', resolve, { once: true }));
+            (page.win.frameElement as HTMLElement).style.width = `${width}px`;
+            await resized;
+        };
+        await resizeFrame(390);
         const input = page.doc.getElementById('object-text');
         const inspector = input.closest('#inspector')!;
         const dock = page.doc.getElementById('photo-text-editor');
@@ -4293,13 +4379,13 @@ for (const placement of ['photo', 'center']) {
         input.setSelectionRange(3, 8, 'backward');
         assert.equal(page.doc.querySelectorAll('#object-text').length, 1);
         assert.equal(page.doc.activeElement, input);
-        page.win.innerWidth = 1000; page.win.dispatchEvent(new page.win.Event('resize'));
+        await resizeFrame(1000);
         assert.equal(inspector.contains(input), true);
         assert.equal(dock.hidden, true);
         assert.equal(wideAligned, 1);
         assert.equal(page.doc.activeElement, input);
         assert.deepEqual([input.selectionStart, input.selectionEnd, input.selectionDirection], [3, 8, 'backward']);
-        page.win.innerWidth = 520; page.win.dispatchEvent(new page.win.Event('resize'));
+        await resizeFrame(520);
         assert.equal(dock.contains(input), true);
         assert.equal(page.doc.activeElement, input);
         assert.equal(input.value, 'North ridge\nUpper gully');
