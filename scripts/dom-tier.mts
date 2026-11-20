@@ -245,14 +245,18 @@ export async function runDomTier(
     args: readonly string[],
     suites?: readonly (DomSuite & { file?: string })[],
     report: (record: Record<string, unknown>) => void = record => console.log(JSON.stringify(record)),
+    { allowEmpty = false }: { allowEmpty?: boolean } = {},
 ): Promise<number> {
     const selection = domSelection(args);
     const loaded = suites ?? await loadDomSuites();
     const matchingSuites = loaded.filter(suite => !selection.suite ||
         suite.name.includes(selection.suite) || suite.file?.includes(selection.suite));
-    if (selection.suite && !matchingSuites.length) throw new Error(`No DOM tier suite matches ${JSON.stringify(selection.suite)}.`);
     const selected = matchingSuites.flatMap(suite => suite.cases.map(item => ({ item, label: `${suite.name}: ${item.name}` })))
         .filter(({ label }) => !selection.filter || label.includes(selection.filter));
+    // The DOM tier command also runs in-page browser tests, which may be the
+    // only match; it then checks that the whole selection executed something.
+    if (allowEmpty && !selected.length) return 0;
+    if (selection.suite && !matchingSuites.length) throw new Error(`No DOM tier suite matches ${JSON.stringify(selection.suite)}.`);
     if (!selected.length) throw new Error(`No DOM tier case matches ${JSON.stringify(selection.filter)}.`);
     const built = await builtReader(selection.dist);
     const resources = createResourceStack();

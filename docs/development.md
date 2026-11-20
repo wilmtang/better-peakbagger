@@ -413,7 +413,7 @@ script is added or removed without updating it.
 
 ### Verification targets
 
-`npm run verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]` runs the
+`npm run verify -- dom [chrome] [firefox] [--suite TEXT] [--case TEXT] [--dist DIR]` runs the
 browser DOM tier: the suites in `test/dom/`, each case in a fresh context of one
 hidden browser per engine (Chrome for Testing in new headless mode, and
 Playwright's Firefox). Pages load at their real HTTPS Peakbagger URL entirely
@@ -424,6 +424,38 @@ an empty selection are rejected, and `BPB_VERIFY_ARTIFACTS` retains failure
 evidence. CI runs it in the required `dom-tier` job. It does not load the
 extension, Playwright's Firefox is a patched build, and hidden runs do not
 establish native focus or window placement.
+
+The same command then runs in-page browser tests, `test/**/*.browser.mts`
+([browser-tests.mts](../scripts/browser-tests.mts)). These are written like
+`node:test` files: the runner bundles each one with small in-page runtimes for
+`node:test`, `node:assert/strict`, read-only `node:fs`, `node:path` and
+`node:url` (`test/dom/runtime/`), and opens it in a fresh hidden page per
+engine on its HTTPS fixture origin (`// @browser-origin https://host`
+overrides www.peakbagger.com). A file fails on a failing test, an uncaught
+error or unhandled rejection in the page or a fixture frame, a load error, a
+hung test or hook, a missing built file, or when none of its tests passed.
+Requests no route serves (fixture images, page scripts) are listed in the
+output. A complete run (no `--suite` or `--case`) first proves the runner
+rejects each broken file in `test/dom/runtime/negative/`; the assertion
+runtime is checked against `node:assert/strict` by
+[browser-assert-runtime.test.mts](../test/project/browser-assert-runtime.test.mts).
+
+Fixture documents are frames from
+[fixture-dom.mts](../test/helpers/fixture-dom.mts) with real layout, at the
+fixture URL as their own URL and base URL. Like jsdom's outside-only pages,
+fixture markup cannot run code: the runner's CSP refuses inline scripts,
+handler attributes and `javascript:` URLs, while evaluated bundles run.
+`await FixtureDom.open()` navigates a real frame, which an extension page with
+its own CSP needs and which reaches same-site hosts such as peakbagger.com.
+[fixture-page.mts](../test/helpers/fixture-page.mts) loads a Peakbagger
+fixture with the extension stub and built bundles, and `fireTrustedEvent`
+performs real automation input, so events are trusted. Each test starts with
+empty web storage on the test origin and ends by clearing and closing every
+fixture frame it opened. A fixture frame is not a top-level page: `window.top`,
+`window.parent` and `frameElement` describe the runner page, so an owner that
+checks them (for example the climber hover card or the terrain frame) belongs
+in a `.dom.mts` suite. `--suite` matches the file path and `--case` the test
+name; set `BPB_BROWSER_TEST_CONSOLE=1` to follow a test's console.
 
 Pass one target after `npm run verify --`. Arguments after the target go to each
 selected verifier; there is no second npm `--` separator. For example:
@@ -760,16 +792,17 @@ build config does not ship.
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.
 - **Behaviour that depends on layout, scrolling, trusted input, focus or
-  browser-specific DOM**: write a new test for the browser DOM tier in
-  a `.dom.mts` file under `test/dom/` (a default-exported `defineDomSuite` from
-  [dom-tier.mts](../scripts/dom-tier.mts)), not in jsdom. It runs in hidden
-  Chromium and Firefox through `npm run verify -- dom`. Use
+  browser-specific DOM**: write an in-page `*.browser.mts` test beside its
+  owner, or, when the case must drive the page from outside, a `.dom.mts`
+  suite under `test/dom/` (a default-exported `defineDomSuite` from
+  [dom-tier.mts](../scripts/dom-tier.mts)). Both run in hidden Chromium and
+  Firefox through `npm run verify -- dom`. Use
   `npm run verify -- dom --suite OWNER` to select by suite name or relative
   path. The browser tier runs separately from `npm test`.
 
-Routing rule: pure logic stays in `node:test` with no DOM; new DOM-behaviour
-tests use the browser tier; legacy jsdom tests stay on typed jsdom until M7.5
-of the [stack adoption plan](plans/modern-stack-adoption.md) moves them.
+Routing rule: pure logic stays in `node:test` with no DOM; DOM behaviour uses
+the browser tier; legacy jsdom tests stay on typed jsdom until M7.5 of the
+[stack adoption plan](plans/modern-stack-adoption.md) moves them.
 
 Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals
@@ -1273,7 +1306,7 @@ toolbar click that grants `activeTab`. Those remain explicit release checks.
 
 The [climber lists guide](climber-lists.md) describes behavior; the
 [archived ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md) records proof and release gaps.
-Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
+Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.browser.mts`,
 `test/ascent/ascent-report-visibility.test.mjs`,
 `test/background/climber-list-sync.test.mjs` and
 `test/options/options-ignored-backup.test.mjs`. They cover exact author evidence,

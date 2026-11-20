@@ -7,7 +7,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fireTrustedEvent, loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
+import { fireTrustedEvent, loadPage, loadPageWithBar, PAGE_FIXTURES, waitFor } from '../helpers/fixture-page.mts';
+import type { TrustedAction } from '../helpers/fixture-dom.mts';
+import type { LoadedPage, LoadPageOptions } from '../helpers/fixture-page.mts';
+import type { PageElement, StubMessage } from '../helpers/page-types.mts';
+
+type Dom = LoadedPage;
+type Row = HTMLTableRowElement;
+type BuddyRead = { url?: string; cache: { ownerCid: number; entries: unknown[] } | null };
+type MessageListener = (message: unknown, sender: unknown, reply: (value: BuddyRead) => void) => unknown;
+const captureMessageListeners = (page: Dom, listeners: MessageListener[]) => {
+    (page.chrome.runtime.onMessage as { addListener: (listener: MessageListener) => void })
+        .addListener = listener => { listeners.push(listener); };
+};
 
 const FAVORITES_KEY = 'bpbFavoriteClimbers';
 const BUDDY_CACHE_KEY = 'bpbBuddyCache';
@@ -16,43 +28,43 @@ const SMALL_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
 const smallFixture = await readFile(new URL('../fixtures/peakascents/1039-default-full-columns.html', import.meta.url), 'utf8');
 const buddyFixture = await readFile(new URL('../fixtures/pages/report-buddy-list.html', import.meta.url), 'utf8');
 const customCids = [...new Set([...smallFixture.matchAll(/climber\.aspx\?cid=(\d+)/gi)].map(match => Number(match[1])))].slice(0, 2);
-const favoriteStore = cids => ({
+const favoriteStore = (cids: number[]) => ({
     schemaVersion: 1,
     entries: cids.map((cid, index) => ({ cid, name: `Favorite ${index + 1}`, addedAt: index + 1, source: 'manual' })),
 });
 
-const bar = dom => dom.window.document.getElementById('pbaf-bar');
-const table = dom => dom.window.document.querySelector('table.gray');
-const status = dom => dom.window.document.querySelector('.pbaf-status').textContent;
-const chip = (dom, label) =>
+const bar = (dom: Dom) => dom.window.document.getElementById('pbaf-bar');
+const table = (dom: Dom) => dom.window.document.querySelector<HTMLTableElement>('table.gray');
+const status = (dom: Dom) => dom.window.document.querySelector('.pbaf-status').textContent;
+const chip = (dom: Dom, label: string): PageElement =>
     [...dom.window.document.querySelectorAll('.pbaf-chip')]
-        .find(c => c.querySelector('.pbaf-chip-label')?.textContent === label);
-const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
-const filterLabels = dom => [...bar(dom).querySelectorAll('.pbaf-chip-label')]
+        .find(c => c.querySelector('.pbaf-chip-label')?.textContent === label)!;
+const chipCount = (dom: Dom, label: string) => chip(dom, label).querySelector('.pbaf-count').textContent;
+const filterLabels = (dom: Dom) => [...bar(dom).querySelectorAll('.pbaf-chip-label')]
     .map(label => label.textContent);
 
 // Same row classification the content script uses: table.rows skips rows of
 // nested icon tables; >1 cells excludes year-separator and stray empty rows.
-const dataRows = dom => [...table(dom).rows].filter(r => r.cells.length > 1 && r.cells[0].tagName === 'TD');
-const visibleRows = dom => dataRows(dom).filter(r => r.style.display === '');
-const sectionRows = dom => [...table(dom).rows].filter(r => r.cells.length === 1 && !r.parentElement.dataset.bpbEmpty);
-const rowCid = row => {
-    const anchor = row.querySelector('a[href*="climber.aspx?cid="]');
+const dataRows = (dom: Dom): Row[] => [...table(dom).rows].filter(r => r.cells.length > 1 && r.cells[0].tagName === 'TD');
+const visibleRows = (dom: Dom) => dataRows(dom).filter(r => r.style.display === '');
+const sectionRows = (dom: Dom) => [...table(dom).rows].filter(r => r.cells.length === 1 && !(r.parentElement as HTMLElement).dataset.bpbEmpty);
+const rowCid = (row: Row) => {
+    const anchor = row.querySelector<HTMLAnchorElement>('a[href*="climber.aspx?cid="]');
     return anchor ? Number(new URL(anchor.href).searchParams.get('cid')) : null;
 };
-const rowHasTripReport = row => /^TR-\d+/.test(row.cells[4].textContent.trim());
-const rowHasGps = row => !!row.cells[3].querySelector('img');
-const rowHasLink = row => !!row.cells[11].querySelector('a[href]');
-const defaultBetaRows = dom => dataRows(dom).filter(row =>
+const rowHasTripReport = (row: Row) => /^TR-\d+/.test(row.cells[4]!.textContent.trim());
+const rowHasGps = (row: Row) => !!row.cells[3]!.querySelector('img');
+const rowHasLink = (row: Row) => !!row.cells[11]!.querySelector('a[href]');
+const defaultBetaRows = (dom: Dom) => dataRows(dom).filter(row =>
     rowHasTripReport(row) || rowHasGps(row) || rowHasLink(row));
-const dateTexts = dom => dataRows(dom).map(r => r.cells[1].textContent.trim());
-const sectionLabels = dom => sectionRows(dom).map(r => r.textContent.trim());
-const tableSortControl = (dom, label) =>
+const dateTexts = (dom: Dom) => dataRows(dom).map(r => r.cells[1]!.textContent.trim());
+const sectionLabels = (dom: Dom) => sectionRows(dom).map(r => r.textContent.trim());
+const tableSortControl = (dom: Dom, label: string): PageElement =>
     [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
-        .find(control => control.firstChild.textContent.trim() === label);
-const sortControl = dom => tableSortControl(dom, 'Ascent Date');
-const arrow = dom => sortControl(dom)?.querySelector('.pbaf-sort-arrow') || null;
-const rememberFilterState = (page, patch = {}) => page.window.localStorage.setItem(
+        .find(control => control.firstChild?.textContent?.trim() === label)!;
+const sortControl = (dom: Dom) => tableSortControl(dom, 'Ascent Date');
+const arrow = (dom: Dom): PageElement => sortControl(dom).querySelector('.pbaf-sort-arrow');
+const rememberFilterState = (page: Dom, patch: Record<string, unknown> = {}) => page.window.localStorage.setItem(
     'pbAscentBetaFilter.v1',
     JSON.stringify({ beta: false, tr: false, minWords: 1, gps: false, link: false, fav: false, ...patch })
 );
@@ -120,8 +132,8 @@ test('malformed remembered filter types fail to the all-off first-use state', as
 });
 
 test('the ascent table stays concealed until remembered settings and row state reconcile', async () => {
-    let releaseSettings;
-    const settingsGate = new Promise(resolve => { releaseSettings = resolve; });
+    let releaseSettings!: () => void;
+    const settingsGate = new Promise<void>(resolve => { releaseSettings = resolve; });
     const dom = await loadPage(SMALL, {
         url: SMALL_URL,
         settings: { betaSortDateDesc: true },
@@ -144,7 +156,7 @@ test('the ascent table stays concealed until remembered settings and row state r
 });
 
 test('filter chips prioritize climbers and direct Has beta configuration to Settings', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
         prepare: page => {
@@ -159,8 +171,8 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
 
     assert.equal(bar(dom).querySelector('.pbaf-divider'), null);
     assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Link', 'Has beta']);
-    assert.match(chip(dom, 'Has beta').getAttribute('aria-description'), /Drag to reorder/);
-    assert.match(chip(dom, 'Has beta').getAttribute('aria-keyshortcuts'), /Alt\+ArrowLeft/);
+    assert.match(chip(dom, 'Has beta').getAttribute('aria-description') ?? '', /Drag to reorder/);
+    assert.match(chip(dom, 'Has beta').getAttribute('aria-keyshortcuts') ?? '', /Alt\+ArrowLeft/);
     const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
     assert.equal(settingsLink.textContent, 'Change what “Has beta” means →');
     assert.equal(settingsLink.tagName, 'BUTTON');
@@ -171,7 +183,7 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.deepEqual(messages, [], 'a synthetic host-page click remains inert');
 
-    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0 });
+    await fireTrustedEvent(settingsLink);
     await waitFor(dom, () => messages.length === 2);
     assert.deepEqual(JSON.parse(JSON.stringify(messages)), [
         { type: 'TRUSTED_ACTION_ISSUE', action: 'beta-settings', generation: 'beta-1' },
@@ -184,8 +196,19 @@ test('filter chips prioritize climbers and direct Has beta configuration to Sett
     ]);
 });
 
-test('trusted Settings activations preserve background-tab and new-window intent', async () => {
-    const messages = [];
+// Messages already sent when each click finished dispatching. The listener
+// is added after the filter's own, so it shows what the activation sent
+// synchronously inside that click, independent of when automation returns.
+const messagesAtClick = (link: Element, messages: StubMessage[]) => {
+    const counts: number[] = [];
+    link.addEventListener('click', () => { counts.push(messages.length); });
+    return counts;
+};
+
+// A filter page whose worker issues trusted-action tokens, and real input
+// that activates the Has-beta Settings link.
+const loadSettingsLink = async () => {
+    const messages: StubMessage[] = [];
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
         prepare: page => {
@@ -198,23 +221,38 @@ test('trusted Settings activations preserve background-tab and new-window intent
         },
     });
     const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
-    const activate = async (type, attributes) => {
+    const activate = async (action: TrustedAction) => {
         const before = messages.length;
-        fireTrustedEvent(settingsLink, type, { bubbles: true, cancelable: true, ...attributes });
+        await fireTrustedEvent(settingsLink, action);
         await waitFor(dom, () => messages.length === before + 2);
-        return messages.at(-1);
+        // Leave the page a moment before the next input, as a person would:
+        // the browser runs queued input ahead of the zero-delay timer that
+        // ends keyboard-click suppression.
+        await new Promise(resolve => dom.window.setTimeout(resolve, 50));
+        return messages.at(-1)!;
     };
+    return { dom, messages, settingsLink, activate };
+};
 
-    assert.equal((await activate('click', { button: 0, ctrlKey: true })).disposition, 'background-tab');
-    assert.equal((await activate('click', { button: 0, metaKey: true })).disposition, 'background-tab');
-    assert.equal((await activate('auxclick', { button: 1 })).disposition, 'background-tab');
-    assert.equal((await activate('click', { button: 0, shiftKey: true })).disposition, 'new-window');
-    assert.equal((await activate('keydown', { key: 'Enter', shiftKey: true })).disposition, 'new-window');
-    assert.equal((await activate('click', { button: 0, detail: 0 })).disposition, 'foreground-tab');
+test('trusted Settings activations preserve background-tab and new-window intent', async () => {
+    const { activate } = await loadSettingsLink();
+    assert.equal((await activate({ type: 'click', modifiers: ['ControlOrMeta'] })).disposition, 'background-tab');
+    assert.equal((await activate({ type: 'click', modifiers: ['Meta'] })).disposition, 'background-tab');
+    assert.equal((await activate({ type: 'click', modifiers: ['Shift'] })).disposition, 'new-window');
+    assert.equal((await activate({ type: 'press', key: 'Shift+Enter' })).disposition, 'new-window');
+    // A keyboard-generated click (detail 0) opens in the foreground.
+    assert.equal((await activate({ type: 'press', key: 'Enter' })).disposition, 'foreground-tab');
+});
+
+test('a trusted middle click opens Settings in a background tab', {
+    skip: /Firefox\//.test(navigator.userAgent) && 'Playwright\'s Firefox dispatches no auxclick for a middle click',
+}, async () => {
+    const { activate } = await loadSettingsLink();
+    assert.equal((await activate({ type: 'click', button: 'middle' })).disposition, 'background-tab');
 });
 
 test('modifier key presses cannot swallow trusted Settings pointer clicks while timers are delayed', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
         prepare: page => {
@@ -228,30 +266,32 @@ test('modifier key presses cannot swallow trusted Settings pointer clicks while 
     });
     const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
     const nativeTimeout = dom.window.setTimeout.bind(dom.window);
-    const delayed = [];
-    dom.window.setTimeout = (callback, delay, ...args) => delay === 0
+    const delayed: (() => void)[] = [];
+    dom.window.setTimeout = ((callback: (...values: unknown[]) => void, delay?: number, ...args: unknown[]) => delay === 0
         ? delayed.push(() => callback(...args))
-        : nativeTimeout(callback, delay, ...args);
-    for (const [key, modifier, disposition] of [
-        ['Control', 'ctrlKey', 'background-tab'],
-        ['Meta', 'metaKey', 'background-tab'],
-        ['Shift', 'shiftKey', 'new-window'],
-    ]) {
-        const before = messages.length;
-        fireTrustedEvent(settingsLink, 'keydown', { bubbles: true, cancelable: true, key, [modifier]: true });
+        : nativeTimeout(callback, delay, ...args)) as typeof setTimeout;
+    const clicks = messagesAtClick(settingsLink, messages);
+    for (const [key, disposition] of [
+        ['ControlOrMeta', 'background-tab'],
+        ['Meta', 'background-tab'],
+        ['Shift', 'new-window'],
+    ] as const) {
+        const before = messages.length, clicked = clicks.length;
+        await fireTrustedEvent(settingsLink, { type: 'press', key });
         assert.equal(messages.length, before, 'a modifier key alone must not open Settings');
-        fireTrustedEvent(settingsLink, 'click', {
-            bubbles: true, cancelable: true, button: 0, detail: 1, [modifier]: true,
-        });
-        assert.equal(messages[before]?.type, 'TRUSTED_ACTION_ISSUE', `${key} must not suppress the pointer activation`);
+        await fireTrustedEvent(settingsLink, { type: 'click', modifiers: [key] });
+        await waitFor(dom, () => clicks.length > clicked);
+        // Zero-delay timers stay held, so the activation cannot depend on them.
+        assert.ok(clicks[clicked]! > before, `${key} must not suppress the pointer activation`);
+        assert.equal(messages[before]?.type, 'TRUSTED_ACTION_ISSUE');
         await waitFor(dom, () => messages.length === before + 2);
-        assert.equal(messages.at(-1).disposition, disposition);
+        assert.equal(messages.at(-1)!.disposition, disposition);
         for (const callback of delayed.splice(0)) callback();
     }
 });
 
 test('modified keyboard activation suppresses only its default click and preserves a subsequent pointer action', async () => {
-    const messages = [];
+    const messages: StubMessage[] = [];
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
         prepare: page => {
@@ -265,18 +305,22 @@ test('modified keyboard activation suppresses only its default click and preserv
     });
     const settingsLink = bar(dom).querySelector('.pbaf-settings-link');
     const nativeTimeout = dom.window.setTimeout.bind(dom.window);
-    dom.window.setTimeout = (callback, delay, ...args) => delay === 0
-        ? 0 : nativeTimeout(callback, delay, ...args);
-    fireTrustedEvent(settingsLink, 'keydown', {
-        bubbles: true, cancelable: true, key: 'Enter', shiftKey: true,
-    });
+    dom.window.setTimeout = ((callback: (...values: unknown[]) => void, delay?: number, ...args: unknown[]) => delay === 0
+        ? 0 : nativeTimeout(callback, delay, ...args)) as typeof setTimeout;
+    // The keyboard activation cancels the key press's own click, so the
+    // suppression flag stays set while its zero-delay reset is held. Only a
+    // keyboard click (detail 0) may be suppressed; a pointer click is not.
+    await fireTrustedEvent(settingsLink, { type: 'press', key: 'Shift+Enter' });
     await waitFor(dom, () => messages.length === 2);
-    assert.equal(messages.at(-1).disposition, 'new-window');
-    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0, detail: 1, ctrlKey: true });
+    assert.equal(messages.at(-1)!.disposition, 'new-window');
+    const clicks = messagesAtClick(settingsLink, messages);
+    await fireTrustedEvent(settingsLink, { type: 'click', modifiers: ['ControlOrMeta'] });
+    await waitFor(dom, () => clicks.length > 0);
+    assert.ok(clicks[0]! > 2, 'the pointer click activates within its own dispatch');
     assert.equal(messages[2]?.type, 'TRUSTED_ACTION_ISSUE', 'a real pointer action must survive keyboard suppression');
-    fireTrustedEvent(settingsLink, 'click', { bubbles: true, cancelable: true, button: 0, detail: 0 });
     await waitFor(dom, () => messages.length === 4);
-    assert.equal(messages.at(-1).disposition, 'background-tab');
+    assert.equal(messages.at(-1)!.disposition, 'background-tab');
+    await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(messages.length, 4, 'the keyboard default click must not mint a third activation');
 });
 
@@ -289,9 +333,9 @@ test('remembered filter order keeps dependent controls with their chips', async 
     });
 
     assert.deepEqual(filterLabels(dom), ['Has beta', 'Trip report', 'Link', 'GPS track', 'Climbing buddies']);
-    assert.ok(chip(dom, 'Trip report').closest('.pbaf-filter-item')
+    assert.ok(chip(dom, 'Trip report').closest('.pbaf-filter-item')!
         .contains(dom.window.document.querySelector('.pbaf-words')));
-    assert.ok(chip(dom, 'Has beta').closest('.pbaf-filter-item')
+    assert.ok(chip(dom, 'Has beta').closest('.pbaf-filter-item')!
         .contains(dom.window.document.querySelector('.pbaf-settings-link')));
 });
 
@@ -306,7 +350,7 @@ test('Alt+Arrow reorders a focused filter without toggling it', async () => {
     assert.equal(move.defaultPrevented, true);
     assert.deepEqual(filterLabels(dom), ['Climbing buddies', 'GPS track', 'Trip report', 'Has beta', 'Link']);
     assert.equal(hasBeta.getAttribute('aria-pressed'), 'false');
-    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
+    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')!);
     assert.deepEqual(saved.peakOrder, ['fav', 'gps', 'tr', 'beta', 'link']);
     assert.equal(saved.beta, false);
     assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
@@ -316,48 +360,49 @@ test('Alt+Arrow reorders a focused filter without toggling it', async () => {
 test('pointer drag lifts and follows a filter while neighbors ease into place', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
     const hasBeta = chip(dom, 'Has beta');
-    const hasBetaItem = hasBeta.closest('.pbaf-filter-item');
+    const hasBetaItem = hasBeta.closest('.pbaf-filter-item')!;
     const favorite = chip(dom, 'Climbing buddies');
-    const favoriteItem = favorite.closest('.pbaf-filter-item');
-    const filterItems = [...bar(dom).querySelectorAll(':scope > .pbaf-filter-item')];
-    const animations = [];
-    for (const item of filterItems) {
-        item.getBoundingClientRect = () => {
-            const index = [...bar(dom).querySelectorAll(':scope > .pbaf-filter-item')].indexOf(item);
-            const left = index * 120;
-            return { x: left, y: 0, top: 0, left, right: left + 100,
-                bottom: 40, width: 100, height: 40 };
+    const animations: { item: Element; frames: Keyframe[]; options: KeyframeAnimationOptions }[] = [];
+    for (const item of bar(dom).querySelectorAll(':scope > .pbaf-filter-item')) {
+        if (item === hasBetaItem) continue;
+        const animate = item.animate.bind(item);
+        item.animate = (frames: Keyframe[], options: KeyframeAnimationOptions) => {
+            animations.push({ item, frames, options });
+            return animate(frames, options);
         };
-        if (item !== hasBetaItem) {
-            item.animate = (frames, options) => {
-                animations.push({ item, frames, options });
-                return { cancel() {}, addEventListener() {} };
-            };
-        }
     }
-    dom.window.document.elementFromPoint = () => favorite;
+    const start = hasBeta.getBoundingClientRect(), target = favorite.getBoundingClientRect();
+    const y = start.top + start.height / 2;
+    // The leading edge of the first filter: an unambiguous first slot.
+    const targetX = target.left + 4;
 
-    hasBeta.dispatchEvent(new dom.window.MouseEvent('pointerdown', {
-        bubbles: true, cancelable: true, button: 0, clientX: 300, clientY: 20,
-    }));
-    dom.window.dispatchEvent(new dom.window.MouseEvent('pointermove', {
-        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
-    }));
+    await fireTrustedEvent(hasBeta, { type: 'mouse', action: 'down' });
+    await fireTrustedEvent(hasBeta, { type: 'mouse', action: 'move', x: targetX, y, steps: 8 });
 
     assert.equal(hasBetaItem.hasAttribute('data-pbaf-dragging'), true);
     assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), true);
-    assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-x'), '-290px');
+    // The lifted chip stays under the pointer however far the reorder moved
+    // its slot; its lift scale keeps the center in place.
+    const lifted = hasBeta.getBoundingClientRect();
+    assert.ok(Math.abs(lifted.left + lifted.width / 2 - targetX) <= 1 && Math.abs(lifted.top + lifted.height / 2 - y) <= 1,
+        `the dragged chip follows the pointer: center ${lifted.left + lifted.width / 2} vs ${targetX}`);
     assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-y'), '0px');
     await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
     assert.equal(bar(dom).hasAttribute('data-pbaf-reordering'), true, 'an unrelated settings update must not cancel the drag');
-    assert.ok(animations.some(animation => animation.item === favoriteItem
-        && animation.frames[0].transform === 'translate3d(-120px, 0px, 0)'
-        && animation.frames[1].transform === 'translate3d(0, 0, 0)'
-        && animation.options.duration === 280));
+    // Neighbors the lifted chip passed ease from their old slots; the
+    // displaced Climbing buddies filter moves right, so it starts left.
+    const favoriteItem = favorite.closest('.pbaf-filter-item');
+    assert.ok(animations.some(({ item, frames }) => item === favoriteItem && /^translate3d\(-\d/.test(String(frames[0]!.transform))),
+        'the displaced Climbing buddies filter eases in from its old slot');
+    assert.ok(animations.length > 0 && animations.every(({ frames, options }) =>
+        /^translate3d\(-?\d+(?:\.\d+)?px, 0px, 0\)$/.test(String(frames[0]!.transform)) && frames[0]!.transform !== 'translate3d(0px, 0px, 0)'
+        && frames[1]!.transform === 'translate3d(0, 0, 0)' && options.duration === 280),
+    `displaced neighbors ease into their new slots: ${JSON.stringify(animations.map(({ frames, options }) => [frames, options]))}`);
 
-    dom.window.dispatchEvent(new dom.window.MouseEvent('pointerup', {
-        bubbles: true, cancelable: true, button: 0, clientX: 10, clientY: 20,
-    }));
+    await fireTrustedEvent(hasBeta, { type: 'mouse', action: 'up', x: targetX, y });
+    // The lifted chip ignores pointer events, so neither engine delivers a
+    // click on release; a click that follows the drag must still not toggle
+    // the filter.
     hasBeta.click();
 
     assert.equal(hasBetaItem.hasAttribute('data-pbaf-dragging'), false);
@@ -365,7 +410,7 @@ test('pointer drag lifts and follows a filter while neighbors ease into place', 
     assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-x'), '');
     assert.equal(hasBetaItem.style.getPropertyValue('--pbaf-drag-y'), '');
     assert.deepEqual(filterLabels(dom), ['Has beta', 'Climbing buddies', 'GPS track', 'Trip report', 'Link']);
-    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1'));
+    const saved = JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')!);
     assert.deepEqual(saved.peakOrder, ['beta', 'fav', 'gps', 'tr', 'link']);
     assert.equal(saved.beta, false, 'finishing a drag must not activate the filter');
     assert.equal(dom.window.document.querySelector('.pbaf-order-status').textContent,
@@ -376,10 +421,10 @@ test('Escape returns a lifted filter to its starting slot without toggling it', 
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL });
     const startingOrder = filterLabels(dom);
     const hasBeta = chip(dom, 'Has beta');
-    const hasBetaItem = hasBeta.closest('.pbaf-filter-item');
+    const hasBetaItem = hasBeta.closest('.pbaf-filter-item')!;
     const favorite = chip(dom, 'Climbing buddies');
-    favorite.closest('.pbaf-filter-item').getBoundingClientRect = () => ({
-        x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 40, width: 100, height: 40,
+    favorite.closest('.pbaf-filter-item')!.getBoundingClientRect = () => ({
+        x: 0, y: 0, top: 0, left: 0, right: 100, bottom: 40, width: 100, height: 40, toJSON: () => ({}),
     });
     dom.window.document.elementFromPoint = () => favorite;
 
@@ -412,7 +457,7 @@ test('Fav climbers counts climber rows and AND-composes with Has beta', async ()
         local: { [FAVORITES_KEY]: favoriteStore(customCids) },
         prepare: page => rememberFilterState(page, { beta: true }),
     });
-    const ids = new Set(customCids);
+    const ids = new Set<number | null>(customCids);
     const favoriteRows = dataRows(dom).filter(row => ids.has(rowCid(row)));
     const defaultVisibleFavorites = visibleRows(dom).filter(row => ids.has(rowCid(row)));
     assert.ok(favoriteRows.length > 0);
@@ -433,13 +478,13 @@ test('Fav climbers can filter independently and persists with the other chips', 
         })),
     });
     await waitFor(dom, () => bar(dom));
-    const ids = new Set(customCids);
+    const ids = new Set<number | null>(customCids);
     assert.equal(visibleRows(dom).length, dataRows(dom).filter(row => ids.has(rowCid(row))).length);
     assert.equal(chip(dom, 'Fav climbers').getAttribute('aria-pressed'), 'true');
 
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, dataRows(dom).length);
-    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).fav, false);
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')!).fav, false);
 });
 
 test('an empty custom list keeps the saved filter active with explicit recovery', async () => {
@@ -470,7 +515,7 @@ test('local favorite changes update the custom filter live', async () => {
     await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore(customCids) });
     await waitFor(dom, () => Number(chipCount(dom, 'Fav climbers')) > 0);
     assert.equal(chipCount(dom, 'Fav climbers'), String(
-        dataRows(dom).filter(row => customCids.includes(rowCid(row))).length));
+        dataRows(dom).filter(row => customCids.includes(rowCid(row)!)).length));
 });
 
 test('buddy mode reads the owner-scoped local cache', async () => {
@@ -486,7 +531,7 @@ test('buddy mode reads the owner-scoped local cache', async () => {
             const account = page.window.document.createElement('div'); account.textContent = 'Logged in: Test | ';
             account.append(owner); page.window.document.body.prepend(account);
         } });
-    const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row))).length;
+    const expected = dataRows(dom).filter(row => customCids.includes(rowCid(row)!)).length;
     assert.equal(chipCount(dom, 'Climbing buddies'), String(expected));
     assert.equal(chip(dom, 'Climbing buddies').disabled, false);
 });
@@ -538,7 +583,7 @@ test('an active stale buddy cache filters immediately and revalidates once', asy
             page.window.fetch = async url => {
                 fetches++;
                 fetchedUrl = String(url);
-                return { status: 200, headers: {}, text: async () => buddyFixture };
+                return new page.window.Response(buddyFixture, { status: 200 });
             };
         },
     });
@@ -571,7 +616,7 @@ test('a refreshed Buddy List from another account is rejected while the stale ca
             page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
                 beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
             }));
-            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => otherAccount });
+            page.window.fetch = async () => new page.window.Response(otherAccount, { status: 200 });
         },
     });
     await waitFor(dom, () => /different Peakbagger account/i.test(chip(dom, 'Climbing buddies')?.title || ''));
@@ -598,7 +643,7 @@ test('a refreshed Buddy List stays usable when only the local cache write fails'
             page.window.localStorage.setItem('pbAscentBetaFilter.v1', JSON.stringify({
                 beta: false, tr: false, minWords: 1, gps: false, link: false, fav: true,
             }));
-            page.window.fetch = async () => ({ status: 200, headers: {}, text: async () => buddyFixture });
+            page.window.fetch = async () => new page.window.Response(buddyFixture, { status: 200 });
             page.chrome.storage.local.set = async () => { throw new Error('storage unavailable'); };
         },
     });
@@ -624,26 +669,26 @@ test('visiting the implicit signed-in Buddy List refreshes the cache without ano
 });
 
 test('Buddy helper snapshots authenticate the extension and favorites URL or legacy extension origin', async () => {
-    const listeners = [];
+    const listeners: MessageListener[] = [];
     const dom = await loadPage('report-buddy-list.html', {
         fixtures: PAGE_FIXTURES,
         url: 'https://peakbagger.com/report/report.aspx?r=b',
-        prepare: page => { page.chrome.runtime.onMessage.addListener = listener => listeners.push(listener); },
+        prepare: page => captureMessageListeners(page, listeners),
     });
     await waitFor(dom, () => dom.chrome._localStore[BUDDY_CACHE_KEY]?.entries?.length === 6);
-    const read = sender => {
-        let result;
+    const read = (sender: Record<string, unknown>) => {
+        let result: BuddyRead | undefined;
         listeners.forEach(listener => listener({ type: 'BUDDY_PAGE_READ' }, sender, value => { result = value; }));
         return result;
     };
     const sender = { id: dom.chrome.runtime.id, url: dom.chrome.runtime.getURL('options/favorites.html') };
-    const result = read(sender);
+    const result = read(sender)!;
     assert.equal(result.url, 'https://peakbagger.com/report/report.aspx?r=b');
-    assert.equal(result.cache.ownerCid, 900001);
-    assert.equal(result.cache.entries.length, 6);
+    assert.equal(result.cache?.ownerCid, 900001);
+    assert.equal(result.cache?.entries.length, 6);
     const published = structuredClone(dom.chrome._localStore[BUDDY_CACHE_KEY]);
     dom.window.Date.now = () => published.fetchedAt + 1000;
-    assert.deepEqual(JSON.parse(JSON.stringify(read(sender).cache)), published,
+    assert.deepEqual(JSON.parse(JSON.stringify(read(sender)!.cache)), published,
         'reading the helper later acknowledges the exact published report without refreshing its age');
     const legacy = { id: sender.id, origin: dom.chrome.runtime.getURL('').replace(/\/$/, '') };
     assert.equal(read(legacy)?.cache?.entries?.length, 6,
@@ -663,23 +708,23 @@ test('Buddy helper snapshots authenticate the extension and favorites URL or leg
 
 test('Buddy helper snapshots reject missing identity, challenge pages, and another owner report', async () => {
     for (const scenario of ['signed-out', 'challenge', 'other-owner', 'invalid-cid']) {
-        const listeners = [];
+        const listeners: MessageListener[] = [];
         const cid = scenario === 'other-owner' ? '&cid=900002' : scenario === 'invalid-cid' ? '&cid=invalid' : '';
         const dom = await loadPage('report-buddy-list.html', {
             fixtures: PAGE_FIXTURES,
             url: `https://peakbagger.com/report/report.aspx?r=b${cid}`,
             prepare: page => {
-                page.chrome.runtime.onMessage.addListener = listener => listeners.push(listener);
+                captureMessageListeners(page, listeners);
                 if (scenario === 'signed-out') page.window.document.querySelector('a[href*="climber/climber.aspx?cid=900001"]').remove();
                 if (scenario === 'challenge') page.window.document.body.innerHTML = '<h1>Just a moment...</h1>';
             },
         });
         await waitFor(dom, () => dom.window.document.readyState !== 'loading');
-        let result;
+        let result: BuddyRead | undefined;
         listeners.forEach(listener => listener({ type: 'BUDDY_PAGE_READ' }, {
             id: dom.chrome.runtime.id, url: dom.chrome.runtime.getURL('options/favorites.html'),
         }, value => { result = value; }));
-        assert.equal(result.cache, null, scenario);
+        assert.equal(result?.cache, null, scenario);
         assert.equal(dom.chrome._localStore[BUDDY_CACHE_KEY], undefined, scenario);
         dom.window.close();
     }
@@ -829,8 +874,8 @@ test('the date header is one persistent toggle with no backend links', async () 
     assert.equal(sortControl(dom).textContent.trim(), 'Ascent Date ▲');
     assert.equal(sortControl(dom).tagName, 'BUTTON');
     assert.equal(sortControl(dom).type, 'button');
-    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'ascending');
-    assert.equal(sortControl(dom).closest('th').querySelectorAll('a[href]').length, 0);
+    assert.equal(sortControl(dom).closest('th')!.getAttribute('aria-sort'), 'ascending');
+    assert.equal(sortControl(dom).closest('th')!.querySelectorAll('a[href]').length, 0);
     const before = dateTexts(dom);
     const labelsBefore = sectionLabels(dom);
     const visibleBefore = visibleRows(dom).length;
@@ -838,7 +883,7 @@ test('the date header is one persistent toggle with no backend links', async () 
     sortControl(dom).click();
 
     assert.equal(arrow(dom).textContent.trim(), '▼');
-    assert.equal(sortControl(dom).closest('th').getAttribute('aria-sort'), 'descending');
+    assert.equal(sortControl(dom).closest('th')!.getAttribute('aria-sort'), 'descending');
     assert.match(dom.window.location.search, /sort=ascentdated(&|$)/i);
     assert.deepEqual(dateTexts(dom), before.slice().reverse());
     assert.deepEqual(sectionLabels(dom), labelsBefore.slice().reverse());
@@ -862,7 +907,7 @@ test('capture guard intercepts native header sort links but lets year links navi
     const nativeHeader = document.createElement('th');
     nativeHeader.innerHTML = '<a href="?pid=1039&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
     document.body.appendChild(nativeHeader);
-    const header = nativeHeader.querySelector('a');
+    const header = nativeHeader.querySelector('a')!;
     const headerEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     header.dispatchEvent(headerEvent);
     assert.equal(headerEvent.defaultPrevented, true);
@@ -894,13 +939,13 @@ test('a modified click on a native header sort link is left to the browser', asy
     const nativeHeader = document.createElement('th');
     nativeHeader.innerHTML = '<a href="?pid=1039&sort=ascentdated&u=ft&y=9998">Ascent Date</a>';
     document.body.appendChild(nativeHeader);
-    const header = nativeHeader.querySelector('a');
+    const header = nativeHeader.querySelector('a')!;
 
     const servedOrder = dateTexts(dom);
     const servedArrow = arrow(dom).textContent.trim();
     for (const modifier of ['metaKey', 'ctrlKey', 'shiftKey', 'altKey']) {
-        let preventedByGuard = null;
-        const observe = event => {
+        let preventedByGuard: boolean | null = null;
+        const observe = (event: Event) => {
             preventedByGuard = event.defaultPrevented;
             event.preventDefault(); // Keep jsdom from attempting a real navigation.
         };
@@ -973,7 +1018,7 @@ test('a non-date-served page replaces backend links and preserves its active sor
     });
 
     assert.ok(sortControl(dom));
-    assert.equal(tableSortControl(dom, 'Qlty').closest('th').getAttribute('aria-sort'), 'descending');
+    assert.equal(tableSortControl(dom, 'Qlty').closest('th')!.getAttribute('aria-sort'), 'descending');
     assert.equal(tableSortControl(dom, 'Qlty').querySelector('.pbaf-sort-arrow').textContent.trim(), '▼');
     assert.equal(table(dom).querySelectorAll('th a[href]').length, 0);
     assert.equal(sectionRows(dom).length, 0);
@@ -983,16 +1028,16 @@ test('all native sortable headers become client-side controls', async () => {
     const dom = await loadPageWithBar('1039-default-full-columns.html', {
         url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039'
     });
-    const header = [...table(dom).rows].find(row => row.cells[0]?.tagName === 'TH');
+    const header = [...table(dom).rows].find(row => row.cells[0]?.tagName === 'TH')!;
     const labels = [...header.querySelectorAll('.pbaf-table-sort')]
-        .map(control => control.firstChild.textContent.trim());
+        .map(control => control.firstChild!.textContent!.trim());
 
     assert.deepEqual(labels, [
         'Climber', 'Ascent Date', 'Type', 'GPS', 'TR-Words', 'Route',
         'Gain-Ft', 'Mi', 'Route Icons', 'Gear Icons', 'Qlty', 'Link'
     ]);
     assert.equal(header.querySelectorAll('a[href]').length, 0);
-    assert.ok([...header.querySelectorAll('.pbaf-table-sort')].every(control => control.type === 'button'));
+    assert.ok([...header.querySelectorAll<HTMLButtonElement>('.pbaf-table-sort')].every(control => control.type === 'button'));
 });
 
 test('text and numeric controls sort existing rows in both directions', async () => {
@@ -1005,8 +1050,8 @@ test('text and numeric controls sort existing rows in both directions', async ()
         const match = /TR-(\d+)/.exec(row.cells[4].textContent.trim());
         return match ? parseInt(match[1], 10) : 0;
     });
-    const isOrdered = (values, compare) => values.every((value, index) =>
-        index === 0 || compare(values[index - 1], value) <= 0
+    const isOrdered = <T, >(values: T[], compare: (left: T, right: T) => number) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1]!, value) <= 0
     );
 
     tableSortControl(dom, 'Climber').click();
@@ -1081,16 +1126,16 @@ test('personal ClimbListC pages retain the beta bar and persistent date toggle',
 
 test('personal ascent lists ignore remembered climber filters across visits and chip changes', async t => {
     const storageKey = 'pbAscentBetaFilter.v1';
-    const open = async (fixture, options) => {
+    const open = async (fixture: string, options: LoadPageOptions) => {
         const dom = await loadPageWithBar(fixture, options);
         t.after(() => dom.window.close());
         return dom;
     };
     // Carry the actual saved state between same-origin pages, rather than
     // resetting every page to an independent first visit.
-    const carryState = previous => page => page.window.localStorage.setItem(
-        storageKey, previous.window.localStorage.getItem(storageKey));
-    const saved = dom => JSON.parse(dom.window.localStorage.getItem(storageKey));
+    const carryState = (previous: Dom) => (page: Dom) => page.window.localStorage.setItem(
+        storageKey, previous.window.localStorage.getItem(storageKey)!);
+    const saved = (dom: Dom) => JSON.parse(dom.window.localStorage.getItem(storageKey)!);
     const peakOptions = {
         url: SMALL_URL,
         settings: { favoritesSource: 'custom' },
@@ -1098,7 +1143,7 @@ test('personal ascent lists ignore remembered climber filters across visits and 
     };
     const peak = await open(SMALL, peakOptions);
     chip(peak, 'Fav climbers').click();
-    const favoriteRows = dataRows(peak).filter(row => customCids.includes(rowCid(row))).length;
+    const favoriteRows = dataRows(peak).filter(row => customCids.includes(rowCid(row)!)).length;
     assert.ok(favoriteRows > 0 && favoriteRows < dataRows(peak).length);
     assert.equal(visibleRows(peak).length, favoriteRows);
     assert.equal(saved(peak).fav, true);
@@ -1175,32 +1220,32 @@ test('Buddy List sorts every displayed field without showing beta controls', asy
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('#RGridView .pbaf-table-sort').length === 6);
 
-    const buddyTable = dom.window.document.getElementById('RGridView');
+    const buddyTable = dom.window.document.querySelector<HTMLTableElement>('#RGridView')!;
     const rows = () => [...buddyTable.rows].slice(1);
-    const controls = [...buddyTable.querySelectorAll('.pbaf-table-sort')];
-    const labels = controls.map(control => control.firstChild.textContent.trim());
+    const controls = [...buddyTable.querySelectorAll<HTMLButtonElement>('.pbaf-table-sort')];
+    const labels = controls.map(control => control.firstChild!.textContent!.trim());
     assert.deepEqual(labels, [
         'Climber', 'Ascent List', 'Ascent Date', 'Peak or Point', 'Elev-ft', 'Location'
     ]);
     assert.equal(bar(dom), null, 'the Buddy List must not show a beta filter or compact-view notice');
     assert.equal(buddyTable.dataset.bpbInstantSort, 'ready');
-    assert.equal(tableSortControl(dom, 'Climber').closest('th').getAttribute('aria-sort'), 'ascending');
+    assert.equal(tableSortControl(dom, 'Climber').closest('th')!.getAttribute('aria-sort'), 'ascending');
 
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
-    const valueAt = (row, index) => {
-        const text = row.cells[index].textContent.trim();
+    const valueAt = (row: Row, index: number) => {
+        const text = row.cells[index]!.textContent.trim();
         return index === 4 ? parseFloat(text.replace(/,/g, '')) : text;
     };
-    const compareAt = (left, right, index) => index === 4
-        ? left - right
-        : collator.compare(left, right);
-    const isOrdered = (values, compare) => values.every((value, index) =>
-        index === 0 || compare(values[index - 1], value) <= 0
+    const compareAt = (left: string | number, right: string | number, index: number) => index === 4
+        ? Number(left) - Number(right)
+        : collator.compare(String(left), String(right));
+    const isOrdered = <T, >(values: T[], compare: (left: T, right: T) => number) => values.every((value, index) =>
+        index === 0 || compare(values[index - 1]!, value) <= 0
     );
 
     for (const [columnIndex, control] of controls.entries()) {
         control.click();
-        const ariaSort = control.closest('th').getAttribute('aria-sort');
+        const ariaSort = control.closest('th')!.getAttribute('aria-sort');
         assert.ok(ariaSort === 'ascending' || ariaSort === 'descending', `${labels[columnIndex]} did not activate`);
         const values = rows().map(row => valueAt(row, columnIndex));
         const direction = ariaSort === 'ascending' ? 1 : -1;
@@ -1208,7 +1253,7 @@ test('Buddy List sorts every displayed field without showing beta controls', asy
             `${labels[columnIndex]} did not sort ${ariaSort}`);
 
         control.click();
-        assert.notEqual(control.closest('th').getAttribute('aria-sort'), ariaSort,
+        assert.notEqual(control.closest('th')!.getAttribute('aria-sort'), ariaSort,
             `${labels[columnIndex]} did not toggle direction`);
     }
 
@@ -1225,48 +1270,49 @@ test('Peak Lists sort every displayed field in place without showing beta contro
     await waitFor(dom, () =>
         dom.window.document.querySelectorAll('table.gray:first-of-type .pbaf-table-sort').length === 8);
 
-    const peakTable = dom.window.document.querySelector('table.gray');
+    const peakTable = dom.window.document.querySelector<HTMLTableElement>('table.gray');
     const rows = () => [...peakTable.rows]
         .filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
-    const controls = [...peakTable.querySelectorAll('.pbaf-table-sort')];
-    const labels = controls.map(control => control.firstChild.textContent.trim());
+    const controls = [...peakTable.querySelectorAll<HTMLButtonElement>('.pbaf-table-sort')];
+    const labels = controls.map(control => control.firstChild!.textContent!.trim());
     assert.deepEqual(labels, [
         'Rank', 'Peak', 'Elev-Ft', 'Range (Level 5)',
         'Prom-Ft', 'County', 'Ascents', 'Ascent Date'
     ]);
     assert.equal(bar(dom), null, 'Peak Lists must remain sorter-only');
     assert.equal(peakTable.dataset.bpbInstantSort, 'ready');
-    assert.equal(tableSortControl(dom, 'Ascent Date').closest('th').getAttribute('aria-sort'), 'ascending');
+    assert.equal(tableSortControl(dom, 'Ascent Date').closest('th')!.getAttribute('aria-sort'), 'ascending');
     assert.equal(peakTable.querySelectorAll('th a[href]').length, 0);
 
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     const numericColumns = new Set([0, 2, 4, 6]);
-    const dateValue = text => {
+    const dateValue = (text: string) => {
         const match = /(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?/.exec(text);
         return match
             ? [Number(match[1]), Number(match[2] || 0), Number(match[3] || 0)]
             : [0, 0, 0];
     };
-    const valueAt = (row, index) => {
-        const text = row.cells[index].textContent.trim();
+    type Value = string | number | number[];
+    const valueAt = (row: Row, index: number): Value => {
+        const text = row.cells[index]!.textContent.trim();
         if (numericColumns.has(index)) return Number(text.replace(/[^\d.-]/g, ''));
         return index === 7 ? dateValue(text) : text;
     };
-    const compare = (left, right) => {
-        if (Array.isArray(left)) {
+    const compare = (left: Value, right: Value): number => {
+        if (Array.isArray(left) && Array.isArray(right)) {
             for (let index = 0; index < left.length; index++) {
-                if (left[index] !== right[index]) return left[index] - right[index];
+                if (left[index] !== right[index]) return left[index]! - right[index]!;
             }
             return 0;
         }
-        return typeof left === 'number' ? left - right : collator.compare(left, right);
+        return typeof left === 'number' && typeof right === 'number' ? left - right : collator.compare(String(left), String(right));
     };
-    const isOrdered = (values, direction) => values.every((value, index) =>
-        index === 0 || direction * compare(values[index - 1], value) <= 0);
+    const isOrdered = (values: Value[], direction: number) => values.every((value, index) =>
+        index === 0 || direction * compare(values[index - 1]!, value) <= 0);
 
     for (const [columnIndex, control] of controls.entries()) {
         control.click();
-        const ariaSort = control.closest('th').getAttribute('aria-sort');
+        const ariaSort = control.closest('th')!.getAttribute('aria-sort');
         const direction = ariaSort === 'ascending' ? 1 : -1;
         assert.ok(ariaSort === 'ascending' || ariaSort === 'descending',
             `${labels[columnIndex]} did not activate`);
@@ -1274,7 +1320,7 @@ test('Peak Lists sort every displayed field in place without showing beta contro
             `${labels[columnIndex]} did not sort ${ariaSort}`);
 
         control.click();
-        assert.notEqual(control.closest('th').getAttribute('aria-sort'), ariaSort,
+        assert.notEqual(control.closest('th')!.getAttribute('aria-sort'), ariaSort,
             `${labels[columnIndex]} did not toggle direction`);
     }
 
@@ -1297,7 +1343,7 @@ test('other report modes remain untouched despite the query-agnostic manifest ma
 
 const DEFAULT_RECENT = '2296-rainier-default-recent-year.html';
 const DEFAULT_RECENT_URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296';
-const sortParam = dom => new dom.window.URL(dom.window.location.href).searchParams.get('sort');
+const sortParam = (dom: Dom) => new dom.window.URL(dom.window.location.href).searchParams.get('sort');
 
 test('newest-first flips a default oldest-first list to descending and rewrites the URL', async () => {
     const served = dateTexts(await loadPageWithBar(DEFAULT_RECENT, { url: DEFAULT_RECENT_URL }));
@@ -1360,8 +1406,8 @@ test('a header sort captured before settings resolve wins over the auto-flip', a
 
     // Hold the one settings read open so the sorter wires up (buttons replace
     // the native links) while the auto-flip is still pending.
-    let release;
-    const gate = new Promise(resolve => { release = resolve; });
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => { release = resolve; });
     const dom = await loadPage(DEFAULT_RECENT, {
         url: DEFAULT_RECENT_URL,
         settings: { betaSortDateDesc: true },
@@ -1377,7 +1423,7 @@ test('a header sort captured before settings resolve wins over the auto-flip', a
     const th = dom.window.document.createElement('th');
     th.innerHTML = '<a href="?pid=2296&sort=ascentdate&u=ft&y=9999">Ascent Date</a>';
     dom.window.document.body.appendChild(th);
-    th.querySelector('a').dispatchEvent(
+    th.querySelector('a')!.dispatchEvent(
         new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
 
     release();
@@ -1391,22 +1437,22 @@ test('a header sort captured before settings resolve wins over the auto-flip', a
 test('legacy orders migrate, synced orders win, and keyboard changes reach settings', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
         prepare: page => rememberFilterState(page, { peakOrder: ['beta', 'tr', 'gps', 'link', 'fav'], personalOrder: ['beta', 'link', 'tr', 'gps'] }) });
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[0] === 'beta');
-    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPersonalFilterOrder), ['beta', 'link', 'tr', 'gps']);
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings!.betaPeakFilterOrder as string[] | undefined)?.[0] === 'beta');
+    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings!.betaPersonalFilterOrder as string[]), ['beta', 'link', 'tr', 'gps']);
     await dom.chrome.storage.sync.set({ bpbSettings: { betaPeakFilterOrder: ['gps', 'fav', 'tr', 'link', 'beta'] } });
     await waitFor(dom, () => filterLabels(dom)[0] === 'GPS track');
     assert.deepEqual(filterLabels(dom), ['GPS track', 'Climbing buddies', 'Trip report', 'Link', 'Has beta']);
     chip(dom, 'Has beta').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true, bubbles: true }));
-    await waitFor(dom, () => dom.chrome._store.bpbSettings.betaPeakFilterOrder?.[3] === 'beta');
-    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings.betaPeakFilterOrder), ['gps', 'fav', 'tr', 'beta', 'link']);
+    await waitFor(dom, () => (dom.chrome._store.bpbSettings!.betaPeakFilterOrder as string[] | undefined)?.[3] === 'beta');
+    assert.deepEqual(Array.from(dom.chrome._store.bpbSettings!.betaPeakFilterOrder as string[]), ['gps', 'fav', 'tr', 'beta', 'link']);
 });
 
-const ignoredStore = cids => ({ schemaVersion: 1, revision: 1,
+const ignoredStore = (cids: number[]) => ({ schemaVersion: 1, revision: 1,
     entries: cids.map(cid => ({ cid, name: 'Ignored', addedAt: 1 })) });
-const utility = (dom, text) => [...bar(dom).querySelectorAll('button')].find(button => button.textContent.startsWith(text));
+const utility = (dom: Dom, text: string) => [...bar(dom).querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent.startsWith(text))!;
 test('ignored ascent disclosure keeps the count format and filter-match detail stable', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL,
-        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]]) } });
+        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]!]) } });
     try {
         const total = dataRows(dom).length, hidden = total - visibleRows(dom).length;
         assert.ok(hidden > 0);
@@ -1473,16 +1519,16 @@ test('an all-hidden list retains full-list recovery below the disclosure row', a
 });
 test('ignores compose with favorites, sorting, clear filters and temporary full-list recovery', async () => {
     const dom = await loadPageWithBar(SMALL, { url: SMALL_URL, settings: { favoritesSource: 'custom' },
-        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]]), [FAVORITES_KEY]: favoriteStore(customCids) } });
+        local: { bpbIgnoredClimbers: ignoredStore([customCids[0]!]), [FAVORITES_KEY]: favoriteStore(customCids) } });
     const all = dataRows(dom).length;
     const ignored = dataRows(dom).filter(row => rowCid(row) === customCids[0]).length;
     assert.equal(visibleRows(dom).length, all - ignored);
     chip(dom, 'Fav climbers').click();
     assert.ok(visibleRows(dom).every(row => rowCid(row) === customCids[1]));
     utility(dom, 'Show ignored').click();
-    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row))));
+    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row)!)));
     sortControl(dom).click();
-    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row))));
+    assert.ok(visibleRows(dom).every(row => customCids.includes(rowCid(row)!)));
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, all - ignored);
     await dom.chrome.storage.local.set({ [FAVORITES_KEY]: favoriteStore([]) });

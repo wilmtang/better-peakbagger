@@ -48,6 +48,7 @@ independent of the existing targets.
 - [create-chrome-description.mts](create-chrome-description.mts)
 - [dependency-metadata.mts](dependency-metadata.mts)
 - [privacy-guard.mts](privacy-guard.mts)
+- [browser-tests.mts](browser-tests.mts) — In-page browser test runner for `test/**/*.browser.mts`: bundles each file with in-page `node:` runtimes and runs it in hidden Chromium and Firefox; part of `npm run verify -- dom`.
 - [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness for `.dom.mts` suites under `test/dom/`, with routed fixtures, extension stubs, and selection by suite or case.
 - [vite-build.mts](vite-build.mts) — The production Vite compiler used by builds and watch generations.
 - [svelte-build.mts](svelte-build.mts) — Shared Svelte compiler settings for development and release bundles.
@@ -85,7 +86,7 @@ independent of the existing targets.
 - [verification-browser-identity.mts](verification-browser-identity.mts)
 - [verification-repetitions.mts](verification-repetitions.mts)
 - [verify.mts](verify.mts)
-- [verify-dom.mts](verify-dom.mts) — `npm run verify -- dom`: runs the browser DOM tier in Chromium and Firefox.
+- [verify-dom.mts](verify-dom.mts) — `npm run verify -- dom`: runs the browser DOM tier (orchestrated suites, then in-page browser tests) in Chromium and Firefox.
 - [verify-fixture-preflight.mts](verify-fixture-preflight.mts) — Early locale, evidence, worker authorization and shipped-fixture checks.
 
 ## Complete extension and package verification

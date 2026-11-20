@@ -747,6 +747,34 @@ against the real settings store in hidden Chromium 158.0.8127.18 and
 Firefox 159.0 at 1000 × 760. A disposable bundle that allowed page-world
 theme writes failed the allowlist case in Chromium.
 
+**Approach change (November 18).** Rewriting each jsdom file as a
+Node-orchestrated `.dom.mts` suite moved about 20 owners in five hours and
+risked silently dropping assertions in the rewrite; 168 files (about 72,000
+lines) still reached jsdom. The DOM tier now also runs in-page browser tests
+(`*.browser.mts`, [browser-tests.mts](../../scripts/browser-tests.mts)): the
+existing `node:test` files run inside hidden Chromium and Firefox with small
+in-page runtimes for the Node modules they use, and
+[fixture-dom.mts](../../test/helpers/fixture-dom.mts) replaces `new JSDOM()`
+with a same-origin frame that has real layout, inert inline scripts and the
+fixture URL as its own URL and base URL. Trusted input is real automation
+input. A port keeps the test's assertions and changes them only where the
+real browser differs, recording why. The first port,
+[ascent-filter.browser.mts](../../test/ascent/ascent-filter.browser.mts),
+passes in hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760. Real
+input changed these cases: modifier clicks use Command on macOS (a
+Control-click there is a secondary click with no `click`, so Control is
+exercised on Linux CI); the pointer drag uses real pointer input and asserts
+that the lifted chip stays under the pointer (jsdom's zero `offsetLeft` had
+fixed its translate at -290 px) and that the displaced filter eases in from
+its old slot; the Settings cases check that an activation was sent within the
+click's own dispatch, observed by a later listener, because automation can
+return before the page handles input; and successive key presses pause as a
+person would, since browsers run queued input ahead of zero-delay timers.
+Playwright's Firefox dispatches no `auxclick` for a middle click, so that case
+is a separate test skipped in Firefox. Disposable bundles without the
+trusted-click guard and without the keyboard click's `detail === 0` check
+failed their cases (the latter in both engines).
+
 1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
    `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
    and additional tests reach it through helpers. Pure logic that needs no DOM

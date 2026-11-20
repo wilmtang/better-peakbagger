@@ -63,6 +63,8 @@ export interface StoredRecord {
     settings: Record<string, unknown>;
     deletedGeneration: string;
     storageGeneration: string;
+    fetchedAt: number;
+    ownerCid: number | null;
     [field: string]: unknown;
 }
 

@@ -1720,7 +1720,7 @@ The focused automated evidence is deliberately split by boundary:
   and rejection of wrong or challenged content.
 - `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
   response classification, typed failures, and document parsing.
-- `test/ascent/ascent-filter.test.mjs` covers custom AND-filtering, persisted chip state,
+- `test/ascent/ascent-filter.browser.mts` covers custom AND-filtering, persisted chip state,
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
   and zero-network Buddy-page caching.
 - `test/options/options-favorites.test.mjs` covers source switching, provenance counts/filtering,
