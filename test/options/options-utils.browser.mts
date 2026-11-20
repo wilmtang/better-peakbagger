@@ -3,20 +3,20 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { optionsUtils as Utils } from '../../options/options-utils.ts';
 
 test('options busy runner rejects overlap and always clears its state', async () => {
     let busy = false;
-    let release;
+    let release!: () => void;
     let calls = 0;
     const state = {
         isBusy: () => busy,
-        setBusy: value => { busy = value; },
+        setBusy: (value: boolean) => { busy = value; },
     };
     const first = Utils.withBusy(state, async () => {
         calls++;
-        await new Promise(resolve => { release = resolve; });
+        await new Promise<void>(resolve => { release = resolve; });
     });
     await Utils.withBusy(state, async () => { calls++; });
     assert.equal(calls, 1);
@@ -36,9 +36,9 @@ test('options repository names prefer the canonical full name', () => {
 });
 
 test('options missing-element diagnostics name every absent control', () => {
-    const messages = [];
+    const messages: unknown[] = [];
     const original = console.error;
-    console.error = message => messages.push(message);
+    console.error = (message: unknown) => { messages.push(message); };
     try {
         assert.equal(Utils.logMissingElements('test panel', {
             present: {}, missing: null, 'empty selector': [], 'partial selector': [{}, null]
@@ -53,22 +53,15 @@ test('options missing-element diagnostics name every absent control', () => {
 });
 
 test('options action buttons share one accessible non-submit shape', () => {
-    const dom = new JSDOM('<!doctype html><body></body>');
-    const previousDocument = globalThis.document;
-    globalThis.document = dom.window.document;
-    try {
-        const button = Utils.actionButton('secondary', 'Delete', 'Delete Mount Rainier');
-        assert.equal(button.outerHTML,
-            '<button type="button" class="panel-button secondary" aria-label="Delete Mount Rainier">Delete</button>');
-    } finally {
-        globalThis.document = previousDocument;
-        dom.window.close();
-    }
+    // The settings page builds its buttons in its own document.
+    const button = Utils.actionButton('secondary', 'Delete', 'Delete Mount Rainier');
+    assert.equal(button.outerHTML,
+        '<button type="button" class="panel-button secondary" aria-label="Delete Mount Rainier">Delete</button>');
 });
 
 test('scoped status dismissal preserves a newer report and manual dismissal still works', () => {
-    const dom = new JSDOM('<div id="status"></div><div id="error" hidden><span id="text"></span><button id="dismiss"></button></div>');
-    const el = id => dom.window.document.getElementById(id);
+    const dom = new FixtureDom('<div id="status"></div><div id="error" hidden><span id="text"></span><button id="dismiss"></button></div>');
+    const el = (id: string) => dom.window.document.getElementById(id);
     const { flash, dismissStatus } = Utils.createStatusFlash({
         statusEl: el('status'), statusErrorEl: el('error'), statusErrorTextEl: el('text'), statusErrorDismissEl: el('dismiss'),
     });

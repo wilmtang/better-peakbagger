@@ -4,16 +4,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
 import { photoProject as Project } from '../../src/photos/photo-project.ts';
 
 const html = await fs.readFile(new URL('../../photos/guide.html', import.meta.url), 'utf8');
 const source = await fs.readFile(new URL('../../photos/guide.ts', import.meta.url), 'utf8');
-const doc = new JSDOM(html).window.document;
+const parse = (markup: string) => new DOMParser().parseFromString(markup, 'text/html');
+const doc = parse(html);
 const manifest = JSON.parse(await fs.readFile(new URL('../../manifest.json', import.meta.url), 'utf8'));
 const photosHtml = await fs.readFile(new URL('../../photos/photos.html', import.meta.url), 'utf8');
-const photosDoc = new JSDOM(photosHtml).window.document;
+const photosDoc = parse(photosHtml);
 const photosSource = await fs.readFile(new URL('../../photos/photos.ts', import.meta.url), 'utf8');
 const optionsHtml = await fs.readFile(new URL('../../options/options.html', import.meta.url), 'utf8');
 const reportEditor = await fs.readFile(
@@ -27,12 +27,12 @@ test('the guide ships as a packaged page with no inline script', () => {
     assert.deepEqual([...doc.querySelectorAll('script')].map(node => node.getAttribute('src')),
         ['photos-head.js', 'guide.js'],
         'no inline script, and the theme resolves before the stylesheet paints');
-    assert.equal(doc.querySelector('script[src="photos-head.js"]').hasAttribute('defer'), false);
-    assert.equal(doc.querySelector('script[src="guide.js"]').hasAttribute('defer'), true);
+    assert.equal(doc.querySelector('script[src="photos-head.js"]')!.hasAttribute('defer'), false);
+    assert.equal(doc.querySelector('script[src="guide.js"]')!.hasAttribute('defer'), true);
     // The trip-report popover links here from a Peakbagger page, and a browser
     // refuses that navigation unless the page is web-accessible from it.
     const entry = manifest.web_accessible_resources
-        .find(record => record.resources.includes('photos/guide.html'));
+        .find((record: { resources: string[] }) => record.resources.includes('photos/guide.html'));
     assert.ok(entry, 'the guide must be reachable from a Peakbagger tab');
     assert.deepEqual(entry.matches, ['https://www.peakbagger.com/*', 'https://peakbagger.com/*']);
 });
@@ -42,14 +42,14 @@ test('the guide ships as a packaged page with no inline script', () => {
 // left. Every Photo Topos page now shows the same three views, in order, with
 // the current one marked.
 test('every photo page shows the same view tabs, marking the current one', () => {
-    const tabs = node => [...node.querySelectorAll('.view-tabs .tab-button')]
+    const tabs = (node: Document) => [...node.querySelectorAll('.view-tabs .tab-button')]
         .map(control => control.textContent.trim());
     assert.deepEqual(tabs(doc), ['Editor', 'Library', 'Guide']);
     assert.deepEqual(tabs(photosDoc), ['Editor', 'Library', 'Guide']);
     assert.equal(doc.querySelector('.view-tabs [aria-current="page"]')?.textContent.trim(), 'Guide');
     assert.equal(photosDoc.querySelector('.view-tabs [aria-current="page"]')?.textContent.trim(), 'Editor');
-    assert.equal(doc.querySelector('.view-tabs').getAttribute('aria-label'),
-        photosDoc.querySelector('.view-tabs').getAttribute('aria-label'),
+    assert.equal(doc.querySelector('.view-tabs')!.getAttribute('aria-label'),
+        photosDoc.querySelector('.view-tabs')!.getAttribute('aria-label'),
         'one component, one accessible name');
     // The guide's Editor and Library tabs must land on the view they name, and
     // photos.js reads exactly this parameter to open on the library.
@@ -68,12 +68,12 @@ test('the contents list is a sidebar that tracks the section being read', () => 
     const items = [...doc.querySelectorAll('.side-nav .nav-item')];
     const sections = [...doc.querySelectorAll('.content section[id]')];
     assert.equal(items.length, sections.length, 'one contents entry per section');
-    assert.deepEqual(items.map(link => link.getAttribute('href').slice(1)),
+    assert.deepEqual(items.map(link => link.getAttribute('href')!.slice(1)),
         sections.map(section => section.id),
         'the contents list must follow the guide in document order');
     for (const link of items) {
-        const heading = doc.getElementById(link.getAttribute('href').slice(1)).querySelector('h2');
-        assert.equal(link.textContent.trim(), heading.textContent.trim(),
+        const heading = doc.getElementById(link.getAttribute('href')!.slice(1))!.querySelector('h2')!;
+        assert.equal(link.textContent!.trim(), heading.textContent!.trim(),
             'a contents entry must read as the heading it goes to');
     }
     // The shared scroll-spy is inert unless it finds both of these.
@@ -85,7 +85,7 @@ test('the contents list is a sidebar that tracks the section being read', () => 
 
 test('the legend is painted from the renderer, once per symbol', () => {
     assert.match(source, /markerSymbolSvg/);
-    const legend = [...doc.querySelectorAll('.guide-legend [data-symbol]')]
+    const legend = [...doc.querySelectorAll<HTMLElement>('.guide-legend [data-symbol]')]
         .map(node => node.dataset.symbol);
     assert.deepEqual(legend, [...Project.MARKER_TYPES],
         'every marker tool needs an entry, and the guide must not invent one');
@@ -97,10 +97,10 @@ test('the legend is painted from the renderer, once per symbol', () => {
 test('every anchor in the guide resolves to a heading it actually has', () => {
     const ids = new Set([...doc.querySelectorAll('[id]')].map(node => node.id));
     const internal = [...doc.querySelectorAll('a[href^="#"]')]
-        .map(link => link.getAttribute('href').slice(1));
+        .map(link => link.getAttribute('href')!.slice(1));
     assert.ok(internal.length >= 10, 'the contents list should cover the guide');
     for (const target of internal) assert.ok(ids.has(target), `#${target} names nothing`);
-    for (const link of doc.querySelectorAll('a[href^="http"]')) {
+    for (const link of doc.querySelectorAll<HTMLAnchorElement>('a[href^="http"]')) {
         assert.equal(link.target, '_blank');
         assert.equal(link.rel, 'noopener noreferrer', link.href);
     }
@@ -134,13 +134,13 @@ test('the guide answers the questions the surfaces send readers here with', () =
 // it has to be able to reach the library it talks about. It previously told the
 // reader to use "Download project in the photo library" without linking there.
 test('settings can reach the photo library it configures and backs up', () => {
-    const doc = new JSDOM(optionsHtml).window.document;
-    const links = [...doc.querySelectorAll('a[href*="photos/photos.html"]')]
+    const options = parse(optionsHtml);
+    const links = [...options.querySelectorAll('a[href*="photos/photos.html"]')]
         .map(link => link.getAttribute('href'));
     assert.ok(links.length >= 2, 'the key section and the backup copy both need a way there');
     // photos.js opens on the library only for this exact parameter.
-    for (const href of links) assert.match(href, /\?mode=library$/);
-    assert.ok(doc.querySelector('#capture-photos #open-photo-library'));
+    for (const href of links) assert.match(href ?? '', /\?mode=library$/);
+    assert.ok(options.querySelector('#capture-photos #open-photo-library'));
 });
 
 test('each surface links to the guide rather than restating it', () => {

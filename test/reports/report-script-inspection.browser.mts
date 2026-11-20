@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from '../helpers/test-dom.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { marked } from 'marked';
 import { inspectReportScripts, INSPECTION_LIMITS } from '../../src/reports/report-script-source.ts';
 import { createScriptNotice } from '../../src/reports/report-script-notice.ts';
@@ -10,9 +10,8 @@ import { sanitizeReportCells } from '../../src/reports/report-protection.ts';
 import { reportMarkup } from '../../src/reports/report-markup.ts';
 
 function fixture(source: string) {
-    const dom = new JSDOM('<!doctype html><body><main></main>', {runScripts:'outside-only',url:'https://www.peakbagger.com/climber/ascent.aspx'});
+    const dom = new FixtureDom('<!doctype html><body><main></main>', {url:'https://www.peakbagger.com/climber/ascent.aspx'});
     const root = dom.window.document.querySelector('main')!;
-    globalThis.DOMParser = dom.window.DOMParser;
     root.innerHTML = source;
     return {dom,root};
 }
@@ -121,6 +120,9 @@ test('notice uses inert text and native disclosure; source selection preserves c
         assert.equal(notice.querySelector('img,script'),null);
         assert.equal(notice.querySelector('summary')!.hasAttribute('aria-label'),false);
         assert.match(notice.querySelector('summary')!.textContent!,/Better Peakbagger report protection: .*2 scripts blocked/);
+        // A user opens the disclosure before reaching its controls; a
+        // collapsed <details> keeps them unfocusable.
+        notice.open = true;
         const buttons = [...notice.querySelectorAll('button')];
         buttons[1].focus(); buttons[1].click();
         assert.equal(dom.window.document.activeElement,buttons[1]);

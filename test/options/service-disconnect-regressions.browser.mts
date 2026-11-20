@@ -1,24 +1,24 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { createGarminImports } from '../../src/garmin/garmin-imports.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
-import { loadOptions as untypedLoadOptions, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mts';
-import type { ChromeStub, LoadPage, PageDom, StubMessage } from '../helpers/page-types.mts';
+import { loadOptions, registerCleanup, waitFor, type OptionsPage } from '../helpers/options-page.mts';
+import type { PageChrome as ChromeStub } from '../helpers/chrome-stub.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 type ImportOptions = Parameters<typeof createGarminImports>[0];
 // The options window hooks these tests replace before the page loads.
 interface HookWindow { setInterval: (callback: () => void) => number; confirm: (message: string) => boolean }
 // The in-page deletion question, or null while none is shown.
-const deleteQuestion = (dom: PageDom) => byId(dom, 'garmin-delete-confirmation').hidden ? null
+const deleteQuestion = (dom: OptionsPage) => byId(dom, 'garmin-delete-confirmation').hidden ? null
     : byId(dom, 'garmin-delete-confirmation-title').textContent;
-const loadOptions = untypedLoadOptions as unknown as LoadPage;
 registerCleanup();
-const byId = (dom: PageDom, id: string) => dom.window.document.getElementById(id);
+const byId = (dom: OptionsPage, id: string) => dom.window.document.getElementById(id);
 
 test('GitHub reflects a connection restored in another settings window', async () => {
     let connected = true;
@@ -120,6 +120,8 @@ test('Garmin local deletion replaces the earlier kept-drafts confirmation', asyn
     byId(dom, 'garmin-disconnect').click();
     await waitFor(dom, () => byId(dom, 'garmin-disconnect').hidden && !byId(dom, 'garmin-disconnect').hasAttribute('aria-busy'));
     assert.match(byId(dom, 'garmin-key-status').textContent, /drafts are kept/);
+    // Delete lives in the collapsed Connection details; a user opens it first.
+    byId(dom, 'garmin-delete').closest('details')!.open = true;
     byId(dom, 'garmin-delete').click();
     assert.equal(deleteQuestion(dom), 'Delete 25 local Garmin drafts and their import history?');
     assert.equal(dom.window.document.activeElement, byId(dom, 'garmin-delete-confirm'));
