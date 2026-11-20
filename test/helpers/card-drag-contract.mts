@@ -1,9 +1,23 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
+import type test from 'node:test';
+
+export interface CardDragEnvironment {
+    position(): string | undefined;
+    active(): boolean;
+    start(): void;
+    smallMove(): void;
+    move(pointerId: number): void;
+    finish(pointerId: number): void;
+    interrupt(reason: string): void;
+    close(): void;
+}
 
 // Run the same input invariants against real layout adapters and their native
 // fixtures. The adapter supplies destinations; this contract never moves nodes.
-export function registerCardDragContract(test, name, setup) {
-    test(`${name}: shared pointer threshold and ownership contract`, async () => {
+export function registerCardDragContract(register: typeof test, name: string, setup: () => CardDragEnvironment | Promise<CardDragEnvironment>) {
+    register(`${name}: shared pointer threshold and ownership contract`, async () => {
         const env = await setup();
         try {
             const before = env.position(); env.start(); env.smallMove(); assert.equal(env.active(), false);
@@ -14,7 +28,7 @@ export function registerCardDragContract(test, name, setup) {
         } finally { env.close(); }
     });
     for (const reason of ['Escape', 'blur', 'resize', 'pointercancel', 'lostpointercapture']) {
-        test(`${name}: shared ${reason} cancellation contract`, async () => {
+        register(`${name}: shared ${reason} cancellation contract`, async () => {
             const env = await setup();
             try {
                 const before = env.position(); env.start(); env.move(1); assert.equal(env.active(), true);

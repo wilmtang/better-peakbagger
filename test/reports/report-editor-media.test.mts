@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
-import { pointerEvent as untypedPointerEvent } from '../helpers/pointer-event.mjs';
+import { pointerEvent as untypedPointerEvent } from '../helpers/pointer-event.mts';
 import { loadEditor as untypedLoadEditor, editorReady, editors, modeButton, videoMarkup, youtubeMarkup, EDITOR_URL, DRAFT_KEY } from '../helpers/report-editor-helpers.mjs';
 import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 

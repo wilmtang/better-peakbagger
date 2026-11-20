@@ -1,34 +1,34 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
-import { changeBuddy, readBuddyProfile } from '../../src/favorites/buddy-client.ts';
-import { BUDDY_INTENTS_KEY } from '../../src/favorites/buddy-state.ts';
-import { makeChromeStub } from '../helpers/load-page.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { changeBuddy, readBuddyProfile, type BuddyClientRuntimeApi, type ChangeBuddyOptions } from '../../src/favorites/buddy-client.ts';
+import { BUDDY_INTENTS_KEY, type BuddyAction } from '../../src/favorites/buddy-state.ts';
+import { makeChromeStub } from '../helpers/fixture-page.mts';
 
 const html = await readFile(new URL('../fixtures/pages/climber-buddy-form.html', import.meta.url), 'utf8');
 const origin = 'https://www.peakbagger.com', url = `${origin}/climber/climber.aspx?cid=900002`;
 const identity = { cid: 900002, ownerCid: 900001, origin };
-const buddyHtml = buddy => buddy ? html.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
+const buddyHtml = (buddy: boolean) => buddy ? html.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
     .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : html;
-const response = (t, text, responseUrl = url) => {
-    const dom = new JSDOM(text, { url: responseUrl }); t.after(() => dom.window.close());
-    return { kind: 'ok', url: responseUrl, document: dom.window.document };
+const response = (t: TestContext, text: string, responseUrl = url) => {
+    const dom = new FixtureDom(text, { url: responseUrl }); t.after(() => dom.window.close());
+    return { kind: 'ok' as const, url: responseUrl, document: dom.window.document as unknown as Document };
 };
-const harness = (t, { local = {}, settings = {}, buddy = false } = {}) => {
+const harness = (t: TestContext, { local = {}, settings = {}, buddy = false }: { local?: Record<string, unknown>; settings?: Record<string, unknown>; buddy?: boolean } = {}) => {
     const api = makeChromeStub({ bpbSettings: { favoritesSource: 'custom', ...settings } }, local);
-    const h = { api, buddy, gets: 0, posts: [], owner: identity.ownerCid };
-    h.change = (action = 'add', options = {}) => changeBuddy({ api, target: { cid: identity.cid, name: 'Casey Alpine' },
-        ...identity, action, currentOwner: () => h.owner,
-        fetchDocument: async () => { h.gets++; return response(t, buddyHtml(h.buddy)); },
-        fetchResource: async (destination, options) => {
-            const body = new URLSearchParams(options.init.body);
-            assert.equal(options.init.redirect, 'error', 'native tokens must not follow a POST redirect');
-            h.posts.push(body); assert.equal(destination, url);
-            h.buddy = body.has('AddBuddy'); return { kind: 'ok', text: 'Untrusted POST response' };
-        }, ...options });
+    const h = { api, buddy, gets: 0, posts: [] as URLSearchParams[], owner: identity.ownerCid as number | null,
+        change: (action: BuddyAction = 'add', options: Partial<ChangeBuddyOptions> = {}) => changeBuddy({ api: api as unknown as BuddyClientRuntimeApi, target: { cid: identity.cid, name: 'Casey Alpine' },
+            ...identity, action, currentOwner: () => h.owner,
+            fetchDocument: async () => { h.gets++; return response(t, buddyHtml(h.buddy)); },
+            fetchResource: async (destination, request) => {
+                const body = new URLSearchParams(request?.init?.body as string);
+                assert.equal(request?.init?.redirect, 'error', 'native tokens must not follow a POST redirect');
+                h.posts.push(body); assert.equal(destination, url);
+                h.buddy = body.has('AddBuddy'); return { kind: 'ok', text: 'Untrusted POST response' };
+            }, ...options }) };
     return h;
 };
 
@@ -78,7 +78,7 @@ test('a lost POST response confirms through a new read; a failed read requires s
         return response(t, buddyHtml(h.buddy));
     } }), /not confirmed/);
     const posts = h.posts.length;
-    assert.equal(h.api._localStore[BUDDY_INTENTS_KEY][0].status, 'dispatched');
+    assert.equal((h.api._localStore[BUDDY_INTENTS_KEY] as unknown as { status: string }[])[0]!.status, 'dispatched');
     await h.change('add', { checkOnly: true });
     assert.equal(h.posts.length, posts, 'recovery must never replay the write');
     assert.deepEqual(h.api._localStore[BUDDY_INTENTS_KEY], []);

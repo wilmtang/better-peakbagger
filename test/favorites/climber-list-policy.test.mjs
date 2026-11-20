@@ -6,7 +6,7 @@ import { createFavoritesStore } from '../../src/background/favorites-store.ts';
 import { createIgnoredStore } from '../../src/background/ignored-store.ts';
 import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.ts';
 import * as I from '../../src/favorites/ignored-climbers.ts';
-import { harness as syncHarness, entry } from '../helpers/ignored-sync-harness.mjs';
+import { harness as syncHarness, entry } from '../helpers/ignored-sync-harness.mts';
 
 const favorite = cid => ({ ...entry(cid), source: 'manual' });
 const harness = initial => {

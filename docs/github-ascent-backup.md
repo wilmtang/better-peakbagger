@@ -1216,7 +1216,7 @@ consumes its own snapshot.
 | Check | Proves | Does not prove |
 | --- | --- | --- |
 | `test/ascent/ascent-snapshot.test.mjs` | ASP.NET field-name mapping and normalization | Live Peakbagger DOM stability |
-| `test/ascent/ascent-backup-source.test.mjs` | Shared fetch options, body classification, form completeness/identity, GPX URL | Signed-in network behavior |
+| `test/ascent/ascent-backup-source.browser.mts` | Shared fetch options, body classification, form completeness/identity, GPX URL | Signed-in network behavior |
 | `test/ascent/ascent-backup.test.mjs` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
 | `test/ascent/ascent-saved.test.mjs` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
 | `test/profile/profile-backup*.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |

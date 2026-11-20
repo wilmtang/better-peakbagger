@@ -3,19 +3,22 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom, browserWindow } from '../helpers/fixture-dom.mts';
+import { rect } from '../helpers/page-types.mts';
 import { createMapLocationMenu, readMapPoint } from '../../src/maps/map-location-menu.ts';
 import { bindMapLocationMenu } from '../../src/maps/peak-weather-map.ts';
 
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function setup() {
-    const dom = new JSDOM('<!doctype html><html><head></head><body><iframe id="Gmap"></iframe><div id="map" tabindex="0"></div></body></html>', {
-        url: 'https://www.peakbagger.com/Peak.aspx?pid=1', pretendToBeVisual: true,
+    const dom = new FixtureDom('<!doctype html><html><head></head><body><iframe id="Gmap"></iframe><div id="map" tabindex="0"></div></body></html>', {
+        url: 'https://www.peakbagger.com/Peak.aspx?pid=1',
     });
-    const win = dom.window, calls = [], messages = [], target = win.document.getElementById('map');
+    const win = dom.window, target = win.document.getElementById('map');
+    const calls: { point: unknown; signal: AbortSignal; resolve: (value: number | null) => void; reject: (error: unknown) => void }[] = [];
+    const messages: Record<string, unknown>[] = [];
     win.postMessage = data => messages.push(data);
-    target.getBoundingClientRect = () => ({ left: 20, top: 20, right: 650, bottom: 450, width: 630, height: 430 });
-    const menu = createMapLocationMenu({ window: win, client: {
+    target.getBoundingClientRect = () => rect({ left: 20, top: 20, right: 650, bottom: 450, width: 630, height: 430 });
+    const menu = createMapLocationMenu({ window: browserWindow(win), client: {
         lookup(point, { signal }) { return new Promise((resolve, reject) => calls.push({ point, signal, resolve, reject })); }, clear() {},
     } });
     const node = win.document.getElementById('bpb-peak-weather-menu');
@@ -43,7 +46,7 @@ test('no data, timeouts and rate limits stay explicit; sizing reservations are h
     const env = setup();
     try {
         for (const result of [null, new Error('timeout'), Object.assign(new Error('limited'), { code: 'rate-limit' })]) {
-            env.show(); const call = env.calls.at(-1);
+            env.show(); const call = env.calls.at(-1)!;
             if (result instanceof Error) call.reject(result); else call.resolve(result);
             await flush(); assert.notEqual(env.node.dataset.state, 'ready');
             assert.match(env.node.querySelector('.bpb-map-location-value').textContent, /unavailable/i);
@@ -52,7 +55,7 @@ test('no data, timeouts and rate limits stay explicit; sizing reservations are h
         assert.equal(env.node.querySelectorAll('[data-sizing-text] :is(button,a,input)').length, 0);
         env.node.dispatchEvent(new env.win.Event('scroll')); assert.equal(env.node.hidden, false, 'a short viewport may scroll the menu');
         env.win.dispatchEvent(new env.win.Event('scroll')); assert.equal(env.node.hidden, true, 'page scrolling dismisses the menu');
-        env.show(); env.calls.at(-1).resolve(0); await flush(); assert.match(env.node.querySelector('.bpb-map-location-value').textContent, /≈ 0 ft/);
+        env.show(); env.calls.at(-1)!.resolve(0); await flush(); assert.match(env.node.querySelector('.bpb-map-location-value').textContent, /≈ 0 ft/);
     } finally { env.close(); }
 });
 
@@ -87,20 +90,21 @@ test('invalid and out-of-map points neither display nor fetch', () => {
 
 test('native map binding scopes trusted projection, normalizes longitude, preserves controls and detaches', () => {
     const env = setup(), doc = env.win.document, handlers = new Map(), original = doc.addEventListener.bind(doc);
-    doc.addEventListener = (type, handler, options) => { handlers.set(type, handler); original(type, handler, options); };
-    let projected = 0, shown;
+    type Handler = (event: Record<string, unknown>) => void;
+    doc.addEventListener = ((type: string, handler: Handler, options?: AddEventListenerOptions) => { handlers.set(type, handler); original(type, handler as unknown as EventListener, options); }) as typeof doc.addEventListener;
+    let projected = 0, shown: { latitude: number; longitude: number; keyboard?: boolean } | undefined;
     const unbind = bindMapLocationMenu({ ownerWindow: env.win, map: {
         getContainer: () => env.target, getCenter: () => ({ lat: 40, lng: 0 }),
         mouseEventToLatLng: () => { projected++; return { lat: 46.8, lng: 238.3 }; },
-    }, menu: { close() {}, show: data => { shown = data; } } });
+    }, menu: { close() {}, show: (data: typeof shown) => { shown = data; } } });
     try {
         const event = { target: env.target, isTrusted: true, button: 2, clientX: 30, clientY: 40, preventDefault() {}, stopPropagation() {} };
-        handlers.get('contextmenu')({ ...event, isTrusted: false }); assert.equal(projected, 0);
-        handlers.get('contextmenu')(event); assert.equal(projected, 1); assert.ok(Math.abs(shown.longitude + 121.7) < 1e-8);
+        handlers.get('contextmenu')!({ ...event, isTrusted: false }); assert.equal(projected, 0);
+        handlers.get('contextmenu')!(event); assert.equal(projected, 1); assert.ok(Math.abs(shown!.longitude + 121.7) < 1e-8);
         const button = doc.createElement('button'); env.target.append(button);
-        handlers.get('contextmenu')({ ...event, target: button }); assert.equal(projected, 1);
-        handlers.get('contextmenu')({ ...event, button: 0, clientX: 0, clientY: 0 }); assert.equal(shown.latitude, 40);
-        handlers.get('keydown')({ ...event, key: 'F10', shiftKey: true });
-        assert.equal(shown.keyboard, true); assert.equal(shown.latitude, 40);
+        handlers.get('contextmenu')!({ ...event, target: button }); assert.equal(projected, 1);
+        handlers.get('contextmenu')!({ ...event, button: 0, clientX: 0, clientY: 0 }); assert.equal(shown!.latitude, 40);
+        handlers.get('keydown')!({ ...event, key: 'F10', shiftKey: true });
+        assert.equal(shown!.keyboard, true); assert.equal(shown!.latitude, 40);
     } finally { unbind(); env.close(); }
 });

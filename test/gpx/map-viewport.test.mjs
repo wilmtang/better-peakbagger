@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { mapViewport as MapViewport } from '../../src/gpx/map-viewport.ts';
-import { pointerEvent } from '../helpers/pointer-event.mjs';
+import { pointerEvent } from '../helpers/pointer-event.mts';
 
 const BOUNDS = { minWidth: 320, maxWidth: 1400, minHeight: 240, maxHeight: 720 };
 const RESIZE_RAIL_HEIGHT = 16;

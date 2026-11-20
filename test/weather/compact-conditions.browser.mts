@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
 import { compactWeatherHours, createWeatherHourlyTable, weatherWindColor } from '../../src/weather/weather-hourly-table.ts';
 import type { WeatherMetric, WeatherSample, WeatherWindow } from '../../src/weather/weather-hourly-table.ts';
 import { weatherDayWindow } from '../../src/weather/weather-day.ts';
@@ -19,14 +18,10 @@ function fixture(latitude = 46.85, longitude = -121.75, date = '2024-11-04') {
     return { zone, window, samples };
 }
 const format = (value: number | null | undefined, key: WeatherMetric) => units.formatWeather(value, key, key === 'temperature' || key === 'freezing' ? 'metric' : 'imperial') as string;
+// The renderer creates nodes through the global document; in the browser
+// that is the test page's own, which jsdom tests had to install.
 function withDocument(run: () => void) {
-    const dom = new JSDOM('');
-    const previous = Object.getOwnPropertyDescriptor(globalThis, 'document');
-    Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document });
-    try { run(); } finally {
-        if (previous) Object.defineProperty(globalThis, 'document', previous); else Reflect.deleteProperty(globalThis, 'document');
-        dom.window.close();
-    }
+    run();
 }
 
 test('compact Conditions keeps nine readings, caller units and the existing archive renderer', () => withDocument(() => {

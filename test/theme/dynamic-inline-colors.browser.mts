@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import {
     INLINE_BACKGROUND_ATTRIBUTE,
     INLINE_BACKGROUND_PROPERTY,
@@ -26,7 +26,7 @@ test('dynamic foreground mapping makes arbitrary legacy colors readable without 
     const sources = ['black', 'navy', 'maroon', 'red', 'brown', '#102030', '#ffffff'];
     const transformed = new Map();
     for (const source of sources) {
-        const color = transformForeground(parseColor(source));
+        const color = transformForeground(parseColor(source)!);
         transformed.set(source, color);
         assert.ok(
             contrastRatio(color, DARK_SURFACE) >= 4.5,
@@ -44,7 +44,7 @@ test('dynamic foreground mapping makes arbitrary legacy colors readable without 
 
 test('dynamic background mapping darkens both attribute and inline light surfaces', () => {
     for (const source of ['white', 'lightgrey', '#ffffcc', 'rgb(247, 247, 247)']) {
-        const background = transformBackground(parseColor(source));
+        const background = transformBackground(parseColor(source)!);
         assert.ok(
             contrastRatio({ r: 199, g: 193, b: 184, a: 1 }, background) >= 4.5,
             `${source} stayed too light for inherited dark-theme body text`
@@ -53,7 +53,7 @@ test('dynamic background mapping darkens both attribute and inline light surface
 });
 
 test('the saved climber-page caption is transformed while header-photo text stays black', async () => {
-    const dom = new JSDOM(
+    const dom = new FixtureDom(
         await readFile(path.join(root, 'test/fixtures/pages/climber-home.html'), 'utf8'),
         { url: 'https://www.peakbagger.com/climber/climber.aspx?cid=40786' }
     );
@@ -70,12 +70,12 @@ test('the saved climber-page caption is transformed while header-photo text stay
     assert.equal(caption.style.color, 'black', 'the source declaration stays intact');
     assert.ok(caption.hasAttribute(INLINE_COLOR_ATTRIBUTE));
     const transformedCaption = parseColor(caption.style.getPropertyValue(INLINE_COLOR_PROPERTY));
-    assert.ok(contrastRatio(transformedCaption, DARK_SURFACE) >= 4.5);
+    assert.ok(contrastRatio(transformedCaption!, DARK_SURFACE) >= 4.5);
 
     const maroonLabel = document.querySelector('span[style*="color: maroon" i]');
     assert.ok(maroonLabel.hasAttribute(INLINE_COLOR_ATTRIBUTE));
     const transformedMaroon = parseColor(maroonLabel.style.getPropertyValue(INLINE_COLOR_PROPERTY));
-    assert.ok(transformedMaroon.r > transformedMaroon.b, 'the section label remains red');
+    assert.ok(transformedMaroon!.r > transformedMaroon!.b, 'the section label remains red');
 
     const headerLink = document.querySelector('.mainbanner a');
     assert.equal(headerLink.style.color, 'black');
@@ -87,9 +87,8 @@ test('the saved climber-page caption is transformed while header-photo text stay
 });
 
 test('later inline color changes and inserted legacy backgrounds are watched', async () => {
-    const dom = new JSDOM('<!doctype html><html><body><span id="status" style="color:#102030">Status</span></body></html>', {
+    const dom = new FixtureDom('<!doctype html><html><body><span id="status" style="color:#102030">Status</span></body></html>', {
         url: 'https://www.peakbagger.com/',
-        pretendToBeVisual: true,
     });
     const { document } = dom.window;
     const applier = createDynamicInlineColorApplier({ document, normalizeColor: () => null });
@@ -130,7 +129,7 @@ test('later inline color changes and inserted legacy backgrounds are watched', a
 });
 
 test('non-rendered link elements remain outside dynamic inline-color processing', () => {
-    const dom = new JSDOM('<!doctype html><html><head><link rel="mask-icon" color="#102030"></head><body></body></html>', {
+    const dom = new FixtureDom('<!doctype html><html><head><link rel="mask-icon" color="#102030"></head><body></body></html>', {
         url: 'https://www.peakbagger.com/',
     });
     const { document } = dom.window;
@@ -147,10 +146,10 @@ test('non-rendered link elements remain outside dynamic inline-color processing'
 });
 
 test('inline color observation settles after its own writes and retains later host mutations', async () => {
-    const dom = new JSDOM('<body><span style="color:black">Status</span></body>', { pretendToBeVisual: true });
+    const dom = new FixtureDom('<body><span style="color:black">Status</span></body>', {});
     let passes = 0;
     class CountObserver extends dom.window.MutationObserver {
-        constructor(callback) { super(records => { passes++; callback(records); }); }
+        constructor(callback: MutationCallback) { super((records, observer) => { passes++; callback(records, observer); }); }
     }
     const applier = createDynamicInlineColorApplier({ document: dom.window.document, MutationObserver: CountObserver, normalizeColor: () => null });
     try {

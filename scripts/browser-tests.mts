@@ -97,7 +97,8 @@ export async function bundleBrowserTest(file: string): Promise<string> {
         stdin: {
             // Module evaluation order runs the test file, including any
             // top-level await, before publishing the runner entry point.
-            contents: `import { runRegisteredTests } from ${JSON.stringify(runtime('node-test.mts'))};\n`
+            contents: `import ${JSON.stringify(runtime('node-globals.mts'))};\n`
+                + `import { runRegisteredTests } from ${JSON.stringify(runtime('node-test.mts'))};\n`
                 + `import ${JSON.stringify(entry)};\nglobalThis.__bpbRunBrowserTests = runRegisteredTests;\n`,
             resolveDir: projectRoot, loader: 'ts', sourcefile: 'browser-test-entry.ts',
         },
@@ -126,7 +127,20 @@ const fileServer = async (dist: string) => {
 };
 
 async function performTrustedInput(page: Page, action: TrustedAction) {
-    const handle = await page.evaluateHandle(() => window.__bpbTrustedTarget);
+    // The target lives in the test page or one of its frames, or in a
+    // top-level fixture page the test opened; act through the page that owns it.
+    let owner = page;
+    let handle = await page.evaluateHandle(() => window.__bpbTrustedTarget);
+    for (const popup of page.context().pages()) {
+        if (popup === page) continue;
+        const candidate = await popup.evaluateHandle(() => {
+            const target = (window.opener as Window | null)?.__bpbTrustedTarget;
+            return target?.ownerDocument === document ? target : null;
+        }).catch(() => null);
+        if (candidate?.asElement()) { await handle.dispose(); handle = candidate; owner = popup; break; }
+        await candidate?.dispose();
+    }
+    page = owner;
     const element = handle.asElement() as ElementHandle<Element> | null;
     if (!element) throw new Error('No trusted input target is set.');
     try {
@@ -210,12 +224,25 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
         unexpected.push(`missing ${url.pathname}`);
         return route.fulfill({ status: 404, body: 'Not a browser test file' });
     });
-    const page = await context.newPage();
-    page.setDefaultTimeout(10_000);
     const pageErrors: string[] = [];
-    page.on('pageerror', error => pageErrors.push(error.stack ?? error.message));
-    // Set BPB_BROWSER_TEST_CONSOLE=1 to follow a test's console while debugging it.
-    if (process.env.BPB_BROWSER_TEST_CONSOLE === '1') page.on('console', message => console.error(`[${test.file}] ${message.type()}: ${message.text()}`));
+    const attached = new WeakSet<Page>();
+    const attachPageListeners = (target: Page) => {
+        if (attached.has(target)) return;
+        attached.add(target);
+        target.setDefaultTimeout(10_000);
+        target.on('pageerror', error => pageErrors.push(error.stack ?? error.message));
+        // A native dialog would block the page; tests stub alert/confirm, so any
+        // that reaches the browser fails the file.
+        target.on('dialog', dialog => {
+            pageErrors.push(`unexpected ${dialog.type()} dialog: ${dialog.message()}`);
+            void dialog.dismiss().catch(() => {});
+        });
+        // Set BPB_BROWSER_TEST_CONSOLE=1 to follow a test's console while debugging it.
+        if (process.env.BPB_BROWSER_TEST_CONSOLE === '1') target.on('console', message => console.error(`[${test.file}] ${message.type()}: ${message.text()}`));
+    };
+    context.on('page', attachPageListeners);
+    const page = await context.newPage();
+    attachPageListeners(page);
     await page.exposeBinding('__bpbTrustedInput', (_source, action: TrustedAction) => performTrustedInput(page, action));
     await page.goto(new URL(RUNNER_PATH, test.origin).href, { waitUntil: 'load' });
     // A module script, so test files may use top-level await; it publishes

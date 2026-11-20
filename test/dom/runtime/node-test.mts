@@ -351,6 +351,11 @@ type TestFunction = {
     skip(name: string, optionsOrFn?: TestOptions | TestFn, maybeFn?: TestFn): void;
     todo(name: string, optionsOrFn?: TestOptions | TestFn, maybeFn?: TestFn): void;
     only(name: string, optionsOrFn?: TestOptions | TestFn, maybeFn?: TestFn): void;
+    before(hook: Hook): void;
+    after(hook: Hook): void;
+    beforeEach(hook: Hook): void;
+    afterEach(hook: Hook): void;
+    readonly mock: MockTracker;
 };
 
 const register = (item: Registered) => { registered.push(item); };
@@ -365,6 +370,12 @@ export const test = Object.assign(
             const item = normalize(name, optionsOrFn, maybeFn); register({ ...item, options: { ...item.options, todo: true } });
         },
         only: () => { throw new Error('test.only is not allowed in committed browser tests.'); },
+        // node:test also exposes its hooks and tracker on the default export.
+        before: (hook: Hook) => { beforeHooks.push(hook); },
+        after: (hook: Hook) => { afterHooks.push(hook); },
+        beforeEach: (hook: Hook) => { beforeEachHooks.push(hook); },
+        afterEach: (hook: Hook) => { afterEachHooks.push(hook); },
+        get mock() { return mock; },
     },
 ) as TestFunction;
 export const it = test;

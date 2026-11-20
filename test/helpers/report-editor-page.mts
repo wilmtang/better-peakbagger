@@ -6,6 +6,8 @@
 // trip-report editor bundles, and helpers that edit through the editors' own
 // transaction paths.
 
+import type { Editor } from '@tiptap/core';
+import type { createMarkdownEditor } from '../../src/reports/report-md-editor.ts';
 import { accelerateTimeout, loadPage, waitFor, PAGE_FIXTURES, type LoadedPage } from './fixture-page.mts';
 
 export { waitFor };
@@ -68,9 +70,8 @@ export const editorReady = async (dom: LoadedPage) => {
 
 // The live editor instances the report editor publishes on its root for tests.
 export interface ReportEditors {
-    rich: { commands: { setContent(html: string, options: { emitUpdate: boolean }): unknown }; [member: string]: unknown };
-    markdown: { view: { state: { doc: { length: number; toString(): string } }; dispatch(transaction: unknown): void }; [member: string]: unknown };
-    [member: string]: unknown;
+    readonly rich: Editor;
+    readonly markdown: ReturnType<typeof createMarkdownEditor>;
 }
 export const editors = (dom: LoadedPage) =>
     (dom.window.document.getElementById('bpb-report-editor') as unknown as { _bpbEditors: ReportEditors })._bpbEditors;
@@ -89,4 +90,4 @@ export const typeMarkdown = (dom: LoadedPage, text: string) => {
 };
 
 export const modeButton = (doc: ParentNode, label: string) =>
-    [...doc.querySelectorAll<HTMLButtonElement>('.bpb-re-mode')].find(button => button.textContent === label);
+    [...doc.querySelectorAll<HTMLButtonElement>('.bpb-re-mode')].find(button => button.textContent === label)!;

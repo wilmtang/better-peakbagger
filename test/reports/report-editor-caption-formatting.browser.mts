@@ -2,24 +2,21 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { EDITOR_URL, loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-helpers.mjs';
-import type { LoadedPage } from '../helpers/load-page.mts';
+import { EDITOR_URL, loadEditor, editorReady, editors, modeButton, typeMarkdown } from '../helpers/report-editor-page.mts';
+import type { LoadedPage } from '../helpers/fixture-page.mts';
 import { reportPhoto as Pending } from '../../src/photos/report-photo.ts';
+import type { Editor } from '@tiptap/core';
 
 const image = '[img src="https://example.com/ridge.jpg" alt="Rocky ridge" width="320" height="200"]';
 const figure = (caption: string) => `[figure]${image}[figcaption]${caption}[/figcaption][/figure]`;
 const PLAIN = figure('North ridge');
 
-interface EditorLike {
-    state: { doc: { descendants(visit: (node: { type: { name: string } }, pos: number) => void): void }; selection: { node?: unknown } };
-    commands: { setTextSelection(range: { from: number; to: number } | number): boolean; setNodeSelection(pos: number): boolean; undo(): boolean };
-}
-const captionStart = (editor: EditorLike) => {
+const captionStart = (editor: Editor) => {
     let start = -1;
     editor.state.doc.descendants((node, pos) => { if (node.type.name === 'reportCaption') start = pos + 1; });
     return start;
 };
-const selectCaption = (editor: EditorLike, from = 0, to = 'North'.length) => {
+const selectCaption = (editor: Editor, from = 0, to = 'North'.length) => {
     const start = captionStart(editor);
     editor.commands.setTextSelection({ from: start + from, to: start + to });
 };
@@ -136,7 +133,8 @@ test('removing a formatted caption and undoing restores its formatting', async (
         selectCaption(editor);
         [...ui.querySelectorAll<HTMLButtonElement>('.bpb-re-captionbar button')].find(button => button.textContent === 'Remove caption')!.click();
         assert.equal(ui.querySelector('figcaption'), null);
-        editor.commands.undo();
+        // The rich editor loads TipTap's undo history extension.
+        (editor.commands as unknown as { undo(): boolean }).undo();
         assert.equal(ui.querySelector('figcaption strong')?.textContent, 'North');
     } finally { dom.window.close(); }
 });
@@ -157,7 +155,7 @@ test('a local photo return keeps formatting when its caption text is unchanged a
         const deliver = (from: string, to: string, caption: string) => {
             for (const listener of listeners) listener({ type: 'PHOTO_LOCAL_RESULT', returnToken: `return-${to}`, expectedIdentity: { cid: 900001, aid: null, pid: null }, expectedUrl: EDITOR_URL, replacesLocalPhotoId: photo(from), url: Pending.url(photo(to)), alt: 'Ridge', caption }, { id: 'test-extension' }, () => {});
         };
-        const shownSource = () => editors(dom).rich.state.doc.firstChild.firstChild.firstChild.attrs.src;
+        const shownSource = () => editors(dom).rich.state.doc.firstChild!.firstChild!.firstChild!.attrs.src;
         deliver('a', 'b', 'North ridge');
         assert.equal(shownSource(), Pending.url(photo('b')));
         assert.equal(ui.querySelector('figcaption strong')?.textContent, 'North');

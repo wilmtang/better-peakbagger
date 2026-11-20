@@ -2,9 +2,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
-import { browserWindow } from '../helpers/page-dom.mts';
+import { browserWindow } from '../helpers/fixture-dom.mts';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { readSnowDepthLegend } from '../../src/maps/snow-depth.ts';
 import { readFile } from 'node:fs/promises';
@@ -145,8 +145,8 @@ test('deadline, cancellation, body bound and 429 cooldown cover the entire point
     await assert.rejects(oversized.rightClick(point, context(), signal()), /large|limit/i);
 });
 test('control supplies document-local context; menu cancels stale rows and invalidates changed layer settings', async () => {
-    const dom = new JSDOM('<!doctype html><div id="map" tabindex="0"></div><section id="bpb-peak-weather" data-bpb-map-weather="ready"></section>',
-        {url: 'https://www.peakbagger.com/Peak.aspx?pid=1', pretendToBeVisual: true});
+    const dom = new FixtureDom('<!doctype html><div id="map" tabindex="0"></div><section id="bpb-peak-weather" data-bpb-map-weather="ready"></section>',
+        {url: 'https://www.peakbagger.com/Peak.aspx?pid=1'});
     const win = dom.window, doc = win.document, target = doc.getElementById('map')!;
     target.getBoundingClientRect = () => new win.DOMRect(0, 0, 500, 500);
     const control = createMapLayerControl({document: doc}); doc.body.append(control.element);

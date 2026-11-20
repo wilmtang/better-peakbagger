@@ -3,7 +3,6 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { JSDOM } from 'jsdom';
 import {
     ascentIdentity,
     readSourceGpx,
@@ -18,13 +17,11 @@ import { fetchPeakbaggerResource } from '../../src/peakbagger/peakbagger-request
 const ascent = 'https://www.peakbagger.com/climber/ascent.aspx?aid=42';
 const download = 'https://www.peakbagger.com/climber/GPXFile.aspx?aid=42&sep=1';
 const gpx = '<?xml version="1.0"?><gpx version="1.1"><trk><name>Test route</name><trkseg><trkpt lat="37.1" lon="-119.2"/><trkpt lat="37.2" lon="-119.3"/></trkseg></trk></gpx>';
-const dom = new JSDOM();
-const parseXml = value => new dom.window.DOMParser().parseFromString(value, 'application/xml');
-
-test.after(() => dom.window.close());
+const parseXml = (value: string) => new DOMParser().parseFromString(value, 'application/xml');
 
 test('map handoff source accepts only exact saved-ascent and track identities', () => {
     const identity = ascentIdentity(ascent);
+    assert.ok(identity);
     assert.equal(identity.id, '42');
     assert.equal(storedTrackLink(download, identity), download);
     for (const url of [
@@ -62,7 +59,7 @@ test('saved GPX handoff preserves the exact Peakbagger export', async () => {
 });
 
 test('saved GPX read fails closed on errors, malformed data, DTDs, size and redirects', async () => {
-    const response = text => ({ kind: 'ok', url: download, text });
+    const response = (text: string) => ({ kind: 'ok', url: download, text });
     for (const value of [
         { kind: 'wrong-content', error: { code: 'cloudflare', resource: 'gpx' } },
         response('<html><body>Log in</body></html>'),
@@ -82,7 +79,7 @@ test('saved GPX read fails closed on errors, malformed data, DTDs, size and redi
             fetchResource: async () => value,
         });
         assert.equal(result.ok, false);
-        assert.equal(result.gpx, undefined);
+        assert.equal('gpx' in result ? result.gpx : undefined, undefined);
     }
     assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_GAIA_GPX_BYTES)}`, { parseXml }), false);
     assert.equal(validateGpx(`<gpx><wpt lat="1" lon="2"/></gpx>${' '.repeat(MAX_ALLTRAILS_GPX_BYTES)}`, {
@@ -101,7 +98,7 @@ test('same-ascent download normalization preserves the exact GPX', async () => {
         const result = await readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
             fetchResource: async () => ({ kind: 'ok', url, text: gpx }) });
         assert.equal(result.ok, true, url);
-        assert.equal(result.gpx, gpx);
+        assert.equal('gpx' in result ? result.gpx : undefined, gpx);
         assert.equal(result.filename, 'peakbagger-42.gpx');
     }
 });
@@ -116,13 +113,13 @@ test('the production request helper preserves final identity for the source gate
                         headers: new Headers({ 'content-type': 'application/gpx+xml' }), text: async () => gpx };
                 } }) });
         assert.equal(result.ok, finalUrl === download);
-        assert.equal(result.gpx, finalUrl === download ? gpx : undefined);
+        assert.equal('gpx' in result ? result.gpx : undefined, finalUrl === download ? gpx : undefined);
     }
 });
 
 test('saved GPX read forwards the caller deadline and cancellation', async () => {
     const controller = new AbortController();
-    let received;
+    let received: { signal?: AbortSignal; timeoutMs?: number } | undefined;
     const result = await readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
         signal: controller.signal, timeoutMs: 100,
         fetchResource: async (url, options) => {
@@ -130,14 +127,14 @@ test('saved GPX read forwards the caller deadline and cancellation', async () =>
             return { kind: 'ok', url, text: gpx };
         } });
     assert.equal(result.ok, true);
-    assert.equal(received.signal, controller.signal);
-    assert.equal(received.timeoutMs, 100);
+    assert.equal(received?.signal, controller.signal);
+    assert.equal(received?.timeoutMs, 100);
 });
 
 test('cancelling a saved GPX read settles a transport that ignores abort', async () => {
     const controller = new AbortController();
-    let entered;
-    const started = new Promise(resolve => { entered = resolve; });
+    let entered!: () => void;
+    const started = new Promise<void>(resolve => { entered = resolve; });
     const pending = readSourceGpx({ pageUrl: ascent, gpxUrl: download, parseXml,
         signal: controller.signal, timeoutMs: 100,
         fetchResource: (url, options) => fetchPeakbaggerResource(url, { ...options,
@@ -147,5 +144,5 @@ test('cancelling a saved GPX read settles a transport that ignores abort', async
     const result = await pending;
     assert.equal(result.ok, false);
     assert.match(result.message, /cancel/i);
-    assert.equal(result.gpx, undefined);
+    assert.equal('gpx' in result ? result.gpx : undefined, undefined);
 });

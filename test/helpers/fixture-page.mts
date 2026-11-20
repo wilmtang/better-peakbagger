@@ -30,7 +30,7 @@ export interface LoadedPage {
     serialize(): string;
 }
 
-export interface LoadPageOptions extends Pick<FixtureDomOptions, 'width' | 'height'> {
+export interface LoadPageOptions extends Pick<FixtureDomOptions, 'width' | 'height' | 'topLevel'> {
     url?: string;
     settings?: Values;
     local?: Values;
@@ -40,10 +40,10 @@ export interface LoadPageOptions extends Pick<FixtureDomOptions, 'width' | 'heig
 }
 
 export const loadPage = async (fixture: string, {
-    url, settings = {}, local = {}, bundles = ['content/ascent-filter.js'], fixtures = FIXTURES, prepare = null, width, height,
+    url, settings = {}, local = {}, bundles = ['content/ascent-filter.js'], fixtures = FIXTURES, prepare = null, width, height, topLevel,
 }: LoadPageOptions = {}): Promise<LoadedPage> => {
     const html = await readFile(path.join(fixtures, fixture), 'utf8');
-    const fixtureDom = await FixtureDom.open(html, { url, width, height });
+    const fixtureDom = await FixtureDom.open(html, { url, width, height, topLevel });
     const window = fixtureDom.window as unknown as PageWindow;
     const chrome = makeChromeStub({ bpbSettings: settings }, local, {
         getSender: () => ({ url: window.location.href, tab: { id: 1 } }),
@@ -64,11 +64,15 @@ export const loadPageWithBar = async (fixture: string, opts?: LoadPageOptions): 
 
 interface TimerWindow { setTimeout: (handler: (...args: never[]) => void, delay?: number, ...args: unknown[]) => unknown }
 
-export const waitFor = async (dom: { window: TimerWindow }, predicate: () => unknown, ms = 5000): Promise<void> => {
-    const start = Date.now();
+// Polls on the test page's own timer, captured before any test can mock it,
+// so a fixture page that navigated away or closed still times out.
+const pollTimer = globalThis.setTimeout.bind(globalThis);
+const pollClock = Date.now.bind(Date);
+export const waitFor = async (_dom: { window: TimerWindow }, predicate: () => unknown, ms = 5000): Promise<void> => {
+    const start = pollClock();
     while (!predicate()) {
-        if (Date.now() - start > ms) throw new Error('waitFor timed out');
-        await new Promise<void>(resolve => { dom.window.setTimeout(resolve, 5); });
+        if (pollClock() - start > ms) throw new Error('waitFor timed out');
+        await new Promise<void>(resolve => { pollTimer(resolve, 5); });
     }
 };
 

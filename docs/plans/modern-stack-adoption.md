@@ -350,9 +350,9 @@ Steps 2–4 status (November 13, 2026):
 `npm test` evaluates the shipped IIFE bundles in jsdom: 118 test files construct
 it 297 times. When M4.5 started, jsdom shipped no type declarations here, so 18
 converted tests suppressed the import (for example
-[page-lifecycle.test.mts](../../test/ui/page-lifecycle.test.mts)) and two files
+[page-lifecycle.browser.mts](../../test/ui/page-lifecycle.browser.mts)) and two files
 hand-typed a constructor:
-[map-layer-inspection.test.mts](../../test/maps/map-layer-inspection.test.mts)
+[map-layer-inspection.browser.mts](../../test/maps/map-layer-inspection.browser.mts)
 and the shared [test-dom.mts](../../test/helpers/test-dom.mts), which 14 tests
 imported as an interim stand-in. Every M7 test batch would have repeated one of
 those. jsdom also has no layout, mints only

@@ -11,7 +11,7 @@
 
 export type TestWindow = Window & typeof globalThis;
 
-type ElementBase = HTMLElement & HTMLInputElement & HTMLSelectElement & HTMLDialogElement & HTMLAnchorElement;
+type ElementBase = HTMLElement & HTMLInputElement & HTMLSelectElement & HTMLDialogElement & HTMLAnchorElement & Pick<HTMLFormElement, 'elements' | 'requestSubmit' | 'submit' | 'reset' | 'action' | 'method'>;
 // Lookups from a page element stay page elements. Like the document's, they
 // are typed as present: a missing node fails the test at the lookup.
 export interface PageElement extends Omit<ElementBase, 'querySelector' | 'querySelectorAll' | 'closest' | 'parentElement'

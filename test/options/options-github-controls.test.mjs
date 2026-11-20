@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as nextTask } from 'node:timers/promises';
 import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-helpers.mjs';
-import { harness } from '../helpers/ignored-sync-harness.mjs';
+import { harness } from '../helpers/ignored-sync-harness.mts';
 import { createClimberListSync } from '../../src/background/climber-list-sync.ts';
 
 registerCleanup();

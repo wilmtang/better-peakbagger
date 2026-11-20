@@ -1,9 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://www.alltrails.com
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { MAX_ALLTRAILS_GPX_BYTES, prepareAlltrailsImport } from '../../src/alltrails/alltrails-import.ts';
 
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
@@ -17,7 +18,7 @@ const run = async ({
     ready = true,
     before = '',
     gpx = GPX,
-    inputLabel = 'hidden file upload',
+    inputLabel = 'hidden file upload' as string | null,
     delayedInput = false,
     inputDelayMs = 25,
     duplicateInput = false,
@@ -25,10 +26,8 @@ const run = async ({
     portalClass = 'dz-hidden-input',
     accept = '.gpx,.GPX,.fit',
 } = {}) => {
-    const dom = new JSDOM(`<!doctype html><body>${before}<button id="open">Upload a route</button></body>`, {
+    const dom = new FixtureDom(`<!doctype html><body>${before}<button id="open">Upload a route</button></body>`, {
         url,
-        runScripts: 'outside-only',
-        pretendToBeVisual: true,
     });
     const win = dom.window;
     // Measure fixture deadlines against scheduled timer time. A busy runner
@@ -36,24 +35,16 @@ const run = async ({
     let clockMs = 0;
     const schedule = win.setTimeout.bind(win);
     win.Date.now = () => clockMs;
-    win.setTimeout = (callback, delay) => {
+    win.setTimeout = ((callback: () => void, delay = 0) => {
         const dueAt = clockMs + delay;
         return schedule(() => {
             clockMs = Math.max(clockMs, dueAt);
             callback();
         }, delay);
-    };
-    win.HTMLElement.prototype.getClientRects = () => [{ width: 1, height: 1 }];
-    win.DataTransfer = class {
-        constructor() {
-            const files = [];
-            this.items = { add: file => files.push(file) };
-            this.files = files;
-        }
-    };
+    }) as typeof setTimeout;
     let uploadClicks = 0;
     let handoffs = 0;
-    let received;
+    let received: File | undefined;
     win.document.getElementById('open').addEventListener('click', () => {
         const dialog = win.document.createElement('div');
         dialog.setAttribute('role', 'dialog');
@@ -62,17 +53,16 @@ const run = async ({
         input.type = 'file';
         input.accept = accept;
         if (inputLabel) input.setAttribute('aria-label', inputLabel);
-        Object.defineProperty(input, 'files', { value: [], writable: true });
         input.addEventListener('change', () => {
             handoffs++;
-            received = input.files[0];
+            received = input.files?.[0];
             if (!ready) return;
             input.remove();
             dialog.insertAdjacentHTML('beforeend', [
                 '<div title="peakbagger-42.gpx">peakbagger-42.gpx</div>',
                 '<button id="upload">Upload</button>',
             ].join(''));
-            dialog.querySelector('#upload').addEventListener('click', () => { uploadClicks++; });
+            dialog.querySelector('#upload')!.addEventListener('click', () => { uploadClicks++; });
         });
         win.document.body.append(dialog);
         const mount = () => {
@@ -87,10 +77,11 @@ const run = async ({
     const result = await win.eval(
         `(${prepareAlltrailsImport.toString()})({gpx:${JSON.stringify(gpx)},filename:"peakbagger-42.gpx",timeoutMs:150})`,
     );
-    const receivedText = received ? await new Promise(resolve => {
+    const file = received;
+    const receivedText = file ? await new Promise(resolve => {
         const reader = new win.FileReader();
         reader.onload = () => resolve(reader.result);
-        reader.readAsText(received);
+        reader.readAsText(file);
     }) : null;
     dom.window.close();
     return { result: structuredClone(result), uploadClicks, handoffs, receivedText };

@@ -19,6 +19,9 @@ export interface FixtureDomOptions {
     contentType?: string;
     // Inline scripts in the markup run only when this is 'dangerously'.
     runScripts?: 'outside-only' | 'dangerously';
+    // A top-level page (a same-origin popup) instead of a frame, for owners
+    // that check window.top, window.parent or frameElement.
+    topLevel?: boolean;
     // The frame's layout viewport.
     width?: number;
     height?: number;
@@ -47,7 +50,8 @@ function createFrame(width: number, height: number) {
 
 export class FixtureDom {
     readonly window: FixtureWindow;
-    readonly #frame: HTMLIFrameElement;
+    readonly #frame: HTMLIFrameElement | null;
+    #closePage: (() => void) | null = null;
 
     // A fixture on the test page's origin, ready synchronously.
     constructor(html = '', options: FixtureDomOptions = {}, frame?: HTMLIFrameElement) {
@@ -55,24 +59,39 @@ export class FixtureDom {
         const target = url ? new URL(url, location.href) : null;
         if (!frame && target && target.origin !== location.origin) {
             throw new Error(`Fixture URL ${target.href} is not on the test page origin ${location.origin}; `
-                + `use await FixtureDom.open() for a same-site host or declare // @browser-origin ${target.origin}`);
+                + (options.topLevel
+                    ? `declare // @browser-origin ${target.origin}`
+                    : `use await FixtureDom.open() for a same-site host or declare // @browser-origin ${target.origin}`));
         }
-        if (!frame) {
+        let opened: Window | null = null;
+        if (options.topLevel) {
+            // Firefox fixes an about:blank page's base URL from the page that
+            // creates it, so open it at the fixture URL.
+            withRunnerAt(target, () => { opened = window.open('', `bpb-fixture-${stacking++}`, `popup,width=${width},height=${height}`); });
+            if (!opened) throw new Error('The browser refused to open a top-level fixture page.');
+        } else if (!frame) {
             frame = createFrame(width, height);
             // Firefox fixes an about:blank frame's base URL from the page
             // that creates it, so create it at the fixture URL too.
             withRunnerAt(target, () => document.body.append(frame!));
         }
-        const window = frame.contentWindow as FixtureWindow | null;
-        if (!window) throw new Error('The fixture frame has no window.');
-        this.#frame = frame;
-        this.window = window;
-        populate(window, html, options, !!frame.src, target);
+        const fixtureWindow = (opened ?? frame!.contentWindow) as FixtureWindow | null;
+        if (!fixtureWindow) throw new Error('The fixture frame has no window.');
+        this.#frame = frame ?? null;
+        this.window = fixtureWindow;
+        const window_ = fixtureWindow;
+        populate(window_, html, options, !!frame?.src, target);
         // Chromium drops the fragment when document.open() copies the URL.
-        if (target && window.location.href !== target.href) window.history.replaceState(null, '', target.href);
+        if (target && window_.location.href !== target.href) window_.history.replaceState(null, '', target.href);
         // Like jsdom's window.close(): the test is done with this page.
-        Object.defineProperty(window, 'close', { configurable: true, value: () => this.close() });
-        fixtureWindows.add(window as unknown as Window, () => this.close());
+        const closePage = opened ? (opened as Window).close.bind(opened) : null;
+        this.#closePage = closePage;
+        Object.defineProperty(window_, 'close', { configurable: true, value: () => this.close() });
+        focusLikeActiveTab(window_);
+        if (!options.topLevel) ignoreInitialResize(window_, width, height);
+        // A tab's page has focus before its scripts run.
+        if (!options.topLevel) window_.focus();
+        fixtureWindows.add(window_ as unknown as Window, () => this.close());
     }
 
     // A fixture document the frame really navigated to: its URL, base URL and
@@ -83,7 +102,7 @@ export class FixtureDom {
     // synchronously once this resolves.
     static async open(html = '', options: FixtureDomOptions = {}): Promise<FixtureDom> {
         const target = options.url ? new URL(options.url, location.href) : null;
-        if (!target) return new FixtureDom(html, options);
+        if (!target || options.topLevel) return new FixtureDom(html, options);
         const site = siteOf(location.hostname);
         if (target.protocol !== location.protocol || siteOf(target.hostname) !== site) {
             throw new Error(`Fixture URL ${target.href} is not on the test page site ${site}; declare // @browser-origin ${target.origin}`);
@@ -113,8 +132,41 @@ export class FixtureDom {
 
     close() {
         fixtureWindows.delete(this.window as unknown as Window);
-        this.#frame.remove();
+        this.#frame?.remove();
+        const closePage = this.#closePage;
+        this.#closePage = null;
+        closePage?.();
     }
+}
+
+// A fixture stands in for the page in the user's focused tab: focusing one
+// of its elements first gives its frame focus, which a browser otherwise
+// withholds from a frame that was never focused.
+function focusLikeActiveTab(target: FixtureWindow) {
+    for (const prototype of [target.HTMLElement.prototype, target.SVGElement.prototype]) {
+        const focus = prototype.focus;
+        Object.defineProperty(prototype, 'focus', {
+            configurable: true, writable: true,
+            value(this: HTMLElement, options?: FocusOptions) {
+                if (!target.document.hasFocus()) target.focus();
+                return focus.call(this, options);
+            },
+        });
+    }
+}
+
+// Chromium dispatches a resize when a new frame first takes its configured
+// size; a tab's page never sees that. Stop that one browser event before page
+// code listening for resize can treat it as the user resizing the window. It
+// may arrive after a test has started, so a test's own synthetic resize
+// passes through untouched.
+function ignoreInitialResize(target: FixtureWindow, width: number, height: number) {
+    const initial = (event: Event) => {
+        if (!event.isTrusted) return;
+        target.removeEventListener('resize', initial, true);
+        if (target.innerWidth === width && target.innerHeight === height) event.stopImmediatePropagation();
+    };
+    target.addEventListener('resize', initial, true);
 }
 
 // document.open() gives a frame document the URL of the page calling it.
@@ -235,7 +287,8 @@ export async function trustedInput(element: Element, action: TrustedAction): Pro
     const frame = element.ownerDocument === document ? null
         : [...document.querySelectorAll<HTMLIFrameElement>('iframe[data-bpb-fixture]')]
             .find(item => item.contentDocument === element.ownerDocument) ?? null;
-    if (element.ownerDocument !== document && !frame) throw new Error('Trusted input target is not in a fixture frame.');
+    const popup = !frame && element.ownerDocument !== document && element.ownerDocument.defaultView?.opener === window;
+    if (element.ownerDocument !== document && !frame && !popup) throw new Error('Trusted input target is not in a fixture frame or page.');
     // Raise the target's frame above later fixtures so the input reaches it.
     if (frame) frame.style.zIndex = String(stacking++);
     // The runner reads the target from this page global rather than a marker

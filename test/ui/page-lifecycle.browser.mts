@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import {
     createPageLifecycle,
     pageLifecycle as PageLifecycle,
@@ -23,7 +23,7 @@ const transition = (window: TestWindow, type: 'pagehide' | 'pageshow', persisted
 );
 
 test('persisted history traversal suspends and resumes without disposing', () => {
-    const dom = new JSDOM('<!doctype html>', { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });
+    const dom = new FixtureDom('<!doctype html>', { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });
     const calls: string[] = [];
     const lifecycle = PageLifecycle.create({
         ownerWindow: dom.window,
@@ -46,7 +46,7 @@ test('persisted history traversal suspends and resumes without disposing', () =>
 });
 
 test('ordinary teardown disposes exactly once and cannot resume', () => {
-    const dom = new JSDOM('<!doctype html>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A' });
+    const dom = new FixtureDom('<!doctype html>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A' });
     const calls: string[] = [];
     const lifecycle = PageLifecycle.create({
         ownerWindow: dom.window,
@@ -65,18 +65,18 @@ test('ordinary teardown disposes exactly once and cannot resume', () => {
     dom.window.close();
 });
 
+// The lifecycle binds the page's own window by default: in the browser that
+// is the test page, which jsdom tests had to install as a global.
 test('default window binding and callback error isolation preserve the state machine', () => {
-    const dom = new JSDOM('<!doctype html>', { url: 'https://www.peakbagger.com/peak.aspx?pid=2' });
-    const globalScope = globalThis as { window?: TestWindow };
-    const previousWindow = globalScope.window;
+    const page = window as unknown as TestWindow;
     const seen: { phase: PageLifecycleState; persisted: boolean | undefined }[] = [];
     const errors: unknown[][] = [];
     const originalError = console.error;
     console.error = (...args: unknown[]) => { errors.push(args); };
 
+    let lifecycle: ReturnType<typeof createPageLifecycle> | null = null;
     try {
-        globalScope.window = dom.window;
-        const lifecycle = createPageLifecycle({
+        lifecycle = createPageLifecycle({
             onSuspend(event: PageTransitionEventLike) {
                 seen.push({ phase: 'suspended', persisted: event.persisted });
                 throw new Error('SUSPEND_FAILED');
@@ -89,10 +89,10 @@ test('default window binding and callback error isolation preserve the state mac
             },
         });
 
-        transition(dom.window, 'pagehide', true);
+        transition(page, 'pagehide', true);
         assert.equal(lifecycle.state, 'suspended');
         assert.equal(errors.length, 1);
-        transition(dom.window, 'pageshow', true);
+        transition(page, 'pageshow', true);
         assert.equal(lifecycle.state, 'active');
         lifecycle.dispose();
         assert.equal(lifecycle.state, 'disposed');
@@ -102,9 +102,7 @@ test('default window binding and callback error isolation preserve the state mac
             { phase: 'disposed', persisted: false },
         ]);
     } finally {
+        lifecycle?.dispose();
         console.error = originalError;
-        if (previousWindow === undefined) delete globalScope.window;
-        else globalScope.window = previousWindow;
-        dom.window.close();
     }
 });

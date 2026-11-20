@@ -4,28 +4,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 
 const source = await fs.readFile(new URL('../../dist/peakbagger-page.js', import.meta.url), 'utf8');
 const ORIGIN = 'https://www.peakbagger.com';
 const LOGIN_URL = `${ORIGIN}/Default.aspx`;
 const PEAKS_URL = `${ORIGIN}/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4`;
 
-const load = ({ url = LOGIN_URL, html = '<!doctype html><title>Peakbagger</title>', fetchFn = async () => ({
+type FetchFn = (url: string, init: RequestInit) => Promise<unknown>;
+type PageResult = { kind: string; error?: { code: string } };
+// The page-world transport the bundle publishes.
+interface PageTransport {
+    readonly version: number;
+    request(id: string, url: string, kind: string): Promise<PageResult>;
+    cancel(id: string): boolean;
+    accountEvidence(): unknown;
+}
+const transport = (dom: FixtureDom) => (dom.window as unknown as { BPBPeakbaggerPage: PageTransport }).BPBPeakbaggerPage;
+
+const load = async ({ url = LOGIN_URL, html = '<!doctype html><title>Peakbagger</title>', fetchFn = (async () => ({
     ok: true,
     status: 200,
     url: LOGIN_URL,
     redirected: false,
     headers: new Headers(),
     text: async () => '<html><a href="/climber/climber.aspx?cid=77">My Home Page</a></html>',
-}) } = {}) => {
-    const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
-    dom.window.fetch = fetchFn;
+})) as FetchFn } = {}) => {
+    const dom = await FixtureDom.open(html, { url });
+    // A fake response with the fields the transport reads.
+    dom.window.fetch = fetchFn as unknown as typeof fetch;
     dom.window.eval(source);
     return dom;
 };
 
-const until = async predicate => {
+const until = async (predicate: () => unknown) => {
     const deadline = Date.now() + 2000;
     while (!predicate()) {
         if (Date.now() >= deadline) throw new Error('condition not reached');
@@ -34,8 +46,8 @@ const until = async predicate => {
 };
 
 test('the page transport uses the signed-in page fetch policy for its two capture resources', async () => {
-    const calls = [];
-    const dom = load({
+    const calls: { url: string; init: RequestInit }[] = [];
+    const dom = await load({
         fetchFn: async (url, init) => {
             calls.push({ url, init });
             const peaks = String(url).includes('/Async/');
@@ -51,7 +63,7 @@ test('the page transport uses the signed-in page fetch policy for its two captur
             };
         },
     });
-    const api = dom.window.BPBPeakbaggerPage;
+    const api = transport(dom);
 
     assert.equal(api.version, 3);
     assert.equal(Object.isFrozen(api), true);
@@ -65,8 +77,8 @@ test('the page transport uses the signed-in page fetch policy for its two captur
     }
 });
 
-test('fresh-page account evidence exposes only corroborated navigation links', () => {
-    const dom = load({
+test('fresh-page account evidence exposes only corroborated navigation links', async () => {
+    const dom = await load({
         html: `<!doctype html><div>Logged in: Test Climber |
             <a href="/climber/climber.aspx?cid=77">My Home Page</a>
             <a href="/climber/climberedit.aspx?cid=77">Edit Account</a>
@@ -77,7 +89,7 @@ test('fresh-page account evidence exposes only corroborated navigation links', (
             <p>Private page text and cid=1234 must not cross the boundary.</p>`,
     });
 
-    assert.deepEqual(JSON.parse(JSON.stringify(dom.window.BPBPeakbaggerPage.accountEvidence())), {
+    assert.deepEqual(JSON.parse(JSON.stringify(transport(dom).accountEvidence())), {
         pageUrl: LOGIN_URL,
         links: [
             { label: 'My Home Page', href: `${ORIGIN}/climber/climber.aspx?cid=77` },
@@ -90,8 +102,8 @@ test('fresh-page account evidence exposes only corroborated navigation links', (
 
 test('the page transport refuses arbitrary same-origin and cross-origin requests before fetch', async () => {
     let fetches = 0;
-    const dom = load({ fetchFn: async () => { fetches++; throw new Error('must not fetch'); } });
-    const api = dom.window.BPBPeakbaggerPage;
+    const dom = await load({ fetchFn: async () => { fetches++; throw new Error('must not fetch'); } });
+    const api = transport(dom);
     const invalid = [
         [LOGIN_URL, 'edit'],
         [`${ORIGIN}/climber/ClimberEdit.aspx?cid=77`, 'html'],
@@ -103,42 +115,43 @@ test('the page transport refuses arbitrary same-origin and cross-origin requests
 
     for (const [url, kind] of invalid) {
         const result = await api.request(`invalid-${fetches}-${kind}`, url, kind);
-        assert.equal(result.error.code, 'invalid-request', `${kind}: ${url}`);
+        assert.equal(result.error?.code, 'invalid-request', `${kind}: ${url}`);
     }
     assert.equal(fetches, 0);
 });
 
 test('a non-canonical Peakbagger page cannot use the transport', async () => {
     let fetches = 0;
-    const dom = load({
+    const dom = await load({
         url: 'https://peakbagger.com/Default.aspx',
         fetchFn: async () => { fetches++; throw new Error('must not fetch'); },
     });
-    assert.equal(dom.window.BPBPeakbaggerPage.accountEvidence(), null);
-    const result = await dom.window.BPBPeakbaggerPage.request('wrong-page', LOGIN_URL, 'html');
-    assert.equal(result.error.code, 'invalid-request');
+    assert.equal(transport(dom).accountEvidence(), null);
+    const result = await transport(dom).request('wrong-page', LOGIN_URL, 'html');
+    assert.equal(result.error?.code, 'invalid-request');
     assert.equal(fetches, 0);
 });
 
 test('cancelling one page request aborts only that request and clears its owner', async () => {
-    let signal;
-    const dom = load({
+    let signal: AbortSignal | undefined;
+    const dom = await load({
         fetchFn: async (_url, init) => {
-            signal = init.signal;
+            const current = init.signal!;
+            signal = current;
             return new Promise((_resolve, reject) => {
-                signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+                current.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
             });
         },
     });
-    const api = dom.window.BPBPeakbaggerPage;
+    const api = transport(dom);
     const pending = api.request('cancel-me', LOGIN_URL, 'html');
     await until(() => !!signal);
 
     assert.equal(api.cancel('not-mine'), false);
-    assert.equal(signal.aborted, false);
+    assert.equal(signal!.aborted, false);
     assert.equal(api.cancel('cancel-me'), true);
     const result = await pending;
-    assert.equal(result.error.code, 'cancelled');
-    assert.equal(signal.aborted, true);
+    assert.equal(result.error?.code, 'cancelled');
+    assert.equal(signal!.aborted, true);
     assert.equal(api.cancel('cancel-me'), false);
 });

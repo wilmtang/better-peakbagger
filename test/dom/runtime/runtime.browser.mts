@@ -162,3 +162,63 @@ test('runScripts: dangerously runs the fixture markup scripts', t => {
     t.after(() => dom.window.close());
     assert.equal((dom.window as unknown as { ran?: number }).ran, 1);
 });
+
+test('top-level fixture pages are their own top window and take trusted input', async t => {
+    const dom = new FixtureDom('<!doctype html><body><a href="climber.aspx?cid=1">x</a><button>Go</button></body>',
+        { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', topLevel: true });
+    t.after(() => dom.window.close());
+    assert.equal(dom.window.top, dom.window);
+    assert.equal(dom.window.frameElement, null);
+    assert.equal(dom.window.location.href, 'https://www.peakbagger.com/climber/ascent.aspx?aid=1');
+    assert.equal(dom.window.document.querySelector('a')!.href, 'https://www.peakbagger.com/climber/climber.aspx?cid=1');
+    const button = dom.window.document.querySelector('button')!;
+    const trusted: boolean[] = [];
+    button.addEventListener('click', event => trusted.push(event.isTrusted));
+    await trustedInput(button, { type: 'click' });
+    assert.deepEqual(trusted, [true]);
+    // Top-level fixture pages render: animation frames and visibility as in a tab.
+    assert.equal(dom.window.document.visibilityState, 'visible');
+    await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('no animation frame in the top-level fixture page')), 2000);
+        dom.window.requestAnimationFrame(() => { clearTimeout(timer); resolve(undefined); });
+    });
+});
+
+test('script focus in a fixture frame delivers focus events, as in a focused tab', t => {
+    const dom = new FixtureDom('<!doctype html><body><button>One</button><button>Two</button></body>');
+    t.after(() => dom.window.close());
+    const [one, two] = dom.window.document.querySelectorAll('button');
+    const events: string[] = [];
+    for (const button of [one!, two!]) {
+        button.addEventListener('focus', () => events.push(`focus ${button.textContent}`));
+        button.addEventListener('blur', () => events.push(`blur ${button.textContent}`));
+    }
+    one!.focus();
+    two!.focus();
+    assert.deepEqual(events, ['focus One', 'blur One', 'focus Two']);
+    assert.equal(dom.window.document.activeElement, two);
+});
+
+test('a fixture frame reports a real resize but not its initial sizing', async t => {
+    const dom = new FixtureDom('<!doctype html><body></body>');
+    t.after(() => dom.window.close());
+    const sizes: number[] = [];
+    dom.window.addEventListener('resize', () => sizes.push(dom.window.innerWidth));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    assert.deepEqual(sizes, []);
+    (document.querySelector('iframe[data-bpb-fixture]:last-of-type') as HTMLIFrameElement).style.width = '800px';
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    assert.deepEqual(sizes, [800]);
+});
+
+test('setImmediate runs in a later task after microtasks, supports clearImmediate, and stays active under mocked timers', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
+    const order: string[] = [];
+    const cancelled = setImmediate(() => order.push('cancelled'));
+    clearImmediate(cancelled);
+    await new Promise<void>(resolve => {
+        setImmediate((label: string) => { order.push(label); resolve(); }, 'immediate');
+        void Promise.resolve().then(() => order.push('microtask'));
+    });
+    assert.deepEqual(order, ['microtask', 'immediate']);
+});

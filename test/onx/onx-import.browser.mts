@@ -1,26 +1,19 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://backcountry.onxmaps.com
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { prepareOnxImport, probeOnxImporter } from '../../src/onx/onx-import.ts';
 
 const GPX = '<gpx version="1.1"><trk><trkseg><trkpt lat="1" lon="2"/></trkseg></trk></gpx>';
 
 const run = async ({ url = 'https://backcountry.onxmaps.com/backcountry/map/content/import', body = '', ready = true } = {}) => {
-    const dom = new JSDOM(`<!doctype html><body>${body}</body>`, { url, runScripts: 'outside-only' });
+    const dom = new FixtureDom(`<!doctype html><body>${body}</body>`, { url });
     const win = dom.window;
-    win.DataTransfer = class {
-        constructor() {
-            const files = [];
-            this.items = { add: file => files.push(file) };
-            this.files = files;
-        }
-    };
     const input = win.document.getElementById('add-files-input');
     if (input) {
-        Object.defineProperty(input, 'files', { value: [], writable: true });
         input.addEventListener('change', () => {
             if (!ready) return;
             const item = win.document.createElement('div');
@@ -81,18 +74,17 @@ test('onX adapter reports an unconfirmed post-supply state without retrying itse
 });
 
 const importerBody = '<input id="add-files-input" type="file" accept=".gpx,.kml"><button data-test="import-card-import-button" disabled>Import</button>';
+type Guarded = ReturnType<typeof guarded>;
 const guarded = () => {
-    const dom = new JSDOM(importerBody, { url: 'https://backcountry.onxmaps.com/backcountry/map/content/import', runScripts: 'outside-only' });
+    const dom = new FixtureDom(importerBody, { url: 'https://backcountry.onxmaps.com/backcountry/map/content/import' });
     const win = dom.window;
     let deliveries = 0;
-    win.DataTransfer = class { constructor() { this.files = []; this.items = { add: value => this.files.push(value) }; } };
     const input = win.document.querySelector('input');
-    Object.defineProperty(input, 'files', { value: [], writable: true });
     input.addEventListener('change', () => { deliveries++; });
     const probe = (attemptId = 'attempt-first', expiresAt = Date.now() + 100) => structuredClone(win.eval(
         `(${probeOnxImporter.toString()})(${JSON.stringify({ attemptId, expiresAt })})`));
-    const deliver = (ready, options = {}) => win.eval(`(${prepareOnxImport.toString()})(${JSON.stringify({
-        gpx: GPX, filename: 'peakbagger-42.gpx', expiresAt: win.__bpbOnxDocument?.expiresAt,
+    const deliver = (ready: Record<string, unknown>, options: Record<string, unknown> = {}) => win.eval(`(${prepareOnxImport.toString()})(${JSON.stringify({
+        gpx: GPX, filename: 'peakbagger-42.gpx', expiresAt: (win as unknown as { __bpbOnxDocument?: { expiresAt?: number } }).__bpbOnxDocument?.expiresAt,
         ...ready, ...options,
     })})`);
     return { dom, win, probe, deliver, get deliveries() { return deliveries; } };
@@ -111,11 +103,11 @@ test('queued delivery expires without supplying a file', async () => {
 
 test('delivery rejects a changed document, SPA route, replaced input and new preview', async () => {
     for (const change of [
-        h => { delete h.win.__bpbOnxDocument; },
-        h => { h.win.history.replaceState({}, '', '/backcountry/map'); },
-        h => { h.win.document.querySelector('input').outerHTML = '<input id="add-files-input" type="file" accept=".gpx">'; },
-        h => { h.win.document.body.insertAdjacentHTML('beforeend', '<p data-test="file-item">Other file</p>'); },
-        h => { h.win.document.body.insertAdjacentHTML('beforeend', '<button data-test="upgrade-now-button">Upgrade</button>'); },
+        (h: Guarded) => { delete (h.win as unknown as { __bpbOnxDocument?: unknown }).__bpbOnxDocument; },
+        (h: Guarded) => { h.win.history.replaceState({}, '', '/backcountry/map'); },
+        (h: Guarded) => { h.win.document.querySelector('input').outerHTML = '<input id="add-files-input" type="file" accept=".gpx">'; },
+        (h: Guarded) => { h.win.document.body.insertAdjacentHTML('beforeend', '<p data-test="file-item">Other file</p>'); },
+        (h: Guarded) => { h.win.document.body.insertAdjacentHTML('beforeend', '<button data-test="upgrade-now-button">Upgrade</button>'); },
     ]) {
         const h = guarded();
         try {

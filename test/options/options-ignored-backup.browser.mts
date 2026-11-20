@@ -1,19 +1,22 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadOptions, el, registerCleanup } from '../helpers/options-helpers.mjs';
-import { waitFor } from '../helpers/load-page.mts';
-import { harness, entry } from '../helpers/ignored-sync-harness.mjs';
-import { createGithubRoutes } from '../../src/background/github-routes.ts';
+import { loadOptions, el, registerCleanup } from '../helpers/options-page.mts';
+import { waitFor } from '../helpers/fixture-page.mts';
+import { harness, entry, syncState } from '../helpers/ignored-sync-harness.mts';
+import type { PageChrome } from '../helpers/chrome-stub.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
+import { createGithubRoutes, type CreateGithubRoutesOptions } from '../../src/background/github-routes.ts';
 import * as I from '../../src/favorites/ignored-climbers.ts';
 registerCleanup();
 test('fresh connected settings keep both climber transfers off until opted in', async () => {
     const h = harness({ syncEnabled: null });
-    const prepareChrome = chrome => {
+    const prepareChrome = (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => true };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
             if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
             return { ok: true };
@@ -33,10 +36,10 @@ test('fresh connected settings keep both climber transfers off until opted in', 
 });
 test('backup preview describes both sides, restore uses replacement counts and guarded Undo', async () => {
     const h = harness({ remote: [entry(2)] });
-    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => true };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
             if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
             if (message.type === I.MUTATE_MESSAGE) return h.store.mutate(message.mutation);
@@ -46,11 +49,11 @@ test('backup preview describes both sides, restore uses replacement counts and g
     await waitFor(dom, () => !el(dom, 'ignored-backup').disabled);
     el(dom, 'ignored-backup').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
     assert.equal(el(dom, 'ignored-review-mode').value, 'device');
-    assert.equal(el(dom, 'ignored-review-mode').closest('label').hidden, false);
+    assert.equal(el(dom, 'ignored-review-mode').closest('label')!.hidden, false);
     assert.match(el(dom, 'ignored-review-impact').textContent, /1 added and 1 removed on GitHub/);
     el(dom, 'ignored-review-cancel').click(); await waitFor(dom, () => el(dom, 'ignored-review').hidden);
     el(dom, 'ignored-restore').click(); await waitFor(dom, () => !el(dom, 'ignored-review').hidden);
-    assert.equal(el(dom, 'ignored-review-mode').closest('label').hidden, true,
+    assert.equal(el(dom, 'ignored-review-mode').closest('label')!.hidden, true,
         'restore hides the entire list-choice label instead of leaving an orphan Keep prompt');
     assert.equal(el(dom, 'ignored-review-confirm').textContent, 'Restore ignored climbers');
     assert.equal(el(dom, 'ignored-review-confirm').classList.contains('danger'), true);
@@ -62,25 +65,30 @@ test('backup preview describes both sides, restore uses replacement counts and g
 });
 test('ignored GitHub routes accept only exact packaged settings and manager pages', async () => {
     const h = harness();
-    const routes = createGithubRoutes({ ext: { storage: { local: h.storage }, runtime: { id: 'own', getURL: path => `chrome-extension://own/${path}` } },
-        ignoredStore: h.store, now: Date.now, resolveGithubAccess: h.engineOptions.getAccess });
+    // The routes hand this access only to the ignored-list engine, which
+    // reads nothing beyond the harness's fake client.
+    const routes = createGithubRoutes({ ext: { storage: { local: h.storage }, runtime: { id: 'own', getURL: (path: string) => `chrome-extension://own/${path}` } },
+        ignoredStore: h.store, now: Date.now,
+        resolveGithubAccess: h.engineOptions.getAccess as unknown as CreateGithubRoutesOptions['resolveGithubAccess'] });
+    const ignoredList = async (action: string, url: string) =>
+        await routes.handlers.GITHUB_IGNORED_LIST({ action }, { id: 'own', url }) as { ok?: boolean; error?: { code: string } };
     for (const url of ['https://www.peakbagger.com/climber/climber.aspx?cid=1', 'chrome-extension://other/options/options.html',
         'chrome-extension://own/options/options.html/extra', 'chrome-extension://own/photos/photos.html']) {
-        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'backup' }, { id: 'own', url })).error.code, 'forbidden');
+        assert.equal((await ignoredList('backup', url)).error?.code, 'forbidden');
     }
     assert.equal(routes.isExtensionOnly('GITHUB_IGNORED_LIST'), true);
     for (const url of ['chrome-extension://own/options/options.html#favorites', 'chrome-extension://own/options/favorites.html#ignored']) {
-        assert.equal((await routes.handlers.GITHUB_IGNORED_LIST({ action: 'status' }, { id: 'own', url })).ok, true);
+        assert.equal((await ignoredList('status', url)).ok, true);
     }
     assert.equal(h.writes, 0);
 });
 
 test('sync checkbox stays checked immediately and can be disabled during upload', async () => {
     const h = harness({ remote: [entry(2)] });
-    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => true };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
             if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
             return { ok: true };
@@ -90,24 +98,24 @@ test('sync checkbox stays checked immediately and can be disabled during upload'
     el(dom, 'ignored-sync-enable').click();
     await waitFor(dom, () => el(dom, 'ignored-backup').textContent === 'Sync now');
     assert.equal(el(dom, 'ignored-sync-enable').checked, true);
-    assert.equal((await h.engine.status()).state.enabled, true);
+    assert.equal(syncState(await h.engine.status()).enabled, true);
     assert.equal(el(dom, 'ignored-review').hidden, true);
     await h.engine.action({ action: 'sync' });
-    let release; const gate = new Promise(resolve => { release = resolve; }); h.commitHook = () => gate;
+    let release!: () => void; const gate = new Promise<void>(resolve => { release = resolve; }); h.commitHook = () => gate;
     el(dom, 'ignored-backup').click(); await waitFor(dom, () => dom.window.document.getElementById('ignored-github').getAttribute('aria-busy') === 'true');
     assert.equal(el(dom, 'ignored-sync-enable').disabled, false);
     el(dom, 'ignored-sync-enable').click();
     await waitFor(dom, () => !el(dom, 'ignored-sync-enable').checked);
     release(); await waitFor(dom, () => !dom.window.document.getElementById('ignored-github').hasAttribute('aria-busy'));
-    assert.equal((await h.engine.status()).state.enabled, false);
+    assert.equal(syncState(await h.engine.status()).enabled, false);
     assert.deepEqual(new Set((await h.store.read()).entries.map(e => e.cid)), new Set([1,2]));
 });
 test('metadata conflicts expose both names and do not accept an undecided version', async () => {
     const h = harness({ remote: [entry(1, 'Remote name')] });
-    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => true };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true };
             if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
             return { ok: true };
@@ -125,10 +133,10 @@ test('metadata conflicts expose both names and do not accept an undecided versio
 
 test('a backup with no Undo result clears an older restore Undo', async () => {
     const h = harness({ remote: [entry(2)] });
-    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: chrome => {
+    const dom = await loadOptions({ enableGithubBackup: true }, { local: h.values, prepareChrome: (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => true };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo: { owner: 'me', name: 'backup' } };
             if (message.type === 'GITHUB_IGNORED_LIST') return message.action === 'status' ? h.engine.status() : h.engine.action(message);
             return { ok: true };

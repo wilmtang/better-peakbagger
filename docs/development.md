@@ -1307,9 +1307,9 @@ toolbar click that grants `activeTab`. Those remain explicit release checks.
 The [climber lists guide](climber-lists.md) describes behavior; the
 [archived ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md) records proof and release gaps.
 Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.browser.mts`,
-`test/ascent/ascent-report-visibility.test.mjs`,
+`test/ascent/ascent-report-visibility.browser.mts`,
 `test/background/climber-list-sync.test.mjs` and
-`test/options/options-ignored-backup.test.mjs`. They cover exact author evidence,
+`test/options/options-ignored-backup.browser.mts`. They cover exact author evidence,
 visibility/count composition, unknown/empty/error states, mutation races, bounded
 files, reviewed replacements, three-way deletions/conflicts, ref retry, journal
 recovery, cancellation and durable scheduling. Scale coverage includes native

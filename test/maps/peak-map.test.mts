@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
 import { makeChromeStub, waitFor, type PageChrome } from '../helpers/load-page.mts';
 import { rect } from '../helpers/page-types.mts';
-import { pointerEvent } from '../helpers/pointer-event.mjs';
+import { pointerEvent } from '../helpers/pointer-event.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // The Peak page loads the isolated settings-bridge bundle and the MAIN-world

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { ownerClimberId } from '../../src/profile/profile-backup-core.ts';
 import { decodeHtmlEntities, peakbaggerAccount } from '../../src/peakbagger/peakbagger-account.ts';
 
@@ -40,7 +40,7 @@ test('account readers reject off-site, invalid and conflicting identities', () =
         nav(home('/climber/climber.aspx?cid=17') + '<a href="/climber/ClimbListC.aspx?cid=29">My Ascents</a>'),
         `<h1>Trip report</h1>${nav(home('/climber/climber.aspx?cid=17'))}`,
     ]) {
-        const dom = new JSDOM(html, { url });
+        const dom = new FixtureDom(html, { url });
         try { assert.equal(ownerClimberId(dom.window.document), null, html); }
         finally { dom.window.close(); }
     }
@@ -67,7 +67,7 @@ test('DOM and worker HTML account adapters agree on native navigation and malfor
         ['', 'unverified', null],
     ];
     for (const [html, status, cid] of fixtures) {
-        const dom = new JSDOM(html, { url });
+        const dom = new FixtureDom(html, { url });
         try {
             assert.deepEqual(account.fromDocument(dom.window.document), { status, cid }, html);
             assert.deepEqual(account.fromHtml(html, url), { status, cid }, html);
@@ -109,7 +109,7 @@ test('real masked native navigation remains readable in DOM and worker adapters'
     const { peakbaggerAccount: account } = await import('../../src/peakbagger/peakbagger-account.ts');
     for (const name of ['home-default', 'peak-rainier', 'climber-ascents', 'climber-ascentedit', 'report-buddy-list', 'climber-buddy-form']) {
         const html = await readFile(new URL(`../fixtures/pages/${name}.html`, import.meta.url), 'utf8');
-        const dom = new JSDOM(html, { url });
+        const dom = new FixtureDom(html, { url });
         try {
             assert.deepEqual(account.fromDocument(dom.window.document), { status: 'signed-in', cid: '900001' }, name);
             assert.deepEqual(account.fromHtml(html, url), { status: 'signed-in', cid: '900001' }, name);

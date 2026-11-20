@@ -3,14 +3,15 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/fixture-page.mts';
+import type { LoadedPage, LoadPageOptions } from '../helpers/fixture-page.mts';
 
-const headers = doc => [...doc.querySelectorAll('#StatsLabel th')].filter(node => /^(Elev|Prom)-/.test(node.textContent));
-const reading = heading => heading.parentElement.nextElementSibling.cells[heading.cellIndex];
-const load = options => loadPage('climber-home.html', { fixtures: PAGE_FIXTURES,
+const headers = (doc: Document) => [...doc.querySelectorAll<HTMLTableCellElement>('#StatsLabel th')].filter(node => /^(Elev|Prom)-/.test(node.textContent));
+const reading = (heading: HTMLTableCellElement) => (heading.parentElement!.nextElementSibling as HTMLTableRowElement).cells[heading.cellIndex]!;
+const load = (options: LoadPageOptions) => loadPage('climber-home.html', { fixtures: PAGE_FIXTURES,
     url: 'https://www.peakbagger.com/climber/climber.aspx?cid=900002',
     bundles: ['content/profile-units.js'], ...options });
-const change = (dom, settings) => dom.chrome.storage.sync.set({ bpbSettings: settings });
+const change = (dom: LoadedPage, settings: Record<string, unknown>) => dom.chrome.storage.sync.set({ bpbSettings: settings });
 
 test('profile elevation and prominence follow metric BPB units on another climber and your own profile', async t => {
     for (const cid of [900001, 900002]) {
@@ -22,14 +23,14 @@ test('profile elevation and prominence follow metric BPB units on another climbe
         assert.equal(reading(elev).textContent, '4420');
         assert.equal(prom.textContent, 'Prom-m');
         assert.equal(reading(prom).textContent, '4036');
-        assert.equal(elev.parentElement.nextElementSibling.cells[0].querySelector('a').textContent, 'Sample Peak 1');
+        assert.equal((elev.parentElement!.nextElementSibling as HTMLTableRowElement).cells[0]!.querySelector('a')!.textContent, 'Sample Peak 1');
         assert.match(dom.window.document.getElementById('StatsLabel').textContent, /Vertical Gain:\s*4,270 ft/);
     }
 });
 
 test('metric native profiles use the elevation override and restore their original nodes without rounding drift', async t => {
     let original;
-    const dom = await load({ settings: { units: 'metric', elevationUnits: 'imperial' }, prepare(page) {
+    const dom = await load({ settings: { units: 'metric', elevationUnits: 'imperial' }, prepare(page: LoadedPage) {
         const [elev, prom] = headers(page.window.document);
         elev.textContent = 'Elev-m';
         prom.textContent = 'Prom-m';
@@ -76,7 +77,7 @@ test('matching units and auto preserve native precision, markup and unrelated pr
 });
 
 test('unfamiliar values keep their table in its native units while recognized tables still convert', async t => {
-    const dom = await load({ settings: { units: 'metric' }, prepare(page) {
+    const dom = await load({ settings: { units: 'metric' }, prepare(page: LoadedPage) {
         reading(headers(page.window.document)[0]).textContent = '4,391 to 4,400';
     } });
     t.after(() => dom.window.close());
@@ -88,29 +89,29 @@ test('unfamiliar values keep their table in its native units while recognized ta
 });
 
 test('zero, negative elevations and missing readings retain their meaning', async t => {
-    const dom = await load({ settings: { units: 'metric' }, prepare(page) {
-        const rows = headers(page.window.document)[0].closest('table').rows;
+    const dom = await load({ settings: { units: 'metric' }, prepare(page: LoadedPage) {
+        const rows = headers(page.window.document)[0]!.closest('table')!.rows;
         for (const [index, value] of ['0', '−100', '—', '', '?'].entries()) rows[index + 2].cells[1].textContent = value;
     } });
     t.after(() => dom.window.close());
     const elev = headers(dom.window.document)[0];
     await waitFor(dom, () => elev.textContent === 'Elev-m');
-    assert.deepEqual([...elev.closest('table').rows].slice(2, 7).map(row => row.cells[1].textContent), ['0', '-30', '—', '', '?']);
+    assert.deepEqual([...elev.closest('table')!.rows].slice(2, 7).map(row => row.cells[1]!.textContent), ['0', '-30', '—', '', '?']);
 });
 
 test('a newer setting wins over a slow initial settings read', async t => {
-    let release;
-    const dom = await load({ settings: { units: 'imperial' }, prepare(page) {
+    let release: (() => void) | undefined;
+    const dom = await load({ settings: { units: 'imperial' }, prepare(page: LoadedPage) {
         const get = page.chrome.storage.sync.get;
-        page.chrome.storage.sync.get = async key => {
+        page.chrome.storage.sync.get = async (key?: string | string[] | null) => {
             const snapshot = await get(key);
-            return new Promise(resolve => { release = () => resolve(snapshot); });
+            return new Promise<Record<string, unknown>>(resolve => { release = () => resolve(snapshot); });
         };
     } });
     t.after(() => dom.window.close());
     await waitFor(dom, () => !!release);
     await change(dom, { units: 'metric' });
-    release();
+    release!();
     // Let the released initial read finish without a newer publication hiding it.
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(headers(dom.window.document)[0].textContent, 'Elev-m');

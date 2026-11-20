@@ -8,20 +8,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { ascentBackupSource as Source } from '../../src/ascent/ascent-backup-source.ts';
-
-globalThis.DOMParser = new JSDOM('').window.DOMParser;
+import type { PeakbaggerFetchFn } from '../../src/peakbagger/peakbagger-request.ts';
 
 const editHtml = await readFile(new URL('../fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
 
-const editDocument = () => new JSDOM(editHtml).window.document;
+const editDocument = () => new FixtureDom(editHtml).window.document;
 
 test('the shared edit-form reader builds one complete raw snapshot with safe list fallbacks', () => {
     const doc = editDocument();
     const form = doc.getElementById('Form1');
-    form.elements.GainFt.value = '4200';
-    form.elements.JournalText.value = '[b]Exact persisted report[/b]';
+    (form.elements.namedItem('GainFt') as HTMLInputElement).value = '4200';
+    (form.elements.namedItem('JournalText') as HTMLTextAreaElement).value = '[b]Exact persisted report[/b]';
 
     const result = Source.snapshotFromEditDocument({
         doc,
@@ -65,7 +64,7 @@ test('the shared edit-form reader retains provisional negative peak identities',
 
 test('the shared edit-form reader rejects incomplete forms and identity mismatches', () => {
     const incomplete = Source.snapshotFromEditDocument({
-        doc: new JSDOM('<form id="Form1"></form>').window.document,
+        doc: new FixtureDom('<form id="Form1"></form>').window.document,
         editUrl: 'https://www.peakbagger.com/climber/AscentEdit.aspx?aid=1',
         ascentId: 1,
     });
@@ -92,14 +91,14 @@ test('the shared edit-form reader rejects incomplete forms and identity mismatch
 });
 
 test('the shared fetch reader uses the signed-in session and validates response bodies', async () => {
-    let request = null;
-    const fetchFn = async (url, init) => {
+    let request = null as { url: string; init: RequestInit } | null;
+    const fetchFn: PeakbaggerFetchFn = async (url, init = {}) => {
         request = { url, init };
         return {
             status: 200,
             url,
             redirected: false,
-            headers: { get: name => (/content-type/i.test(name) ? 'application/gpx+xml' : null) },
+            headers: { get: (name: string) => (/content-type/i.test(name) ? 'application/gpx+xml' : null) },
             text: async () => '<?xml version="1.0"?><gpx version="1.1"><trk/></gpx>',
         };
     };
@@ -108,10 +107,11 @@ test('the shared fetch reader uses the signed-in session and validates response 
         fetchFn,
     });
     assert.equal(ok.kind, 'ok');
-    assert.equal(request.init.credentials, 'include');
-    assert.equal(request.init.redirect, 'follow');
-    assert.equal(request.init.cache, 'no-store');
-    assert.ok(request.init.signal instanceof AbortSignal);
+    assert.ok(request);
+    assert.equal(request!.init.credentials, 'include');
+    assert.equal(request!.init.redirect, 'follow');
+    assert.equal(request!.init.cache, 'no-store');
+    assert.ok(request!.init.signal instanceof AbortSignal);
 
     const wrong = await Source.fetchPeakbaggerResource('https://www.peakbagger.com/climber/GPXFile.aspx?aid=7&sep=1', {
         kind: 'gpx',
@@ -132,7 +132,7 @@ test('the shared full-profile GPX URL matches Peakbagger current download link',
     const url = new URL(Source.storedGpxUrl({
         origin: 'https://www.peakbagger.com',
         ascentId: 7654321,
-    }));
+    })!);
     assert.equal(url.pathname, '/climber/GPXFile.aspx');
     assert.equal(url.searchParams.get('aid'), '7654321');
     assert.equal(url.searchParams.get('sep'), '1');

@@ -3,22 +3,46 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/load-page.mts';
+import { loadPage, PAGE_FIXTURES, waitFor } from '../helpers/fixture-page.mts';
+import type { LoadedPage } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=3273892&cid=900001';
 const DRAFT_KEY = 'bpbReportDraft:900001:a3273892';
+
+// Record whether the extension let Peakbagger's submission through, without
+// leaving the page: Firefox performs a real submission even for a synthetic
+// submit event that nothing cancelled.
+const dispatchSubmit = (win: LoadedPage['window'], form: EventTarget, submitter?: HTMLElement | null) => {
+    const event = new win.SubmitEvent('submit', {
+        bubbles: true,
+        cancelable: true,
+        submitter,
+    });
+    let observed = false;
+    let allowed = false;
+    const observe = (seen: Event) => {
+        if (seen !== event) return;
+        observed = true;
+        allowed = !seen.defaultPrevented;
+        seen.preventDefault();
+    };
+    win.addEventListener('submit', observe);
+    try { form.dispatchEvent(event); } finally { win.removeEventListener('submit', observe); }
+    return observed ? allowed : !event.defaultPrevented;
+};
 
 const loadDeleteForm = async ({
     buttonId = 'DeleteButton',
     settings = { enableGithubBackup: true, removeGithubBackupOnDelete: true },
     confirm = true,
-    intentResponse = { ok: true },
-    draft = null,
-    settingsReadError = null,
+    intentResponse = { ok: true } as Record<string, unknown>,
+    draft = null as Record<string, unknown> | null,
+    settingsReadError = null as Error | null,
 } = {}) => {
-    const messages = [];
-    const alerts = [];
-    const nativeSubmissions = [];
+    const messages: StubMessage[] = [];
+    const alerts: string[] = [];
+    const nativeSubmissions: { id: string; allowed: boolean }[] = [];
     const dom = await loadPage('climber-ascentedit.html', {
         fixtures: PAGE_FIXTURES,
         url: URL,
@@ -39,21 +63,14 @@ const loadDeleteForm = async ({
                 form.append(input);
             }
             current.window.confirm = () => confirm;
-            current.window.alert = message => alerts.push(message);
+            current.window.alert = (message?: string) => { alerts.push(String(message)); };
             current.chrome.runtime.sendMessage = async message => {
                 messages.push(message);
                 return message.type === 'GITHUB_ASCENT_DELETE_INTENT' ? intentResponse : null;
             };
-            form.requestSubmit = submitter => {
-                const event = new current.window.SubmitEvent('submit', {
-                    bubbles: true,
-                    cancelable: true,
-                    submitter,
-                });
-                nativeSubmissions.push({
-                    id: submitter.id,
-                    allowed: form.dispatchEvent(event),
-                });
+            form.requestSubmit = (submitter?: HTMLElement | null) => {
+                const allowed = dispatchSubmit(current.window, form, submitter);
+                nativeSubmissions.push({ id: submitter!.id, allowed });
             };
         },
     });
@@ -66,11 +83,7 @@ const loadDeleteForm = async ({
     };
 };
 
-const submit = (dom, button) => button.form.dispatchEvent(new dom.window.SubmitEvent('submit', {
-    bubbles: true,
-    cancelable: true,
-    submitter: button,
-}));
+const submit = (dom: LoadedPage, button: HTMLInputElement) => dispatchSubmit(dom.window, button.form!, button);
 
 for (const buttonId of ['DeleteButton', 'DeleteButton2']) {
     test(`${buttonId} records one intent before allowing Peakbagger's native delete`, async () => {
