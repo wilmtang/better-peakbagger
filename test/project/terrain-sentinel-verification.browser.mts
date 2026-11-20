@@ -3,15 +3,19 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+
+// The terrain frame's window, where the verifier reads the test hooks.
+type TerrainFrameWindow = Window & { __bpbCatalogLimitRequests?: number };
+const frameWindow = (frame: unknown) => (frame as HTMLIFrameElement).contentWindow as TerrainFrameWindow;
 import { createMapLayerControl } from '../../src/maps/map-layer-control.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { readSentinelCooldown } from '../../scripts/verify-terrain-provider-ui.mts';
 
 test('terrain cooldown verification reads the actual shared control and requires an intercepted catalog request', t => {
-    const dom = new JSDOM('<iframe id="bpb-terrain-frame"></iframe>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<iframe id="bpb-terrain-frame"></iframe>');
     t.after(() => dom.window.close());
-    const doc = dom.window.document, frame = doc.querySelector('iframe').contentWindow;
+    const doc = dom.window.document, frame = frameWindow(doc.querySelector('iframe'));
     const control = createMapLayerControl({ document: doc });
     t.after(() => control.dispose());
     doc.body.append(control.element);
@@ -21,7 +25,8 @@ test('terrain cooldown verification reads the actual shared control and requires
     control.render({ state, statuses, zoom: 13 });
     control.trigger.click();
     doc.querySelector('[data-layer="sentinel"] button').click();
-    frame.__bpbTerrainTestMap = { getZoom: () => 13 };
+    // The verifier reads only the zoom.
+    frame.__bpbTerrainTestMap = { getZoom: () => 13 } as unknown as typeof frame.__bpbTerrainTestMap;
     const read = () => dom.window.eval(`(${readSentinelCooldown})()`);
     assert.equal(read().ready, false, 'a matching message without the HTTP 429 probe cannot pass');
     frame.__bpbCatalogLimitRequests = 1;

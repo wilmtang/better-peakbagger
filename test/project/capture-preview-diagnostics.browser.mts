@@ -1,9 +1,8 @@
-/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from '../helpers/test-dom.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { captureProfileCount, installPreviewProbe, sanitizePreviewEvent } from '../../scripts/capture-preview-diagnostics.mts';
 
 test('capture fresh profiles reject unknown, duplicate, zero and fractional selections', () => {
@@ -13,8 +12,8 @@ test('capture fresh profiles reject unknown, duplicate, zero and fractional sele
 });
 
 test('native probe records prevented Preview and invalid controls without private values', async () => {
-    const dom = new JSDOM('<form><input id="private" value="PRIVATE_SENTINEL" required><input id="GPXUpload" type="file"><button id="GPXPreview" type="button">Preview</button></form>',
-        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=PRIVATE_QUERY', runScripts: 'outside-only' });
+    const dom = new FixtureDom('<form><input id="private" value="PRIVATE_SENTINEL" required><input id="GPXUpload" type="file"><button id="GPXPreview" type="button">Preview</button></form>',
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx?cid=PRIVATE_QUERY' });
     try {
         const events: unknown[] = [];
         dom.window.__bpbRecordPreview = (value: unknown) => { events.push(value); return Promise.resolve(); };

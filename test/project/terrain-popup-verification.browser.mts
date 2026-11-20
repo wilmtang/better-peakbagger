@@ -2,29 +2,34 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+
+// The terrain frame's window and the marker the frame publishes for verifiers.
+type TerrainFrameWindow = Window & typeof globalThis & { __bpbPeakNameMarker: Element };
+const frameWindow = (frame: unknown) => (frame as HTMLIFrameElement).contentWindow as TerrainFrameWindow;
+type Probe = () => unknown;
 import { peakPopupSnapshot, waitForPeakPopupSnapshot } from '../../scripts/verify-terrain-popup.mts';
 
 test('terrain popup verification captures marker identity, name and URL before reconciliation', async t => {
-    const dom = new JSDOM('<iframe id="bpb-terrain-frame"></iframe>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<iframe id="bpb-terrain-frame"></iframe>');
     t.after(() => dom.window.close());
-    const win = dom.window.document.querySelector('iframe').contentWindow;
+    const win = frameWindow(dom.window.document.querySelector('iframe'));
     win.document.body.innerHTML = '<button id="marker"></button><div class="bpb-peak-popup"><a href="/peak.aspx?pid=2829">Mount Shuksan</a></div>';
-    win.__bpbPeakNameMarker = win.document.getElementById('marker');
+    win.__bpbPeakNameMarker = win.document.getElementById('marker')!;
     const reconcile = () => {
         win.__bpbPeakNameMarker.remove();
         win.document.querySelector('.bpb-peak-popup')?.remove();
     };
     let disposed = false;
     const page = {
-        waitForFunction: async fn => {
+        waitForFunction: async (fn: Probe) => {
             const state = dom.window.eval(`(${fn.toString()})()`);
             assert.ok(state);
             const snapshot = JSON.parse(JSON.stringify(state));
             return { jsonValue: async () => { reconcile(); return snapshot; }, dispose: async () => { disposed = true; } };
         },
-        frameLocator: () => ({ locator: selector => ({
-            evaluate: async fn => {
+        frameLocator: () => ({ locator: (selector: string) => ({
+            evaluate: async (fn: Probe) => {
                 assert.equal(selector, 'body');
                 const state = win.eval(`(${fn.toString()})()`);
                 reconcile();
@@ -41,17 +46,17 @@ test('terrain popup verification captures marker identity, name and URL before r
 });
 
 test('terrain popup readiness waits for a connected marker and exposes only actual replacements', t => {
-    const dom = new JSDOM('<iframe id="bpb-terrain-frame"></iframe>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<iframe id="bpb-terrain-frame"></iframe>');
     t.after(() => dom.window.close());
-    const win = dom.window.document.querySelector('iframe').contentWindow;
+    const win = frameWindow(dom.window.document.querySelector('iframe'));
     win.document.body.innerHTML = '<button id="marker"></button>';
-    win.__bpbPeakNameMarker = win.document.getElementById('marker');
+    win.__bpbPeakNameMarker = win.document.getElementById('marker')!;
     const read = () => dom.window.eval(`(${peakPopupSnapshot.toString()})()`);
     assert.equal(read(), false, 'a missing popup on a connected marker must not pass readiness');
     win.document.body.insertAdjacentHTML('beforeend', '<div class="bpb-peak-popup"><a href="/wrong">Wrong summit</a></div>');
     assert.deepEqual(JSON.parse(JSON.stringify(read())), { replaced: false, name: 'Wrong summit', href: '/wrong' },
         'keep incorrect popup contents available to the exact-name and URL assertions');
     win.__bpbPeakNameMarker.remove();
-    win.document.querySelector('.bpb-peak-popup').remove();
+    win.document.querySelector('.bpb-peak-popup')!.remove();
     assert.deepEqual(JSON.parse(JSON.stringify(read())), { replaced: true, name: null, href: null });
 });

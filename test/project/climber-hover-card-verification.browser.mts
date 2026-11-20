@@ -2,19 +2,18 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { runInNewContext } from 'node:vm';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { climberCardPlacementReady, prepareClimberCardViewport } from '../../scripts/verify-climber-hover-card.mts';
 
 test('viewport captures close before repositioning and reopen with keyboard focus after the anchor settles', async t => {
-    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger"></button><div id="bpb-climber-card"><button class="bpb-climber-card-close">Close</button></div>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger"></button><div id="bpb-climber-card"><button class="bpb-climber-card-close">Close</button></div>');
     t.after(() => dom.window.close());
     const { window } = dom;
     const card = window.document.getElementById('bpb-climber-card');
     const anchor = window.document.getElementById('hover-climber');
-    const events = [];
+    const events: string[] = [];
     anchor.scrollIntoView = () => events.push('scroll');
-    anchor.getBoundingClientRect = () => ({ top: 100, bottom: 120 });
+    anchor.getBoundingClientRect = () => ({ top: 100, bottom: 120 }) as DOMRect;
     Object.assign(window, { innerWidth: 1000, innerHeight: 760 });
     await prepareClimberCardViewport({
         evaluate: fn => window.eval(`(${fn.toString()})()`),
@@ -28,24 +27,23 @@ test('viewport captures close before repositioning and reopen with keyboard focu
             if (!card.hidden) card.querySelector('button').focus();
         },
         wait: async fn => assert.ok(window.eval(`(${fn.toString()})()`)),
-        click: async () => assert.fail('reopening must use the already verified keyboard action'),
     }, 1000, 760);
     assert.deepEqual(events, ['Escape', 'resize', 'scroll', 'Enter']);
     assert.equal(card.contains(window.document.activeElement), true);
 });
 
 test('hover-card placement tolerates Firefox layout rounding while rejecting visible overlap and unfinished paint', t => {
-    const dom = new JSDOM('<a id="hover-climber"></a><div id="bpb-climber-card" style="opacity:1"></div>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<a id="hover-climber"></a><div id="bpb-climber-card" style="opacity:1"></div>');
     t.after(() => dom.window.close());
     const { window } = dom;
     const card = window.document.getElementById('bpb-climber-card');
     const bounds = { width: 312, left: 24, right: 336, top: 257.9666748046875, bottom: 627.0666809082031 };
     const anchor = { top: 627.066650390625, bottom: 644.066650390625 };
     Object.assign(window, { innerWidth: 360, innerHeight: 760 });
-    card.getBoundingClientRect = () => bounds;
-    window.document.getElementById('hover-climber').getBoundingClientRect = () => anchor;
-    let animations = [];
-    card.getAnimations = () => animations;
+    card.getBoundingClientRect = () => bounds as DOMRect;
+    window.document.getElementById('hover-climber').getBoundingClientRect = () => anchor as DOMRect;
+    let animations: { playState: string }[] = [];
+    card.getAnimations = () => animations as unknown as Animation[];
     const ready = () => window.eval(`(${climberCardPlacementReady.toString()})()`);
 
     assert.equal(ready(), true, 'captured Firefox 152 rectangles differ by only 0.00003 CSS pixels');
@@ -63,19 +61,19 @@ test('hover-card placement tolerates Firefox layout rounding while rejecting vis
 });
 
 test('failed keyboard reopening reports the live state without retrying or replacing its cause', async t => {
-    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>', { runScripts: 'outside-only' });
+    const dom = new FixtureDom('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>');
     t.after(() => dom.window.close());
     const { window } = dom;
     window.document.getElementById('hover-climber').scrollIntoView = () => {};
-    window.document.getElementById('bpb-climber-card').matches = () => false;
-    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) });
+    window.document.getElementById('bpb-climber-card').matches = (() => false) as unknown as Element['matches'];
+    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) }) as unknown as DOMRect;
     const primary = new Error('keyboard opening timed out');
     let waits = 0, keys = 0;
     await assert.rejects(prepareClimberCardViewport({
         evaluate: fn => window.eval(`(${fn.toString()})()`), resize: async () => {},
         key: async () => { keys++; },
         wait: async () => { if (++waits === 2) throw primary; },
-    }, 320, 760), error => {
+    }, 320, 760), (error: Error) => {
         assert.equal(error.cause, primary);
         assert.match(error.message, /did not reopen at 320x760/);
         assert.match(error.message, /"hidden":true/);
@@ -84,28 +82,37 @@ test('failed keyboard reopening reports the live state without retrying or repla
     });
     assert.equal(keys, 1);
     assert.equal(waits, 2);
-    assert.equal(window.__bpbClimberViewportTrace, undefined, 'remove diagnostic listeners after a failed sample');
+    assert.equal((window as { __bpbClimberViewportTrace?: unknown }).__bpbClimberViewportTrace, undefined, 'remove diagnostic listeners after a failed sample');
 });
 
 test('viewport diagnostics survive Firefox creating a fresh script global for each command', async t => {
-    const dom = new JSDOM('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>');
+    const dom = new FixtureDom('<a id="hover-climber"></a><button class="bpb-climber-actions-trigger" aria-expanded="false"></button><div id="bpb-climber-card" hidden></div>');
     t.after(() => dom.window.close());
     const { window } = dom;
+    // Each command runs in a brand-new script global, as Firefox's WebDriver
+    // does: a fresh realm whose free names reach only these page objects.
+    // Like Firefox's sandboxes, the realms outlive their command, so listeners
+    // a probe registers from one keep running; they close with the test.
+    const inFreshGlobal = (fn: () => unknown) => {
+        const realm = new FixtureDom('');
+        t.after(() => realm.window.close());
+        return realm.window.Function('window', 'document', 'innerWidth', 'innerHeight', 'addEventListener',
+            'removeEventListener', 'MutationObserver', 'performance', `return (${fn.toString()})();`)(
+            window, window.document, window.innerWidth, window.innerHeight, window.addEventListener.bind(window),
+            window.removeEventListener.bind(window), window.MutationObserver, window.performance);
+    };
     window.document.getElementById('hover-climber').scrollIntoView = () => {};
-    window.document.getElementById('bpb-climber-card').matches = () => false;
-    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) });
+    window.document.getElementById('bpb-climber-card').matches = (() => false) as unknown as Element['matches'];
+    for (const node of window.document.body.children) node.getBoundingClientRect = () => ({ toJSON: () => ({ top: 0, bottom: 0 }) }) as unknown as DOMRect;
     let waits = 0;
     await assert.rejects(prepareClimberCardViewport({
-        evaluate: fn => runInNewContext(`(${fn.toString()})()`, { window, document: window.document,
-            innerWidth: window.innerWidth, innerHeight: window.innerHeight,
-            addEventListener: window.addEventListener.bind(window), removeEventListener: window.removeEventListener.bind(window),
-            MutationObserver: window.MutationObserver, performance: window.performance }),
+        evaluate: async fn => inFreshGlobal(fn),
         resize: async () => {},
         key: async () => window.document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true })),
         wait: async () => { if (++waits === 2) throw new Error('opening timed out'); },
-    }, 320, 760), error => {
+    }, 320, 760), (error: Error) => {
         assert.match(error.message, /"key":"Enter"/, 'event history must remain on the page Window between commands');
         return true;
     });
-    assert.equal(window.__bpbClimberViewportTrace, undefined, 'cleanup must reach the same page-owned trace');
+    assert.equal((window as { __bpbClimberViewportTrace?: unknown }).__bpbClimberViewportTrace, undefined, 'cleanup must reach the same page-owned trace');
 });

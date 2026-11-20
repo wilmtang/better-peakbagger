@@ -1,17 +1,16 @@
-/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Page } from 'playwright';
-import { JSDOM } from '../helpers/test-dom.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { installTerrainFrameCreation, readTerrainFrameCreation, stopTerrainFrameCreation,
     observeTerrainFrameCreation } from '../../scripts/terrain-frame-creation.mts';
 
 const frameUrl = 'chrome-extension://fixture-id/terrain/terrain.html';
 function fixture() {
-    const dom = new JSDOM('<div id="bpb-map-viewport"></div><div id="other"></div>',
-        { url: 'https://www.peakbagger.com/map/BigMap.aspx', runScripts: 'outside-only' });
+    const dom = new FixtureDom('<div id="bpb-map-viewport"></div><div id="other"></div>',
+        { url: 'https://www.peakbagger.com/map/BigMap.aspx' });
     const win = dom.window;
     const invoke = (fn: { toString(): string }, ...args: unknown[]) => win.eval(`(${fn.toString()})(...${JSON.stringify(args)})`);
     const add = (url = frameUrl, parent = win.document.getElementById('bpb-map-viewport')!, tag = 'iframe') => {
