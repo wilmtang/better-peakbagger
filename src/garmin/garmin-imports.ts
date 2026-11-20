@@ -18,7 +18,7 @@ interface RouteAnalysis {
 }
 interface GarminItem {
     id: string; owner?: string | null; cid?: string | null; phase: string; createdAt?: number; saved: string[];
-    summary: { id?: string; date?: string; type?: string; owner?: string | null; localStart?: string; utcStart?: string };
+    summary: { id?: string; name?: string; date?: string; type?: string; owner?: string | null; localStart?: string; utcStart?: string };
     analysis?: RouteAnalysis | null; error?: string | null; handoff?: { jobId?: string; tabId?: number; phase?: string } | null;
     revision?: number; retryAt?: number; undoUntil?: number; previousPhase?: string;
 }
@@ -232,7 +232,8 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
             const state = await store.read(); meta = garminPublicSummary(state);
             publicCache = { revision: meta.revision, items: Object.values(state.items).filter(item => item.phase !== 'dismissed').map(item => ({
                 id: item.id, phase: item.phase, saved: item.saved || [], error: item.error, handoff: !!item.handoff,
-                summary: { type: item.summary?.type || 'activity', date: item.summary?.date || '' },
+                summary: { type: item.summary?.type || 'activity', date: item.summary?.date || '',
+                    name: item.summary?.name || '', localStart: item.summary?.localStart || '' },
                 analysis: item.analysis ? { matches: item.analysis.matches.map(match => ({ id: match.id, name: match.name,
                     classification: match.classification, confidence: match.confidence, evidence: match.evidence })),
                 hasTimestamps: item.analysis.route?.some(segment => segment.some(point => point.time !== null)) } : null,
@@ -276,7 +277,11 @@ export function createGarminImports({ ext, settings, store: durableStore = creat
                 for (const row of rows) {
                     if (row.owner && row.owner !== connection.owner) throw new GarminError('identity');
                     if (row.date < range.from! || row.date > range.to || (prefs.garminActivityTypes === 'walking' && !MOUNTAIN_ACTIVITY_TYPES.includes(row.type))) continue;
-                    if (current.items[row.id] || current.receipts[row.id]) continue;
+                    // A listed item takes Garmin's current title, which also names
+                    // items imported before titles were kept.
+                    const existing = current.items[row.id];
+                    if (existing && row.name && existing.summary?.name !== row.name) existing.summary = { ...existing.summary, name: row.name };
+                    if (existing || current.receipts[row.id]) continue;
                     if (Object.keys(current.items).length >= 200) throw new GarminError('capacity');
                     current.items[row.id] = { id: row.id, owner: connection.owner, cid: connection.cid, summary: row, phase: 'waiting', createdAt: clock(), saved: [] };
                 }

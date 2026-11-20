@@ -136,7 +136,10 @@ The extension does not open a tab or solve an interactive challenge automaticall
 
 Garmin sends complete activity summaries and recordings, which can contain
 health and device data. The extension immediately projects summaries to ID,
-owner, activity type and dates, and decodes only route fields from FIT. Raw
+owner, activity title, activity type and dates, and decodes only route fields
+from FIT. The title (up to 120 characters) names the activity in the inbox on
+this device. It can contain place names or your own text; it is not sent to
+Peakbagger or included in draft forms. Raw
 recordings and unwanted fields remain transient in extension memory. Route
 processing waits for a suitable existing Peakbagger session. Summit lookup sends
 small route-corridor boxes to Peakbagger; every lookup must succeed before
