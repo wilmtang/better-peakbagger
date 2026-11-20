@@ -16,7 +16,8 @@
 // orchestrated `test/dom/*.dom.mts` suites. `npm test` never globs them.
 
 import assert from 'node:assert/strict';
-import { readFile, readdir, realpath } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, truncate, utimes, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build, type Plugin } from 'esbuild';
@@ -126,7 +127,9 @@ const fileServer = async (dist: string) => {
     };
 };
 
-async function performTrustedInput(page: Page, action: TrustedAction) {
+type StagedFileInput = Extract<TrustedAction, { type: 'files' }>['files'];
+
+async function performTrustedInput(page: Page, action: TrustedAction, stageFiles: (files: StagedFileInput) => Promise<string[]>) {
     // The target lives in the test page or one of its frames, or in a
     // top-level fixture page the test opened; act through the page that owns it.
     let owner = page;
@@ -164,9 +167,15 @@ async function performTrustedInput(page: Page, action: TrustedAction) {
         }
         case 'press': await element.press(action.key); break;
         case 'type': await element.focus(); await page.keyboard.type(action.text); break;
-        case 'files': await element.setInputFiles(action.files.map(item => ({
-            name: item.name, mimeType: item.mimeType, buffer: Buffer.from(item.text),
-        }))); break;
+        case 'files': {
+            // Real paths drive Playwright through native browser file-chooser
+            // IPC (DOM.setFileInputFiles / Page.setFileInputFiles) so the input
+            // dispatches a real trusted `change` event; in-memory payloads would
+            // fall back to a synthetic untrusted JS Event.
+            const paths = action.files.length ? await stageFiles(action.files) : [];
+            await element.setInputFiles(paths);
+            break;
+        }
         default: throw new Error(`Unknown trusted input ${JSON.stringify(action satisfies never)}`);
         }
     } finally {
@@ -176,6 +185,38 @@ async function performTrustedInput(page: Page, action: TrustedAction) {
 
 async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awaited<ReturnType<typeof fileServer>>, script: string) {
     const context = await browser.newContext({ viewport: { width: 1000, height: 760 } });
+    let tempDir: string | null = null;
+    let stagedBatch = 0;
+    const cleanupFiles = async () => {
+        const dir = tempDir;
+        tempDir = null;
+        if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {});
+    };
+    const stageFiles = async (files: StagedFileInput): Promise<string[]> => {
+        tempDir ??= await mkdtemp(path.join(os.tmpdir(), 'bpb-browser-files-'));
+        const batchDir = path.join(tempDir, String(stagedBatch++));
+        await mkdir(batchDir, { recursive: true });
+        const paths: string[] = [];
+        for (const item of files) {
+            if (!item.name || item.name === '.' || item.name === '..' || path.basename(item.name) !== item.name) {
+                throw new Error(`Unsafe trusted file input name: ${JSON.stringify(item.name)}`);
+            }
+            const filePath = path.join(batchDir, item.name);
+            await writeFile(filePath, item.text, 'utf8');
+            if (item.size !== undefined) {
+                if (!Number.isSafeInteger(item.size) || item.size < 0 || item.size > 128 * 1024 * 1024) {
+                    throw new Error(`Invalid trusted file input size: ${item.size}`);
+                }
+                await truncate(filePath, item.size);
+            }
+            if (item.lastModified !== undefined) {
+                const seconds = item.lastModified / 1000;
+                await utimes(filePath, seconds, seconds);
+            }
+            paths.push(filePath);
+        }
+        return paths;
+    };
     const unexpected: string[] = [];
     await context.route('**/*', async route => {
         const url = new URL(route.request().url());
@@ -243,18 +284,24 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
     context.on('page', attachPageListeners);
     const page = await context.newPage();
     attachPageListeners(page);
-    await page.exposeBinding('__bpbTrustedInput', (_source, action: TrustedAction) => performTrustedInput(page, action));
-    await page.goto(new URL(RUNNER_PATH, test.origin).href, { waitUntil: 'load' });
-    // A module script, so test files may use top-level await; it publishes
-    // the runner entry point once every top-level statement has finished.
-    // A test file that throws while loading reports a page error instead;
-    // listen before the module can evaluate.
-    const failed = new Promise<never>((_, reject) => page.once('pageerror', error => reject(new Error(`${test.file} failed to load: ${error.message}`, { cause: error }))));
-    failed.catch(() => {});
-    await Promise.race([page.addScriptTag({ url: RUNNER_SCRIPT, type: 'module' }), failed]);
-    const loaded = page.waitForFunction(() => '__bpbRunBrowserTests' in globalThis, null, { timeout: 60_000 });
-    await Promise.race([loaded, failed]);
-    return { context, page, pageErrors, unexpected };
+    await page.exposeBinding('__bpbTrustedInput', (_source, action: TrustedAction) => performTrustedInput(page, action, stageFiles));
+    try {
+        await page.goto(new URL(RUNNER_PATH, test.origin).href, { waitUntil: 'load' });
+        // A module script, so test files may use top-level await; it publishes
+        // the runner entry point once every top-level statement has finished.
+        // A test file that throws while loading reports a page error instead;
+        // listen before the module can evaluate.
+        const failed = new Promise<never>((_, reject) => page.once('pageerror', error => reject(new Error(`${test.file} failed to load: ${error.message}`, { cause: error }))));
+        failed.catch(() => {});
+        await Promise.race([page.addScriptTag({ url: RUNNER_SCRIPT, type: 'module' }), failed]);
+        const loaded = page.waitForFunction(() => '__bpbRunBrowserTests' in globalThis, null, { timeout: 60_000 });
+        await Promise.race([loaded, failed]);
+        return { context, page, pageErrors, unexpected, cleanupFiles };
+    } catch (error) {
+        await context.close().catch(() => {});
+        await cleanupFiles();
+        throw error;
+    }
 }
 
 export async function runBrowserTests(selection: DomSelection, report: (record: Record<string, unknown>) => void,
@@ -276,9 +323,11 @@ export async function runBrowserTests(selection: DomSelection, report: (record: 
             resources.defer(`${engine} browser test browser`, () => browser.close());
             for (const test of selected) {
                 let context: BrowserContext | null = null;
+                let cleanupFiles: (() => Promise<void>) | null = null;
                 try {
                     const opened = await openTestPage(browser, test, serve, scripts.get(test.file)!);
                     context = opened.context;
+                    cleanupFiles = opened.cleanupFiles;
                     let timer: ReturnType<typeof setTimeout> | undefined;
                     const results = await Promise.race([opened.page.evaluate(filter =>
                         (globalThis as unknown as { __bpbRunBrowserTests(filter: string | null): Promise<BrowserTestRecord[]> })
@@ -305,6 +354,7 @@ export async function runBrowserTests(selection: DomSelection, report: (record: 
                     executed += results.filter(record => record.result === 'passed').length;
                 } finally {
                     await context?.close().catch(() => {});
+                    await cleanupFiles?.();
                 }
             }
             await browser.close();

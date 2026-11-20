@@ -105,14 +105,27 @@ interface RunBackupOptions {
     let operationTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let pendingWrite: Promise<BackupWriteResponse | null> | null = null;
     let reconcileOnResume = false;
+    let restoreFocusOnEnable = false;
     const setBody = (...nodes: (HTMLElement | null | undefined)[]) => {
         if (!control) return;
         const action = control.querySelector<HTMLButtonElement>('.bpb-gh-btn')!;
         const nextAction = nodes.find((node): node is HTMLButtonElement => node?.tagName === 'BUTTON');
         const complete = nodes[0]?.classList.contains('bpb-gh-ok');
         const checking = !nextAction && nodes[0]?.textContent === 'Checking GitHub…';
+        if (!nextAction && !action.disabled && document.activeElement === action) {
+            restoreFocusOnEnable = true;
+        }
         action.disabled = !nextAction;
         action.hidden = !!complete || checking;
+        if (complete) {
+            restoreFocusOnEnable = false;
+        } else if (nextAction && !action.hidden && restoreFocusOnEnable) {
+            restoreFocusOnEnable = false;
+            const active = document.activeElement;
+            if (!active || active === document.body || active === document.documentElement || active === action) {
+                action.focus({ preventScroll: true });
+            }
+        }
         action.onclick = nextAction ? event => {
             if (backupInfo) void runBackup(backupInfo, { event });
         } : null;

@@ -98,7 +98,7 @@ or downgraded by a late reply. Explicit continuation reuses only an owned
 untouched importer; Open and Check only focus the target and never resend.
 
 Focused coverage lives in `test/onx/`, `test/background/onx-routes.test.mjs`,
-and `test/ascent/ascent-gaia.test.mjs`. `npm run verify -- onx` exercises cold startup, authentication, deadlines,
+and `test/ascent/ascent-gaia.browser.mts`. `npm run verify -- onx` exercises cold startup, authentication, deadlines,
 manual Import and transition geometry in hidden Chrome and Firefox.
 `npm run verify -- map-handoffs` loads the
 real unpacked extension in hidden Chrome for Testing against masked HTTPS

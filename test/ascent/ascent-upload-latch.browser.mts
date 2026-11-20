@@ -5,7 +5,8 @@
 // input blocked. The built ascent-editor bundle runs on the captured form.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES, type LoadedPage } from '../helpers/load-page.mts';
+import { trustedInput } from '../helpers/fixture-dom.mts';
+import { loadPage, waitFor, PAGE_FIXTURES, type LoadedPage } from '../helpers/fixture-page.mts';
 import type { StubMessage } from '../helpers/page-types.mts';
 
 const URL = 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=900001';
@@ -25,8 +26,6 @@ const loadEditor = async (startReply: Record<string, unknown>, settings: Record<
     const dom = await loadPage('climber-ascentedit.html', {
         url: URL, settings, bundles: ['vendor/marked.umd.js', 'content/ascent-editor.js'], fixtures: PAGE_FIXTURES,
         prepare: d => {
-            class DataTransferMock { files: File[] = []; items = { add: (file: File) => this.files.push(file) }; }
-            (d.window as { DataTransfer: unknown }).DataTransfer = DataTransferMock;
             d.chrome.runtime.sendMessage = async (message: StubMessage) => {
                 if (message.type === 'GPX_PROCESS_INVALIDATE') {
                     if (hold) { hold = false; await new Promise<void>(resolve => { releaseHeld = resolve; }); }
@@ -46,9 +45,7 @@ const loadEditor = async (startReply: Record<string, unknown>, settings: Record<
 
 const chooseGpx = async (dom: EditorDom) => {
     const input = dom.window.document.getElementById('GPXUpload') as HTMLInputElement;
-    const file = new dom.window.File([GPX], 'walk.gpx', { type: 'application/gpx+xml' });
-    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
-    fireTrustedEvent(input, 'change', { bubbles: true });
+    await trustedInput(input, { type: 'files', files: [{ name: 'walk.gpx', mimeType: 'application/gpx+xml', text: GPX }] });
     await waitFor(dom, () => dom.window.document.querySelector('.bpb-process-button'));
     return input;
 };
@@ -116,8 +113,7 @@ test('a page suspend during a preparation still releases its latch when it settl
         toggleTimestamps(dom);
         await waitFor(dom, () => input.disabled);
         // A persisted pagehide suspends without starting another preparation.
-        const hide = new dom.window.Event('pagehide');
-        Object.defineProperty(hide, 'persisted', { value: true });
+        const hide = new dom.window.PageTransitionEvent('pagehide', { persisted: true });
         dom.window.dispatchEvent(hide);
         await settle(dom);
         dom.release();
@@ -128,7 +124,7 @@ test('a page suspend during a preparation still releases its latch when it settl
 
 test('turning timestamp removal on re-prepares a chosen file before Save can send it', async () => {
     const dom = await loadEditor({ phase: 'no-matches' }, { removeGpxTimestamps: false });
-    const attachedText = () => (dom.window.document.getElementById('GPXUpload') as HTMLInputElement).files![0].text();
+    const attachedText = () => (dom.window.document.getElementById('GPXUpload') as HTMLInputElement).files![0]!.text();
     try {
         await chooseGpx(dom);
         await settle(dom);

@@ -272,7 +272,7 @@ export type TrustedAction =
     // A key or chord in Playwright's syntax, for example 'Shift+Enter'.
     | { type: 'press'; key: string }
     | { type: 'type'; text: string }
-    | { type: 'files'; files: { name: string; mimeType: string; text: string }[] };
+    | { type: 'files'; files: { name: string; mimeType?: string; text: string; size?: number; lastModified?: number }[] };
 
 declare global {
     interface Window {

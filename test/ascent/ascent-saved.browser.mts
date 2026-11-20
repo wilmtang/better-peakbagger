@@ -1,23 +1,25 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://peakbagger.com
 //
 // The save-success route from ascentedit.aspx to the saved ascent. These tests
-// evaluate the dependency-free source against synthetic Add/Edit success DOM,
-// including the automatic-backup handoff to the ascent.aspx runner.
+// evaluate the shipped ascent-editor bundle against synthetic Add/Edit success
+// DOM, including the automatic-backup handoff to the ascent.aspx runner.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
-import { build } from 'esbuild';
+import { FixtureDom, builtBundle } from '../helpers/fixture-dom.mts';
+import { makeChromeStub, waitFor } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
-const { outputFiles } = await build({ entryPoints: ['src/ascent/ascent-saved.ts'], bundle: true, write: false, format: 'iife' });
-const source = outputFiles[0].text;
+const markedSource = await builtBundle('vendor/marked.umd.js');
+const source = await builtBundle('content/ascent-editor.js');
 const editorFixture = await fs.readFile(
     new URL('../fixtures/pages/climber-ascentedit.html', import.meta.url), 'utf8');
 
 const EDITOR_URL = 'https://peakbagger.com/climber/ascentedit.aspx?pid=12&cid=900001';
-const tick = () => new Promise(resolve => setTimeout(resolve, 5));
+const settle = (dom: FixtureDom) => new Promise(resolve => dom.window.setTimeout(resolve, 20));
 
 // A minimal reproduction of the async-postback success view: #SubTitle inside
 // #UpdatePanelAE, the native "Go Back to Referring Page" anchor followed by the
@@ -38,56 +40,65 @@ const successHtml = ({
   </div>
 </body>`;
 
-const load = (html, {
+interface LoadOptions {
+    url?: string;
+    status?: Record<string, unknown> | null;
+    navigations?: (string | null)[];
+    messages?: StubMessage[];
+    draftConfirmation?: Record<string, unknown> | null;
+    draftEvents?: unknown[];
+}
+
+const load = (html: string, {
     url = EDITOR_URL,
     status = null,
-    navigations = null,
-    messages = null,
+    navigations,
+    messages,
     draftConfirmation = null,
-    draftEvents = null,
-} = {}) => {
-    const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
+    draftEvents,
+}: LoadOptions = {}) => {
+    const dom = new FixtureDom(html, { url });
     if (draftEvents) {
         dom.window.document.addEventListener('bpb:report-draft-saved', event => {
-            draftEvents.push(event.detail);
+            draftEvents.push((event as CustomEvent).detail);
         });
     }
-    dom.window.chrome = {
-        runtime: {
-            lastError: null,
-            sendMessage: async message => {
-                if (messages) messages.push(structuredClone(message));
-                if (message.type === 'GITHUB_BACKUP_STATUS') return status;
-                if (message.type === 'REPORT_DRAFT_SAVE_CONFIRMED') return draftConfirmation;
-                return null;
-            },
-        },
+    const chrome = makeChromeStub();
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
+        if (messages) messages.push(structuredClone(message));
+        if (message.type === 'DRAFT_READY') return { action: 'ignore' };
+        if (message.type === 'GITHUB_BACKUP_STATUS') return status;
+        if (message.type === 'REPORT_DRAFT_SAVE_CONFIRMED') return draftConfirmation;
+        return null;
     };
+    dom.window.chrome = chrome;
     if (navigations) {
         dom.window.document.addEventListener('click', event => {
-            if (event.target?.id !== 'bpb-view-new-ascent') return;
+            const target = event.target as HTMLElement | null;
+            if (target?.id !== 'bpb-view-new-ascent') return;
             event.preventDefault();
-            navigations.push(event.target.getAttribute('href'));
+            navigations.push(target.getAttribute('href'));
         });
     }
+    dom.window.eval(markedSource);
     dom.window.eval(source);
     return dom;
 };
 
-const links = dom => [...dom.window.document.querySelectorAll('#bpb-view-new-ascent')];
+const links = (dom: FixtureDom) => [...dom.window.document.querySelectorAll('#bpb-view-new-ascent')];
 
 test('an Add success links the photo aid to the saved ascent runner', () => {
     const dom = load(successHtml());
     const inserted = links(dom);
     assert.equal(inserted.length, 1);
-    assert.equal(inserted[0].getAttribute('href'), 'ascent.aspx?aid=778899');
-    assert.equal(inserted[0].textContent, 'View the Saved Ascent');
+    assert.equal(inserted[0]!.getAttribute('href'), 'ascent.aspx?aid=778899');
+    assert.equal(inserted[0]!.textContent, 'View the Saved Ascent');
 
     const back = [...dom.window.document.querySelectorAll('a')]
-        .find(a => /go back to referring page/i.test(a.textContent));
+        .find(a => /go back to referring page/i.test(a.textContent ?? ''))!;
     // Reads: "Go Back to Referring Page, View the Saved Ascent, or, add a new ascent…"
-    assert.equal(back.nextSibling.textContent, ', ');
-    assert.equal(back.nextSibling.nextSibling, inserted[0]);
+    assert.equal(back.nextSibling!.textContent, ', ');
+    assert.equal(back.nextSibling!.nextSibling, inserted[0]);
     dom.window.close();
 });
 
@@ -98,7 +109,7 @@ test('an Add success ignores unrelated photo links outside the success panel', (
     );
     const dom = load(html);
     assert.equal(links(dom).length, 1);
-    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=778899');
+    assert.equal(links(dom)[0]!.getAttribute('href'), 'ascent.aspx?aid=778899');
     dom.window.close();
 });
 
@@ -108,13 +119,13 @@ test('an Add success ignores non-action photo links inside the success panel', (
         '<a href="Photo.aspx?aid=1">Old report photo</a><h1><span id="PageTitle">',
     );
     const dom = load(html);
-    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=778899');
+    assert.equal(links(dom)[0]!.getAttribute('href'), 'ascent.aspx?aid=778899');
     dom.window.close();
 });
 
 test('an Add success rejects the live aid=1 photo action', async () => {
-    const messages = [];
-    const navigations = [];
+    const messages: StubMessage[] = [];
+    const navigations: (string | null)[] = [];
     const dom = load(successHtml({
         photoAid: '1',
         photoText: 'Click here to add a photo for this ascent.',
@@ -123,7 +134,7 @@ test('an Add success rejects the live aid=1 photo action', async () => {
         messages,
         navigations,
     });
-    await tick();
+    await settle(dom);
 
     assert.equal(links(dom).length, 0);
     assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), false);
@@ -136,7 +147,7 @@ test('an Edit success uses the stable URL aid even without a photo link', () => 
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
     });
     assert.equal(links(dom).length, 1);
-    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=445566');
+    assert.equal(links(dom)[0]!.getAttribute('href'), 'ascent.aspx?aid=445566');
     dom.window.close();
 });
 
@@ -145,7 +156,7 @@ test('an Edit success preserves the historical aid=1 URL identity', () => {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=1&cid=900001',
     });
     assert.equal(links(dom).length, 1);
-    assert.equal(links(dom)[0].getAttribute('href'), 'ascent.aspx?aid=1');
+    assert.equal(links(dom)[0]!.getAttribute('href'), 'ascent.aspx?aid=1');
     dom.window.close();
 });
 
@@ -159,17 +170,17 @@ test('confirmed Add and Edit success notify the worker and editor exactly once',
             key: 'bpbReportDraft:900001:a445566',
         },
     ]) {
-        const messages = [];
-        const draftEvents = [];
+        const messages: StubMessage[] = [];
+        const draftEvents: unknown[] = [];
         const dom = load(scenario.html, {
             url: scenario.url,
             messages,
             draftEvents,
             draftConfirmation: { ok: true, draftKey: scenario.key, removed: true },
         });
-        await tick();
+        await waitFor(dom, () => draftEvents.length === 1);
         dom.window.document.getElementById('UpdatePanelAE').append(dom.window.document.createElement('span'));
-        await tick();
+        await settle(dom);
 
         assert.deepEqual(
             messages.filter(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'),
@@ -181,8 +192,8 @@ test('confirmed Add and Edit success notify the worker and editor exactly once',
 });
 
 test('a newer retained draft does not make the old editor terminal', async () => {
-    const messages = [];
-    const draftEvents = [];
+    const messages: StubMessage[] = [];
+    const draftEvents: unknown[] = [];
     const dom = load(successHtml(), {
         messages,
         draftEvents,
@@ -192,7 +203,8 @@ test('a newer retained draft does not make the old editor terminal', async () =>
             removed: false,
         },
     });
-    await tick();
+    await waitFor(dom, () => messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'));
+    await settle(dom);
 
     assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), true);
     assert.deepEqual(draftEvents, []);
@@ -200,15 +212,15 @@ test('a newer retained draft does not make the old editor terminal', async () =>
 });
 
 test('conflicting URL and success-panel identities fail closed', async () => {
-    const navigations = [];
-    const messages = [];
+    const navigations: (string | null)[] = [];
+    const messages: StubMessage[] = [];
     const dom = load(successHtml(), {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?aid=445566&cid=900001',
         status: { enabled: true, connected: true, auto: true },
         navigations,
         messages,
     });
-    await tick();
+    await settle(dom);
     assert.equal(links(dom).length, 0);
     assert.deepEqual(navigations, []);
     assert.equal(messages.some(message => message.type === 'REPORT_DRAFT_SAVE_CONFIRMED'), false);
@@ -224,13 +236,13 @@ test('automatic backup follows the saved-ascent route after Add or Edit success'
             href: 'ascent.aspx?aid=445566',
         },
     ]) {
-        const navigations = [];
+        const navigations: (string | null)[] = [];
         const dom = load(scenario.html, {
             url: scenario.url,
             status: { enabled: true, connected: true, auto: true },
             navigations,
         });
-        await tick();
+        await waitFor(dom, () => navigations.length === 1);
         assert.deepEqual(navigations, [scenario.href]);
         dom.window.close();
     }
@@ -241,9 +253,9 @@ test('manual or disconnected backup leaves navigation to the user', async () => 
         { enabled: true, connected: true, auto: false },
         { enabled: true, connected: false, auto: true },
     ]) {
-        const navigations = [];
+        const navigations: (string | null)[] = [];
         const dom = load(successHtml(), { status, navigations });
-        await tick();
+        await settle(dom);
         assert.deepEqual(navigations, []);
         assert.equal(links(dom).length, 1);
         dom.window.close();
@@ -263,7 +275,7 @@ test('an observer refire after the link exists does not duplicate it', async () 
     // Mutate the observed subtree to fire the MutationObserver again.
     dom.window.document.getElementById('UpdatePanelAE').append(
         dom.window.document.createElement('span'));
-    await tick();
+    await settle(dom);
     assert.equal(links(dom).length, 1);
     dom.window.close();
 });
@@ -276,7 +288,7 @@ test('inserts nothing until the success view arrives, then reacts to the postbac
     dom.window.document.getElementById('SubTitle').textContent = 'Ascent Added/Saved Successfully!';
     dom.window.document.getElementById('UpdatePanelAE').append(
         dom.window.document.createElement('span'));
-    await tick();
+    await waitFor(dom, () => links(dom).length === 1);
     assert.equal(links(dom).length, 1);
     dom.window.close();
 });

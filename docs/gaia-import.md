@@ -237,7 +237,7 @@ permission setup, worker sender and grant checks, tab reuse, uncertain
 handoffs, control placement, BFCache restoration, and access-page behavior:
 
 ```text
-test/ascent/ascent-gaia.test.mjs
+test/ascent/ascent-gaia.browser.mts
 test/background/gaia-routes.test.mjs
 test/gaia/gaia-access.test.mjs
 test/gpx/saved-gpx-source.browser.mts

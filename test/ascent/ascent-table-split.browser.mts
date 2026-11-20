@@ -3,7 +3,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { ascentTableSplit as Split } from '../../src/ascent/ascent-table-split.ts';
 import { pointerEvent } from '../helpers/pointer-event.mts';
 
@@ -26,21 +26,19 @@ const detailsHtml = ({ between = '' } = {}) => legacyHtml({ between }).replace(
     <tr><td><b>Peak:</b></td><td><a href="/peak.aspx?pid=1">Fixture Peak</a></td></tr>`,
 );
 
-const setup = ({ html = legacyHtml(), saved = null, storage = null } = {}) => {
-    const dom = new JSDOM(html, {
+const rect = (values: Partial<DOMRect>) => values as DOMRect;
+
+const setup = ({ html = legacyHtml(), saved = null as string | null, storage = null as Pick<Storage, 'getItem' | 'setItem'> | null } = {}) => {
+    const dom = new FixtureDom(html, {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        pretendToBeVisual: true,
     });
     if (saved !== null) dom.window.localStorage.setItem(Split.storageKey, saved);
-    const previousDocument = globalThis.document;
-    globalThis.document = dom.window.document;
     const split = Split.mount({
-        doc: dom.window.document,
+        doc: dom.window.document as unknown as Document,
         storage: storage || dom.window.localStorage,
     });
-    if (split) split.handle.getBoundingClientRect = () => ({ width: 13 });
+    if (split) split.handle.getBoundingClientRect = () => rect({ width: 13 });
     const restore = () => {
-        globalThis.document = previousDocument;
         dom.window.close();
     };
     return { dom, split, restore };
@@ -60,12 +58,12 @@ test('the exact legacy report / summary pair becomes one accessible split', () =
         assert.equal(split.handle.getAttribute('aria-orientation'), 'vertical');
         assert.equal(split.handle.getAttribute('aria-valuemin'), '25');
         assert.equal(split.handle.getAttribute('aria-valuemax'), '75');
-        assert.match(split.handle.getAttribute('aria-valuetext'), /Trip report 49%; summary 51%/);
+        assert.match(split.handle.getAttribute('aria-valuetext') ?? '', /Trip report 49%; summary 51%/);
         assert.ok(split.left.classList.contains('bpb-ascent-table-split__report'));
         assert.ok(split.right.classList.contains('bpb-ascent-table-split__summary'));
         assert.equal(dom.window.document.querySelectorAll('#bpb-ascent-table-split').length, 1);
         assert.equal(Split.mount({
-            doc: dom.window.document,
+            doc: dom.window.document as unknown as Document,
             storage: dom.window.localStorage,
         }), null, 'mounting is idempotent');
     } finally { restore(); }
@@ -120,6 +118,7 @@ test('image height caps and authored ratios preserve saved dimensions', () => {
         <img id="invalid" height="invalid">
     `) + '<img id="outside" height="200">' });
     try {
+        assert.ok(split);
         const image = dom.window.document.getElementById('height-only');
         assert.equal(image.style.getPropertyValue('--bpb-ascent-image-max-height'), '200px');
         split.applyPercent(25);
@@ -139,7 +138,8 @@ test('image height caps and authored ratios preserve saved dimensions', () => {
 test('pointer dragging resizes both columns and persists once released', () => {
     const { dom, split, restore } = setup();
     try {
-        split.wrapper.getBoundingClientRect = () => ({ width: 1013, left: 0, right: 1013 });
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013, left: 0, right: 1013 });
         const initial = split.leftPercent;
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
             button: 0, clientX: 500,
@@ -152,7 +152,7 @@ test('pointer dragging resizes both columns and persists once released', () => {
         assert.equal(dom.window.localStorage.getItem(Split.storageKey), null,
             'an in-progress gesture is not persisted');
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', { clientX: 600 }));
-        const saved = JSON.parse(dom.window.localStorage.getItem(Split.storageKey));
+        const saved = JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!);
         assert.equal(saved.leftPercent, split.leftPercent);
         assert.equal(dom.window.document.documentElement.classList
             .contains('bpb-ascent-table-split-resizing'), false);
@@ -160,15 +160,16 @@ test('pointer dragging resizes both columns and persists once released', () => {
 });
 
 test('touch cancellation and capture loss restore the original split', () => {
-    const writes = [];
+    const writes: [string, string][] = [];
     const storage = {
         getItem: () => null,
-        setItem: (key, value) => writes.push([key, value]),
+        setItem: (key: string, value: string) => { writes.push([key, value]); },
     };
     const { dom, split, restore } = setup({ storage });
     try {
-        split.wrapper.getBoundingClientRect = () => ({ width: 1044, left: 0, right: 1044 });
-        split.handle.getBoundingClientRect = () => ({ width: 44 });
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1044, left: 0, right: 1044 });
+        split.handle.getBoundingClientRect = () => rect({ width: 44 });
         const initial = split.leftPercent;
         const touch = { pointerId: 11, pointerType: 'touch' };
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
@@ -195,8 +196,9 @@ test('touch cancellation and capture loss restore the original split', () => {
 test('Escape cancels an active pointer resize without saving it', () => {
     const { dom, split, restore } = setup();
     try {
+        assert.ok(split);
         const initial = split.leftPercent;
-        split.wrapper.getBoundingClientRect = () => ({ width: 1013, left: 0, right: 1013 });
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013, left: 0, right: 1013 });
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
             button: 0, clientX: 500,
         }));
@@ -217,6 +219,7 @@ test('Escape cancels an active pointer resize without saving it', () => {
 test('keyboard resizing is bounded, persisted, and resettable', () => {
     const { dom, split, restore } = setup();
     try {
+        assert.ok(split);
         split.handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
             key: 'End', bubbles: true, cancelable: true,
         }));
@@ -229,7 +232,7 @@ test('keyboard resizing is bounded, persisted, and resettable', () => {
             key: 'ArrowLeft', shiftKey: true, bubbles: true, cancelable: true,
         }));
         assert.equal(split.leftPercent, 70);
-        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)).leftPercent, 70);
+        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!).leftPercent, 70);
 
         split.handle.dispatchEvent(new dom.window.MouseEvent('dblclick', {
             bubbles: true, cancelable: true,
@@ -242,12 +245,14 @@ test('keyboard resizing is bounded, persisted, and resettable', () => {
 test('a saved split is cleaned and restored on the next ascent page', () => {
     const restored = setup({ saved: JSON.stringify({ leftPercent: 68 }) });
     try {
+        assert.ok(restored.split);
         assert.equal(restored.split.leftPercent, 68);
         assert.equal(restored.split.wrapper.style.getPropertyValue('--bpb-ascent-report-share'), '68fr');
     } finally { restored.restore(); }
 
     const corrupt = setup({ saved: '{broken' });
     try {
+        assert.ok(corrupt.split);
         assert.ok(corrupt.split.leftPercent > 49 && corrupt.split.leftPercent < 50,
             'corrupt storage falls back to the native ratio');
     } finally { corrupt.restore(); }
@@ -256,6 +261,7 @@ test('a saved split is cleaned and restored on the next ascent page', () => {
 test('clicking the divider offers single-pointer resizing without dragging or losing focus', () => {
     const { dom, split, restore } = setup();
     try {
+        assert.ok(split);
         const before = split.leftPercent;
         split.handle.click();
         const menu = dom.window.document.querySelector('.bpb-layout-menu');
@@ -265,19 +271,25 @@ test('clicking the divider offers single-pointer resizing without dragging or lo
         assert.equal(split.leftPercent, before + 5);
         assert.equal(menu.hidden, true);
         assert.equal(dom.window.document.activeElement, split.handle);
-        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)).leftPercent, before + 5);
+        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!).leftPercent, before + 5);
         split.handle.click();
-        dom.window.document.activeElement.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        const focused: Element | null = dom.window.document.activeElement;
+        assert.ok(focused);
+        focused.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
         assert.equal(menu.hidden, true); assert.equal(dom.window.document.activeElement, split.handle);
     } finally { restore(); }
 });
 
 test('a failed pointer capture still receives movement and completion outside the handle', () => {
-    const writes = [], storage = { getItem: () => null, setItem: (...args) => writes.push(args) };
+    const writes: [string, string][] = [], storage = {
+        getItem: () => null,
+        setItem: (key: string, value: string) => { writes.push([key, value]); },
+    };
     const { dom, split, restore } = setup({ storage });
     try {
-        split.wrapper.getBoundingClientRect = () => ({ width: 1013 });
-        split.handle.getBoundingClientRect = () => ({ width: 13 });
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013 });
+        split.handle.getBoundingClientRect = () => rect({ width: 13 });
         const initial = split.leftPercent;
         split.handle.setPointerCapture = () => { throw new Error('capture unavailable'); };
         split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', { pointerId: 2, button: 0, clientX: 500 }));

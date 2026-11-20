@@ -12,21 +12,24 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 import { ascentSnapshot as Snapshot } from '../../src/ascent/ascent-snapshot.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const editHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
 
-const loadForm = async () => {
-    const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
-    const dom = new JSDOM(html);
+const loadForm = () => {
+    const dom = new FixtureDom(editHtml);
     const doc = dom.window.document;
-    const form = doc.getElementById('Form1') || doc.querySelector('form');
+    const form = (doc.getElementById('Form1') || doc.querySelector('form')) as unknown as HTMLFormElement;
     return { dom, doc, form };
 };
-const setValue = (form, name, value) => { const el = form.elements[name]; if (el) el.value = value; };
-const addCompanionRows = form => {
-    const table = form.ownerDocument.getElementById('OthersTable');
+const setValue = (form: HTMLFormElement, name: string, value: string) => {
+    const el = form.elements.namedItem(name) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+    if (el) el.value = value;
+};
+const addCompanionRows = (form: HTMLFormElement) => {
+    const table = form.ownerDocument.getElementById('OthersTable') as HTMLTableElement;
     const registered = table.insertRow();
     registered.insertCell().innerHTML = '<a href="/climber/Climber.aspx?cid=900101">Jan Doe</a>';
     registered.insertCell().innerHTML = '<input type="button" value="Remove">';
@@ -44,8 +47,8 @@ test('normalizeDate handles Peakbagger M/D/YYYY, partials, and ISO input', () =>
     assert.equal(Snapshot.normalizeDate('  '), '');
 });
 
-test('build maps the ascentedit form fields into the backup snapshot', async () => {
-    const { form } = await loadForm();
+test('build maps the ascentedit form fields into the backup snapshot', () => {
+    const { form } = loadForm();
     setValue(form, 'DateText', '7/12/2026');
     setValue(form, 'GainFt', '9000');
     setValue(form, 'LossFt', '9000');
@@ -66,9 +69,9 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     addCompanionRows(form);
     setValue(form, 'UpHr', '7'); setValue(form, 'UpMin', '30');
     // The first gear item, whatever the fixture lists it as.
-    const gear0 = form.elements['GearCheckBoxList$0'];
+    const gear0 = form.elements.namedItem('GearCheckBoxList$0') as HTMLInputElement;
     gear0.checked = true;
-    const gear0Label = form.ownerDocument.querySelector('label[for="GearCheckBoxList_0"]').textContent.trim();
+    const gear0Label = form.ownerDocument.querySelector('label[for="GearCheckBoxList_0"]')!.textContent!.trim();
 
     const params = new URLSearchParams('cid=900001&pid=2296');
     const { snapshot, identity, key } = Snapshot.build({
@@ -110,9 +113,9 @@ test('build maps the ascentedit form fields into the backup snapshot', async () 
     assert.equal(key, '900001|2296|2026-07-12');
 });
 
-test('a selected peak in the list box wins over the URL pid', async () => {
-    const { doc, form } = await loadForm();
-    const select = form.elements['PeakListBox'];
+test('a selected peak in the list box wins over the URL pid', () => {
+    const { doc, form } = loadForm();
+    const select = form.elements.namedItem('PeakListBox') as HTMLSelectElement;
     const option = doc.createElement('option');
     option.value = '1234';
     option.textContent = 'Glacier Peak';
@@ -125,9 +128,9 @@ test('a selected peak in the list box wins over the URL pid', async () => {
     assert.equal(snapshot.peak.name, 'Glacier Peak');
 });
 
-test('label reads bounded display metadata from the ascent form', async () => {
-    const { doc, form } = await loadForm();
-    const select = form.elements['PeakListBox'];
+test('label reads bounded display metadata from the ascent form', () => {
+    const { doc, form } = loadForm();
+    const select = form.elements.namedItem('PeakListBox') as HTMLSelectElement;
     const option = doc.createElement('option');
     option.value = '1234';
     option.textContent = `  ${'Glacier Peak '.repeat(20)}  `;
@@ -137,57 +140,57 @@ test('label reads bounded display metadata from the ascent form', async () => {
 
     const label = Snapshot.label({
         form,
-        params: new URLSearchParams('cid=900001&pid=2296')
+        params: new URLSearchParams('cid=900001&pid=2296'),
     });
-    assert.equal(label.peak.length, 200);
-    assert.match(label.peak, /^Glacier Peak/);
+    assert.equal(label.peak!.length, 200);
+    assert.match(label.peak!, /^Glacier Peak/);
     assert.equal(label.date, '7/12/2026');
 });
 
-test('label omits unavailable display metadata', async () => {
-    const { form } = await loadForm();
+test('label omits unavailable display metadata', () => {
+    const { form } = loadForm();
     assert.deepEqual(Snapshot.label({ form, params: new URLSearchParams() }), {});
     assert.deepEqual(Snapshot.label(), {});
 });
 
-test('label uses a matching prepared-draft peak name when the native picker is empty', async () => {
-    const { form } = await loadForm();
+test('label uses a matching prepared-draft peak name when the native picker is empty', () => {
+    const { form } = loadForm();
     form.dataset.bpbDraftPeakId = '2296';
     form.dataset.bpbDraftPeakName = 'Mount Rainier';
 
     assert.deepEqual(Snapshot.label({
         form,
-        params: new URLSearchParams('cid=900001&pid=2296')
+        params: new URLSearchParams('cid=900001&pid=2296'),
     }), { peak: 'Mount Rainier' });
     assert.deepEqual(Snapshot.label({
         form,
-        params: new URLSearchParams('cid=900001&pid=9999')
+        params: new URLSearchParams('cid=900001&pid=9999'),
     }), {}, 'display metadata from another peak must not label this draft');
 });
 
-test('label derives the peak from exact existing-ascent page titles when the picker is empty', async () => {
-    const { doc, form } = await loadForm();
+test('label derives the peak from exact existing-ascent page titles when the picker is empty', () => {
+    const { doc, form } = loadForm();
     const title = doc.getElementById('PageTitle');
 
     title.textContent = '  Ascent   of   Mount Daniel   by   Alex Doe  ';
     assert.deepEqual(Snapshot.label({ form, params: new URLSearchParams('aid=123') }), {
-        peak: 'Mount Daniel'
+        peak: 'Mount Daniel',
     });
 
     title.textContent = `Ascent of ${'Hibox Mountain '.repeat(20)} by Alex Doe on 2026-07-18`;
     const dated = Snapshot.label({ form, params: new URLSearchParams('aid=124') });
-    assert.equal(dated.peak.length, 200);
-    assert.match(dated.peak, /^Hibox Mountain/);
+    assert.equal(dated.peak!.length, 200);
+    assert.match(dated.peak!, /^Hibox Mountain/);
 });
 
-test('label preserves stronger peak sources and ignores unrelated native titles', async () => {
-    const { doc, form } = await loadForm();
+test('label preserves stronger peak sources and ignores unrelated native titles', () => {
+    const { doc, form } = loadForm();
     const title = doc.getElementById('PageTitle');
     title.textContent = 'Ascent of Native Title Peak by Alex Doe';
     form.dataset.bpbDraftPeakId = '2296';
     form.dataset.bpbDraftPeakName = 'Prepared Peak';
 
-    const select = form.elements['PeakListBox'];
+    const select = form.elements.namedItem('PeakListBox') as HTMLSelectElement;
     const option = doc.createElement('option');
     option.value = '1234';
     option.textContent = 'Selected Peak';
@@ -195,24 +198,24 @@ test('label preserves stronger peak sources and ignores unrelated native titles'
     select.value = '1234';
     assert.deepEqual(Snapshot.label({
         form,
-        params: new URLSearchParams('pid=2296')
+        params: new URLSearchParams('pid=2296'),
     }), { peak: 'Selected Peak' });
 
     select.selectedIndex = -1;
     assert.deepEqual(Snapshot.label({
         form,
-        params: new URLSearchParams('pid=2296')
+        params: new URLSearchParams('pid=2296'),
     }), { peak: 'Native Title Peak' });
 
     title.textContent = 'New Ascent by Alex Doe';
     assert.deepEqual(Snapshot.label({
         form,
-        params: new URLSearchParams('pid=2296')
+        params: new URLSearchParams('pid=2296'),
     }), { peak: 'Prepared Peak' });
 });
 
-test('an edited ascent carries its aid and an empty report yields an empty body', async () => {
-    const { form } = await loadForm();
+test('an edited ascent carries its aid and an empty report yields an empty body', () => {
+    const { form } = loadForm();
     setValue(form, 'DateText', '2026-07-12');
     const params = new URLSearchParams('cid=900001&aid=555&pid=2296');
     const { snapshot, identity } = Snapshot.build({ form, params, report: {} });
@@ -221,8 +224,8 @@ test('an edited ascent carries its aid and an empty report yields an empty body'
     assert.deepEqual(snapshot.report, { markdown: '', submitted: '' });
 });
 
-test('the zero-valued weather placeholders are omitted from snapshots', async () => {
-    const { form } = await loadForm();
+test('the zero-valued weather placeholders are omitted from snapshots', () => {
+    const { form } = loadForm();
     const { snapshot } = Snapshot.build({
         form,
         params: new URLSearchParams('cid=900001&aid=555&pid=2296'),

@@ -97,7 +97,7 @@ test('mocked timers drive the page and fixture windows created before and after 
 });
 
 test('trusted input reaches fixture frames as real, trusted events', async t => {
-    const dom = new FixtureDom('<!doctype html><body><button>Go</button><input id="field"></body>');
+    const dom = new FixtureDom('<!doctype html><body><button>Go</button><input id="field"><input id="file" type="file"></body>');
     t.after(() => dom.window.close());
     const covering = new FixtureDom('<!doctype html><body style="background:red"></body>');
     t.after(() => covering.window.close());
@@ -107,12 +107,19 @@ test('trusted input reaches fixture frames as real, trusted events', async t => 
     button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     await trustedInput(button, { type: 'click' });
     assert.deepEqual(events, [false, true]);
-    const field = dom.window.document.querySelector('input')!;
+    const field = dom.window.document.getElementById('field') as HTMLInputElement;
     const keys: string[] = [];
     field.addEventListener('keydown', event => { if (event.isTrusted) keys.push(event.key); });
     await trustedInput(field, { type: 'press', key: 'Enter' });
     assert.deepEqual(keys, ['Enter']);
     assert.equal(dom.window.document.activeElement, field);
+    const fileInput = dom.window.document.getElementById('file') as HTMLInputElement;
+    const fileChanges: boolean[] = [];
+    fileInput.addEventListener('change', event => fileChanges.push(event.isTrusted));
+    await trustedInput(fileInput, { type: 'files', files: [{ name: 'sample.txt', text: 'hello' }] });
+    assert.deepEqual(fileChanges, [true]);
+    assert.equal(fileInput.files?.[0]?.name, 'sample.txt');
+    assert.equal(await fileInput.files?.[0]?.text(), 'hello');
 });
 
 test('subtests and after hooks run in order', async t => {

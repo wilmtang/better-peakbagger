@@ -9,7 +9,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPage, waitFor, fireTrustedEvent, PAGE_FIXTURES } from '../helpers/load-page.mts';
+import { readFile } from 'node:fs/promises';
+import { trustedInput } from '../helpers/fixture-dom.mts';
+import { loadPage, waitFor, PAGE_FIXTURES, type LoadedPage } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 import { MAX_GPX_BYTES } from '../../src/capture/capture-resource-limits.ts';
 
 const FIXTURE = 'climber-ascentedit.html';
@@ -22,65 +25,65 @@ const GPX = `<?xml version="1.0"?><gpx creator="SourceApp" xmlns="http://www.top
     <trkpt lat="49.5" lon="-123.099"><ele>130</ele><time>2026-07-01T16:00:00Z</time></trkpt>
   </trkseg></trk></gpx>`;
 
-const loadEditor = ({ prepare = null, url = URL, respond = null, settings = {} } = {}) => loadPage(FIXTURE, {
-    url,
-    settings,
-    bundles: BUNDLES,
-    fixtures: PAGE_FIXTURES,
-    prepare: d => {
-        if (respond) {
-            d.messages = [];
-            d.chrome.runtime.sendMessage = async message => {
-                d.messages.push(message);
-                if (message.type === 'GPX_PROCESS_INVALIDATE') return undefined;
-                const response = await respond(message);
-                return message.type === 'GPX_PROCESS_START' && response
-                    ? {
-                        ...response,
-                        pageSessionId: message.pageSessionId,
-                        selectionGeneration: message.selectionGeneration,
-                        selectionNonce: message.selectionNonce,
-                    }
-                    : response;
-            };
-        }
-        if (prepare) prepare(d);
-    }
-});
+type EditorPage = LoadedPage & { messages: StubMessage[] };
+type Responder = (message: StubMessage) => Record<string, unknown> | undefined | null | Promise<Record<string, unknown> | undefined | null>;
 
-const chooseGpx = async (dom, {
-    name = 'walk.gpx', content = GPX, size = null,
-    type = 'application/gpx+xml', lastModified = undefined,
+interface LoadEditorOptions {
+    prepare?: ((dom: EditorPage) => void) | null;
+    url?: string;
+    respond?: Responder | null;
+    settings?: Record<string, unknown>;
+}
+
+const loadEditor = async ({ prepare = null, url = URL, respond = null, settings = {} }: LoadEditorOptions = {}): Promise<EditorPage> => {
+    const dom = await loadPage(FIXTURE, {
+        url,
+        settings,
+        bundles: BUNDLES,
+        fixtures: PAGE_FIXTURES,
+        prepare: page => {
+            const editor = Object.assign(page, { messages: [] as StubMessage[] });
+            if (respond) {
+                editor.chrome.runtime.sendMessage = async (message: StubMessage) => {
+                    editor.messages.push(message);
+                    if (message.type === 'GPX_PROCESS_INVALIDATE') return undefined;
+                    const response = await respond(message);
+                    return message.type === 'GPX_PROCESS_START' && response
+                        ? {
+                            ...response,
+                            pageSessionId: message.pageSessionId,
+                            selectionGeneration: message.selectionGeneration,
+                            selectionNonce: message.selectionNonce,
+                        }
+                        : response;
+                };
+            }
+            if (prepare) prepare(editor);
+        },
+    });
+    return dom as EditorPage;
+};
+
+const chooseGpx = async (dom: EditorPage, {
+    name = 'walk.gpx', content = GPX, size = null as number | null,
+    type = 'application/gpx+xml', lastModified = undefined as number | undefined,
 } = {}) => {
     const input = dom.window.document.getElementById('GPXUpload');
-    const file = new dom.window.File([content], name, { type, lastModified });
-    if (size !== null) Object.defineProperty(file, 'size', { value: size });
-    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
-    fireTrustedEvent(input, 'change', { bubbles: true });
+    await trustedInput(input, {
+        type: 'files',
+        files: [{ name, mimeType: type, text: content, ...(size !== null ? { size } : {}), ...(lastModified !== undefined ? { lastModified } : {}) }],
+    });
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     return input;
 };
 
-const installDropFileList = d => {
-    class DataTransferMock {
-        constructor() {
-            this.files = [];
-            this.items = { add: file => this.files.push(file) };
-        }
-    }
-    d.window.DataTransfer = DataTransferMock;
-    Object.defineProperty(d.window.document.getElementById('GPXUpload'), 'files', {
-        value: [], configurable: true, writable: true,
-    });
-};
-
-const transferEvent = (win, type, transfer) => {
+const transferEvent = (win: LoadedPage['window'], type: string, transfer: unknown) => {
     const event = new win.Event(type, { bubbles: true, cancelable: true });
     Object.defineProperty(event, 'dataTransfer', { value: transfer });
     return event;
 };
 
-const fileTransfer = files => ({
+const fileTransfer = (files: File[]) => ({
     types: ['Files'],
     items: files.map(file => ({
         kind: 'file',
@@ -92,15 +95,16 @@ const fileTransfer = files => ({
     dropEffect: 'none',
 });
 
-const processButton = dom => dom.window.document.querySelector('.bpb-process-button');
-const uploadStatus = dom => dom.window.document.querySelector('.bpb-upload-status');
+const processButton = (dom: LoadedPage) => dom.window.document.querySelector('.bpb-process-button');
+const uploadStatus = (dom: LoadedPage) => dom.window.document.querySelector('.bpb-upload-status');
 
 test('repairing a previewed multi-summit source offers attachment without replacing its capture', async () => {
     const dom = await loadEditor({ prepare: d => {
-        d.chrome.runtime.sendMessage = async message => message.type === 'GPX_PROCESS_INVALIDATE'
+        d.chrome.runtime.sendMessage = async (message: StubMessage) => message.type === 'GPX_PROCESS_INVALIDATE'
             ? { ok: true, preserved: true } : { action: 'ignore' };
     } });
     await chooseGpx(dom);
+    await waitFor(dom, () => dom.window.document.querySelector('.bpb-attach-gpx-button'));
     assert.ok(dom.window.document.querySelector('.bpb-attach-gpx-button'));
     assert.equal(processButton(dom), null);
     dom.window.close();
@@ -111,7 +115,7 @@ test('Attach GPX preserves the original file and current ascent without processi
         const dom = await loadEditor({ url, respond: () => ({ ok: true }) });
         const document = dom.window.document;
         const input = await chooseGpx(dom, { content: '<gpx>malformed source' });
-        const original = input.files[0];
+        const original = input.files![0];
         document.getElementById('DateText').value = '2020-02-03';
         let previews = 0;
         let saves = 0;
@@ -123,29 +127,29 @@ test('Attach GPX preserves the original file and current ascent without processi
         assert.equal(!!processButton(dom), !url.includes('aid='));
         document.querySelector('.bpb-attach-gpx-button').click();
         await waitFor(dom, () => previews === 1);
-        assert.equal(input.files[0], original);
+        assert.equal(input.files![0], original);
         assert.equal(document.getElementById('DateText').value, '2020-02-03');
         assert.equal(dom.window.location.href, url);
         assert.equal(saves, 0);
-        assert.equal(dom.messages.some(message => ['GPX_PROCESS_START', 'GPX_PROCESS_APPLY'].includes(message.type)), false);
+        assert.equal(dom.messages.some(message => ['GPX_PROCESS_START', 'GPX_PROCESS_APPLY'].includes(String(message.type))), false);
         dom.window.close();
     }
 });
 
 const localToday = () => {
     const now = new Date();
-    const pad = value => String(value).padStart(2, '0');
+    const pad = (value: number) => String(value).padStart(2, '0');
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 };
 
 test('an empty Ascent Date on a fresh form is filled with the local today', async () => {
-    const events = [];
+    const events: string[] = [];
     const dom = await loadEditor({
         prepare: d => {
             const field = d.window.document.getElementById('DateText');
             field.addEventListener('input', () => events.push('input'));
             field.addEventListener('change', () => events.push('change'));
-        }
+        },
     });
     assert.equal(dom.window.document.getElementById('DateText').value, localToday());
     assert.equal(dom.window.document.getElementById('DateText').dataset.bpbAutofilled, 'date');
@@ -156,26 +160,27 @@ test('an empty Ascent Date on a fresh form is filled with the local today', asyn
 test('editing the generated date protects it from later GPX processing', async () => {
     const dom = await loadEditor();
     const field = dom.window.document.getElementById('DateText');
-    field.value = '2019-08-14';
-    fireTrustedEvent(field, 'input', { bubbles: true });
+    field.value = '';
+    await trustedInput(field, { type: 'type', text: '2019-08-14' });
+    assert.equal(field.value, '2019-08-14');
     assert.equal(field.dataset.bpbAutofilled, undefined);
 });
 
 test('a populated date — an existing ascent being edited — is never touched', async () => {
     const dom = await loadEditor({
-        prepare: d => { d.window.document.getElementById('DateText').value = '2019-08-14'; }
+        prepare: d => { d.window.document.getElementById('DateText').value = '2019-08-14'; },
     });
     assert.equal(dom.window.document.getElementById('DateText').value, '2019-08-14');
 });
 
 test('whitespace-only counts as empty; a page without the field is left alone', async () => {
     const dom = await loadEditor({
-        prepare: d => { d.window.document.getElementById('DateText').value = '   '; }
+        prepare: d => { d.window.document.getElementById('DateText').value = '   '; },
     });
     assert.equal(dom.window.document.getElementById('DateText').value, localToday());
 
     const bare = await loadEditor({
-        prepare: d => { d.window.document.getElementById('DateText').remove(); }
+        prepare: d => { d.window.document.getElementById('DateText').remove(); },
     });
     assert.equal(bare.window.document.getElementById('DateText'), null);
 });
@@ -187,20 +192,20 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
     const button = processButton(dom);
     assert.ok(button, 'the Process button should appear');
     assert.equal(button.getAttribute('aria-label'), 'Process the chosen GPX and fill this form');
-    assert.equal(button.textContent.includes('Process'), true);
+    assert.equal(button.textContent!.includes('Process'), true);
     assert.equal(button.disabled, false);
 
     const hint = dom.window.document.getElementById('bpb-capture-hint');
     assert.equal(hint.parentElement, dom.window.document.getElementById('GPXUpload').closest('td'));
-    assert.match(hint.textContent, /Garmin or Strava.*browser toolbar.*capture it directly/);
+    assert.match(hint.textContent ?? '', /Garmin or Strava.*browser toolbar.*capture it directly/);
     assert.equal(dom.window.document.getElementById('bpb-gpx-drop-hint').textContent,
         'Or drop one GPX file anywhere on this page.');
-    assert.match(dom.window.document.getElementById('GPXUpload').getAttribute('aria-describedby'),
+    assert.match(dom.window.document.getElementById('GPXUpload').getAttribute('aria-describedby') ?? '',
         /\bbpb-gpx-drop-hint\b/);
     const overlay = dom.window.document.getElementById('bpb-gpx-page-drop-overlay');
     assert.equal(overlay.getAttribute('role'), 'status');
     assert.equal(overlay.getAttribute('aria-hidden'), 'true');
-    assert.match(overlay.textContent, /Drop GPX to add it.*Release anywhere on this page/);
+    assert.match(overlay.textContent ?? '', /Drop GPX to add it.*Release anywhere on this page/);
     assert.equal(button.getAttribute('aria-busy'), null);
     const native = dom.window.document.getElementById('GPXPreview');
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), true,
@@ -208,8 +213,7 @@ test('a user-picked .gpx swaps native Preview for an accessible Process button',
 
     // Clearing the selection restores Peakbagger's plain upload path.
     const input = dom.window.document.getElementById('GPXUpload');
-    Object.defineProperty(input, 'files', { value: [], configurable: true, writable: true });
-    fireTrustedEvent(input, 'change', { bubbles: true });
+    await trustedInput(input, { type: 'files', files: [] });
     assert.equal(processButton(dom), null);
     assert.equal(native.classList.contains('bpb-native-preview-hidden'), false);
 });
@@ -231,22 +235,23 @@ test('a non-gpx selection and Peakbagger’s Remove both restore the native butt
 test('the capture draft flow’s programmatic change never triggers the swap', async () => {
     const dom = await loadEditor();
     const input = dom.window.document.getElementById('GPXUpload');
-    const file = new dom.window.File([GPX], 'track.gpx', { type: 'application/gpx+xml' });
-    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
+    const transfer = new dom.window.DataTransfer();
+    transfer.items.add(new dom.window.File([GPX], 'track.gpx', { type: 'application/gpx+xml' }));
+    input.files = transfer.files;
     input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
     assert.equal(processButton(dom), null, 'a synthetic (untrusted) change must not swap the buttons');
 });
 
 test('dragging one GPX anywhere on the page cues and attaches it through the normal selection binding', async () => {
     const dom = await loadEditor({
-        prepare: installDropFileList,
         respond: () => ({ action: 'ignore' }),
     });
     const { document } = dom.window;
     const target = document.getElementById('DateText');
     const uploadCell = document.getElementById('GPXUpload').closest('td');
-    let revealOptions = null;
-    uploadCell.scrollIntoView = options => { revealOptions = options; };
+    assert.ok(uploadCell);
+    let revealOptions: ScrollIntoViewOptions | boolean | undefined;
+    uploadCell.scrollIntoView = (options?: ScrollIntoViewOptions | boolean) => { revealOptions = options; };
     const file = new dom.window.File([GPX], 'dragged-walk.gpx', { type: 'application/gpx+xml' });
     const transfer = fileTransfer([file]);
 
@@ -266,14 +271,14 @@ test('dragging one GPX anywhere on the page cues and attaches it through the nor
     assert.equal(drop.defaultPrevented, true);
     assert.equal(document.documentElement.classList.contains('is-gpx-page-drag-over'), false);
     assert.equal(document.getElementById('bpb-gpx-page-drop-overlay').getAttribute('aria-hidden'), 'true');
-    assert.equal(revealOptions?.block, 'center');
-    assert.equal(revealOptions?.inline, 'nearest');
+    assert.equal((revealOptions as ScrollIntoViewOptions | undefined)?.block, 'center');
+    assert.equal((revealOptions as ScrollIntoViewOptions | undefined)?.inline, 'nearest');
     await waitFor(dom, () => processButton(dom));
 
     const input = document.getElementById('GPXUpload');
-    assert.equal(input.files.length, 1);
-    assert.equal(input.files[0], file, 'the exact dropped file becomes Peakbagger’s native upload');
-    const invalidation = dom.messages.find(message => message.type === 'GPX_PROCESS_INVALIDATE');
+    assert.equal(input.files!.length, 1);
+    assert.equal(input.files![0], file, 'the exact dropped file becomes Peakbagger’s native upload');
+    const invalidation = dom.messages.find(message => message.type === 'GPX_PROCESS_INVALIDATE')!;
     assert.equal(typeof invalidation.selectionNonce, 'string');
     assert.equal(Object.hasOwn(invalidation, 'fileIdentity'), false);
     assert.doesNotMatch(JSON.stringify(invalidation), /dragged-walk\.gpx/);
@@ -302,7 +307,6 @@ test('the page cue stays stable across child transitions and clears when the fil
 
 test('multi-file and folder drops are explicit future cases and never choose the first file', async () => {
     const dom = await loadEditor({
-        prepare: installDropFileList,
         respond: () => ({ action: 'ignore' }),
     });
     const { document } = dom.window;
@@ -311,9 +315,9 @@ test('multi-file and folder drops are explicit future cases and never choose the
     const second = new dom.window.File([GPX], 'second.gpx', { type: 'application/gpx+xml' });
 
     target.dispatchEvent(transferEvent(dom.window, 'drop', fileTransfer([first, second])));
-    assert.match(uploadStatus(dom).textContent,
+    assert.match(uploadStatus(dom).textContent ?? '',
         /Drop one GPX file at a time.*Multiple files and folders aren’t supported yet/);
-    assert.equal(document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(document.getElementById('GPXUpload').files!.length, 0);
     assert.equal(processButton(dom), null);
 
     const folderTransfer = {
@@ -326,13 +330,13 @@ test('multi-file and folder drops are explicit future cases and never choose the
         dropEffect: 'none',
     };
     target.dispatchEvent(transferEvent(dom.window, 'drop', folderTransfer));
-    assert.match(uploadStatus(dom).textContent, /Multiple files and folders aren’t supported yet/);
+    assert.match(uploadStatus(dom).textContent ?? '', /Multiple files and folders aren’t supported yet/);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_INVALIDATE'), false,
         'rejected collections must not create or invalidate a file-selection generation');
 });
 
 test('non-GPX drops stay local, actionable, and do not disturb an existing selection', async () => {
-    const dom = await loadEditor({ prepare: installDropFileList });
+    const dom = await loadEditor();
     await chooseGpx(dom, { name: 'kept.gpx' });
     const { document } = dom.window;
     const target = document.body;
@@ -347,20 +351,20 @@ test('non-GPX drops stay local, actionable, and do not disturb an existing selec
     target.dispatchEvent(transferEvent(dom.window, 'drop', fileTransfer([photo])));
 
     assert.equal(uploadStatus(dom).textContent, 'Drop a .gpx file to choose it.');
-    assert.equal(document.getElementById('GPXUpload').files[0].name, 'kept.gpx');
+    assert.equal(document.getElementById('GPXUpload').files![0]!.name, 'kept.gpx');
     assert.ok(processButton(dom));
 });
 
 test('selecting file B invalidates file A while capture settings are still loading', async () => {
-    let releaseSettings;
+    let releaseSettings: (() => void) | undefined;
     let settingsBlocked = false;
     const dom = await loadEditor({
         respond: () => ({ action: 'ignore' }),
         prepare: d => {
             const nativeGet = d.chrome.storage.sync.get;
-            d.chrome.storage.sync.get = async key => {
-                if (settingsBlocked) await new Promise(resolve => { releaseSettings = resolve; });
-                return nativeGet(key);
+            d.chrome.storage.sync.get = async (key?: string | string[] | Record<string, unknown> | null) => {
+                if (settingsBlocked) await new Promise<void>(resolve => { releaseSettings = resolve; });
+                return nativeGet(key as string | string[] | null);
             };
         },
     });
@@ -370,7 +374,7 @@ test('selecting file B invalidates file A while capture settings are still loadi
     await waitFor(dom, () => releaseSettings);
 
     await chooseGpx(dom, { name: 'B.gpx' });
-    releaseSettings();
+    releaseSettings!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
     assert.equal(uploadStatus(dom), null);
@@ -380,18 +384,20 @@ test('selecting file B invalidates file A while capture settings are still loadi
 test('selecting file B invalidates file A while its body is still being read', async () => {
     const dom = await loadEditor({ respond: () => ({ action: 'ignore' }) });
     const input = await chooseGpx(dom, { name: 'A.gpx' });
-    let releaseRead;
+    let releaseRead: (() => void) | undefined;
     let readStarted = false;
-    input.files[0].text = async () => {
+    const fileA = input.files![0]!;
+    Object.defineProperty(fileA, 'stream', { value: undefined, configurable: true });
+    fileA.text = async () => {
         readStarted = true;
-        await new Promise(resolve => { releaseRead = resolve; });
+        await new Promise<void>(resolve => { releaseRead = resolve; });
         return GPX;
     };
     processButton(dom).click();
     await waitFor(dom, () => readStarted && releaseRead);
 
     await chooseGpx(dom, { name: 'B.gpx' });
-    releaseRead();
+    releaseRead!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
     assert.equal(uploadStatus(dom), null);
@@ -399,13 +405,13 @@ test('selecting file B invalidates file A while its body is still being read', a
 });
 
 test('a delayed A worker result cannot apply after B is selected, while processed B can', async () => {
-    let releaseA;
+    let releaseA: (() => void) | undefined;
     let startCount = 0;
     const dom = await loadEditor({
         respond: async message => {
             if (message.type === 'GPX_PROCESS_START') {
                 startCount++;
-                if (startCount === 1) await new Promise(resolve => { releaseA = resolve; });
+                if (startCount === 1) await new Promise<void>(resolve => { releaseA = resolve; });
                 return {
                     phase: 'ready',
                     jobId: startCount === 1 ? 'job-A' : 'job-B',
@@ -425,7 +431,7 @@ test('a delayed A worker result cannot apply after B is selected, while processe
     await waitFor(dom, () => releaseA);
 
     await chooseGpx(dom, { name: 'B.gpx' });
-    releaseA();
+    releaseA!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
@@ -435,33 +441,33 @@ test('a delayed A worker result cannot apply after B is selected, while processe
     await waitFor(dom, () => dom.messages.some(message =>
         message.type === 'GPX_PROCESS_APPLY' && message.jobId === 'job-B'));
     assert.equal(dom.messages.filter(message => message.type === 'GPX_PROCESS_APPLY').length, 1);
-    const startB = dom.messages.filter(message => message.type === 'GPX_PROCESS_START')[1];
-    const applyB = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
+    const startB = dom.messages.filter(message => message.type === 'GPX_PROCESS_START')[1]!;
+    const applyB = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY')!;
     assert.equal(applyB.selectionGeneration, startB.selectionGeneration);
     assert.equal(applyB.selectionNonce, startB.selectionNonce);
 });
 
 test('a missing summit reply times out, restores Preview, and rejects a late result', async () => {
-    let expireLookup;
-    let releaseLookup;
+    let expireLookup: (() => void) | undefined;
+    let releaseLookup: (() => void) | undefined;
     const dom = await loadEditor({
         prepare: d => {
-            const setTimeout = d.window.setTimeout.bind(d.window);
-            const clearTimeout = d.window.clearTimeout.bind(d.window);
-            d.window.setTimeout = (callback, delay, ...args) => {
+            const nativeSetTimeout = d.window.setTimeout.bind(d.window);
+            const nativeClearTimeout = d.window.clearTimeout.bind(d.window);
+            d.window.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
                 if (delay === 80_000) {
                     expireLookup = () => callback(...args);
                     return 80000;
                 }
-                return setTimeout(callback, delay, ...args);
-            };
-            d.window.clearTimeout = id => {
-                if (id !== 80000) clearTimeout(id);
-            };
+                return nativeSetTimeout(callback, delay, ...args);
+            }) as typeof setTimeout;
+            d.window.clearTimeout = ((id?: number) => {
+                if (id !== 80000) nativeClearTimeout(id);
+            }) as typeof clearTimeout;
         },
         respond: async message => {
             if (message.type !== 'GPX_PROCESS_START') return undefined;
-            await new Promise(resolve => { releaseLookup = resolve; });
+            await new Promise<void>(resolve => { releaseLookup = resolve; });
             return {
                 phase: 'ready', jobId: 'late-job', boundPid: 7,
                 matches: [{
@@ -477,20 +483,20 @@ test('a missing summit reply times out, restores Preview, and rejects a late res
     assert.equal(processButton(dom).querySelector('.bpb-process-label').textContent,
         'Finding summits…');
 
-    expireLookup();
+    expireLookup!();
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent,
+    assert.match(uploadStatus(dom).textContent ?? '',
         /Summit lookup stopped responding.*Peakbagger’s Preview.*Process again/);
     assert.equal(processButton(dom), null);
     assert.equal(dom.window.document.getElementById('GPXPreview')
         .classList.contains('bpb-native-preview-hidden'), false);
 
-    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START')!;
     const invalidations = dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE');
-    assert.equal(invalidations.at(-1).selectionGeneration > start.selectionGeneration, true,
+    assert.equal(Number(invalidations.at(-1)!.selectionGeneration) > Number(start.selectionGeneration), true,
         'the timeout must supersede and abort the worker generation');
 
-    releaseLookup();
+    releaseLookup!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
@@ -498,7 +504,7 @@ test('a missing summit reply times out, restores Preview, and rejects a late res
 });
 
 test('B selection supersedes an A Apply that settles late', async () => {
-    let releaseApply;
+    let releaseApply: (() => void) | undefined;
     const dom = await loadEditor({
         respond: async message => {
             if (message.type === 'GPX_PROCESS_START') return {
@@ -506,7 +512,7 @@ test('B selection supersedes an A Apply that settles late', async () => {
                 matches: [{ id: 7, name: 'Test Peak', confidence: 91, classification: 'strong', selected: true }],
             };
             if (message.type === 'GPX_PROCESS_APPLY') {
-                await new Promise(resolve => { releaseApply = resolve; });
+                await new Promise<void>(resolve => { releaseApply = resolve; });
                 return { ok: true, tabIds: [5] };
             }
             return undefined;
@@ -516,7 +522,7 @@ test('B selection supersedes an A Apply that settles late', async () => {
     processButton(dom).click();
     await waitFor(dom, () => releaseApply);
     await chooseGpx(dom, { name: 'B.gpx' });
-    releaseApply();
+    releaseApply!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
 
     assert.equal(uploadStatus(dom), null);
@@ -525,11 +531,10 @@ test('B selection supersedes an A Apply that settles late', async () => {
 });
 
 test('clearing, replacing, removing, or navigating invalidates a delayed A result', async () => {
-    const cases = [
+    const cases: [string, (dom: EditorPage) => Promise<unknown>][] = [
         ['cleared selection', async dom => {
             const input = dom.window.document.getElementById('GPXUpload');
-            Object.defineProperty(input, 'files', { value: [], configurable: true, writable: true });
-            fireTrustedEvent(input, 'change', { bubbles: true });
+            await trustedInput(input, { type: 'files', files: [] });
         }],
         ['non-GPX replacement', dom => chooseGpx(dom, { name: 'photo.jpeg', content: 'not gpx' })],
         ['native Remove', async dom => {
@@ -542,11 +547,11 @@ test('clearing, replacing, removing, or navigating invalidates a delayed A resul
     ];
 
     for (const [label, replace] of cases) {
-        let releaseA;
+        let releaseA: (() => void) | undefined;
         const dom = await loadEditor({
             respond: async message => {
                 if (message.type === 'GPX_PROCESS_START') {
-                    await new Promise(resolve => { releaseA = resolve; });
+                    await new Promise<void>(resolve => { releaseA = resolve; });
                     return {
                         phase: 'ready', jobId: `job-A-${label}`, boundPid: 7,
                         matches: [{
@@ -564,7 +569,7 @@ test('clearing, replacing, removing, or navigating invalidates a delayed A resul
         await waitFor(dom, () => releaseA);
 
         await replace(dom);
-        releaseA();
+        releaseA!();
         await new Promise(resolve => dom.window.setTimeout(resolve, 20));
 
         assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false, label);
@@ -604,36 +609,45 @@ test('page teardown identifies lifecycle invalidation separately from a new file
     dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pagehide', { persisted: false }));
 
     const invalidations = dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE');
-    assert.equal(invalidations.at(-1).reason, 'page-lifecycle');
+    assert.equal(invalidations.at(-1)!.reason, 'page-lifecycle');
     dom.window.close();
 });
 
 test('file selection sends only an opaque nonce and fails closed with a dead worker', async () => {
     const dom = await loadEditor();
     let reads = 0;
-    let invalidation = null;
-    dom.chrome.runtime.sendMessage = async message => {
+    let invalidation: StubMessage | null = null;
+    dom.chrome.runtime.sendMessage = async (message: StubMessage) => {
         invalidation = structuredClone(message);
         throw new Error('Extension context invalidated.');
     };
+    const nativeStream = dom.window.Blob.prototype.stream;
+    const nativeText = dom.window.Blob.prototype.text;
+    dom.window.Blob.prototype.stream = function (this: Blob) {
+        reads++;
+        return nativeStream.call(this);
+    };
+    dom.window.Blob.prototype.text = function (this: Blob) {
+        reads++;
+        return nativeText.call(this);
+    };
     const input = dom.window.document.getElementById('GPXUpload');
-    const file = new dom.window.File([GPX], 'private-name.gpx', { type: 'application/gpx+xml' });
-    file.text = async () => { reads++; return GPX; };
-    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
-    fireTrustedEvent(input, 'change', { bubbles: true });
+    await trustedInput(input, { type: 'files', files: [{ name: 'private-name.gpx', mimeType: 'application/gpx+xml', text: GPX }] });
 
     await waitFor(dom, () => uploadStatus(dom));
-    assert.equal(invalidation.type, 'GPX_PROCESS_INVALIDATE');
-    assert.equal(typeof invalidation.selectionNonce, 'string');
-    assert.equal(Object.hasOwn(invalidation, 'fileIdentity'), false);
-    assert.doesNotMatch(JSON.stringify(invalidation), /private-name\.gpx|application\/gpx\+xml/);
+    assert.ok(invalidation);
+    const sent = invalidation as StubMessage;
+    assert.equal(sent.type, 'GPX_PROCESS_INVALIDATE');
+    assert.equal(typeof sent.selectionNonce, 'string');
+    assert.equal(Object.hasOwn(sent, 'fileIdentity'), false);
+    assert.doesNotMatch(JSON.stringify(sent), /private-name\.gpx|application\/gpx\+xml/);
     assert.equal(reads, 0, 'selection nonce must not read or hash the GPX body');
     assert.equal(processButton(dom), null);
-    assert.match(uploadStatus(dom).textContent, /selected GPX could not be prepared/);
+    assert.match(uploadStatus(dom).textContent ?? '', /selected GPX could not be prepared/);
 });
 
 test('Process parses on the page without disclosing local-file metadata and auto-applies a bound match', async () => {
-    const labels = [];
+    const labels: string[] = [];
     const dom = await loadEditor({
         settings: { fillTripInfo: false },
         respond: message => {
@@ -643,12 +657,21 @@ test('Process parses on the page without disclosing local-file metadata and auto
                     phase: 'ready',
                     jobId: 'job-1',
                     boundPid: 7,
-                    matches: [{ id: 7, name: 'Test Peak', confidence: 91, classification: 'strong', selected: true, date: '2026-07-01', time: '08:00', upDistanceM: 70 }]
+                    matches: [{ id: 7, name: 'Test Peak', confidence: 91, classification: 'strong', selected: true, date: '2026-07-01', time: '08:00', upDistanceM: 70 }],
                 };
             }
             if (message.type === 'GPX_PROCESS_APPLY') return { ok: true, tabIds: [5] };
             return undefined;
-        }
+        },
+    });
+    const nativeTypeDescriptor = Object.getOwnPropertyDescriptor(dom.window.Blob.prototype, 'type');
+    Object.defineProperty(dom.window.Blob.prototype, 'type', {
+        configurable: true,
+        get(this: Blob) {
+            return (this as File).name === 'private-hike-unique.gpx'
+                ? 'application/x-private-gpx'
+                : nativeTypeDescriptor?.get?.call(this) ?? '';
+        },
     });
     await chooseGpx(dom, {
         name: 'private-hike-unique.gpx',
@@ -657,7 +680,7 @@ test('Process parses on the page without disclosing local-file metadata and auto
     });
     const button = processButton(dom);
     const observer = new dom.window.MutationObserver(() => {
-        const label = button.querySelector('.bpb-process-label').textContent;
+        const label = button.querySelector('.bpb-process-label').textContent ?? '';
         if (labels[labels.length - 1] !== label) labels.push(label);
     });
     observer.observe(button, { subtree: true, childList: true, characterData: true, attributes: true });
@@ -665,10 +688,12 @@ test('Process parses on the page without disclosing local-file metadata and auto
     button.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
 
-    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START') as StubMessage & {
+        segments: { lat: number }[][]; waypoints: unknown[];
+    };
     assert.equal(start.segments.length, 1);
-    assert.equal(start.segments[0].length, 2);
-    assert.equal(start.segments[0][0].lat, 49.5);
+    assert.equal(start.segments[0]!.length, 2);
+    assert.equal(start.segments[0]![0]!.lat, 49.5);
     assert.equal(start.utcOffsetMinutes, -420, 'July in America/Vancouver is UTC-7, resolved offline');
     assert.deepEqual([...start.waypoints], []);
     assert.equal(start.trackName, '', 'with Trip Info filling off, the track name never leaves the page');
@@ -678,7 +703,7 @@ test('Process parses on the page without disclosing local-file metadata and auto
         /private-hike-unique\.gpx|application\/x-private-gpx|1977609599123/,
         'local file metadata must never cross the extension messaging boundary');
 
-    const apply = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY');
+    const apply = dom.messages.find(message => message.type === 'GPX_PROCESS_APPLY')!;
     assert.deepEqual(JSON.parse(JSON.stringify({
         type: apply.type,
         jobId: apply.jobId,
@@ -707,32 +732,36 @@ test('timezone resolution ignores route-invalid coordinates and untrustworthy ti
     const dom = await loadEditor({
         respond: message => message.type === 'GPX_PROCESS_START'
             ? { phase: 'no-matches' }
-            : { action: 'ignore' }
+            : { action: 'ignore' },
     });
     await chooseGpx(dom, { content });
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
 
-    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START') as StubMessage & {
+        segments: { time: number | null; invalidTime?: boolean }[][];
+    };
     assert.equal(start.utcOffsetMinutes, -420,
         'the valid July point, not rejected January coordinates or a nonexistent date, controls DST');
-    assert.equal(start.segments[0][1].time, null);
-    assert.equal(start.segments[0][1].invalidTime, true);
+    assert.equal(start.segments[0]![1]!.time, null);
+    assert.equal(start.segments[0]![1]!.invalidTime, true);
 });
 
 test('timezone resolution observes DST and stays unknown for an all-invalid route', async () => {
-    const process = async content => {
+    const process = async (content: string) => {
         const dom = await loadEditor({
             respond: message => message.type === 'GPX_PROCESS_START'
                 ? { phase: 'no-matches' }
-                : { action: 'ignore' }
+                : { action: 'ignore' },
         });
         await chooseGpx(dom, { content });
         processButton(dom).click();
         await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
-        return dom.messages.find(message => message.type === 'GPX_PROCESS_START').utcOffsetMinutes;
+        const offset = dom.messages.find(message => message.type === 'GPX_PROCESS_START')!.utcOffsetMinutes;
+        dom.window.close();
+        return offset;
     };
-    const gpx = (lat, lon, time) => `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
+    const gpx = (lat: number, lon: number, time: string) => `<?xml version="1.0"?><gpx xmlns="http://www.topografix.com/GPX/1/1"><trk><trkseg>
       <trkpt lat="${lat}" lon="${lon}"><time>${time}</time></trkpt>
     </trkseg></trk></gpx>`;
 
@@ -746,31 +775,38 @@ test('the trip name is sent only when Trip Info filling is enabled', async () =>
         settings: { fillTripInfo: true },
         respond: message => message.type === 'GPX_PROCESS_START'
             ? { phase: 'no-matches' }
-            : { action: 'ignore' }
+            : { action: 'ignore' },
     });
     await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
-    assert.equal(dom.messages.find(message => message.type === 'GPX_PROCESS_START').trackName, 'Corridor walk');
+    assert.equal(dom.messages.find(message => message.type === 'GPX_PROCESS_START')!.trackName, 'Corridor walk');
 });
 
 test('local upload fails before reading the file when capture settings are unavailable', async () => {
-    const errors = [];
+    const errors: unknown[][] = [];
     const dom = await loadEditor({
         prepare: d => {
             d.chrome.storage.sync.get = async () => {
                 throw new Error('SYNC_UPLOAD_SETTINGS_SENTINEL');
             };
-            d.window.console.error = (...args) => { errors.push(args); };
+            d.window.console.error = (...args: unknown[]) => { errors.push(args); };
         },
         respond: message => message.type === 'DRAFT_READY' ? { action: 'ignore' } : null,
     });
     let fileReads = 0;
-    const file = new dom.window.File([GPX], 'walk.gpx');
-    file.text = async () => { fileReads++; return GPX; };
+    const nativeStream = dom.window.Blob.prototype.stream;
+    const nativeText = dom.window.Blob.prototype.text;
+    dom.window.Blob.prototype.stream = function (this: Blob) {
+        fileReads++;
+        return nativeStream.call(this);
+    };
+    dom.window.Blob.prototype.text = function (this: Blob) {
+        fileReads++;
+        return nativeText.call(this);
+    };
     const input = dom.window.document.getElementById('GPXUpload');
-    Object.defineProperty(input, 'files', { value: [file], configurable: true, writable: true });
-    fireTrustedEvent(input, 'change', { bubbles: true });
+    await trustedInput(input, { type: 'files', files: [{ name: 'walk.gpx', mimeType: 'application/gpx+xml', text: GPX }] });
     await waitFor(dom, () => uploadStatus(dom));
     assert.equal(uploadStatus(dom).textContent,
         'Capture settings could not be read. Reload and try again. Nothing was captured.');
@@ -786,21 +822,23 @@ test('local upload rejects an oversized file before reading or messaging the wor
     });
     const input = await chooseGpx(dom, { size: MAX_GPX_BYTES + 1 });
     let read = false;
-    input.files[0].text = async () => { read = true; return GPX; };
+    const oversized = input.files![0]!;
+    Object.defineProperty(oversized, 'stream', { value: undefined, configurable: true });
+    oversized.text = async () => { read = true; return GPX; };
 
     processButton(dom).click();
     await waitFor(dom, () => /too large to process safely/.test(uploadStatus(dom)?.textContent || ''));
 
     assert.equal(read, false);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false);
-    assert.match(uploadStatus(dom).textContent, /64 MiB.*100,000 track points/);
+    assert.match(uploadStatus(dom).textContent ?? '', /64 MiB.*100,000 track points/);
 });
 
 test('processing failures name the problem and restore the native Preview', async () => {
     const dom = await loadEditor({
         respond: message => message.type === 'GPX_PROCESS_START'
             ? { phase: 'error', error: { code: 'peakbagger-signed-out', message: 'Your Peakbagger login could not be verified. Confirm you’re signed in, then try again.' } }
-            : { action: 'ignore' }
+            : { action: 'ignore' },
     });
     await chooseGpx(dom);
     processButton(dom).click();
@@ -808,7 +846,7 @@ test('processing failures name the problem and restore the native Preview', asyn
 
     const status = uploadStatus(dom);
     assert.equal(status.getAttribute('role'), 'alert');
-    assert.match(status.textContent, /login could not be verified/);
+    assert.match(status.textContent ?? '', /login could not be verified/);
     assert.equal(processButton(dom), null, 'failure restores the native path');
     assert.equal(dom.window.document.getElementById('GPXPreview')
         .classList.contains('bpb-native-preview-hidden'), false);
@@ -816,33 +854,33 @@ test('processing failures name the problem and restore the native Preview', asyn
 
 test('runtime exceptions are logged without entering the local-upload status', async () => {
     const sentinel = 'RAW_UPLOAD_SENTINEL: chrome.runtime.lastError';
-    const errors = [];
+    const errors: unknown[][] = [];
     const dom = await loadEditor({
         prepare: d => {
-            d.window.console.error = (...args) => { errors.push(args); };
+            d.window.console.error = (...args: unknown[]) => { errors.push(args); };
         },
         respond: message => {
             if (message.type === 'DRAFT_READY') return { action: 'ignore' };
             throw new Error(sentinel);
-        }
+        },
     });
     await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
 
-    assert.match(uploadStatus(dom).textContent, /GPX file could not be read/);
-    assert.doesNotMatch(uploadStatus(dom).textContent, /RAW_UPLOAD_SENTINEL|chrome\.runtime/);
+    assert.match(uploadStatus(dom).textContent ?? '', /GPX file could not be read/);
+    assert.doesNotMatch(uploadStatus(dom).textContent ?? '', /RAW_UPLOAD_SENTINEL|chrome\.runtime/);
     assert.match(errors.flat().map(String).join('\n'), /RAW_UPLOAD_SENTINEL/);
 });
 
 test('an unparseable file fails inline without leaving the page broken', async () => {
     const dom = await loadEditor({
-        respond: () => ({ action: 'ignore' })
+        respond: () => ({ action: 'ignore' }),
     });
     await chooseGpx(dom, { content: '<gpx><trk><trkseg></gpx' });
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /GPX file contains invalid XML/);
+    assert.match(uploadStatus(dom).textContent ?? '', /GPX file contains invalid XML/);
     assert.equal(processButton(dom), null);
     assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_START'), false,
         'nothing crosses to the worker when the file cannot be parsed');
@@ -853,19 +891,28 @@ test('a waypoint-only file points the user back at Peakbagger’s own path', asy
     await chooseGpx(dom, { content: '<gpx><wpt lat="1" lon="2"/></gpx>' });
     processButton(dom).click();
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /no track points.*Preview may still accept/i);
+    assert.match(uploadStatus(dom).textContent ?? '', /no track points.*Preview may still accept/i);
     assert.equal(processButton(dom), null);
 });
 
 const MULTI_MATCHES = [
     { id: 7, name: 'First Peak', confidence: 91, classification: 'strong', selected: true, date: '2026-07-01', time: '08:12', upDistanceM: 3400 },
-    { id: 8, name: 'Second Peak', confidence: 72, classification: 'probable', selected: false, date: '2026-07-01', time: '10:40', upDistanceM: 7800 }
+    { id: 8, name: 'Second Peak', confidence: 72, classification: 'probable', selected: false, date: '2026-07-01', time: '10:40', upDistanceM: 7800 },
 ];
+
+interface LoadCardOptions {
+    boundPid?: number | null;
+    matches?: typeof MULTI_MATCHES;
+    boundFallback?: Record<string, unknown> | null;
+    applyResult?: Record<string, unknown> | ((message: StubMessage) => Record<string, unknown>);
+    settings?: Record<string, unknown>;
+    prepare?: ((dom: EditorPage) => void) | null;
+}
 
 const loadCard = async ({
     boundPid = 7, matches = MULTI_MATCHES, boundFallback = null,
-    applyResult = { ok: true, tabIds: [5, 100] }, settings = {}, prepare = null
-} = {}) => {
+    applyResult = { ok: true, tabIds: [5, 100] }, settings = {}, prepare = null,
+}: LoadCardOptions = {}) => {
     const dom = await loadEditor({
         settings,
         prepare,
@@ -878,7 +925,7 @@ const loadCard = async ({
                 return typeof applyResult === 'function' ? applyResult(message) : applyResult;
             }
             return undefined;
-        }
+        },
     });
     await chooseGpx(dom);
     processButton(dom).click();
@@ -886,35 +933,35 @@ const loadCard = async ({
     return dom;
 };
 
-const cardParts = dom => {
+const cardParts = (dom: LoadedPage) => {
     const cardElement = dom.window.document.querySelector('.bpb-summit-card');
     return {
         card: cardElement,
         checkboxes: [...cardElement.querySelectorAll('.bpb-summit-check')],
         apply: cardElement.querySelector('.bpb-summit-apply'),
-        cancel: cardElement.querySelector('.bpb-summit-cancel')
+        cancel: cardElement.querySelector('.bpb-summit-cancel'),
     };
 };
 
 test('several summits earn the picker card with strong and bound peaks preselected', async () => {
     const dom = await loadCard();
     const { card, checkboxes, apply } = cardParts(dom);
-    assert.match(card.querySelector('.bpb-summit-card-title').textContent, /2 summits detected/);
+    assert.match(card.querySelector('.bpb-summit-card-title').textContent ?? '', /2 summits detected/);
     assert.deepEqual(checkboxes.map(checkbox => checkbox.checked), [true, false],
         'strong matches (and the bound peak) preselect; probable ones await the user');
     assert.deepEqual(
         [...card.querySelectorAll('.bpb-summit-chip')].map(chip => chip.textContent),
         ['Strong', 'Probable']);
-    assert.match(card.querySelector('.bpb-summit-meta').textContent, /at 08:12 · 2\.1 mi/,
+    assert.match(card.querySelector('.bpb-summit-meta').textContent ?? '', /at 08:12 · 2\.1 mi/,
         'Auto follows the fixture’s imperial-first native ascent fields');
     assert.equal(apply.textContent, 'Fill this ascent');
 
-    checkboxes[1].click();
+    checkboxes[1]!.click();
     assert.equal(apply.textContent, 'Fill + open 1 draft');
 
     apply.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
-    const message = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY');
+    const message = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY')!;
     assert.deepEqual(JSON.parse(JSON.stringify({
         type: message.type,
         jobId: message.jobId,
@@ -929,13 +976,13 @@ test('several summits earn the picker card with strong and bound peaks preselect
 
 test('a rejected Apply restores the native path without exposing the browser exception', async () => {
     const dom = await loadCard({
-        applyResult: () => { throw new Error('Extension context invalidated.'); }
+        applyResult: () => { throw new Error('Extension context invalidated.'); },
     });
     cardParts(dom).apply.click();
 
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /prepared draft could not be delivered/);
-    assert.doesNotMatch(uploadStatus(dom).textContent, /Extension context invalidated/);
+    assert.match(uploadStatus(dom).textContent ?? '', /prepared draft could not be delivered/);
+    assert.doesNotMatch(uploadStatus(dom).textContent ?? '', /Extension context invalidated/);
     assert.equal(uploadStatus(dom).getAttribute('role'), 'alert');
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
     assert.equal(processButton(dom), null, 'the dead-worker path must not remain stuck at Filling form');
@@ -945,17 +992,17 @@ test('a rejected Apply restores the native path without exposing the browser exc
 
 test('summit distances honor explicit units and Auto follows metric-first page fields', async () => {
     const explicitMetric = await loadCard({ settings: { units: 'metric' } });
-    assert.match(explicitMetric.window.document.querySelector('.bpb-summit-meta').textContent,
+    assert.match(explicitMetric.window.document.querySelector('.bpb-summit-meta').textContent ?? '',
         /at 08:12 · 3\.4 km/);
 
     const autoMetric = await loadCard({
         prepare: d => {
             const miles = d.window.document.getElementById('UpMi');
             const kilometers = d.window.document.getElementById('UpKm');
-            miles.parentNode.insertBefore(kilometers, miles);
-        }
+            miles.parentNode!.insertBefore(kilometers, miles);
+        },
     });
-    assert.match(autoMetric.window.document.querySelector('.bpb-summit-meta').textContent,
+    assert.match(autoMetric.window.document.querySelector('.bpb-summit-meta').textContent ?? '',
         /at 08:12 · 3\.4 km/);
 });
 
@@ -970,30 +1017,30 @@ test('Cancel dismisses the card and restores Peakbagger’s native path', async 
 
 test('a bound peak off the track offers an explicit closest-approach override', async () => {
     const dom = await loadCard({
-        matches: [MULTI_MATCHES[1]],
+        matches: [MULTI_MATCHES[1]!],
         boundFallback: {
             id: 7, name: 'Bound Peak', confidence: 22, classification: 'weak', selected: false,
-            date: '2026-07-01', time: '09:00', upDistanceM: 5000, closestApproachM: 240
-        }
+            date: '2026-07-01', time: '09:00', upDistanceM: 5000, closestApproachM: 240,
+        },
     });
     const { card, checkboxes, apply } = cardParts(dom);
-    assert.match(card.querySelector('.bpb-summit-note').textContent,
+    assert.match(card.querySelector('.bpb-summit-note').textContent ?? '',
         /closest approach to Bound Peak is 787 ft from the summit/);
-    assert.match(card.textContent, /Off track/);
-    assert.equal(checkboxes[1].checked, false, 'using the bound peak anyway is an explicit choice');
+    assert.match(card.textContent ?? '', /Off track/);
+    assert.equal(checkboxes[1]!.checked, false, 'using the bound peak anyway is an explicit choice');
 
     // The detected summit alone can only open a draft; adding the bound peak
     // fills this page too.
-    checkboxes[0].click();
+    checkboxes[0]!.click();
     assert.equal(apply.textContent, 'Open 1 draft');
-    checkboxes[1].click();
+    checkboxes[1]!.click();
     assert.equal(apply.textContent, 'Fill + open 1 draft');
-    checkboxes[0].click();
+    checkboxes[0]!.click();
     assert.equal(apply.textContent, 'Fill this ascent');
 
     apply.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
-    const applied = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY');
+    const applied = dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY')!;
     assert.deepEqual(JSON.parse(JSON.stringify({
         type: applied.type,
         jobId: applied.jobId,
@@ -1005,20 +1052,20 @@ test('a bound peak off the track offers an explicit closest-approach override', 
 test('sibling-only drafts leave this page on its native path with a confirmation', async () => {
     const dom = await loadCard({
         boundPid: 99,
-        matches: [MULTI_MATCHES[0]],
-        applyResult: { ok: true, tabIds: [100] }
+        matches: [MULTI_MATCHES[0]!],
+        applyResult: { ok: true, tabIds: [100] },
     });
     const { card, apply } = cardParts(dom);
-    assert.match(card.querySelector('.bpb-summit-note').textContent,
+    assert.match(card.querySelector('.bpb-summit-note').textContent ?? '',
         /never comes within range of this page’s peak/);
     assert.equal(apply.textContent, 'Open 1 draft');
     const invalidationsBeforeApply = dom.messages.filter(message =>
         message.type === 'GPX_PROCESS_INVALIDATE').length;
     apply.click();
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /Opened 1 draft tab in the Peak Drafts group/);
+    assert.match(uploadStatus(dom).textContent ?? '', /Opened 1 draft tab in the Peak Drafts group/);
     assert.equal(processButton(dom), null, 'the native upload path returns');
-    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, null);
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY')!.primaryId, null);
     assert.equal(dom.messages.filter(message => message.type === 'GPX_PROCESS_INVALIDATE').length,
         invalidationsBeforeApply, 'returning the native UI must not revoke the opened draft payload');
 });
@@ -1026,11 +1073,11 @@ test('sibling-only drafts leave this page on its native path with a confirmation
 test('on an unbound page the highest-confidence selection becomes this page’s peak', async () => {
     const dom = await loadCard({ boundPid: null });
     const { checkboxes, apply } = cardParts(dom);
-    checkboxes[1].click();
+    checkboxes[1]!.click();
     assert.equal(apply.textContent, 'Fill + open 1 draft');
     apply.click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
-    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, 7,
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY')!.primaryId, 7,
         'the strongest selected match fills the page it navigates to');
 });
 
@@ -1039,21 +1086,20 @@ test('a single summit on an unbound page fills immediately without a card', asyn
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx',
         respond: message => {
             if (message.type === 'GPX_PROCESS_START') {
-                return { phase: 'ready', jobId: 'job-3', boundPid: null, matches: [MULTI_MATCHES[0]], boundFallback: null };
+                return { phase: 'ready', jobId: 'job-3', boundPid: null, matches: [MULTI_MATCHES[0]!], boundFallback: null };
             }
             if (message.type === 'GPX_PROCESS_APPLY') return { ok: true, tabIds: [5] };
             return { action: 'ignore' };
-        }
+        },
     });
     await chooseGpx(dom);
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'));
     assert.equal(dom.window.document.querySelector('.bpb-summit-card'), null);
-    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY').primaryId, 7);
+    assert.equal(dom.messages.find(entry => entry.type === 'GPX_PROCESS_APPLY')!.primaryId, 7);
 });
 
 test('the stylesheet keeps its reduced-motion and dark-theme guards', async () => {
-    const { readFile } = await import('node:fs/promises');
     const css = await readFile(new globalThis.URL('../../src/ascent/ascent-upload.css', import.meta.url), 'utf8');
     assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(css, /html\[data-bpb-theme='dark'\] \.bpb-process-button/);
@@ -1065,36 +1111,38 @@ test('the stylesheet keeps its reduced-motion and dark-theme guards', async () =
 });
 
 test('native upload is timeless before Attach or Save; exception restores only this file and Process still analyzes original times', async () => {
-    const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: installDropFileList,
+    const dom = await loadEditor({ settings: { removeGpxTimestamps: true },
         respond: message => message.type === 'GPX_PROCESS_START' ? { phase: 'no-matches' } : { action: 'ignore' } });
     const input = await chooseGpx(dom);
     await waitFor(dom, () => processButton(dom));
-    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    assert.doesNotMatch(await input.files![0]!.text(), /<time>/);
     const checkbox = dom.window.document.getElementById('bpb-include-timestamps-once');
     assert.equal(checkbox.checked, false);
     checkbox.checked = true; checkbox.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => checkbox.getAttribute('aria-disabled') === 'false');
-    assert.match(await input.files[0].text(), /<time>/);
+    assert.match(await input.files![0]!.text(), /<time>/);
     checkbox.checked = false; checkbox.dispatchEvent(new dom.window.Event('change'));
     await waitFor(dom, () => checkbox.getAttribute('aria-disabled') === 'false');
-    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    assert.doesNotMatch(await input.files![0]!.text(), /<time>/);
     processButton(dom).click();
     await waitFor(dom, () => dom.messages.some(message => message.type === 'GPX_PROCESS_START'));
-    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START');
+    const start = dom.messages.find(message => message.type === 'GPX_PROCESS_START') as StubMessage & {
+        segments: { time: number }[][];
+    };
     assert.equal(start.includeTimestampsOnce, false);
-    assert.equal(start.segments[0][0].time, Date.parse('2026-07-01T15:00:00Z'));
+    assert.equal(start.segments[0]![0]!.time, Date.parse('2026-07-01T15:00:00Z'));
     await chooseGpx(dom, { name: 'other.gpx' });
     await waitFor(dom, () => processButton(dom));
     assert.equal(checkbox.checked, false);
-    assert.doesNotMatch(await input.files[0].text(), /<time>/);
+    assert.doesNotMatch(await input.files![0]!.text(), /<time>/);
     dom.window.close();
 });
 
 test('malformed GPX cannot leave the original file attached when timestamp removal is enabled', async () => {
-    const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: installDropFileList });
+    const dom = await loadEditor({ settings: { removeGpxTimestamps: true } });
     const input = await chooseGpx(dom, { content: '<gpx><time>private</time>' });
     await waitFor(dom, () => uploadStatus(dom));
-    assert.match(uploadStatus(dom).textContent, /could not be prepared safely/);
+    assert.match(uploadStatus(dom).textContent ?? '', /could not be prepared safely/);
     assert.equal(input.value, '');
     assert.equal(processButton(dom), null);
     assert.equal(input.disabled, false);
@@ -1102,32 +1150,32 @@ test('malformed GPX cannot leave the original file attached when timestamp remov
 });
 
 test('stalled file preparation blocks native submission, times out safely, and ignores its late reply', async () => {
-    let expirePreparation;
-    let releasePreparation;
+    let expirePreparation: (() => void) | undefined;
+    let releasePreparation: ((value: unknown) => void) | undefined;
     const dom = await loadEditor({ settings: { removeGpxTimestamps: true }, prepare: d => {
-        const setTimeout = d.window.setTimeout.bind(d.window);
-        const clearTimeout = d.window.clearTimeout.bind(d.window);
-        d.window.setTimeout = (callback, delay, ...args) => delay === 20_000
-            ? (expirePreparation = () => callback(...args), 20000) : setTimeout(callback, delay, ...args);
-        d.window.clearTimeout = id => { if (id !== 20000) clearTimeout(id); };
-        d.chrome.runtime.sendMessage = message => message.type === 'GPX_PROCESS_INVALIDATE'
+        const nativeSetTimeout = d.window.setTimeout.bind(d.window);
+        const nativeClearTimeout = d.window.clearTimeout.bind(d.window);
+        d.window.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => delay === 20_000
+            ? (expirePreparation = () => callback(...args), 20000) : nativeSetTimeout(callback, delay, ...args)) as typeof setTimeout;
+        d.window.clearTimeout = ((id?: number) => { if (id !== 20000) nativeClearTimeout(id); }) as typeof clearTimeout;
+        d.chrome.runtime.sendMessage = (message: StubMessage) => message.type === 'GPX_PROCESS_INVALIDATE'
             ? new Promise(resolve => { releasePreparation = resolve; }) : Promise.resolve({ action: 'ignore' });
     } });
     const input = await chooseGpx(dom);
     assert.equal(input.disabled, true, 'native postbacks cannot include the original file while preparing');
     assert.equal(dom.window.document.getElementById('bpb-capture-provider-hint').textContent, 'Preparing GPX…');
     const submit = new dom.window.Event('submit', { bubbles: true, cancelable: true });
-    input.form.dispatchEvent(submit);
+    input.form!.dispatchEvent(submit);
     assert.equal(submit.defaultPrevented, true);
     const save = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
     dom.window.document.getElementById('SaveButton').dispatchEvent(save);
     assert.equal(save.defaultPrevented, true);
-    expirePreparation();
+    expirePreparation!();
     await waitFor(dom, () => uploadStatus(dom));
     assert.equal(input.disabled, false);
     assert.equal(input.value, '');
     assert.equal(processButton(dom), null);
-    releasePreparation({ ok: true });
+    releasePreparation!({ ok: true });
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(processButton(dom), null);
     dom.window.close();
@@ -1137,13 +1185,13 @@ test('cancelled summit review can process the still-selected file with fresh aut
     const dom = await loadCard();
     try {
         const starts = () => dom.messages.filter(message => message.type === 'GPX_PROCESS_START');
-        const previous = starts().at(-1);
+        const previous = starts().at(-1)!;
         cardParts(dom).cancel.click();
         await waitFor(dom, () => dom.window.document.querySelector('.bpb-process-retry'));
         dom.window.document.querySelector('.bpb-process-retry').click();
         await waitFor(dom, () => starts().length === 2 && dom.window.document.querySelector('.bpb-summit-card'));
-        assert.ok(starts().at(-1).selectionGeneration > previous.selectionGeneration);
-        assert.notEqual(starts().at(-1).selectionNonce, previous.selectionNonce);
+        assert.ok(Number(starts().at(-1)!.selectionGeneration) > Number(previous.selectionGeneration));
+        assert.notEqual(starts().at(-1)!.selectionNonce, previous.selectionNonce);
         assert.equal(dom.messages.some(message => message.type === 'GPX_PROCESS_APPLY'), false);
     } finally { dom.window.close(); }
 });

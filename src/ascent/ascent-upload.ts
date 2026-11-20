@@ -911,10 +911,17 @@ type CodedError = Error & { code?: string; settingsUnavailable?: boolean };
         };
 
         upload.addEventListener('change', event => {
+            const file = upload.files && upload.files[0];
             // The capture draft flow attaches files programmatically; its
             // synthetic change is not trusted and must not trigger the swap.
-            if (!event.isTrusted) return;
-            void handleFileChange(upload.files && upload.files[0]);
+            // A clearing change while local-upload UI is active still restores
+            // Peakbagger's native state so an empty input never keeps a stale
+            // Process action mounted.
+            if (!event.isTrusted) {
+                if (!file && (selectedFile || button || attachButton || preparingFile)) void handleFileChange(null);
+                return;
+            }
+            void handleFileChange(file);
         });
         document.addEventListener('dragenter', onDragEnter);
         document.addEventListener('dragover', onDragOver);

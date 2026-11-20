@@ -2,47 +2,80 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Drives the built ascent.aspx backup surface (content/ascent-backup.js) in
-// jsdom against the masked ascent fixture. Pins the fail-closed gates (owner +
-// enabled + connected), the affordance, the GPX fetch in the page session, the
-// GITHUB_BACKUP_ASCENT message shape, and the success/error render.
+// a real browser against the masked ascent fixture. Pins the fail-closed gates
+// (owner + enabled + connected), the affordance, the GPX fetch in the page
+// session, the GITHUB_BACKUP_ASCENT message shape, and the success/error render.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
-import { evalBundle, fireTrustedEvent, waitFor } from '../helpers/load-page.mts';
+import { FixtureDom, evalBundle, trustedInput } from '../helpers/fixture-dom.mts';
+import { waitFor } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const ascentHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
+const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
 
-const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true,
-    gpxResponse = null, onEditFetch = null, fastSlowBackupNotice = false,
-    url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' } = {}) => {
-    const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
-    const rawEditHtml = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascentedit.html'), 'utf8');
-    const editDom = new JSDOM(rawEditHtml);
-    const editDoc = editDom.window.document;
-    editDoc.getElementById('DateText').setAttribute('value', '2026-07-12');
-    editDoc.getElementById('PointFt').setAttribute('value', '14411');
-    editDoc.getElementById('PeakListBox').innerHTML = '<option value="2296" selected>Mount Rainier</option>';
-    editDoc.getElementById('JournalText').textContent = '[b]Great climb[/b] under blue skies.';
-    const editHtml = editDom.serialize();
-    const dom = new JSDOM(html, { url, runScripts: 'outside-only' });
-    if (fastSlowBackupNotice) {
-        const setTimeout = dom.window.setTimeout.bind(dom.window);
-        dom.window.setTimeout = (callback, delay, ...args) =>
-            setTimeout(callback, delay === 20_000 ? 0 : delay, ...args);
+const buildEditHtml = () => {
+    const editDom = new FixtureDom(rawEditHtml);
+    try {
+        const editDoc = editDom.window.document;
+        editDoc.getElementById('DateText').setAttribute('value', '2026-07-12');
+        editDoc.getElementById('PointFt').setAttribute('value', '14411');
+        editDoc.getElementById('PeakListBox').innerHTML = '<option value="2296" selected>Mount Rainier</option>';
+        editDoc.getElementById('JournalText').textContent = '[b]Great climb[/b] under blue skies.';
+        return editDom.serialize();
+    } finally {
+        editDom.close();
     }
-    const sent = [];
+};
+
+interface FetchStubResponse {
+    ok: boolean;
+    status?: number;
+    url?: string;
+    redirected?: boolean;
+    headers?: { get(name: string): string | null };
+    text(): Promise<string>;
+}
+
+interface LoadSurfaceOptions {
+    status: Record<string, unknown>;
+    onBackup?: (message: StubMessage) => unknown;
+    onCheck?: (message: StubMessage) => unknown;
+    onPreflight?: (message: StubMessage) => unknown;
+    editOk?: boolean;
+    gpxOk?: boolean;
+    gpxResponse?: FetchStubResponse | null;
+    onEditFetch?: ((info: { target: RequestInfo | URL; editHtml: string }) => FetchStubResponse | Promise<FetchStubResponse>) | null;
+    fastSlowBackupNotice?: boolean;
+    url?: string;
+}
+
+const loadSurface = async ({
+    status, onBackup, onCheck, onPreflight, editOk = true, gpxOk = true,
+    gpxResponse = null, onEditFetch = null, fastSlowBackupNotice = false,
+    url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321',
+}: LoadSurfaceOptions) => {
+    const editHtml = buildEditHtml();
+    const dom = new FixtureDom(ascentHtml, { url });
+    if (fastSlowBackupNotice) {
+        const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
+        dom.window.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) =>
+            nativeSetTimeout(callback, delay === 20_000 ? 0 : delay, ...args)) as typeof setTimeout;
+    }
+    const sent: StubMessage[] = [];
     dom.window.chrome = {
         runtime: {
             id: 'test',
             lastError: null,
             getManifest: () => ({ version: '3.0.0' }),
-            sendMessage: async message => {
+            sendMessage: async (message: StubMessage) => {
                 sent.push(message);
-                let reply = null;
+                let reply: unknown = null;
                 if (message.type === 'GITHUB_BACKUP_STATUS') reply = status;
                 else if (message.type === 'TRUSTED_ACTION_ISSUE') reply = { ok: true, token: 'activation-1' };
                 else if (message.type === 'TRUSTED_ACTION_BEGIN') reply = { ok: true, grantToken: 'grant-1' };
@@ -58,7 +91,7 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
             },
         },
     };
-    dom.window.fetch = async target => {
+    dom.window.fetch = (async (target: RequestInfo | URL) => {
         if (/ascentedit\.aspx/i.test(String(target))) {
             if (onEditFetch) return onEditFetch({ target, editHtml });
             return editOk
@@ -68,22 +101,22 @@ const loadSurface = async ({ status, onBackup, onCheck, onPreflight, editOk = tr
         return gpxResponse || (gpxOk
             ? { ok: true, status: 200, headers: { get: () => 'text/gpx' }, text: async () => '<gpx><trk><trkseg></trkseg></trk></gpx>' }
             : { ok: false, status: 404, headers: { get: () => null }, text: async () => '' });
-    };
+    }) as unknown as typeof fetch;
     await evalBundle(dom.window, 'content/ascent-backup.js');
     return { dom, sent };
 };
 
-const control = dom => dom.window.document.querySelector('.bpb-gh-control');
+const control = (dom: FixtureDom) => dom.window.document.querySelector('.bpb-gh-control');
 
 test('pending backup and retry preserve the action node and keyboard focus', async t => {
-    let finish;
+    let finish!: (value: unknown) => void;
     const { dom } = await loadSurface({ status: { enabled: true, connected: true },
         onBackup: () => new Promise(resolve => { finish = resolve; }) });
     t.after(() => dom.window.close());
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     const action = control(dom).querySelector('.bpb-gh-btn');
     action.focus();
-    fireTrustedEvent(action, 'click');
+    await trustedInput(action, { type: 'click' });
     await waitFor(dom, () => finish);
     assert.equal(control(dom).querySelector('.bpb-gh-btn'), action);
     assert.equal(action.disabled, true);
@@ -99,13 +132,13 @@ test('the affordance mounts as a compact control beside the native ascent action
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
     const actions = dom.window.document.getElementById('owneractions');
     assert.equal(control(dom).parentElement, actions);
-    assert.equal(control(dom).textContent.trim(), 'Back up ascent and TR');
+    assert.equal(control(dom).textContent!.trim(), 'Back up ascent and TR');
     assert.equal(control(dom).getAttribute('aria-label'), 'Ascent and TR backup');
     assert.equal(dom.window.document.body.firstElementChild, dom.window.document.getElementById('page'));
 });
 
 test('a passive GitHub comparison exposes neutral status instead of a disabled action', async t => {
-    let finish;
+    let finish!: (value: unknown) => void;
     const { dom } = await loadSurface({ status: { enabled: true, connected: true },
         onCheck: () => new Promise(resolve => { finish = resolve; }) });
     t.after(() => dom.window.close());
@@ -123,15 +156,17 @@ test('a passive GitHub comparison exposes neutral status instead of a disabled a
 });
 
 test('a current GitHub payload renders an affirmative state without writing', async () => {
-    let checked = null;
+    let checked: StubMessage | null = null;
     const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true },
         onCheck: message => { checked = message; return { ok: true, current: true }; },
     });
-    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
-    assert.equal(checked.pageComplete, true);
-    assert.equal(checked.page.ascent.id, 7654321);
-    assert.match(checked.gpx, /<gpx>/);
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent ?? ''));
+    assert.ok(checked);
+    const checkedRecord = checked as Record<string, unknown> & { page: { ascent: { id: number } }; gpx: string };
+    assert.equal(checkedRecord.pageComplete, true);
+    assert.equal(checkedRecord.page.ascent.id, 7654321);
+    assert.match(checkedRecord.gpx, /<gpx>/);
     assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
     assert.equal(control(dom).querySelector('.bpb-gh-btn').hidden, true,
         'a current backup must not present an inert button');
@@ -154,28 +189,32 @@ test('no affordance when the feature is disabled or not connected', async () => 
 });
 
 test('clicking Back up fetches the track and sends the page fields, then shows success', async () => {
-    let received = null;
+    let received: StubMessage | null = null;
     const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true },
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/abc', isUpdate: false } }; },
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
 
     assert.ok(received, 'a GITHUB_BACKUP_ASCENT message was sent');
-    assert.equal(received.pageComplete, true);
-    assert.equal(received.page.ascent.id, 7654321);
-    assert.equal(received.page.ascent.date, '2026-07-12');
-    assert.equal(received.page.ascent.type, 'Successful Ascent (stood on the summit)');
-    assert.equal(received.page.ascent.pointFt, '14411');
-    assert.equal(received.page.peak.id, 2296);
-    assert.equal(received.page.peak.name, 'Mount Rainier');
-    assert.match(received.page.report.markdown, /\*\*Great climb\*\*/);
-    assert.match(received.page.report.submitted, /\[b\]Great climb\[\/b\]/);
-    assert.match(received.gpx, /<gpx>/);           // fetched in the page session
-    assert.equal(received.grantToken, 'grant-1');
-    assert.equal(received.generation, '2');
+    const payload = received as Record<string, unknown> & {
+        page: { ascent: { id: number; date: string; type: string; pointFt: string }; peak: { id: number; name: string }; report: { markdown: string; submitted: string } };
+        gpx: string;
+    };
+    assert.equal(payload.pageComplete, true);
+    assert.equal(payload.page.ascent.id, 7654321);
+    assert.equal(payload.page.ascent.date, '2026-07-12');
+    assert.equal(payload.page.ascent.type, 'Successful Ascent (stood on the summit)');
+    assert.equal(payload.page.ascent.pointFt, '14411');
+    assert.equal(payload.page.peak.id, 2296);
+    assert.equal(payload.page.peak.name, 'Mount Rainier');
+    assert.match(payload.page.report.markdown, /\*\*Great climb\*\*/);
+    assert.match(payload.page.report.submitted, /\[b\]Great climb\[\/b\]/);
+    assert.match(payload.gpx, /<gpx>/);           // fetched in the page session
+    assert.equal(payload.grantToken, 'grant-1');
+    assert.equal(payload.generation, '2');
     // Success state links to the commit.
     const link = control(dom).querySelector('.bpb-gh-link');
     assert.equal(link.getAttribute('href'), 'https://github.com/me/backup/commit/abc');
@@ -192,7 +231,7 @@ test('an updated backup retains the commit link beside plain completion status',
     });
     try {
         await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-        fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
+        await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
         await waitFor(dom, () => control(dom)?.querySelector('[role="status"]')?.textContent === 'Backup updated ✓');
         const status = control(dom).querySelector('[role="status"]');
         assert.equal(status.tagName, 'SPAN');
@@ -231,11 +270,11 @@ test('a synthetic host-page click cannot read or send a manual backup', async ()
     assert.equal(editReads, readsBeforeClick);
     assert.equal(sent.some(message => message.type === 'TRUSTED_ACTION_ISSUE'), false);
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false);
-    assert.match(control(dom).textContent, /Back up ascent and TR/);
+    assert.match(control(dom).textContent ?? '', /Back up ascent and TR/);
 });
 
 test('a 200 error page for a displayed track aborts without replacing the backup', async () => {
-    let received = null;
+    let received: StubMessage | null = null;
     const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true },
         // A 200 whose body is an HTML error page, not a GPX document — what a
@@ -251,8 +290,8 @@ test('a 200 error page for a displayed track aborts without replacing the backup
         onBackup: message => { received = message; return { ok: true, result: {} }; },
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /unexpected page instead of the GPS track/i.test(control(dom).textContent));
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
+    await waitFor(dom, () => /unexpected page instead of the GPS track/i.test(control(dom).textContent ?? ''));
 
     assert.equal(received, null, 'an ambiguous track failure must not send a destructive replacement');
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
@@ -264,8 +303,8 @@ test('an incomplete edit-form response aborts without sending a sparse backup', 
         editOk: false,
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/i.test(control(dom).textContent));
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
+    await waitFor(dom, () => /temporarily unavailable \(HTTP 500\)/i.test(control(dom).textContent ?? ''));
     assert.equal(sent.filter(m => m.type === 'GITHUB_BACKUP_ASCENT').length, 0);
 });
 
@@ -275,9 +314,9 @@ test('a typed backup error shows an actionable message with a retry', async () =
         onBackup: () => ({ ok: false, error: { code: 'rate-limit' } }),
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /GitHub request limit reached/.test(control(dom).textContent));
-    assert.match(control(dom).textContent, /Wait a few minutes, then try again/);
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
+    await waitFor(dom, () => /GitHub request limit reached/.test(control(dom).textContent ?? ''));
+    assert.match(control(dom).textContent ?? '', /Wait a few minutes, then try again/);
     assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
@@ -287,56 +326,56 @@ test('an unexpected backup error shows GitHub\'s bounded detail', async () => {
         onBackup: () => ({ ok: false, error: { code: 'unknown', message: 'Repository service is temporarily unavailable.' } }),
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
-    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(control(dom).textContent));
-    assert.doesNotMatch(control(dom).textContent, /something went wrong/i);
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
+    await waitFor(dom, () => /Repository service is temporarily unavailable/.test(control(dom).textContent ?? ''));
+    assert.doesNotMatch(control(dom).textContent ?? '', /something went wrong/i);
 });
 
 test('automatic mode pushes on load without a click', async () => {
-    let received = null;
+    let received: StubMessage | null = null;
     const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onPreflight: () => ({ ok: true, fresh: true }),
         onBackup: message => { received = message; return { ok: true, result: { commitUrl: 'https://github.com/me/backup/commit/z', isUpdate: false } }; },
     });
-    await waitFor(dom, () => control(dom) && /Backed up/.test(control(dom).textContent));
-    assert.ok(received && received.auto === true, 'the push was flagged automatic');
-    assert.equal('grantToken' in received, false);
-    assert.equal(sent.some(message => message.type.startsWith('TRUSTED_ACTION_')), false,
+    await waitFor(dom, () => control(dom) && /Backed up/.test(control(dom).textContent ?? ''));
+    assert.ok(received && (received as Record<string, unknown>).auto === true, 'the push was flagged automatic');
+    assert.equal('grantToken' in (received as Record<string, unknown>), false);
+    assert.equal(sent.some(message => String(message.type ?? '').startsWith('TRUSTED_ACTION_')), false,
         'save-owned automatic backup keeps its separate freshness authorization');
 });
 
 test('automatic mode on a revisit falls back to the manual button, not an error', async () => {
-    let finishCheck;
+    let finishCheck!: (value: unknown) => void;
     const checking = new Promise(resolve => { finishCheck = resolve; });
     const { dom, sent } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onPreflight: () => ({ ok: true, fresh: false }),
         onCheck: () => checking,
     });
-    await waitFor(dom, () => control(dom) && /Checking GitHub/.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Checking GitHub/.test(control(dom).textContent ?? ''));
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,
         'a revisit must not claim or attempt that a backup is running');
     finishCheck({ ok: true, current: false });
-    await waitFor(dom, () => control(dom) && /Back up ascent and TR/.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Back up ascent and TR/.test(control(dom).textContent ?? ''));
     assert.ok(control(dom).querySelector('.bpb-gh-btn'), 'the manual Back up button is offered');
 });
 
 test('a fresh automatic save reports backup work immediately', async () => {
-    let finishBackup;
+    let finishBackup!: (value: unknown) => void;
     const backingUp = new Promise(resolve => { finishBackup = resolve; });
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onPreflight: () => ({ ok: true, fresh: true }),
         onBackup: () => backingUp,
     });
-    await waitFor(dom, () => control(dom) && /Backing up to GitHub/.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Backing up to GitHub/.test(control(dom).textContent ?? ''));
     finishBackup({ ok: true, result: {} });
-    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
 });
 
 test('a slow automatic backup stops claiming ordinary progress while it remains pending', async () => {
-    let finishBackup;
+    let finishBackup!: (value: unknown) => void;
     const backingUp = new Promise(resolve => { finishBackup = resolve; });
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
@@ -345,16 +384,16 @@ test('a slow automatic backup stops claiming ordinary progress while it remains 
         onBackup: () => backingUp,
     });
 
-    await waitFor(dom, () => control(dom) && /taking longer than usual/i.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /taking longer than usual/i.test(control(dom).textContent ?? ''));
     finishBackup({ ok: true, result: {} });
-    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
 });
 
 test('slow-backup feedback includes the persisted Peakbagger read', async () => {
     let editReads = 0;
-    let releaseEdit;
-    const stalledEdit = new Promise(resolve => { releaseEdit = resolve; });
-    const normalEditResponse = (target, editHtml) => ({
+    let releaseEdit!: () => void;
+    const stalledEdit = new Promise<void>(resolve => { releaseEdit = resolve; });
+    const normalEditResponse = (target: RequestInfo | URL, editHtml: string): FetchStubResponse => ({
         ok: true,
         status: 200,
         url: String(target),
@@ -373,17 +412,17 @@ test('slow-backup feedback includes the persisted Peakbagger read', async () => 
         onBackup: () => ({ ok: true, result: {} }),
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    fireTrustedEvent(control(dom).querySelector('.bpb-gh-btn'), 'click');
+    await trustedInput(control(dom).querySelector('.bpb-gh-btn'), { type: 'click' });
 
-    await waitFor(dom, () => /This backup is taking longer than usual/.test(control(dom).textContent));
+    await waitFor(dom, () => /This backup is taking longer than usual/.test(control(dom).textContent ?? ''));
     assert.equal(sent.some(message => message.type === 'GITHUB_BACKUP_ASCENT'), false,
         'the notice must be able to appear before the persisted read reaches GitHub');
     releaseEdit();
-    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
 });
 
 test('a timed-out backup reconciles a commit that reached GitHub before reporting success', async () => {
-    let checked = null;
+    let checked: StubMessage | null = null;
     const { dom } = await loadSurface({
         status: { enabled: true, connected: true, auto: true },
         onPreflight: () => ({ ok: true, fresh: true }),
@@ -391,8 +430,8 @@ test('a timed-out backup reconciles a commit that reached GitHub before reportin
         onCheck: message => { checked = message; return { ok: true, current: true }; },
     });
 
-    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
-    assert.equal(checked.reconcile, true);
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent ?? ''));
+    assert.equal((checked as Record<string, unknown> | null)?.reconcile, true);
     assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
 });
 
@@ -405,7 +444,7 @@ test('a timed-out backup offers retry only after reconciliation proves it is not
     });
 
     await waitFor(dom, () => control(dom)
-        && /GitHub took too long to respond/.test(control(dom).textContent));
+        && /GitHub took too long to respond/.test(control(dom).textContent ?? ''));
     assert.ok(Array.from(control(dom).querySelectorAll('button'), b => b.textContent).includes('Try again'));
 });
 
@@ -416,7 +455,9 @@ test('automatic preflight carries the complete persisted identity without source
         onCheck: () => ({ ok: true, current: false }),
     });
     await waitFor(dom, () => control(dom)?.querySelector('.bpb-gh-btn:not(:disabled)'));
-    const preflight = sent.find(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT');
+    const preflight = sent.find(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT') as Record<string, unknown> & {
+        page: { ascent: { id: number; date: string }; peak: { id: number } };
+    };
     assert.equal(preflight.pageComplete, true);
     assert.equal(preflight.page.ascent.id, 7654321);
     assert.equal(preflight.page.ascent.date, '2026-07-12');
@@ -430,18 +471,17 @@ test('automatic mode on an unchanged revisit reports the existing backup', async
         onPreflight: () => ({ ok: true, fresh: false }),
         onCheck: () => ({ ok: true, current: true }),
     });
-    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent));
+    await waitFor(dom, () => control(dom) && /Backed up ✓/.test(control(dom).textContent ?? ''));
     assert.equal(control(dom).querySelector('.bpb-gh-btn').disabled, true);
 });
 
 test('a visitor viewing someone else’s ascent gets no affordance', async () => {
-    const html = await readFile(path.join(root, 'test', 'fixtures', 'pages', 'climber-ascent.html'), 'utf8');
     // Strip the owner-only edit link before load.
-    const stripped = html.replace(/<a href="\/climber\/ascentedit\.aspx\?aid=7654321">[^<]*<\/a>/, '');
-    const dom = new JSDOM(stripped, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321', runScripts: 'outside-only' });
+    const stripped = ascentHtml.replace(/<a href="\/climber\/ascentedit\.aspx\?aid=7654321">[^<]*<\/a>/, '');
+    const dom = new FixtureDom(stripped, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=7654321' });
     let statusAsked = false;
-    dom.window.chrome = { runtime: { id: 't', lastError: null, sendMessage: async m => { if (m.type === 'GITHUB_BACKUP_STATUS') statusAsked = true; return { enabled: true, connected: true }; } } };
-    dom.window.fetch = async () => ({ ok: true, text: async () => '' });
+    dom.window.chrome = { runtime: { id: 't', lastError: null, sendMessage: async (m: StubMessage) => { if (m.type === 'GITHUB_BACKUP_STATUS') statusAsked = true; return { enabled: true, connected: true }; } } };
+    dom.window.fetch = (async () => ({ ok: true, text: async () => '' })) as unknown as typeof fetch;
     await evalBundle(dom.window, 'content/ascent-backup.js');
     await new Promise(r => dom.window.setTimeout(r, 30));
     assert.equal(control(dom), null);
@@ -449,11 +489,10 @@ test('a visitor viewing someone else’s ascent gets no affordance', async () =>
     assert.equal(statusAsked, false);
 });
 
-
-const pageTransition = (dom, type) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted: true }));
+const pageTransition = (dom: FixtureDom, type: string) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted: true }));
 
 test('cached restoration restarts a discarded check once without duplicating controls or writes', async () => {
-    let resolveOld;
+    let resolveOld!: (value: unknown) => void;
     let checks = 0;
     const oldCheck = new Promise(resolve => { resolveOld = resolve; });
     const { dom, sent } = await loadSurface({ status: { enabled: true, connected: true, auto: true },
@@ -462,10 +501,10 @@ test('cached restoration restarts a discarded check once without duplicating con
     pageTransition(dom, 'pagehide');
     resolveOld({ ok: true, current: false });
     pageTransition(dom, 'pageshow');
-    await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+    await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
     pageTransition(dom, 'pagehide');
     pageTransition(dom, 'pageshow');
-    await waitFor(dom, () => checks === 3 && /Backed up/.test(control(dom).textContent));
+    await waitFor(dom, () => checks === 3 && /Backed up/.test(control(dom).textContent ?? ''));
     assert.equal(dom.window.document.querySelectorAll('.bpb-gh-control').length, 1);
     assert.equal(sent.filter(message => message.type === 'GITHUB_BACKUP_ASCENT').length, 0);
     assert.equal(sent.filter(message => message.type === 'GITHUB_ASCENT_BACKUP_PREFLIGHT').length, 1,
@@ -475,7 +514,7 @@ test('cached restoration restarts a discarded check once without duplicating con
 
 for (const timeout of [false, true]) {
     test(`cached restoration waits for a pending ${timeout ? 'timed-out' : 'successful'} write before reconciliation`, async () => {
-        let finish;
+        let finish!: (value: unknown) => void;
         const write = new Promise(resolve => { finish = resolve; });
         const { dom, sent } = await loadSurface({ status: { enabled: true, connected: true, auto: true },
             onPreflight: () => ({ ok: true, fresh: true }), onBackup: () => write,
@@ -486,9 +525,9 @@ for (const timeout of [false, true]) {
         await waitFor(dom, () => sent.filter(message => message.type === 'GITHUB_BACKUP_STATUS').length === 2);
         assert.equal(sent.filter(message => message.type === 'GITHUB_CHECK_ASCENT_BACKUP').length, 0);
         finish(timeout ? { ok: false, error: { code: 'timeout' } } : { ok: true, result: {} });
-        await waitFor(dom, () => /Backed up/.test(control(dom).textContent));
+        await waitFor(dom, () => /Backed up/.test(control(dom).textContent ?? ''));
         assert.equal(sent.filter(message => message.type === 'GITHUB_BACKUP_ASCENT').length, 1);
-        assert.equal(sent.find(message => message.type === 'GITHUB_CHECK_ASCENT_BACKUP').reconcile, true);
+        assert.equal(sent.find(message => message.type === 'GITHUB_CHECK_ASCENT_BACKUP')!.reconcile, true);
         dom.window.close();
     });
 }

@@ -1,14 +1,17 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://peakbagger.com
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { JSDOM } from 'jsdom';
+import { FixtureDom, builtBundle } from '../helpers/fixture-dom.mts';
+import { waitFor } from '../helpers/fixture-page.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 
 // The built ascent-editor bundle (draft filling + report markup + editor); the
 // editor stays dormant without a JournalText field, so it exercises draft fill.
-const source = await fs.readFile(new URL('../../dist/content/ascent-editor.js', import.meta.url), 'utf8');
+const source = await builtBundle('content/ascent-editor.js');
 const editorCss = await fs.readFile(new URL('../../src/reports/report-editor.css', import.meta.url), 'utf8');
 
 const formHtml = `<!doctype html><body><form>
@@ -24,46 +27,34 @@ const formHtml = `<!doctype html><body><form>
 </form></body>`;
 
 const waitForAsync = () => new Promise(resolve => setTimeout(resolve, 30));
-const waitForCondition = async condition => {
-    for (let attempt = 0; attempt < 50 && !condition(); attempt++) {
-        await new Promise(resolve => setTimeout(resolve, 10));
-    }
-};
+const waitForCondition = (condition: () => unknown) => waitFor({ window }, condition);
 
-const loadDraft = (responseFactory, { statusText = 'No GPS Data for this Ascent', html = formHtml } = {}) => {
-    const dom = new JSDOM(html, {
+type DraftResponse = Record<string, unknown> | null | undefined;
+type DraftResponder = (message: StubMessage) => DraftResponse | Promise<DraftResponse>;
+
+const loadDraft = (responseFactory: DraftResponder, { statusText = 'No GPS Data for this Ascent', html = formHtml } = {}) => {
+    const dom = new FixtureDom(html, {
         url: 'https://peakbagger.com/climber/ascentedit.aspx?pid=12&cid=34',
-        runScripts: 'outside-only'
     });
-    const messages = [];
-    const runtimeListeners = [];
-    const errors = [];
-    dom.window.console.error = (...args) => { errors.push(args); };
+    const messages: StubMessage[] = [];
+    const runtimeListeners: ((message: StubMessage) => void)[] = [];
+    const errors: unknown[][] = [];
+    dom.window.console.error = (...args: unknown[]) => { errors.push(args); };
     dom.window.document.getElementById('GPXStatusLabel').textContent = statusText;
     dom.window.chrome = {
         runtime: {
-            sendMessage: async message => {
+            sendMessage: async (message: StubMessage) => {
                 messages.push(message);
                 const response = await responseFactory(message);
                 return message.type === 'DRAFT_READY' && response?.action === 'apply'
                     ? { applyLeaseToken: 'test-draft-apply-lease', ...response }
                     : response;
             },
-            onMessage: { addListener: listener => runtimeListeners.push(listener) }
-        }
+            onMessage: { addListener: (listener: (message: StubMessage) => void) => runtimeListeners.push(listener) },
+        },
     };
-    class DataTransferMock {
-        constructor() {
-            this.files = [];
-            this.items = { add: file => this.files.push(file) };
-        }
-    }
-    dom.window.DataTransfer = DataTransferMock;
-    Object.defineProperty(dom.window.document.getElementById('GPXUpload'), 'files', {
-        value: [], writable: true, configurable: true
-    });
     dom.window.eval(source);
-    const dispatchRuntimeMessage = message => runtimeListeners.forEach(listener => listener(message));
+    const dispatchRuntimeMessage = (message: StubMessage) => runtimeListeners.forEach(listener => listener(message));
     return { dom, messages, dispatchRuntimeMessage, errors };
 };
 
@@ -78,9 +69,9 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
             date: '2026-07-01', time: '08:45', suffix: 'a', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
-            downDuration: { days: 0, hours: 1, minutes: 55 }
+            downDuration: { days: 0, hours: 1, minutes: 55 },
         },
-        gpx: '<?xml version="1.0"?><gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000.5</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>'
+        gpx: '<?xml version="1.0"?><gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000.5</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>',
     };
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -95,11 +86,11 @@ test('fills the expected fields, attaches reduced GPX with elevation and time, p
     assert.equal(dom.window.document.getElementById('UpHr').value, '2');
     assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakId, '12');
     assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakName, 'Test Peak');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 1);
     assert.equal(previewClicks, 1);
     assert.equal(saveClicks, 0);
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_PREVIEW_STARTED']);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /91% confidence/);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /91% confidence/);
     dom.window.close();
 });
 
@@ -148,8 +139,8 @@ test('unexpected draft exceptions are logged without entering the page banner', 
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
 
     const banner = dom.window.document.getElementById('bpb-draft-banner');
-    assert.match(banner.textContent, /Draft preparation stopped unexpectedly/);
-    assert.doesNotMatch(banner.textContent, /RAW_DRAFT_SENTINEL|chrome\.runtime/);
+    assert.match(banner.textContent ?? '', /Draft preparation stopped unexpectedly/);
+    assert.doesNotMatch(banner.textContent ?? '', /RAW_DRAFT_SENTINEL|chrome\.runtime/);
     assert.match(errors.flat().map(String).join('\n'), /RAW_DRAFT_SENTINEL/);
     dom.window.close();
 });
@@ -186,16 +177,16 @@ test('a rejected apply lease rolls back owned fields and GPX without clobbering 
     assert.equal(dom.window.document.getElementById('DateText').value, 'user correction');
     assert.equal(dom.window.document.getElementById('SuffixText').value, 'original');
     assert.equal(dom.window.document.getElementById('StartM').value, '');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
     assert.equal(previewClicks, 0);
     assert.equal(saveClicks, 0);
-    const confirmation = messages.find(message => message.type === 'DRAFT_PREVIEW_STARTED');
+    const confirmation = messages.find(message => message.type === 'DRAFT_PREVIEW_STARTED')!;
     assert.equal(confirmation.applyLeaseToken, 'test-draft-apply-lease');
     dom.window.close();
 });
 
 test('clearing a claimed draft during field application stops and rolls back the transaction', async () => {
-    let dispatchRuntimeMessage;
+    let dispatchRuntimeMessage!: (message: StubMessage) => void;
     let previewClicks = 0;
     const payload = {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 91,
@@ -225,7 +216,7 @@ test('clearing a claimed draft during field application stops and rolls back the
 
     assert.equal(dom.window.document.getElementById('SuffixText').value, 'original');
     assert.equal(dom.window.document.getElementById('StartFt').value, '');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
     assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
     assert.equal(previewClicks, 0);
     dom.window.close();
@@ -238,9 +229,9 @@ test('fills the external trip report URL only when the field is empty', async ()
             date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
-            downDuration: { days: 0, hours: 1, minutes: 55 }
+            downDuration: { days: 0, hours: 1, minutes: 55 },
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
 
     // Empty field → filled with the captured activity link.
@@ -279,7 +270,7 @@ test('a processed upload preserves every populated ascent field', async () => {
         ExUpFt: '900', ExUpM: '274', ExDnFt: '800', ExDnM: '244',
         UpMi: '9.5', UpKm: '15.3', DnMi: '8.2', DnKm: '13.2',
         UpDay: '1', UpHr: '4', UpMin: '30', DnDay: '1', DnHr: '3', DnMin: '15',
-        TripSeqText: '7', TripNameText: 'Existing Traverse', TripNightsText: '4'
+        TripSeqText: '7', TripNameText: 'Existing Traverse', TripNightsText: '4',
     };
     let html = formHtml;
     for (const [id, value] of Object.entries(protectedValues)) {
@@ -295,9 +286,9 @@ test('a processed upload preserves every populated ascent field', async () => {
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 },
             tripInfo: { sequence: 2, name: 'Generated Trip', nightsOut: 1 },
-            wildernessNightsOut: 2
+            wildernessNightsOut: 2,
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true }, { html });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -308,7 +299,7 @@ test('a processed upload preserves every populated ascent field', async () => {
     }
     assert.equal(dom.window.document.getElementById('TripDD').value, 'existing');
     assert.equal(dom.window.document.getElementById('AscentNightsDD').value, '4');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1,
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 1,
         'the privacy-cleaned GPX still replaces the selected source file');
     dom.window.close();
 });
@@ -324,9 +315,9 @@ test('fills multi-peak Trip Info and accepts allowlisted waypoint names when cap
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 },
             tripInfo: { sequence: 2, name: 'Afternoon Hike', nightsOut: 1 },
-            wildernessNightsOut: null
+            wildernessNightsOut: null,
         },
-        gpx: '<?xml version="1.0"?><gpx><wpt lat="47.1" lon="-121.2"><name>Camp &amp; Water</name></wpt><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<?xml version="1.0"?><gpx><wpt lat="47.1" lon="-121.2"><name>Camp &amp; Water</name></wpt><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -336,11 +327,11 @@ test('fills multi-peak Trip Info and accepts allowlisted waypoint names when cap
     assert.equal(dom.window.document.getElementById('TripSeqText').value, '2');
     assert.equal(dom.window.document.getElementById('TripNameText').value, 'Afternoon Hike');
     assert.equal(dom.window.document.getElementById('TripNightsText').value, '1');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 1);
     dom.window.close();
 });
 
-for (const [name, transform, tripInfo = { sequence: 1, name: '2026-07-01', nightsOut: 0 }] of [
+const tripInfoFailures: [string, (html: string) => string, Record<string, unknown>?][] = [
     ['its trip selector', html => html.replace(/<select id="TripDD">.*?<\/select>/, '')],
     ['the add-new option', html => html.replace('<option value="new">**Add New Trip</option>', '')],
     ['an unambiguous add-new option', html => html.replace('</select>', '<option value="other">**Add New Trip</option></select>')],
@@ -357,7 +348,9 @@ for (const [name, transform, tripInfo = { sequence: 1, name: '2026-07-01', night
         .replace('</form>', '</form><form id="other"></form>')],
     ['a sequence field on a shared trip', html => html.replace('value="existing"', 'value="44"')
         .replace('<input id="TripSeqText">', ''), { id: '44', sequence: 2, name: '2026-07-01', nightsOut: 0 }],
-]) {
+];
+
+for (const [name, transform, tripInfo = { sequence: 1, name: '2026-07-01', nightsOut: 0 }] of tripInfoFailures) {
     test(`fails closed when requested Trip Info lacks ${name}`, async () => {
         const { dom, messages, errors } = loadDraft(message => message.type === 'DRAFT_READY' ? {
             action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
@@ -373,11 +366,11 @@ for (const [name, transform, tripInfo = { sequence: 1, name: '2026-07-01', night
             const doc = dom.window.document;
             assert.equal(previews, 0, 'an incomplete trip must never reach GPS Preview');
             assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
-            assert.equal(doc.getElementById('GPXUpload').files.length, 0);
+            assert.equal(doc.getElementById('GPXUpload').files!.length, 0);
             assert.equal(doc.getElementById('DateText').value, '2026-06-30', 'the failed draft leaves native fields intact');
             assert.equal(doc.getElementById('SuffixText').value, 'z');
             assert.equal(doc.getElementById('SaveButton').disabled, true);
-            assert.match(doc.getElementById('bpb-draft-banner').textContent, /Trip Info/);
+            assert.match(doc.getElementById('bpb-draft-banner').textContent ?? '', /Trip Info/);
             assert.equal(doc.querySelector('.bpb-draft-banner-action')?.textContent, 'Reload ascent form');
         } finally { dom.window.close(); }
     });
@@ -403,11 +396,13 @@ test('a saved shared trip does not require the new-trip-only fields', async () =
     } finally { dom.window.close(); }
 });
 
-for (const [name, mutate] of [
+const changeMutations: [string, (doc: FixtureDom['window']['document']) => void][] = [
     ['removed sequence', doc => doc.getElementById('TripSeqText')?.remove()],
     ['disabled sequence', doc => { doc.getElementById('TripSeqText').disabled = true; }],
     ['reset trip selection', doc => { doc.getElementById('TripDD').value = 'existing'; }],
-]) test(`a native change handler with ${name} rolls back before Preview`, async () => {
+];
+
+for (const [name, mutate] of changeMutations) test(`a native change handler with ${name} rolls back before Preview`, async () => {
     const { dom, errors, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? {
         action: 'apply', jobId: 'job', pid: '12', cid: '34', classification: 'strong', confidence: 90,
         fields: { suffix: 'a', fillAscentDetails: false,
@@ -425,8 +420,8 @@ for (const [name, mutate] of [
         assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
         assert.equal(dom.window.document.getElementById('SuffixText').value, '');
         assert.equal(dom.window.document.getElementById('TripDD').value, 'existing');
-        assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
-        assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Trip Info/);
+        assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
+        assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /Trip Info/);
     } finally { dom.window.close(); }
 });
 
@@ -440,9 +435,9 @@ test('fills single-ascent wilderness nights without firing Peakbagger’s AutoPo
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 1, hours: 2, minutes: 5 },
             downDuration: { days: 1, hours: 1, minutes: 55 },
-            tripInfo: null, wildernessNightsOut: 2
+            tripInfo: null, wildernessNightsOut: 2,
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('AscentNightsDD').addEventListener('change', () => { nightsChanges++; });
@@ -463,9 +458,9 @@ test('the ascent-details setting leaves optional route fields untouched while Pr
             startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
-            downDuration: { days: 0, hours: 1, minutes: 55 }
+            downDuration: { days: 0, hours: 1, minutes: 55 },
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
@@ -493,20 +488,20 @@ test('missing optional Peakbagger fields do not block Preview when Trip Info is 
             upDuration: { days: 0, hours: 2, minutes: 5 },
             downDuration: { days: 0, hours: 1, minutes: 55 },
             tripInfo: null,
-            wildernessNightsOut: 1
+            wildernessNightsOut: 1,
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true }, {
-        html: minimalHtml
+        html: minimalHtml,
     });
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
     await waitForCondition(() => previewClicks === 1);
 
     assert.equal(dom.window.document.getElementById('DateText').value, '2026-07-01');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 1);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 1);
     assert.equal(previewClicks, 1);
-    assert.doesNotMatch(dom.window.document.getElementById('bpb-draft-banner').textContent, /stopped/i);
+    assert.doesNotMatch(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /stopped/i);
     dom.window.close();
 });
 
@@ -523,12 +518,12 @@ test('post-Preview day rows are filled once and acknowledged without another Pre
         jobId: 'job', pid: '12', cid: '34', dayStatsPending: true,
         dayStats: [
             { date: '2026-07-11', gainM: 400, lossM: 50, distanceM: 1609.344, maxElevationM: 1400, campElevationM: 1200 },
-            { date: '2026-07-12', gainM: 600, lossM: 900, distanceM: 8046.72, maxElevationM: 2100, campElevationM: null }
-        ]
+            { date: '2026-07-12', gainM: 600, lossM: 900, distanceM: 8046.72, maxElevationM: 2100, campElevationM: null },
+        ],
     };
     const { dom, messages } = loadDraft(message => message.type === 'DRAFT_READY' ? response : { ok: true }, {
         html,
-        statusText: 'Your file is now successfully uploaded.'
+        statusText: 'Your file is now successfully uploaded.',
     });
     await waitForCondition(() => messages.some(message => message.type === 'DRAFT_DAY_STATS_APPLIED'));
 
@@ -542,9 +537,9 @@ test('post-Preview day rows are filled once and acknowledged without another Pre
     assert.equal(dom.window.document.getElementById('CampM2').value, '');
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY', 'DRAFT_DAY_STATS_APPLIED']);
     assert.deepEqual({ ...messages[1] }, {
-        type: 'DRAFT_DAY_STATS_APPLIED', jobId: 'job', pid: '12', cid: '34'
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: 'job', pid: '12', cid: '34',
     });
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /Preview is ready/);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /Preview is ready/);
     dom.window.close();
 });
 
@@ -554,15 +549,16 @@ test('a post-preview reload shows a dismissible, short-lived confidence toast wi
         { statusText: 'Your file is now successfully uploaded.' });
     let previewClicks = 0;
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
+    await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     await waitForAsync();
     assert.equal(previewClicks, 0);
     assert.equal(messages.length, 1);
-    assert.deepEqual({ ...messages[0].previewResult }, {
-        state: 'success', message: 'Your file is now successfully uploaded.'
+    assert.deepEqual({ ...(messages[0]!.previewResult as Record<string, unknown>) }, {
+        state: 'success', message: 'Your file is now successfully uploaded.',
     });
     const banner = dom.window.document.getElementById('bpb-draft-banner');
-    assert.match(banner.textContent, /Probable match · 71% confidence/);
-    assert.match(banner.textContent, /Preview is ready/);
+    assert.match(banner.textContent ?? '', /Probable match · 71% confidence/);
+    assert.match(banner.textContent ?? '', /Preview is ready/);
     assert.ok(banner.classList.contains('bpb-draft-banner-probable'));
     assert.equal(dom.window.document.querySelector('form').dataset.bpbDraftPeakName, 'Test Peak');
     assert.equal(banner.style.position, '', 'layout and colors belong to the theme-aware stylesheet');
@@ -597,11 +593,11 @@ test('a closest-approach fallback draft is never announced as a Probable match',
                 date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
                 upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
                 upDuration: { days: 0, hours: 2, minutes: 5 },
-                downDuration: { days: 0, hours: 1, minutes: 55 }
+                downDuration: { days: 0, hours: 1, minutes: 55 },
             },
             gpx: '<?xml version="1.0"?><gpx><trk><trkseg>'
                 + '<trkpt lat="47" lon="-121"></trkpt><trkpt lat="47.1" lon="-121.1"></trkpt>'
-                + '</trkseg></trk></gpx>'
+                + '</trkseg></trk></gpx>',
         };
         const { dom } = loadDraft(message => message.type === 'DRAFT_READY' ? payload : { ok: true });
         let previewClicks = 0;
@@ -609,8 +605,8 @@ test('a closest-approach fallback draft is never announced as a Probable match',
             .addEventListener('click', () => { previewClicks++; });
         await waitForCondition(() => previewClicks === 1);
         const banner = dom.window.document.getElementById('bpb-draft-banner');
-        assert.match(banner.textContent, /Off track match · 41% confidence/);
-        assert.doesNotMatch(banner.textContent, /Probable|Strong/);
+        assert.match(banner.textContent ?? '', /Off track match · 41% confidence/);
+        assert.doesNotMatch(banner.textContent ?? '', /Probable|Strong/);
         // The tone must be one the stylesheet declares in every theme block;
         // an unmatched class takes the block's light-mode defaults, which put
         // a light amber banner on a dark page.
@@ -626,7 +622,7 @@ test('a post-preview reload names a below-bar match the same way the picker did'
         { statusText: 'Your file is now successfully uploaded.' });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     const banner = dom.window.document.getElementById('bpb-draft-banner');
-    assert.match(banner.textContent, /Off track match · 38% confidence/);
+    assert.match(banner.textContent ?? '', /Off track match · 38% confidence/);
     assert.ok(banner.classList.contains('bpb-draft-banner-off'));
     dom.window.close();
 });
@@ -640,9 +636,9 @@ test('a rejected Preview reports Peakbagger’s error and retries only after the
             date: '2026-07-01', suffix: '', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
-            downDuration: { days: 0, hours: 1, minutes: 55 }
+            downDuration: { days: 0, hours: 1, minutes: 55 },
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"><ele>1000</ele><time>2026-07-01T15:45:00Z</time></trkpt></trkseg></trk></gpx>',
     };
     const { dom, messages } = loadDraft(message => {
         if (message.type !== 'DRAFT_READY') return { ok: true };
@@ -654,7 +650,7 @@ test('a rejected Preview reports Peakbagger’s error and retries only after the
     dom.window.document.getElementById('GPXPreview').addEventListener('click', () => { previewClicks++; });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
 
-    assert.deepEqual({ ...messages[0].previewResult }, { state: 'error', message: 'Invalid GPX file.' });
+    assert.deepEqual({ ...(messages[0]!.previewResult as Record<string, unknown>) }, { state: 'error', message: 'Invalid GPX file.' });
     assert.equal(previewClicks, 0);
     const retry = [...dom.window.document.querySelectorAll('#bpb-draft-banner button')]
         .find(button => button.textContent === 'Retry GPS Preview');
@@ -676,9 +672,9 @@ test('a queued draft waits persistently and starts when the background releases 
             date: '2026-07-01', suffix: 'b', startElevationM: 1000, endElevationM: 900,
             upDistanceM: 5000, downDistanceM: 6000, upGainM: 1200, downGainM: 80,
             upDuration: { days: 0, hours: 2, minutes: 5 },
-            downDuration: { days: 0, hours: 1, minutes: 55 }
+            downDuration: { days: 0, hours: 1, minutes: 55 },
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="47" lon="-121"></trkpt></trkseg></trk></gpx>',
     };
     const { dom, dispatchRuntimeMessage } = loadDraft(message => {
         if (message.type !== 'DRAFT_READY') return { ok: true };
@@ -697,7 +693,7 @@ test('a queued draft waits persistently and starts when the background releases 
     assert.equal(previewClicks, 1);
 
     dispatchRuntimeMessage({ type: 'DRAFT_CLEARED' });
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /no longer connected/);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /no longer connected/);
     dom.window.close();
 });
 
@@ -708,21 +704,21 @@ test('ordinary Peakbagger editor tabs get only the fresh-form date autofill', as
     assert.equal(dom.window.document.getElementById('bpb-draft-banner'), null);
     // The bundled ascent-upload module deliberately fills an empty Ascent Date
     // with the local today; the draft machinery must fill nothing else.
-    const pad = value => String(value).padStart(2, '0');
+    const pad = (value: number) => String(value).padStart(2, '0');
     const today = new Date();
     assert.equal(dom.window.document.getElementById('DateText').value,
         `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
     for (const id of ['SuffixText', 'StartM', 'EndM', 'UpMi', 'TripNameText']) {
         assert.equal(dom.window.document.getElementById(id).value, '', `${id} must stay untouched`);
     }
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
     assert.equal(dom.window.document.getElementById('SaveButton').disabled, false);
     dom.window.close();
 });
 
 for (const action of ['ignore', 'wait', 'error', 'banner', 'unknown', null]) {
     test(`the initial handshake blocks native Save until its ${action} response settles`, async () => {
-        let release;
+        let release!: (value: DraftResponse) => void;
         const html = formHtml.replace('<button id="SaveButton" type="button">Save</button>',
             '<button id="SaveButton" type="submit" title="Native title">Save</button><button id="SaveButton2" type="submit" disabled>Save</button>');
         const { dom } = loadDraft(() => new Promise(resolve => { release = resolve; }), { html });
@@ -870,17 +866,17 @@ test('privacy guard still blocks non-allowlisted GPX extensions', async () => {
         fields: {
             date: '2026-01-01', time: '', startElevationM: 1, endElevationM: 1,
             upDistanceM: 1, downDistanceM: 1, upGainM: 1, downGainM: 0,
-            upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 }
+            upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 },
         },
-        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><ele>1</ele><time>2026-01-01T00:00:00Z</time><extensions><hr>120</hr></extensions></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><trk><trkseg><trkpt lat="1" lon="2"><ele>1</ele><time>2026-01-01T00:00:00Z</time><extensions><hr>120</hr></extensions></trkpt></trkseg></trk></gpx>',
     } : { ok: true });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);
     const banner = dom.window.document.getElementById('bpb-draft-banner');
     assert.ok(banner);
-    assert.match(banner.textContent, /privacy check/);
+    assert.match(banner.textContent ?? '', /privacy check/);
     assert.equal(dom.window.document.getElementById('StartM').value, '');
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
     dom.window.close();
 });
 
@@ -891,13 +887,13 @@ test('privacy guard rejects waypoint data when capture disabled retention', asyn
         fields: {
             date: '2026-01-01', suffix: '', startElevationM: 1, endElevationM: 1,
             upDistanceM: 1, downDistanceM: 1, upGainM: 1, downGainM: 0,
-            upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 }
+            upDuration: { days: 0, hours: 0, minutes: 0 }, downDuration: { days: 0, hours: 0, minutes: 0 },
         },
-        gpx: '<gpx><wpt lat="1" lon="2"><name>Camp</name></wpt><trk><trkseg><trkpt lat="1" lon="2"></trkpt></trkseg></trk></gpx>'
+        gpx: '<gpx><wpt lat="1" lon="2"><name>Camp</name></wpt><trk><trkseg><trkpt lat="1" lon="2"></trkpt></trkseg></trk></gpx>',
     } : { ok: true });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     assert.deepEqual(messages.map(message => message.type), ['DRAFT_READY']);
-    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /privacy check/);
+    assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /privacy check/);
     dom.window.close();
 });
 
@@ -918,7 +914,7 @@ test('later summits select the saved trip id and refuse a stale native trip list
             assert.equal(dom.window.document.getElementById('TripSeqText').value, '2');
             assert.equal(dom.window.document.getElementById('TripNameText').value, '');
         } else {
-            assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent, /shared trip is missing/);
+            assert.match(dom.window.document.getElementById('bpb-draft-banner').textContent ?? '', /shared trip is missing/);
         }
         dom.window.close();
     }
@@ -931,7 +927,7 @@ test('empty GPX cannot reach Preview even if it passes the element allowlist', a
     } : { ok: true });
     await waitForCondition(() => dom.window.document.getElementById('bpb-draft-banner'));
     assert.equal(messages.some(message => message.type === 'DRAFT_PREVIEW_STARTED'), false);
-    assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+    assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
     dom.window.close();
 });
 
@@ -945,11 +941,11 @@ test('preparation rollback replaces stale busy feedback with explicit reload rec
         await waitForCondition(() => errors.length > 0);
         const doc = dom.window.document;
         assert.equal(doc.getElementById('SuffixText').value, '');
-        assert.equal(doc.getElementById('GPXUpload').files.length, 0);
+        assert.equal(doc.getElementById('GPXUpload').files!.length, 0);
         assert.equal(doc.getElementById('SaveButton').disabled, true);
         assert.match(doc.getElementById('SaveButton').title, /Reload this ascent form/);
         assert.equal(doc.querySelector('.bpb-draft-banner-action')?.textContent, 'Reload ascent form');
-        assert.match(doc.getElementById('bpb-draft-banner').textContent, /privacy check/);
+        assert.match(doc.getElementById('bpb-draft-banner').textContent ?? '', /privacy check/);
     } finally { dom.window.close(); }
 });
 
@@ -972,7 +968,7 @@ test('a lease wait retries at its expiry and keeps Save blocked until the final 
 for (const action of ['banner', 'error', 'ignore']) {
     test(`a parked lease revalidates on persisted restoration before accepting ${action}`, async () => {
         let readyCalls = 0;
-        let deadline;
+        let deadline = 0;
         const { dom } = loadDraft(message => {
             if (message.type !== 'DRAFT_READY') return { ok: true };
             if (++readyCalls === 1) {
@@ -982,9 +978,9 @@ for (const action of ['banner', 'error', 'ignore']) {
             return { action, classification: 'strong', confidence: 90 };
         });
         try {
-            const transition = (type, persisted) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted }));
+            const transition = (type: string, persisted: boolean) => dom.window.dispatchEvent(new dom.window.PageTransitionEvent(type, { persisted }));
             const doc = dom.window.document;
-            await waitForCondition(() => /Waiting for the lease/.test(doc.getElementById('bpb-draft-banner')?.textContent));
+            await waitForCondition(() => /Waiting for the lease/.test(doc.getElementById('bpb-draft-banner')?.textContent ?? ''));
             transition('pagehide', true);
             dom.window.Date.now = () => deadline + 1;
             assert.equal(readyCalls, 1, 'parked timers must not run');
@@ -1004,7 +1000,7 @@ for (const action of ['banner', 'error', 'ignore']) {
 }
 
 test('persisted restoration bypasses an unresolved old handshake and ignores its later reply', async () => {
-    let release;
+    let release!: (value: DraftResponse) => void;
     let readyCalls = 0;
     const { dom } = loadDraft(message => {
         if (message.type !== 'DRAFT_READY') return { ok: true };
@@ -1023,7 +1019,7 @@ test('persisted restoration bypasses an unresolved old handshake and ignores its
 });
 
 test('suspending an in-flight Preview acknowledgment rolls back owned fields without replaying it', async () => {
-    let release;
+    let release!: (value: DraftResponse) => void;
     let readyCalls = 0;
     let previews = 0;
     const { dom, messages } = loadDraft(message => {
@@ -1048,7 +1044,7 @@ test('suspending an in-flight Preview acknowledgment rolls back owned fields wit
         assert.equal(previews, 0);
         assert.equal(dom.window.document.getElementById('DateText').value, 'user correction');
         assert.equal(dom.window.document.getElementById('SuffixText').value, '');
-        assert.equal(dom.window.document.getElementById('GPXUpload').files.length, 0);
+        assert.equal(dom.window.document.getElementById('GPXUpload').files!.length, 0);
         assert.equal(dom.window.document.getElementById('SaveButton').disabled, true);
         assert.equal(messages.filter(message => message.type === 'DRAFT_PREVIEW_STARTED').length, 1);
     } finally { dom.window.close(); }
