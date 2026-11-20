@@ -4,13 +4,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { readPeakSunPlacement } from '../../scripts/browser-verification-fixtures.mts';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { readPeakSunPlacement } from '../../scripts/page-probes.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
 
 test('the shared browser gate accepts an independent card while retaining the native map link', () => {
-    const dom = fixtureDom(`<table><tr id="map"><td><iframe id="Gmap"></iframe><a href="BigMap.aspx">Full Screen Map</a></td></tr>
-        <tr id="bpb-peak-sun-row"><td><section class="bpb-sun-calculator" data-bpb-peak-card="sun"></section></td></tr></table>`,
-    { runScripts: 'outside-only' });
+    const dom = new FixtureDom(`<table><tr id="map"><td><iframe id="Gmap"></iframe><a href="BigMap.aspx">Full Screen Map</a></td></tr>
+        <tr id="bpb-peak-sun-row"><td><section class="bpb-sun-calculator" data-bpb-peak-card="sun"></section></td></tr></table>`);
     const doc = dom.window.document;
     const read = () => dom.window.eval(`(${readPeakSunPlacement.toString()})()`);
     try {

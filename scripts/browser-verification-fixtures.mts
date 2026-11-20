@@ -625,7 +625,7 @@ const peakMasterMapHtml = `<!doctype html><html><body>
 // that guard — so a plain-HTTP fixture makes the extension refuse its own
 // fixture and the check fails for a reason unrelated to the behavior under
 // test. AGENTS.md requires HTTPS on a real Peakbagger hostname for exactly
-// that reason, and test/project/showcase.test.mjs pins it for every
+// that reason, and test/project/showcase.test.mts pins it for every
 // fixture-serving script.
 //
 // This lived as four near-identical copies (here plus the three terrain

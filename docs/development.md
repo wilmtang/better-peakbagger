@@ -1372,7 +1372,7 @@ three scripts therefore mint a disposable self-signed certificate for
 to the local server (`--host-resolver-rules` in Chrome,
 `network.dns.localDomains` in Firefox), accept the certificate for that launch
 only, and delete the key and certificate in teardown.
-`test/project/showcase.test.mjs` fails if any of them regresses to HTTP, and
+`test/project/showcase.test.mts` fails if any of them regresses to HTTP, and
 also asserts the product-side refusal is still in force — the fixtures follow
 the product, not the reverse.
 

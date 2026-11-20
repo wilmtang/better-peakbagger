@@ -94,7 +94,7 @@ test('viewport diagnostics survive Firefox creating a fresh script global for ea
     // Like Firefox's sandboxes, the realms outlive their command, so listeners
     // a probe registers from one keep running; they close with the test.
     const inFreshGlobal = (fn: () => unknown) => {
-        const realm = new FixtureDom('');
+        const realm = new FixtureDom('', { takeFocus: false });
         t.after(() => realm.window.close());
         return realm.window.Function('window', 'document', 'innerWidth', 'innerHeight', 'addEventListener',
             'removeEventListener', 'MutationObserver', 'performance', `return (${fn.toString()})();`)(

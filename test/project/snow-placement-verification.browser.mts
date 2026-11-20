@@ -3,14 +3,14 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { JSDOM } from 'jsdom';
-import { readSnowCardPlacement } from '../../scripts/verify-peak-snow-cases.mts';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { readSnowCardPlacement } from '../../scripts/page-probes.mts';
 
-const row = id => `<tr id="${id}"><td>Card</td></tr>`;
+const row = (id: string) => `<tr id="${id}"><td>Card</td></tr>`;
 const weather = row('bpb-peak-weather-row'), snow = row('bpb-peak-snow-row');
-const read = html => {
-    const dom = new JSDOM(html, { runScripts: 'outside-only' });
-    try { return dom.window.eval(`(${readSnowCardPlacement})()`); }
+const read = (html: string) => {
+    const dom = new FixtureDom(html);
+    try { return dom.window.eval(`(${readSnowCardPlacement})()`) as ReturnType<typeof readSnowCardPlacement>; }
     finally { dom.window.close(); }
 };
 

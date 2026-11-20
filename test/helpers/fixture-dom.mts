@@ -25,6 +25,9 @@ export interface FixtureDomOptions {
     // The frame's layout viewport.
     width?: number;
     height?: number;
+    // false for a frame that stands only for a script global, such as a
+    // WebDriver command's realm: it represents no page, so it takes no focus.
+    takeFocus?: boolean;
 }
 
 // Lookups in this repository's own fixture markup are typed as present (see
@@ -90,7 +93,7 @@ export class FixtureDom {
         focusLikeActiveTab(window_);
         if (!options.topLevel) ignoreInitialResize(window_, width, height);
         // A tab's page has focus before its scripts run.
-        if (!options.topLevel) window_.focus();
+        if (!options.topLevel && options.takeFocus !== false) window_.focus();
         fixtureWindows.add(window_ as unknown as Window, () => this.close());
     }
 
