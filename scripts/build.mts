@@ -337,7 +337,11 @@ export async function watchAll({
                 commitSignal = () => rename(nextSignal, signalPath);
             }
             await beforePublish?.({ candidateDir: outputDir, sequence: nextSequence });
-            if (!sameSnapshot(baseline, await sourceSnapshot(layout)) || pending) {
+            // Publish unless the sources changed while compiling. A watch
+            // event that repeats this generation's edit sets `pending` but
+            // leaves the snapshot equal; discarding the generation for it
+            // would also lose the in-flight build when the watcher closes.
+            if (!sameSnapshot(baseline, await sourceSnapshot(layout))) {
                 pending = true;
                 return;
             }
