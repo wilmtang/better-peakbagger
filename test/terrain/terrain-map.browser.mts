@@ -2431,7 +2431,7 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
 
     await waitFor(dom, () => messages.some(message => message.type === 'peaksRequest'));
     const request = messages.at(-1);
-    assert.ok(request, 'the frame asks for dots after load settles');
+    assert.equal(request!.type, 'peaksRequest', 'the frame asks for dots after load settles');
     assert.equal(request!.requestId, 1);
     const bounds = request!.bounds as Record<string, number>;
     assert.ok(bounds.miny > camera.bounds.south && bounds.maxy < camera.bounds.north,
