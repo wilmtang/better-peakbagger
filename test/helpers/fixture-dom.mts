@@ -227,6 +227,17 @@ export async function builtBundle(file: string): Promise<string> {
     return response.text();
 }
 
+// Bundle a test harness entry (test/helpers/ or test/dom/runtime/) as a
+// classic IIFE for FixtureDom evaluation without adding test-only exports to
+// shipped bundles. Shipped code is tested through its dist/ bundle.
+export async function iifeBundle(file: string, { globalName }: { globalName?: string } = {}): Promise<string> {
+    const encoded = file.split('/').map(encodeURIComponent).join('/');
+    const query = globalName ? `?globalName=${encodeURIComponent(globalName)}` : '';
+    const response = await fetch(`/__bpb_iife__/${encoded}${query}`);
+    if (!response.ok) throw new Error(`Unable to bundle ${file}: HTTP ${response.status}`);
+    return response.text();
+}
+
 // Evaluate built bundles into a fixture window, in order, as classic scripts.
 // A page whose own CSP forbids eval (extension pages) loads the bundle as a
 // same-origin script element instead, as the page itself does.

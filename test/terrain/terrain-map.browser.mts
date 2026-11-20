@@ -1,16 +1,13 @@
+/// <reference lib="dom" />
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import assert from 'node:assert/strict';
-import { nativeMapDarkCss } from '../../src/theme/native-map-theme.ts';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
-import { build } from 'esbuild';
-import { JSDOM as TestJSDOM } from '../helpers/test-dom.mts';
-import type { TestDom, TestDomOptions, TestWindow } from '../helpers/test-dom.mts';
-import { fireTrustedEvent, makeChromeStub } from '../helpers/load-page.mts';
+import { nativeMapDarkCss } from '../../src/theme/native-map-theme.ts';
+import { FixtureDom, builtBundle, iifeBundle, trustedInput, type FixtureDomOptions } from '../helpers/fixture-dom.mts';
+import { makeChromeStub, waitFor } from '../helpers/fixture-page.mts';
+import type { TestWindow } from '../helpers/page-types.mts';
 import { terrainFailure } from '../../src/terrain/terrain-failure.ts';
 import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.ts';
 
@@ -45,9 +42,29 @@ const withResolvers = <T = void,>() => {
     return { promise, resolve, reject };
 };
 type HarnessWindow = TestWindow & { chrome: unknown; maplibregl: unknown; authorizeTerrain?: unknown };
-const JSDOM = TestJSDOM as unknown as new (html?: string, options?: TestDomOptions) => Omit<TestDom, 'window'> & { window: HarnessWindow };
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+type HarnessDom = Omit<FixtureDom, 'window'> & { window: HarnessWindow };
+const createBridgeDom = (html?: string, options?: FixtureDomOptions) =>
+    new FixtureDom(html, options) as unknown as HarnessDom;
+// Terrain frame tests check `event.source === window.parent` and post to
+// `window.parent`, so they run as top-level fixtures where `window.parent === window`.
+const createFrameDom = (html?: string, options?: FixtureDomOptions) =>
+    new FixtureDom(html, { ...options, topLevel: true }) as unknown as HarnessDom;
+const FRAME_ORIGIN = 'https://www.peakbagger.com';
+const waitForFrame = async (frame: HTMLIFrameElement, timeoutMs = 5000): Promise<void> => {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+        let ready = false;
+        try {
+            const doc = frame.contentDocument;
+            ready = doc?.readyState === 'complete' && doc.location?.href === frame.src;
+        } catch {
+            ready = false;
+        }
+        if (ready) return;
+        await new Promise<void>(resolve => setTimeout(resolve, 5));
+    }
+    throw new Error(`Timed out waiting for terrain frame ${frame.src}`);
+};
 const makeWebp = () => {
     const bytes = new Uint8Array(24);
     bytes.set(new TextEncoder().encode('RIFF'), 0);
@@ -60,50 +77,49 @@ const makeWebp = () => {
 };
 // The bridge imports settings, so tests provide the real chrome.storage shape
 // that module reads from, plus the getURL the bridge needs. Push updates with
-// chrome.storage.sync.set(...).
+// chrome.storage.sync.set(...). Bridge iframes navigate to a same-origin stub
+// URL so the test can intercept frame.contentWindow.postMessage without a
+// cross-origin chrome-extension:// error document.
 const chromeWith = (settings: Record<string, unknown>) => {
     const chrome = makeChromeStub({ bpbSettings: settings });
-    chrome.runtime.getURL = (resource: string) => `chrome-extension://test-id/${resource}`;
+    chrome.runtime.getURL = (resource: string) => `${FRAME_ORIGIN}/__bpb_ext__/${resource}`;
     return chrome;
 };
-const armTerrain = (window: HarnessWindow, type = 'click') => {
+const armTerrain = async (window: HarnessWindow, type: 'click' | 'pointerover' | 'focus' = 'click') => {
     let toggle = window.document.getElementById('bpb-terrain-toggle');
     if (!toggle) {
         toggle = window.document.createElement('button');
         toggle.id = 'bpb-terrain-toggle';
+        toggle.textContent = '3D';
+        toggle.style.margin = '24px';
         window.document.body.append(toggle);
+    } else if (!toggle.textContent) {
+        toggle.textContent = '3D';
     }
-    fireTrustedEvent(toggle, type, { bubbles: true });
+    if (type === 'click') {
+        await trustedInput(toggle, { type: 'click' });
+    } else if (type === 'pointerover') {
+        await trustedInput(toggle, { type: 'mouse', action: 'move', x: 0, y: 0 });
+        await trustedInput(toggle, { type: 'hover' });
+    } else {
+        toggle.blur();
+        await trustedInput(toggle, { type: 'focus' });
+    }
     return toggle;
 };
 // The isolated in-page 3D bridge bundle and a classic test harness around the
 // frame's injectable runtime. Production loads the tiny native-ESM entry that
-// imports MapLibre directly; lifecycle tests pass a stub so jsdom never allocates
-// WebGL. The bundled terrain cache still binds each test's supplied fetch stub.
-const bridgeBundle = await readFile(path.join(root, 'dist', 'content', 'terrain-map.js'), 'utf8');
-const frameHarnessBuild = await build({
-    stdin: {
-        contents: `import { startTerrainFrame } from ${JSON.stringify(path.join(root, 'src', 'terrain', 'terrain-frame-runtime.ts'))};\nconst originalPost=window.parent.postMessage.bind(window.parent); window.parent.postMessage=(message,...args)=>{if(message.type==='layerBasemaps')window.__testLayerBasemaps=message;return originalPost(message,...args)};
-startTerrainFrame(globalThis.maplibregl, { authorize: request => globalThis.authorizeTerrain ? globalThis.authorizeTerrain(request) : true });\n`,
-        resolveDir: root,
-        sourcefile: 'terrain-frame-test-harness.js',
-        loader: 'js',
-    },
-    bundle: true,
-    format: 'iife',
-    target: ['node22'],
-    platform: 'browser',
-    write: false,
-    legalComments: 'none',
-    logLevel: 'silent',
-});
-const frameBundle = frameHarnessBuild.outputFiles[0].text;
+// imports MapLibre directly; lifecycle tests pass a stub so unit cases never
+// allocate WebGL. The bundled terrain cache still binds each test's supplied
+// fetch stub.
+const bridgeBundle = await builtBundle('content/terrain-map.js');
+const frameBundle = await iifeBundle('test/helpers/terrain-frame-harness.mts');
 
 function framePicker(window: HarnessWindow) {
     return window.document.querySelector<HTMLSelectElement>('.bpb-terrain-controls select[aria-label="Base map"]')!;
 }
 
-const terrainCss = await readFile(path.join(root, 'src', 'terrain', 'terrain-map.css'), 'utf8');
+const terrainCss = await builtBundle('css/terrain-map.css');
 
 // Share frame wiring, while each case retains its own renderer and failure model.
 const bootTerrainFrame = (window: HarnessWindow, MapStub: unknown, {
@@ -140,7 +156,7 @@ const bootTerrainFrame = (window: HarnessWindow, MapStub: unknown, {
 
 test('3D terrain waits for the extension frame handshake before sending route coordinates', async () => {
     const snowStation = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
@@ -161,7 +177,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
         origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
-    armTerrain(window);
+    await armTerrain(window);
     dispatchPage({
         type: 'init',
         routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
@@ -184,14 +200,15 @@ test('3D terrain waits for the extension frame handshake before sending route co
 
     const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
     assert.ok(frame);
-    assert.equal(frame.src, 'chrome-extension://test-id/terrain/terrain.html');
+    assert.equal(frame.src, `${FRAME_ORIGIN}/__bpb_ext__/terrain/terrain.html`);
     assert.equal(frameMessages.length, 0, 'route coordinates must wait until the frame listener is ready');
+    await waitForFrame(frame);
     frame.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(message); };
 
     dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' }
     }));
     const init = frameMessages.find(message => message.type === 'init');
@@ -222,7 +239,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true,
             dir: 'toParent',
@@ -250,7 +267,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     assert.equal(frameMessages.length, afterFireRetry, 'wildfires expose retry only; unknown layers remain blocked');
 
     const snowSelect = (stationId: string, generation = init.generation) => window.dispatchEvent(new window.MessageEvent('message', {
-        source: frame.contentWindow, origin: 'chrome-extension://test-id',
+        source: frame.contentWindow, origin: FRAME_ORIGIN,
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'snowSelect', generation, stationId },
     }));
     const beforeSnowSelect = pageMessages.length;
@@ -263,7 +280,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true,
             dir: 'toParent',
@@ -285,7 +302,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     });
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true,
             dir: 'toParent',
@@ -311,7 +328,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     // Compass: the frame streams its bearing/pitch to the page…
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true, dir: 'toParent', type: 'view',
             generation: init.generation, bearing: 12.5, pitch: 47
@@ -330,7 +347,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
     // Escape inside the cross-origin frame reaches the page only as a request.
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'exit', generation: init.generation }
     }));
     assert.deepEqual(JSON.parse(JSON.stringify(pageMessages.at(-1))), {
@@ -353,7 +370,7 @@ test('3D terrain waits for the extension frame handshake before sending route co
 // setTimeout is the keep-alive TTL, so intercept it (by its delay) into `timers`
 // for deterministic firing; every other timeout runs for real.
 const bootLoadedFrame = async (initOverrides = {}, { deferLoaded = false } = {}) => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
@@ -388,17 +405,18 @@ const bootLoadedFrame = async (initOverrides = {}, { deferLoaded = false } = {})
         cacheLimitMb: 512,
         ...initOverrides
     };
-    armTerrain(window);
+    await armTerrain(window);
     dispatchPage(initData);
     await new Promise(resolve => realSetTimeout(resolve, 0));
     const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+    await waitForFrame(frame!);
     frame!.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(structuredClone(message)); };
 
     const dispatchFrame = (data: TestMessage) => {
         const outboundGeneration = [...frameMessages].reverse()
             .find(message => message.type === 'init' || message.type === 'resume')?.generation;
         window.dispatchEvent(new window.MessageEvent('message', {
-            source: frame!.contentWindow, origin: 'chrome-extension://test-id',
+            source: frame!.contentWindow, origin: FRAME_ORIGIN,
             data: {
                 __bpbTerrainFrame: true,
                 dir: 'toParent',
@@ -419,7 +437,7 @@ for (const action of ['init', 'resume']) test(`terrain ${action} replays style, 
     const station = { id: '679:WA:SNTL', name: 'Paradise', latitude: 46.78, longitude: -121.74, elevation: 1570 };
     try {
         if (action === 'resume') {
-            dispatchPage({ type: 'destroy' }); armTerrain(window); dispatchPage(initData);
+            dispatchPage({ type: 'destroy' }); await armTerrain(window); dispatchPage(initData);
             await new Promise(resolve => realSetTimeout(resolve, 0));
         }
         const original = frameMessages.filter(message => message.type === action).at(-1);
@@ -447,16 +465,21 @@ for (const action of ['init', 'resume']) test(`terrain ${action} retains updates
         dispatchPage({ type: 'destroy' });
         if (action === 'init') timers[0]();
         frameMessages.length = 0;
-        Object.defineProperty(window.chrome.runtime, 'sendMessage', { value: () => new Promise(resolve => pending.push(resolve)) });
-        armTerrain(window); dispatchPage(initData);
+        Object.defineProperty(window.chrome.runtime, 'sendMessage', {
+            value: (message: { action?: string }) => (message?.action === 'init'
+                ? new Promise(resolve => pending.push(resolve))
+                : Promise.resolve({ ok: true, token: 'prefetch-activation', expiresAt: Date.now() + 10000 }))
+        });
+        await armTerrain(window); dispatchPage(initData);
         dispatchPage({ type: 'update', routeStyle: { color: '#347a3f' }, theme: 'dark' });
         dispatchPage({ type: 'snowStations', snowStations: [station], conditions: [station.id] });
         pending.shift()!({ ok: true, token: 'deferred-activation', expiresAt: Date.now() + 10000 });
         await new Promise(resolve => realSetTimeout(resolve, 0));
         if (action === 'init') {
             const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+            await waitForFrame(frame!);
             frame!.contentWindow!.postMessage = (message: TestMessage) => frameMessages.push(structuredClone(message));
-            window.dispatchEvent(new window.MessageEvent('message', { source: frame!.contentWindow, origin: 'chrome-extension://test-id',
+            window.dispatchEvent(new window.MessageEvent('message', { source: frame!.contentWindow, origin: FRAME_ORIGIN,
                 data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' } }));
         }
         const payload = frameMessages.find(message => message.type === action);
@@ -467,7 +490,7 @@ for (const action of ['init', 'resume']) test(`terrain ${action} retains updates
 });
 
 test('terrain station actions require explicit membership, preserve omitted updates and reset on resume', async () => {
-    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = createFrameDom('<body></body>', { url: 'https://www.peakbagger.com/Peak.aspx?pid=1', runScripts: 'outside-only' });
     const popups: StubPopup[] = [], messages: TestMessage[] = []; let map;
     class MapStub {
         declare layers: StubLayer[];
@@ -515,7 +538,7 @@ test('a parked terrain frame cannot reveal stations and resume does not replay t
         dispatchPage({ type: 'destroy' });
         dispatchPage({ type: 'snowStations', snowStations: [station], reveal: true });
         assert.equal(frameMessages.at(-1)!.reveal, false, 'hidden terrain must not animate');
-        armTerrain(window); dispatchPage({ ...initData, snowStations: [station] });
+        await armTerrain(window); dispatchPage({ ...initData, snowStations: [station] });
         await new Promise(resolve => harness.realSetTimeout(resolve, 0));
         dispatchFrame({ type: 'loaded', navTop: 96 });
         assert.equal(frameMessages.at(-1)!.type, 'snowStations');
@@ -542,7 +565,7 @@ test('3D location points require the active frame generation and valid coordinat
         const parkedCount = pageMessages.length;
         dispatchFrame(context); dispatchFrame({ type: 'locationDismiss' });
         assert.equal(pageMessages.length, parkedCount, 'a parked renderer cannot open or dismiss a weather menu');
-        armTerrain(window); dispatchPage(initData);
+        await armTerrain(window); dispatchPage(initData);
         await new Promise(resolve => harness.realSetTimeout(resolve, 0));
         dispatchFrame({ type: 'loaded', navTop: 96 });
         const resumedCount = pageMessages.length;
@@ -568,7 +591,7 @@ test('a loaded 3D frame suspends on destroy and resumes on re-entry without a ne
 
     // re-entry → resume: no new iframe, a resume posted carrying the fresh payload.
     frameMessages.length = 0;
-    armTerrain(window);
+    await armTerrain(window);
     dispatchPage(initData);
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
     assert.equal(window.document.querySelectorAll('#bpb-terrain-frame').length, 1, 'no second iframe is built');
@@ -614,7 +637,7 @@ test('the bridge ignores wrong-origin and stale-generation replies from the curr
     assert.deepEqual(frameMessages, [], 'wrong-origin ready must not disclose the pending route');
     assert.deepEqual(pageMessages, [], 'wrong-origin replies must not reach the page coordinator');
 
-    armTerrain(window);
+    await armTerrain(window);
     dispatchPage(ctx.initData);
     await new Promise(resolve => ctx.realSetTimeout(resolve, 0));
     const resumed = (frameMessages as TestMessage[]).find(message => message.type === 'resume');
@@ -622,7 +645,7 @@ test('the bridge ignores wrong-origin and stale-generation replies from the curr
     pageMessages.length = 0;
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame!.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true,
             dir: 'toParent',
@@ -652,7 +675,7 @@ test('the keep-alive TTL hard-destroys the parked frame when it expires', async 
 });
 
 test('a destroy that races the boot hard-destroys instead of suspending', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport"><iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe></div>
     </body>`, { url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only' });
     const { window } = dom;
@@ -665,7 +688,7 @@ test('a destroy that races the boot hard-destroys instead of suspending', async 
         source: window, origin: window.location.origin,
         data: { __bpbTerrain: true, dir: 'toCS', ...data }
     }));
-    armTerrain(window);
+    await armTerrain(window);
     dispatchPage({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]], theme: 'light', cacheLimitMb: 512 });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.ok(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, 'the iframe was created');
@@ -691,14 +714,16 @@ test('disabling 3D tears down even a suspended frame immediately', async () => {
 });
 
 test('cancelling 3D while activation is pending cannot mount an abandoned frame', async () => {
-    const dom = new JSDOM('<!doctype html><body><div id="bpb-map-viewport"></div></body>', {
+    const dom = createBridgeDom('<!doctype html><body><div id="bpb-map-viewport"></div></body>', {
         url: 'https://www.peakbagger.com/peak.aspx?pid=1', runScripts: 'outside-only',
     });
     const { window } = dom;
     const pending: ((value: unknown) => void)[] = [];
     Object.assign(window, { chrome: chromeWith({ enable3dMap: true }) });
     Object.defineProperty(window.chrome.runtime, 'sendMessage', {
-        value: () => new Promise(resolve => pending.push(resolve)),
+        value: (message: { action?: string }) => (message?.action === 'init'
+            ? new Promise(resolve => pending.push(resolve))
+            : Promise.resolve({ ok: true, token: 'prefetch-activation', expiresAt: Date.now() + 10000 })),
     });
     window.postMessage = () => {};
     window.eval(bridgeBundle);
@@ -709,13 +734,13 @@ test('cancelling 3D while activation is pending cannot mount an abandoned frame'
     const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
     try {
         await settle();
-        armTerrain(window); dispatch('init'); dispatch('destroy');
+        await armTerrain(window); dispatch('init'); dispatch('destroy');
         pending.shift()!({ ok: true, token: 'cancelled-activation', expiresAt: Date.now() + 10000 });
         await settle();
         assert.equal(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, null,
             'a late activation cannot reopen a cancelled view');
 
-        armTerrain(window); dispatch('init');
+        await armTerrain(window); dispatch('init');
         pending.shift()!({ ok: true, token: 'fresh-activation', expiresAt: Date.now() + 10000 });
         await settle();
         assert.ok(window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null, 'a new user attempt still opens 3D');
@@ -723,7 +748,7 @@ test('cancelling 3D while activation is pending cannot mount an abandoned frame'
 });
 
 test('a real 3D request whose activation lapsed answers at once, and the analyzer view switch can restart 3D', async () => {
-    const dom = new JSDOM('<!doctype html><body><div id="bpb-map-viewport"></div><button class="bpb-gpx-segment-view">Original</button></body>', {
+    const dom = createBridgeDom('<!doctype html><body><div id="bpb-map-viewport"></div><button class="bpb-gpx-segment-view">Original</button></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only',
     });
     const { window } = dom, messages: TestMessage[] = [];
@@ -738,35 +763,35 @@ test('a real 3D request whose activation lapsed answers at once, and the analyze
     const settle = () => new Promise(resolve => window.setTimeout(resolve, 0));
     try {
         await settle();
-        armTerrain(window); dispatch('requestConsent'); await settle();
+        await armTerrain(window); dispatch('requestConsent'); await settle();
         assert.deepEqual(messages.filter(item => item.type === 'consentResult').map(item => item.enabled), [false], 'A lapsed consent request releases the click');
-        armTerrain(window); dispatch('init'); await settle();
+        await armTerrain(window); dispatch('init'); await settle();
         assert.equal(messages.at(-1)!.type, 'error'); assert.equal(messages.at(-1)!.reason, 'timeout');
 
         const before = issued;
-        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        await trustedInput(window.document.querySelector('.bpb-gpx-segment-view')!, { type: 'click' });
         assert.equal(issued, before, 'The switch mints nothing while 3D is closed');
         reply = { ok: true, token: 'open', expiresAt: Date.now() + 10000 };
-        armTerrain(window); dispatch('init'); await settle();
+        await armTerrain(window); dispatch('init'); await settle();
         assert.ok(window.document.getElementById('bpb-terrain-frame'));
         const open = issued;
-        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        await trustedInput(window.document.querySelector('.bpb-gpx-segment-view')!, { type: 'click' });
         assert.equal(issued, open + 1, 'The trusted switch authorizes the restart it causes');
 
         // A second click while the restart's capability is still in flight.
         dispatch('destroy'); await settle();
         const held: ((value: unknown) => void)[] = [];
         Object.defineProperty(window.chrome.runtime, 'sendMessage', { value: () => { issued++; return new Promise(resolve => held.push(resolve)); } });
-        armTerrain(window); dispatch('init');
+        await armTerrain(window); dispatch('init');
         const launching = issued;
-        fireTrustedEvent(window.document.querySelector('.bpb-gpx-segment-view')!, 'click', { bubbles: true });
+        await trustedInput(window.document.querySelector('.bpb-gpx-segment-view')!, { type: 'click' });
         assert.equal(issued, launching + 1, 'A view switch during a launch authorizes its own restart');
         for (const resolve of held) resolve(reply);
     } finally { dispatch('destroy'); dom.window.close(); }
 });
 
 test('3D terrain bridge refuses forged page requests without trusted activation', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
@@ -798,10 +823,9 @@ test('3D terrain bridge refuses forged page requests without trusted activation'
 });
 
 test('3D terrain consent is extension-owned, discloses the actual providers, and rejects scripted acceptance', async () => {
-    const dom = new JSDOM('<!doctype html><body><button id="bpb-terrain-toggle">3D</button><div id="bpb-map-viewport"></div></body>', {
+    const dom = createBridgeDom('<!doctype html><body><button id="bpb-terrain-toggle">3D</button><div id="bpb-map-viewport"></div></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages: TestMessage[] = [];
@@ -809,19 +833,19 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     window.postMessage = message => { messages.push(message); };
     window.eval(bridgeBundle);
 
-    const requestConsent = ({ trusted = true } = {}) => {
-        if (trusted) armTerrain(window);
+    const requestConsent = async ({ trusted = true } = {}) => {
+        if (trusted) await armTerrain(window);
         window.dispatchEvent(new window.MessageEvent('message', {
             source: window,
             origin: window.location.origin,
             data: { __bpbTerrain: true, dir: 'toCS', type: 'requestConsent' }
         }));
     };
-    requestConsent({ trusted: false });
+    await requestConsent({ trusted: false });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(window.document.querySelector<HTMLElement>('[role="dialog"]'), null,
         'host-page script cannot open extension consent with a forged bridge message');
-    requestConsent();
+    await requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
 
     let dialog = window.document.querySelector<HTMLElement>('[role="dialog"]');
@@ -847,7 +871,7 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
     assert.equal(messages.at(-1)!.enabled, false);
     assert.equal(await featureEnabled(), false, 'declining must keep the feature off');
 
-    requestConsent();
+    await requestConsent();
     await new Promise(resolve => window.setTimeout(resolve, 0));
     dialog = window.document.querySelector<HTMLElement>('[role="dialog"]');
     dialog!.querySelector<HTMLElement>('.bpb-terrain-consent-primary')!.click();
@@ -860,7 +884,7 @@ test('3D terrain consent is extension-owned, discloses the actual providers, and
 });
 
 test('a newer feature-gate push wins over a stale initial storage read', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
@@ -880,7 +904,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
 
     // A newer enabling push arrives before the initial read resolves.
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: true } });
-    armTerrain(window);
+    await armTerrain(window);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -900,7 +924,7 @@ test('a newer feature-gate push wins over a stale initial storage read', async (
 });
 
 test('the extension frame starts no renderer for missing, rejected, or replayed activation', () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only'
     });
@@ -970,10 +994,9 @@ test('the extension frame starts no renderer for missing, rejected, or replayed 
 });
 
 test('3D terrain frame validates coordinate-only routes before loading public DEM tiles', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages: TestMessage[] = [];
@@ -1549,10 +1572,9 @@ test('3D terrain frame validates coordinate-only routes before loading public DE
 });
 
 test('the 3D drape picker offers every layer and swaps the draped raster live', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const maps: StubMap[] = [];
@@ -1656,8 +1678,8 @@ test('the 3D drape picker offers every layer and swaps the draped raster live', 
 });
 
 test('re-entering 3D drapes the raster layer chosen in 2D, without rebuilding an unchanged one', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
-        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only', pretendToBeVisual: true,
+    const dom = createFrameDom('<!doctype html><body></body>', {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only',
     });
     const { window } = dom;
     let map!: StubMap, added = 0;
@@ -1711,10 +1733,9 @@ test('re-entering 3D drapes the raster layer chosen in 2D, without rebuilding an
 });
 
 test('the extension-provided vector entry grafts the provider style under the extension layers', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const maps: StubMap[] = [];
@@ -1908,7 +1929,7 @@ test('the extension-provided vector entry grafts the provider style under the ex
 });
 
 test('Maptoolkit terrain preserves its mesh and route, restores named sprites and enforces provider cooldowns', async () => {
-    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = createFrameDom('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only' });
     const { window } = dom, maps: StubMap[] = [], protocols = new Map<string, StubProtocol>(), calls: string[] = [];
     let finishStyle, rejectLate, now = Date.now(); window.Date.now = () => now;
     class MapStub {
@@ -1978,8 +1999,8 @@ test('Maptoolkit terrain preserves its mesh and route, restores named sprites an
     } finally { dom.window.close(); }
 });
 
-test('the 3D base map control wears the native picker palette in both themes', async () => {
-    const css = await readFile(new URL('../../src/terrain/terrain-map.css', import.meta.url), 'utf8');
+test('the 3D base map control wears the native picker palette in both themes', () => {
+    const css = terrainCss;
     const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split('}')[0];
     const value = (block: string, name: string) => new RegExp(`${name}: ([^;]+);`).exec(block)?.[1];
     const native = (selector: string) => nativeMapDarkCss.slice(nativeMapDarkCss.indexOf(`${selector} {`)).split('}')[0];
@@ -1991,13 +2012,12 @@ test('the 3D base map control wears the native picker palette in both themes', a
 });
 
 test('a lent 2D paint drapes above the loading vector map, retires once its tiles load and never outlives the choice', async () => {
-    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = createFrameDom('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only' });
     const { window } = dom, maps: StubMap[] = [];
     let finishStyle: (() => void) | undefined, sourcesLoaded = false;
     class Bitmap { width = 640; height = 480; closed = false; close() { this.closed = true; } }
     const drawn: unknown[] = [];
     Object.assign(window, { ImageBitmap: Bitmap });
-    Object.assign(globalThis, { ImageBitmap: Bitmap });
     window.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage: (image: unknown) => drawn.push(image), measureText: () => ({ width: 100 }) })) as never;
     class MapStub {
         declare handlers: Map<string, Handler[]>; declare layers: StubLayer[]; declare options: StubOptions; declare sources: Map<string, StubSource>;
@@ -2041,7 +2061,7 @@ test('a lent 2D paint drapes above the loading vector map, retires once its tile
         map.fire('idle'); assert.ok(map.getLayer('bpb-drape-2d'), 'Tiles still loading keep it');
         sourcesLoaded = true; map.fire('sourcedata');
         assert.ok(map.paints.some(([id, name, value]) => id === 'bpb-drape-2d' && name === 'raster-opacity' && value === 0), 'It fades once the vector tiles load');
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await waitFor(dom, () => map.getLayer('bpb-drape-2d') === undefined);
         assert.equal(map.getLayer('bpb-drape-2d'), undefined); assert.equal(map.getSource('bpb-drape-2d'), undefined);
         assert.equal((map.handlers.get('sourcedata') || []).length, 0, 'A retired drape leaves no listeners');
 
@@ -2063,18 +2083,18 @@ test('a lent 2D paint drapes above the loading vector map, retires once its tile
         const reentry = lent(); send({ type: 'drape', generation: 2, bitmap: reentry, ...paint });
         send({ type: 'resume', generation: 2, routeSegments: [[[46.85, -121.76], [46.86, -121.77]]], basemap: { kind: 'vector', provider: 'maptoolkit' } }); await tick();
         assert.ok(map.getLayer('bpb-drape-2d'), 'The stand-in covers the new camera until the next settle');
-        map.fire('idle'); await new Promise(resolve => setTimeout(resolve, 300));
+        map.fire('idle'); await waitFor(dom, () => map.getLayer('bpb-drape-2d') === undefined);
         assert.equal(map.getLayer('bpb-drape-2d'), undefined); sourcesLoaded = false;
 
         const held = lent(); send({ type: 'drape', generation: 2, bitmap: held, ...paint }); await tick();
         assert.ok(map.getLayer('bpb-drape-2d'));
         framePick.value = 'terrain'; framePick.dispatchEvent(new window.Event('change'));
         assert.equal(map.getLayer('bpb-drape-2d'), undefined, 'Choosing another map removes the stand-in at once');
-    } finally { delete (globalThis as { ImageBitmap?: unknown }).ImageBitmap; dom.window.close(); }
+    } finally { dom.window.close(); }
 });
 
 test('a repeated peak feed row is one dot and leaves nothing behind', async () => {
-    const dom = new JSDOM('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = createFrameDom('<body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A', runScripts: 'outside-only' });
     const { window } = dom, messages: TestMessage[] = [], created: { removed?: boolean }[] = [];
     class MapStub {
         declare layers: StubLayer[]; declare sources: Map<string, StubSource>; declare handlers: Map<string, Handler>;
@@ -2102,7 +2122,7 @@ test('a repeated peak feed row is one dot and leaves nothing behind', async () =
 });
 
 test('the bridge forwards peak-feed requests to the page and replies to the frame', async () => {
-    const dom = new JSDOM(`<!doctype html><body>
+    const dom = createBridgeDom(`<!doctype html><body>
       <div id="bpb-map-viewport">
         <iframe src="https://www.peakbagger.com/map/MasterMap.aspx"></iframe>
       </div>
@@ -2118,7 +2138,7 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     window.eval(bridgeBundle);
     await new Promise(resolve => window.setTimeout(resolve, 0)); // settings.get() resolves
 
-    armTerrain(window);
+    await armTerrain(window);
     window.dispatchEvent(new window.MessageEvent('message', {
         source: window,
         origin: window.location.origin,
@@ -2129,18 +2149,19 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
     }));
     await new Promise(resolve => window.setTimeout(resolve, 0));
     const frame = window.document.getElementById('bpb-terrain-frame') as HTMLIFrameElement | null;
+    await waitForFrame(frame!);
     frame!.contentWindow!.postMessage = (message: TestMessage) => { frameMessages.push(message); };
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame!.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: { __bpbTerrainFrame: true, dir: 'toParent', type: 'ready' }
     }));
     const generation = frameMessages.find(message => message.type === 'init')!.generation;
 
     window.dispatchEvent(new window.MessageEvent('message', {
         source: frame!.contentWindow,
-        origin: 'chrome-extension://test-id',
+        origin: FRAME_ORIGIN,
         data: {
             __bpbTerrainFrame: true, dir: 'toParent', type: 'peaksRequest',
             generation,
@@ -2178,7 +2199,7 @@ test('the bridge forwards peak-feed requests to the page and replies to the fram
 });
 
 test('the bridge relays a bounded DEM prefetch to the background worker only while 3D is on', async () => {
-    const dom = new JSDOM('<!doctype html><body><div id="bpb-map-viewport"></div></body>', {
+    const dom = createBridgeDom('<!doctype html><body><div id="bpb-map-viewport"></div></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
         runScripts: 'outside-only'
     });
@@ -2204,7 +2225,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     assert.equal(sent.length, 0);
 
     // A route prefetch forwards route bounds + viewport as a TERRAIN_PREFETCH.
-    armTerrain(window, 'pointerover');
+    await armTerrain(window, 'pointerover');
     dispatchPage({
         type: 'prefetch',
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
@@ -2219,7 +2240,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     assert.equal('center' in sent[0], false, 'a bounds prefetch does not also carry a centre');
 
     // A peak prefetch forwards center + zoom instead.
-    armTerrain(window, 'focus');
+    await armTerrain(window, 'focus');
     dispatchPage({ type: 'prefetch', center: [48.83, -121.6], zoom: 13, viewport: { width: 1000, height: 425 } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2);
@@ -2227,7 +2248,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     assert.equal(sent[1].zoom, 13);
 
     // A prefetch that names neither a valid bounds nor a valid centre is dropped.
-    armTerrain(window, 'pointerover');
+    await armTerrain(window, 'pointerover');
     dispatchPage({ type: 'prefetch', viewport: { width: 1000, height: 425 } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
     assert.equal(sent.length, 2, 'a prefetch with no view is not forwarded');
@@ -2235,7 +2256,7 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
     // Turning the feature off closes the relay: no prefetch reaches the worker.
     await window.chrome.storage.sync.set({ bpbSettings: { enable3dMap: false } });
     await new Promise(resolve => window.setTimeout(resolve, 0));
-    armTerrain(window, 'pointerover');
+    await armTerrain(window, 'pointerover');
     dispatchPage({
         type: 'prefetch',
         bounds: { minLat: 48.7, minLon: -121.82, maxLat: 48.76, maxLon: -121.8 },
@@ -2247,11 +2268,12 @@ test('the bridge relays a bounded DEM prefetch to the background worker only whi
 });
 
 test('terrain warming cancels for gestures and suspension without restarting from hidden map events', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1', runScripts: 'outside-only',
-        pretendToBeVisual: true,
     });
     const { window } = dom;
+    // Isolate the warm-pass state machine from persistent CacheStorage IPC.
+    Object.defineProperty(window, 'caches', { configurable: true, value: undefined });
     const timers = new Map<number, { callback: Handler; ms: number }>(), requests: AbortSignal[] = [];
     let timerId = 0, map;
     (window as unknown as Record<string, unknown>).setTimeout = (callback: Handler, ms: number) => { timers.set(++timerId, { callback, ms }); return timerId; };
@@ -2324,10 +2346,9 @@ test('terrain warming cancels for gestures and suspension without restarting fro
 });
 
 test('3D peak markers request Peakbagger dots on camera settle and render only validated batches', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages: TestMessage[] = [];
@@ -2408,9 +2429,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
     assert.equal(ringPaint!['circle-pitch-scale'], 'viewport',
         'rings keep a constant screen size so the drawn extent matches the screen-space hit radius');
 
-    await settle();
+    await waitFor(dom, () => messages.some(message => message.type === 'peaksRequest'));
     const request = messages.at(-1);
-    assert.equal(request!.type, 'peaksRequest', 'the frame asks for dots after load settles');
+    assert.ok(request, 'the frame asks for dots after load settles');
     assert.equal(request!.requestId, 1);
     const bounds = request!.bounds as Record<string, number>;
     assert.ok(bounds.miny > camera.bounds.south && bounds.maxy < camera.bounds.north,
@@ -2549,10 +2570,9 @@ test('3D peak markers request Peakbagger dots on camera settle and render only v
 });
 
 test('3D peak dots snap uphill to the local DEM summit, and only to a genuine one', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const maps: StubMap[] = [];
@@ -2647,11 +2667,12 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
         remove() {}
     }
 
-    const dispatch = bootTerrainFrame(window, MapStub, { maplibre: { Popup: class { remove() {} } } });
+    const peakMessages: TestMessage[] = [];
+    const dispatch = bootTerrainFrame(window, MapStub, { messages: peakMessages, maplibre: { Popup: class { remove() {} } } });
 
     dispatch({ type: 'init', routeSegments: [[[48.7, -121.8], [48.71, -121.81]]] });
     await new Promise<void>(resolve => window.queueMicrotask(resolve));
-    await new Promise(resolve => window.setTimeout(resolve, 320));
+    await waitFor(dom, () => peakMessages.some(message => message.type === 'peaksRequest'));
     const sendBatch = () => dispatch({
         type: 'peaks',
         requestId: 1,
@@ -2730,10 +2751,9 @@ test('3D peak dots snap uphill to the local DEM summit, and only to a genuine on
 });
 
 test('3D group tracks highlight the hovered climber and Escape leaves the view', async () => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/Map/BigMap.aspx?t=G&d=2414',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages: TestMessage[] = [];
@@ -2921,7 +2941,7 @@ test('3D group tracks highlight the hovered climber and Escape leaves the view',
 
 test('3D overlays retain a pinned pass and native base through suspend, refresh, retry and stale snapshots', async t => {
     t.mock.timers.enable({ apis: ['setTimeout'] });
-    const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A&d=1', runScripts: 'outside-only', pretendToBeVisual: true });
+    const dom = createFrameDom('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/map/BigMap.aspx?t=A&d=1', runScripts: 'outside-only' });
     const messages: TestMessage[] = [], pending: { resolve(value: unknown): void; url: string; options: RequestInit }[] = [];
     let map!: StubMap;
     class MapStub {
@@ -3001,10 +3021,9 @@ test('3D overlays retain a pinned pass and native base through suspend, refresh,
 // needs: the posted messages, the live map stub, and the protocol handler
 // MapLibre would call for each tile.
 const bootFrameWithTileHost = ({ tileStatus, deferLoad = false }: { tileStatus?: (url: string) => number; deferLoad?: boolean } = {}) => {
-    const dom = new JSDOM('<!doctype html><body></body>', {
+    const dom = createFrameDom('<!doctype html><body></body>', {
         url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true
+        runScripts: 'outside-only'
     });
     const { window } = dom;
     const messages: TestMessage[] = [];
@@ -3092,7 +3111,7 @@ const bootFrameWithTileHost = ({ tileStatus, deferLoad = false }: { tileStatus?:
             type: 'init',
             routeSegments: [[[48.7, -121.8], [48.71, -121.81]]],
             theme: 'light',
-            // No CacheStorage in jsdom, so the loader is network-only: every
+            // Disable CacheStorage so the loader is network-only: every
             // tile the renderer asks for reaches the stubbed host.
             cacheLimitMb: 0
         }
@@ -3147,7 +3166,9 @@ test('an elevation gap above the provider level keeps the 3D view on the coarser
     map.handlers.get('idle')!();
     assert.ok(!host.messages.some(message => message.type === 'error'),
         `a partial coverage gap must not fail: ${JSON.stringify(host.messages.map(m => m.type))}`);
-    assert.equal(host.messages.at(-1)!.type, 'loaded');
+    assert.equal(host.messages.filter(message => message.type === 'loaded' || message.type === 'error' || message.type === 'destroyed').at(-1)!.type,
+        'loaded');
+    assert.equal(map.removed, undefined);
     host.dom.window.close();
 });
 

@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { FixtureDom, evalBundle, trustedInput } from '../../helpers/fixture-dom.mts';
+import { FixtureDom, evalBundle, iifeBundle, trustedInput } from '../../helpers/fixture-dom.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 
@@ -78,6 +78,12 @@ test('checkout files and built bundles are readable, and nothing outside the che
     const dom = new FixtureDom('<!doctype html><body></body>', { url: 'https://www.peakbagger.com/peak.aspx?pid=1' });
     t.after(() => dom.window.close());
     await evalBundle(dom.window, 'content/report-protection.js');
+    const bundled = await iifeBundle('test/dom/runtime/iife-probe.mts', { globalName: 'testTerrainFailure' });
+    dom.window.eval(bundled);
+    assert.equal((dom.window as unknown as { testTerrainFailure?: { terrainFailure?: { REASONS?: Set<string> } } }).testTerrainFailure?.terrainFailure?.REASONS?.has('coverage'), true);
+    await assert.rejects(iifeBundle('scripts/build.mts'), /HTTP 404/);
+    await assert.rejects(iifeBundle('src/terrain/terrain-failure.ts'), /HTTP 404/, 'shipped modules are tested through dist/');
+    await assert.rejects(iifeBundle('test/dom/runtime/iife-probe.mts', { globalName: 'bad;alert(1)' }), /HTTP 404/);
 });
 
 test('mocked timers drive the page and fixture windows created before and after enabling', t => {

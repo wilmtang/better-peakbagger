@@ -42,6 +42,8 @@ const FIXTURE_NONCE = 'bpb-fixture';
 const RUNNER_CSP = `script-src 'self' 'unsafe-eval' 'nonce-${FIXTURE_NONCE}'`;
 const runnerHeaders = { 'Origin-Agent-Cluster': '?0', 'Content-Security-Policy': RUNNER_CSP };
 const FILE_ROUTE = '/__bpb_fs__';
+const IIFE_ROUTE = '/__bpb_iife__';
+const GLOBAL_NAME_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const runtime = (file: string) => path.join(projectRoot, 'test', 'dom', 'runtime', file);
 const NODE_RUNTIMES: Record<string, string> = {
     'node:test': runtime('node-test.mts'),
@@ -127,6 +129,42 @@ const fileServer = async (dist: string) => {
     };
 };
 
+// Bundles a test harness entry as a classic IIFE for FixtureDom evaluation,
+// cached across engines in a run. Only harness entries qualify: a test of a
+// shipped bundle evaluates dist/, so it runs what the Vite build produced.
+const iifeServer = async () => {
+    const root = await realpath(projectRoot);
+    const allowedRoots = [path.join(root, 'test', 'helpers') + path.sep, path.join(root, 'test', 'dom', 'runtime') + path.sep];
+    const cache = new Map<string, string>();
+    return async (pathname: string, globalName: string | null): Promise<string | null> => {
+        if (globalName !== null && !GLOBAL_NAME_PATTERN.test(globalName)) return null;
+        const relativePath = decodeURIComponent(pathname).replace(/^\/+/, '');
+        const candidate = path.resolve(root, relativePath);
+        const resolved = await realpath(candidate).catch(() => null);
+        if (!resolved || !/\.[cm]?ts$/.test(resolved) || !allowedRoots.some(prefix => resolved.startsWith(prefix))) {
+            return null;
+        }
+        const key = `${resolved}\0${globalName ?? ''}`;
+        const cached = cache.get(key);
+        if (cached !== undefined) return cached;
+        const { outputFiles } = await build({
+            entryPoints: [resolved],
+            bundle: true,
+            write: false,
+            format: 'iife',
+            platform: 'browser',
+            target: ['chrome128', 'firefox152'],
+            ...(globalName ? { globalName } : {}),
+            legalComments: 'none',
+            logLevel: 'silent',
+        });
+        assert.equal(outputFiles.length, 1, `${relativePath} must bundle to one IIFE script`);
+        const code = outputFiles[0]!.text;
+        cache.set(key, code);
+        return code;
+    };
+};
+
 type StagedFileInput = Extract<TrustedAction, { type: 'files' }>['files'];
 
 async function performTrustedInput(page: Page, action: TrustedAction, stageFiles: (files: StagedFileInput) => Promise<string[]>) {
@@ -183,7 +221,8 @@ async function performTrustedInput(page: Page, action: TrustedAction, stageFiles
     }
 }
 
-async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awaited<ReturnType<typeof fileServer>>, script: string) {
+async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awaited<ReturnType<typeof fileServer>>,
+    serveIife: Awaited<ReturnType<typeof iifeServer>>, script: string) {
     const context = await browser.newContext({ viewport: { width: 1000, height: 760 } });
     let tempDir: string | null = null;
     let stagedBatch = 0;
@@ -229,7 +268,8 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
         // already relaxed it; setting document.domain on a same-origin child
         // frame while the parent stays unrelaxed makes the child cross-origin.
         const fixtureFrame = request.isNavigationRequest() && request.frame() !== request.frame().page().mainFrame() && sameSite
-            && url.pathname !== RUNNER_PATH && !url.pathname.startsWith(`${FILE_ROUTE}/`) && !url.pathname.startsWith('/dist/');
+            && url.pathname !== RUNNER_PATH && !url.pathname.startsWith(`${FILE_ROUTE}/`)
+            && !url.pathname.startsWith(`${IIFE_ROUTE}/`) && !url.pathname.startsWith('/dist/');
         if (fixtureFrame) {
             // FixtureDom.open announces each navigation it starts; any other
             // fixture-frame navigation comes from the page under test.
@@ -257,6 +297,12 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
                 body: '<!doctype html><meta charset="utf-8"><title>Browser test</title><body></body>' });
         }
         if (url.pathname === RUNNER_SCRIPT) return route.fulfill({ status: 200, contentType: 'text/javascript', body: script });
+        if (url.pathname.startsWith(`${IIFE_ROUTE}/`)) {
+            const bundled = await serveIife(url.pathname.slice(IIFE_ROUTE.length), url.searchParams.get('globalName'));
+            if (bundled !== null) return route.fulfill({ status: 200, contentType: 'text/javascript', body: bundled });
+            unexpected.push(`missing ${url.pathname}`);
+            return route.fulfill({ status: 404, body: 'Not a browser test IIFE module' });
+        }
         const file = url.pathname.startsWith(`${FILE_ROUTE}/`) ? url.pathname.slice(FILE_ROUTE.length)
             : url.pathname.startsWith('/dist/') ? path.join(projectRoot, url.pathname) : null;
         const body = file && await serve(file);
@@ -317,6 +363,7 @@ export async function runBrowserTests(selection: DomSelection, report: (record: 
     const selected = discovered.filter(test => !selection.suite || test.file.includes(selection.suite));
     if (!selected.length) return 0;
     const serve = await fileServer(selection.dist);
+    const serveIife = await iifeServer();
     const scripts = new Map<string, string>();
     for (const test of selected) scripts.set(test.file, await bundleBrowserTest(test.file));
     const resources = createResourceStack();
@@ -332,7 +379,7 @@ export async function runBrowserTests(selection: DomSelection, report: (record: 
                 let context: BrowserContext | null = null;
                 let cleanupFiles: (() => Promise<void>) | null = null;
                 try {
-                    const opened = await openTestPage(browser, test, serve, scripts.get(test.file)!);
+                    const opened = await openTestPage(browser, test, serve, serveIife, scripts.get(test.file)!);
                     context = opened.context;
                     cleanupFiles = opened.cleanupFiles;
                     let timer: ReturnType<typeof setTimeout> | undefined;
