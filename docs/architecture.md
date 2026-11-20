@@ -1709,7 +1709,7 @@ a known live-markup risk, not something fixture tests can prove away.
 
 The focused automated evidence is deliberately split by boundary:
 
-- `test/favorites/favorite-climbers.test.mjs` covers schema cleaning, deduplication, name
+- `test/favorites/favorite-climbers.browser.mts` covers schema cleaning, deduplication, name
   normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
   merge/mirror and Buddy-mutation semantics, effective source selection,
   comparators, and fuzzy scoring.
@@ -1718,7 +1718,7 @@ The focused automated evidence is deliberately split by boundary:
   after a failed storage write.
 - `test/profile/profile-backup-core.browser.mts` covers Buddy/climber response acceptance
   and rejection of wrong or challenged content.
-- `test/peakbagger/peakbagger-request.test.mjs` covers origin and fetch policy, timeouts,
+- `test/peakbagger/peakbagger-request.test.mts` and `test/peakbagger/peakbagger-request.browser.mts` cover origin and fetch policy, timeouts,
   response classification, typed failures, and document parsing.
 - `test/ascent/ascent-filter.browser.mts` covers custom AND-filtering, persisted chip state,
   live storage updates, owner-scoped cache use, stale-while-revalidate fetch,
@@ -1728,7 +1728,7 @@ The focused automated evidence is deliberately split by boundary:
   Buddy refresh, merge, and the default-off removal preference.
 - `test/options/options-ui.test.mts` covers distance-aware sidebar navigation;
   `test/options/options-github.test.mts` covers the explicit GitHub messages.
-- `test/favorites/climber-favorite.test.mts` covers manual add/remove, self exclusion,
+- `test/favorites/climber-favorite.browser.mts` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.
 - `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options

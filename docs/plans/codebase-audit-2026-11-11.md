@@ -664,7 +664,7 @@ as `provider-download-failed` rather than `provider-forbidden` or
 
 Reproduced the reader's throw in Node with a 9 KB 403 HTML body; the mapping to
 `gpx-too-large` is from reading. Existing tests use only tiny probe bodies
-(`test/capture/provider-page.test.mjs` lines 485–525). Not affected: the common
+(`test/capture/provider-page.browser.mts` lines 385–430). Not affected: the common
 signed-out case, a sign-in *redirect* (classified earlier from the final URL),
 and challenges flagged by the `cf-mitigated` header.
 

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { loadPage, PAGE_FIXTURES, waitFor, fireTrustedEvent, type LoadedPage } from '../helpers/load-page.mts';
+import { loadPage, PAGE_FIXTURES, waitFor, trustedInput, type LoadedPage } from '../helpers/fixture-page.mts';
 import type { PageElement } from '../helpers/page-types.mts';
 
 const bundle = ['content/climber-favorite.js'];
@@ -36,10 +36,10 @@ test('profile favorite failures expose visible recovery and retain the real list
     await waitFor(dom, () => /Storage is unavailable/.test(doc.getElementById('bpb-climber-favorite').title));
     const feedback = doc.getElementById('bpb-climber-profile-feedback');
     assert.ok(feedback, 'failure must not be tooltip-only');
-    assert.match(feedback.textContent, /Favorites not saved/);
+    assert.match(feedback.textContent ?? '', /Favorites not saved/);
     assert.equal(feedback.querySelector('button').hidden, false);
     assert.equal(doc.getElementById('bpb-climber-favorite').getAttribute('aria-pressed'), 'false');
-    assert.match(doc.getElementById('bpb-climber-profile-announcement').textContent, /Storage is unavailable/);
+    assert.match(doc.getElementById('bpb-climber-profile-announcement').textContent ?? '', /Storage is unavailable/);
 });
 
 test('supported native profile actions share the confirmed adapter and cross-tab reservation', async t => {
@@ -47,20 +47,20 @@ test('supported native profile actions share the confirmed adapter and cross-tab
     let buddy = false, posts = 0;
     const dom = await loadPage('climber-buddy-form.html', { fixtures: PAGE_FIXTURES, url: otherUrl,
         bundles: bundle, settings: { favoritesSource: 'custom' }, prepare(page: LoadedPage) {
-            page.window.fetch = async (url, init) => {
+            page.window.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
                 if (init?.method === 'POST') { posts++; buddy = new URLSearchParams(String(init.body)).has('AddBuddy'); }
                 const text = buddy ? html.replace('Add this Climber as a Buddy', 'This Climber is one of your buddies.')
                     .replaceAll('AddBuddy', 'RemoveBuddy').replace('Add to your Buddy List', 'Remove from your Buddy List') : html;
                 return { ...pageResponse(text), url: String(url) };
-            };
+            }) as unknown as typeof fetch;
         } });
     t.after(() => dom.window.close());
     await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-favorite')?.disabled === false);
-    fireTrustedEvent(dom.window.document.getElementById('AddBuddy'), 'click', { bubbles: true, cancelable: true });
+    await trustedInput(dom.window.document.getElementById('AddBuddy'), { type: 'click' });
     await waitFor(dom, () => dom.window.document.getElementById('RemoveBuddy')?.disabled === false
         && dom.window.document.getElementById('RemoveBuddy')?.getAttribute('aria-disabled') !== 'true');
     assert.equal(posts, 1);
-    assert.ok(dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
+    assert.ok(dom.chrome._localStore[key]!.entries.some(entry => entry.cid === 900002));
     assert.deepEqual(dom.chrome._localStore.bpbBuddyIntents, []);
 });
 
@@ -84,10 +84,10 @@ test('custom mode toggles the viewed climber without replacing other favorites',
     assert.equal(button.parentElement!.classList.contains('bpb-climber-favorite-host'), true);
 
     button.click();
-    await waitFor(dom, () => dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
-    assert.equal(dom.chrome._localStore[key].entries.length, 2);
+    await waitFor(dom, () => dom.chrome._localStore[key]!.entries.some(entry => entry.cid === 900002));
+    assert.equal(dom.chrome._localStore[key]!.entries.length, 2);
     assert.deepEqual(
-        JSON.parse(JSON.stringify(dom.chrome._localStore[key].entries.find(entry => entry.cid === 900003))),
+        JSON.parse(JSON.stringify(dom.chrome._localStore[key]!.entries.find(entry => entry.cid === 900003))),
         existing,
     );
     const firstMutation = dom.chrome._favoriteMutations[0] as { kind: string; entry: { cid: number; name: string; addedAt: number; source: string } };
@@ -104,7 +104,7 @@ test('custom mode toggles the viewed climber without replacing other favorites',
     assert.equal(button.getAttribute('aria-label'), 'Remove Casey Alpine from your Better Peakbagger favorite');
 
     button.click();
-    await waitFor(dom, () => !dom.chrome._localStore[key].entries.some(entry => entry.cid === 900002));
+    await waitFor(dom, () => !dom.chrome._localStore[key]!.entries.some(entry => entry.cid === 900002));
     assert.deepEqual(dom.chrome._favoriteMutations[1], { kind: 'remove', cid: 900002 });
     assert.equal(button.textContent, '☆');
 });
@@ -154,7 +154,7 @@ test('native Buddy actions leave a short-lived refresh marker for the completed 
     await waitFor(dom, () => nativeButton.getAttribute('aria-disabled') !== 'true');
     assert.equal(nativeButton.classList.contains('bpb-native-buddy-action'), true);
     assert.match(
-        dom.window.document.getElementById('bpb-native-buddy-action-style').textContent,
+        dom.window.document.getElementById('bpb-native-buddy-action-style').textContent ?? '',
         /\.bpb-native-buddy-action:hover:not\(:disabled\)/,
     );
     nativeButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, button: 0 }));
@@ -175,10 +175,10 @@ test('an in-place Buddy addition refreshes Buddy-source membership after the nat
     const dom = await loadOther({
         settings: { favoritesSource: 'buddies' },
         prepare(page: LoadedPage) {
-            page.window.fetch = async () => {
+            page.window.fetch = (async () => {
                 requests += 1;
                 return pageResponse(buddyWithCasey);
-            };
+            }) as unknown as typeof fetch;
         },
     });
     t.after(() => dom.window.close());
@@ -205,10 +205,10 @@ test('in-place Buddy changes synchronize the custom list and honor opted-in remo
     const dom = await loadOther({
         settings: { favoritesSource: 'custom', removeFavoriteWhenBuddyRemoved: true },
         prepare(page: LoadedPage) {
-            page.window.fetch = async () => {
+            page.window.fetch = (async () => {
                 requests += 1;
                 return pageResponse(included ? buddyWithCasey : buddyFixture);
-            };
+            }) as unknown as typeof fetch;
         },
     });
     t.after(() => dom.window.close());
@@ -231,7 +231,7 @@ test('in-place Buddy changes synchronize the custom list and honor opted-in remo
     replaceNativeControl('Add to My Buddy List');
     await waitFor(dom, () => dom.chrome._localStore[key]?.entries?.every(entry => entry.cid !== 900002));
     assert.equal(dom.window.document.getElementById('bpb-climber-favorite').textContent, '☆');
-    assert.equal(dom.chrome._localStore[cacheKey].entries.some(entry => entry.cid === 900002), false);
+    assert.equal(dom.chrome._localStore[cacheKey]!.entries.some(entry => entry.cid === 900002), false);
     assert.equal(dom.window.sessionStorage.getItem(pendingKey), null);
     assert.equal(requests, 2);
 });
@@ -255,9 +255,9 @@ test('overlapping in-place Buddy refreshes serialize epochs instead of failing a
                     return result;
                 },
             });
-            page.window.fetch = () => new Promise<Response>(resolve => {
+            page.window.fetch = (() => new Promise<Response>(resolve => {
                 fetchResolvers.push(html => resolve(pageResponse(html)));
-            });
+            })) as unknown as typeof fetch;
         },
     });
     t.after(() => dom.window.close());
@@ -279,14 +279,14 @@ test('overlapping in-place Buddy refreshes serialize epochs instead of failing a
     await new Promise(resolve => dom.window.setTimeout(resolve, 20));
     assert.equal(fetchResolvers.length, 1, 'second refresh must wait until the first cache transaction commits');
 
-    fetchResolvers[0](buddyWithCasey);
+    fetchResolvers[0]!(buddyWithCasey);
     await waitFor(dom, () => fetchResolvers.length === 2);
 
-    fetchResolvers[1](buddyFixture);
+    fetchResolvers[1]!(buddyFixture);
     await waitFor(dom, () => publishResults.length === 2
         && !dom.chrome._localStore[key]?.entries?.some(entry => entry.cid === 900002));
     assert.deepEqual(publishResults, [true, true]);
-    assert.equal(dom.chrome._localStore[cacheKey].entries.some(entry => entry.cid === 900002), false);
+    assert.equal(dom.chrome._localStore[cacheKey]!.entries.some(entry => entry.cid === 900002), false);
     assert.equal(dom.window.document.getElementById('bpb-climber-favorite').textContent, '☆');
     assert.equal(dom.window.document.getElementById('bpb-climber-favorite').getAttribute('aria-pressed'), 'false');
 });
@@ -302,10 +302,10 @@ test('a confirmed Buddy addition refreshes the cache and joins a custom favorite
         local: { [key]: { schemaVersion: 1, entries: [existing] } },
         prepare(page: LoadedPage) {
             page.window.sessionStorage.setItem(pendingKey, pendingMutation('add'));
-            page.window.fetch = async url => {
+            page.window.fetch = (async (url: RequestInfo | URL) => {
                 requests.push(String(url));
                 return pageResponse(buddyWithCasey);
-            };
+            }) as unknown as typeof fetch;
         },
     });
     t.after(() => dom.window.close());
@@ -314,10 +314,10 @@ test('a confirmed Buddy addition refreshes the cache and joins a custom favorite
     assert.deepEqual(requests, ['https://www.peakbagger.com/report/report.aspx?r=b']);
     assert.equal(dom.window.sessionStorage.getItem(pendingKey), null);
     assert.deepEqual(
-        JSON.parse(JSON.stringify(dom.chrome._localStore[key].entries.find(entry => entry.cid === 900003))),
+        JSON.parse(JSON.stringify(dom.chrome._localStore[key]!.entries.find(entry => entry.cid === 900003))),
         existing,
     );
-    assert.equal(dom.chrome._localStore[key].entries.find(entry => entry.cid === 900002)!.source, 'buddy');
+    assert.equal(dom.chrome._localStore[key]!.entries.find(entry => entry.cid === 900002)!.source, 'buddy');
 });
 
 test('a Buddy removal keeps the custom favorite by default and removes it only when opted in', async () => {
@@ -328,15 +328,15 @@ test('a Buddy removal keeps the custom favorite by default and removes it only w
             local: { [key]: { schemaVersion: 1, entries: [favorite] } },
             prepare(page: LoadedPage) {
                 page.window.sessionStorage.setItem(pendingKey, pendingMutation('remove'));
-                page.window.fetch = async () => pageResponse(buddyFixture);
+                page.window.fetch = (async () => pageResponse(buddyFixture)) as unknown as typeof fetch;
             },
         });
         try {
             await waitFor(dom, () => dom.chrome._localStore[cacheKey]?.entries?.length === 6);
             if (removeFavoriteWhenBuddyRemoved) {
-                await waitFor(dom, () => dom.chrome._localStore[key].entries.length === 0);
+                await waitFor(dom, () => dom.chrome._localStore[key]!.entries.length === 0);
             } else {
-                assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key].entries)), [favorite]);
+                assert.deepEqual(JSON.parse(JSON.stringify(dom.chrome._localStore[key]!.entries)), [favorite]);
             }
         } finally { dom.window.close(); }
     }
@@ -347,7 +347,7 @@ test('an unconfirmed Buddy action refreshes the cache without changing custom fa
         settings: { favoritesSource: 'custom' },
         prepare(page: LoadedPage) {
             page.window.sessionStorage.setItem(pendingKey, pendingMutation('add'));
-            page.window.fetch = async () => pageResponse(buddyFixture);
+            page.window.fetch = (async () => pageResponse(buddyFixture)) as unknown as typeof fetch;
         },
     });
     t.after(() => dom.window.close());
@@ -363,10 +363,10 @@ test('legacy buddy refresh reports limits without replacing saved favorites or t
             page.window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
         } });
     try {
-        await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-profile-feedback')?.textContent.includes('Peakbagger request limit reached'));
-        assert.equal(dom.chrome._localStore[key].entries.length, 1);
+        await waitFor(dom, () => dom.window.document.getElementById('bpb-climber-profile-feedback')?.textContent?.includes('Peakbagger request limit reached'));
+        assert.equal(dom.chrome._localStore[key]!.entries.length, 1);
         assert.equal(dom.chrome._localStore[cacheKey], undefined);
-        assert.match(dom.window.document.getElementById('bpb-climber-profile-feedback').textContent, /saved favorites were kept/);
+        assert.match(dom.window.document.getElementById('bpb-climber-profile-feedback').textContent ?? '', /saved favorites were kept/);
         assert.equal(dom.window.document.getElementById('bpb-climber-profile-feedback').querySelector('details').open, false);
     } finally { dom.window.close(); }
 });

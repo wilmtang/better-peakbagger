@@ -593,7 +593,7 @@ const mount = () => {
                     if (target.cid !== record.target.cid && current === record) close({ restore: true, suppress: true });
                     record.target = target;
                     record.trigger.setAttribute('aria-label', `Climber actions for ${target.name}`);
-                    if (!isVisible(record.anchor) && focusedRecord === record) {
+                    if (!isVisible(record.anchor) && (focusedRecord === record || current === record)) {
                         const fallback = retireFocus(record);
                         if (current === record) close();
                         moveFocus(fallback);
