@@ -313,6 +313,7 @@ export function mountAscentWeather(): { card: HTMLElement; lifecycle: PageLifecy
     let chartBounds: { left: number; right: number; top: number; bottom: number } | null = null;
     let chartDescription = '';
     let conditionColumns = new Map<number, HTMLTableCellElement[]>();
+    let drawnWidth = -1;
     let activeConditionColumn: HTMLTableCellElement[] | null = null;
     const cancelCursorFrame = (): void => { if (cursorFrame !== null) cancelAnimationFrame(cursorFrame); cursorFrame = null; };
     function drawCursor(): void {
@@ -456,7 +457,9 @@ export function mountAscentWeather(): { card: HTMLElement; lifecycle: PageLifecy
             drawCursor(); return;
         }
         const width = chart.getBoundingClientRect().width;
-        if (width < 100) return;
+        // An undrawn graph has no width to keep; any later width redraws it.
+        if (width < 100) { drawnWidth = -1; return; }
+        drawnWidth = width;
         const rows = hourlyWeatherSeries(dayWindow, data.samples, currentMetric, data.gustTiming);
         readingRows = rows; readingGeometry = null;
         readingText.reserve(['Hourly readings unavailable', ...(['temperature', 'precipitation', 'wind'] as const).flatMap(key => {
@@ -709,7 +712,12 @@ export function mountAscentWeather(): { card: HTMLElement; lifecycle: PageLifecy
             buttons[next].focus({ preventScroll: true }); buttons[next].click();
         });
     });
-    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(drawChart) : null;
+    // Redraw only when the visible graph changes width. Hiding it for
+    // Conditions, or the observer's first report after a draw, must not
+    // rebuild the graph or the hourly table under the reader.
+    const resizeObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+        if (metric !== 'conditions' && chart.getBoundingClientRect().width !== drawnWidth) drawChart();
+    }) : null;
     resizeObserver?.observe(chart);
     const beginWhenVisible = (): void => {
         readGate.waitForViewport(() => { void load(); });
