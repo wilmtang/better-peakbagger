@@ -1,10 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { browserWindow, fixtureDom, type FixtureWindow } from '../helpers/page-dom.mts';
+import { browserWindow, builtBundle, fixtureDom, iifeBundle, type FixtureWindow } from '../helpers/fixture-dom.mts';
 import { rect } from '../helpers/page-types.mts';
 import type * as MapLocationMenu from '../../src/maps/map-location-menu.ts';
-import { build } from 'esbuild';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
 import { airQualityFixture } from '../helpers/air-quality-fixture.mts';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mts';
@@ -37,7 +36,12 @@ const [peak, bundle] = await Promise.all([
     readFile(new URL('../fixtures/pages/peak-rainier.html', import.meta.url), 'utf8'),
     readFile(new URL('../../dist/content/peak-weather.js', import.meta.url), 'utf8'),
 ]);
-const menuBundle = (await build({ entryPoints: ['src/maps/map-location-menu.ts'], bundle: true, write: false, format: 'iife', globalName: 'testMapMenu' })).outputFiles[0].text;
+// The stylesheets the manifest injects with peak-weather.js, so layout and
+// scrolling match the extension on the page.
+const manifest = JSON.parse(await readFile(new URL('../../manifest.json', import.meta.url), 'utf8')) as { content_scripts: { js?: string[]; css?: string[] }[] };
+const weatherCss = (await Promise.all(manifest.content_scripts.find(entry => entry.js?.includes('content/peak-weather.js'))!.css!
+    .map(file => builtBundle(file)))).join('\n');
+const menuBundle = await iifeBundle('test/helpers/map-location-menu-harness.mts', { globalName: 'testMapMenu' });
 const pause = () => new Promise(resolve => setImmediate(resolve));
 const waitFor = async (predicate: () => unknown) => {
     const deadline = Date.now() + 2000;
@@ -51,14 +55,14 @@ const reply = (url: string, _init?: RequestOptions) => {
         elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn }: SetupOptions = {}) {
-    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
+    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
     const win = jsdom.window as WeatherWindow;
+    win.document.head.append(Object.assign(win.document.createElement('style'), { textContent: weatherCss }));
     const requests: CapturedRequest[] = [], metadataRequests: CapturedRequest[] = [], listeners: StorageListener[] = [];
     const observers: { callback: (entries: { isIntersecting: boolean }[]) => void; disconnected: boolean }[] = [], resizeObservers: { callback: () => void; disconnected: boolean }[] = [];
     let clock = Date.parse(now);
     win.Date.now = () => clock;
     win.scrollBy = () => {};
-    win.AbortController = AbortController; win.TextDecoder = TextDecoder; win.TextEncoder = TextEncoder;
     win.chrome = { storage: { local: { get: async (key: string | string[]) => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : (readModels ? readModels() : localModels), set: saveModels || (async (values: Values) => { Object.assign(localModels, values); }) }, sync: { get: readSettings || (async () => ({ bpbSettings: { units: 'imperial', ...storedSettings } })) }, onChanged: {
         addListener: (fn: StorageListener) => listeners.push(fn), removeListener: (fn: StorageListener) => listeners.splice(listeners.indexOf(fn), 1),
     } } };
@@ -73,6 +77,9 @@ function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T1
         constructor(callback: (entries: { isIntersecting: boolean }[]) => void) { this.callback = callback; observers.push(this); }
         observe() {} disconnect() { this.disconnected = true; }
     };
+    // Eager cases read without waiting for the viewport, as the gate does where
+    // no observer exists; card-read-gate.browser.mts covers the real observer.
+    else (win as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
     let chartWidth = 620;
     win.HTMLElement.prototype.getBoundingClientRect = () => rect({ width: chartWidth, height: 184, left: 0, top: 0 });
     win.SVGElement.prototype.getBoundingClientRect = () => rect({ width: chartWidth, height: 184, left: 0, top: 0 });

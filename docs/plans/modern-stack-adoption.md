@@ -291,7 +291,7 @@ Step 1 status (November 13, 2026):
   types. Guard tests in `test/project/typescript-tooling.test.mts` pin the
   split and reject a suppressed or `require`d jsdom import.
 - **Intentionally not changed:** fixture pages are typed through
-  [page-dom.mts](../../test/helpers/page-dom.mts) and `page-types.mts`, which
+  `page-dom.mts` (since replaced by `fixture-dom.mts`) and `page-types.mts`, which
   treat lookups in this repository's known markup as present; tests stub
   window members through narrow `as { member: unknown }` assignments, pass a
   jsdom window where a browser global is expected only through

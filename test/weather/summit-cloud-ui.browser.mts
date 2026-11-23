@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom } from '../helpers/fixture-dom.mts';
 import { settingsSchema } from '../../src/settings/settings-schema.ts';
 import { cloudResponseForUrl } from '../helpers/summit-cloud-fixture.mts';
 
@@ -15,12 +15,12 @@ const wait = async (predicate: () => unknown) => {
     while (!predicate()) { if (Date.now() > end) throw new Error('Summit cloud UI did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
 };
 function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manualClock = false } = {}) {
-    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296', runScripts: 'outside-only', pretendToBeVisual: true });
+    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
     const win = jsdom.window;
     const requests: { url: string; options: RequestInit & { signal: AbortSignal }; mode: string }[] = [], writes: Record<string, unknown>[] = [];
     const listeners = new Set<(changes: unknown, area: string) => void>(), observers: { fn: (entries: { isIntersecting: boolean }[]) => void }[] = [], held: (() => void)[] = [];
     let stored = settingsSchema.clean(preferences), mode = 'complete';
-    win.Date.now = () => Date.parse(now); win.AbortController = AbortController; win.TextDecoder = TextDecoder;
+    win.Date.now = () => Date.parse(now);
     const minuteJobs = new Map<number, () => void>(), setTimer = win.setTimeout.bind(win), clearTimer = win.clearTimeout.bind(win);
     if (manualClock) {
         (win as { setTimeout: unknown }).setTimeout = (callback: () => void, delay: number, ...args: unknown[]) => {
@@ -35,6 +35,9 @@ function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manu
     } }, runtime: { sendMessage: async (message: { patch: Record<string, unknown> }) => { writes.push(message.patch); update(message.patch); return { ok: true, settings: stored }; } } };
     const update = (patch: Record<string, unknown>) => { const oldValue = stored; stored = settingsSchema.clean({ ...stored, ...patch }); listeners.forEach(fn => fn({ bpbSettings: { oldValue, newValue: stored } }, 'sync')); };
     if (lazy) (win as { IntersectionObserver: unknown }).IntersectionObserver = class { fn; constructor(fn: (entries: { isIntersecting: boolean }[]) => void) { this.fn = fn; observers.push(this); } observe() {} disconnect() {} };
+    // Eager cases read without waiting for the viewport, as the gate does where
+    // no observer exists; card-read-gate.browser.mts covers the real observer.
+    else (win as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
     (win as { fetch: unknown }).fetch = async (url: string, options: RequestInit & { signal: AbortSignal }) => {
         if (new URL(url).pathname.startsWith('/data/')) return new Response(JSON.stringify({ last_run_initialisation_time: Date.parse(now) / 1000 - 3600, last_run_availability_time: Date.parse(now) / 1000 - 600, update_interval_seconds: 21600 }), { headers: { 'content-type': 'application/json' } });
         const request = { url, options, mode }; requests.push(request);

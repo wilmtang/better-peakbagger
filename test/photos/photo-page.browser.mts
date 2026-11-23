@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom } from '../helpers/fixture-dom.mts';
 import { marked } from 'marked';
 import { COPY_FILES, ENTRIES } from '../../scripts/build-config.mts';
 import { photoProject as Project } from '../../src/photos/photo-project.ts';

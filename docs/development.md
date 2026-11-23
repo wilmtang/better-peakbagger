@@ -114,7 +114,7 @@ import closure: a script or test that imports `jsdom` or extension source, or
 declares `/// <reference lib="dom" />` for browser callbacks, is checked with the
 DOM library through `tsconfig.dom.check.json`; every other Node file is checked
 without DOM globals. jsdom tests use the published `@types/jsdom` declarations;
-[page-dom.mts](../test/helpers/page-dom.mts) and
+[fixture-dom.mts](../test/helpers/fixture-dom.mts) and
 [page-types.mts](../test/helpers/page-types.mts) type fixture pages as known
 markup, and [load-page.mts](../test/helpers/load-page.mts) keeps its
 trusted-event internals behind one local declaration pinned to jsdom's major.

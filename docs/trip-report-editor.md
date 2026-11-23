@@ -1047,7 +1047,7 @@ shows the exact bracket source.
 - Parser tests pin structured drop/unwrap/neutralize diagnostics for unsupported
   tags, attributes, and nesting, while proving aliases, legacy lists, and
   whitespace normalization remain warning-free.
-- `test/reports/report-markup.test.mts` pins Markdown tokens, bracket aliases, DOM
+- `test/reports/report-markup.browser.mts` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
 - `test/reports/report-editor-mount.browser.mts`,

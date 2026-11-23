@@ -1,10 +1,11 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://popup.better-peakbagger.test
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { fixtureDom, type FixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom, type FixtureDom } from '../helpers/fixture-dom.mts';
 
 interface PopupMessage { type: string; [key: string]: unknown }
 type PopupDom = FixtureDom;
@@ -65,7 +66,7 @@ test('popup paints from the cached theme and reconciles the synced preference', 
 
 test('popup explains both match class and confidence percentage', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -133,7 +134,7 @@ const unitsJob = {
 
 const loadPopupWithUnits = async (units: string, overrides = {}) => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     dom.window.chrome = {
@@ -192,7 +193,7 @@ test('popup resolves auto units without a page to sniff, and never mixes systems
 
 test('popup reads cached results before units resolve and delays the first result paint', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     let resolveSettings!: (value: unknown) => void;
@@ -232,7 +233,7 @@ test('popup reads cached results before units resolve and delays the first resul
 
 test('popup discards the cached GPX before offering a fresh capture', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -281,7 +282,7 @@ test('popup discards the cached GPX before offering a fresh capture', async () =
 
 test('popup presents a trackless manual activity as a neutral retryable state', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -322,7 +323,7 @@ test('popup presents a trackless manual activity as a neutral retryable state', 
 
 test('popup lets a no-match capture bypass the cached terminal job and check again', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -361,7 +362,7 @@ test('popup lets a no-match capture bypass the cached terminal job and check aga
 
 test('popup locks the selection in the same turn the drafts open', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const matches = [
@@ -427,7 +428,7 @@ test('popup locks the selection in the same turn the drafts open', async () => {
 
 test('popup keeps a persisted opening generation visibly locked', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const messages: PopupMessage[] = [];
@@ -463,7 +464,7 @@ test('popup keeps a persisted opening generation visibly locked', async () => {
 
 test('popup reports a grouping failure in the status line, not on the primary button', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = (phase: string) => ({
@@ -507,7 +508,7 @@ test('popup reports a grouping failure in the status line, not on the primary bu
 
 test('popup locks an opened selection and keeps its existing drafts discoverable', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -559,7 +560,7 @@ test('popup locks an opened selection and keeps its existing drafts discoverable
 
 test('popup keeps previewed drafts reachable for manual review and Save', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -599,7 +600,7 @@ test('popup keeps previewed drafts reachable for manual review and Save', async 
 
 test('popup explains when every previewed draft tab is gone and offers recovery', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -649,7 +650,7 @@ test('popup explains when every previewed draft tab is gone and offers recovery'
 
 test('popup restores the singular draft label after opening fails', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const job = {
@@ -684,7 +685,7 @@ test('popup restores the singular draft label after opening fails', async () => 
 
 test('popup rides out a transient poll failure instead of declaring the capture dead', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
@@ -743,7 +744,7 @@ test('popup rides out a transient poll failure instead of declaring the capture 
 
 test('popup gives up on a sustained poll outage with recoverable, plain copy', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
@@ -789,7 +790,7 @@ test('popup gives up on a sustained poll outage with recoverable, plain copy', a
 
 test('popup stops status polling when capture finishes without storing a job', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
@@ -842,7 +843,7 @@ test('popup names each capture stage and shows bounded summit-area progress', as
     ];
     for (const [phase, title, detail] of cases) {
         const dom = fixtureDom(html, {
-            url: 'chrome-extension://better-peakbagger/popup/popup.html',
+            url: 'https://popup.better-peakbagger.test/popup/popup.html',
             runScripts: 'outside-only'
         });
         const job = {
@@ -871,7 +872,7 @@ test('popup names each capture stage and shows bounded summit-area progress', as
 
 test('popup shows a neutral unsupported-page state with discoverable Settings', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     let settingsOpens = 0;
@@ -906,7 +907,7 @@ test('popup shows a neutral unsupported-page state with discoverable Settings', 
 
 test('popup turns a Peakbagger human check into a direct recovery flow', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const opened: Record<string, unknown>[] = [];
@@ -954,7 +955,7 @@ test('popup turns a Peakbagger human check into a direct recovery flow', async (
 
 test('popup focuses the exact preserved Peakbagger challenge instead of opening a duplicate', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const opened: Record<string, unknown>[] = [];
@@ -1012,7 +1013,7 @@ test('popup names Peakbagger transport failures and offers direct recovery', asy
 
     for (const item of cases) {
         const dom = fixtureDom(html, {
-            url: 'chrome-extension://better-peakbagger/popup/popup.html',
+            url: 'https://popup.better-peakbagger.test/popup/popup.html',
             runScripts: 'outside-only'
         });
         const opened: Record<string, unknown>[] = [];
@@ -1090,7 +1091,7 @@ test('popup recovery actions match the shared capture error policy', async t => 
     for (const item of cases) {
         await t.test(item.code, async () => {
             const dom = fixtureDom(html, {
-                url: 'chrome-extension://better-peakbagger/popup/popup.html',
+                url: 'https://popup.better-peakbagger.test/popup/popup.html',
                 runScripts: 'outside-only'
             });
             const calls = { updates: [] as unknown[][], reloads: [] as unknown[][], starts: [] as unknown[] };
@@ -1141,7 +1142,7 @@ test('export recovery reopens only the captured provider activity and preserves 
         for (const code of ['provider-session-not-ready', 'provider-download-failed', 'provider-export-failed']) {
             await t.test(`${provider}: ${code}`, async () => {
                 const dom = fixtureDom(html, {
-                    url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+                    url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only',
                 });
                 const created: Record<string, unknown>[] = [];
                 const starts: unknown[] = [];
@@ -1185,7 +1186,7 @@ test('export recovery reopens only the captured provider activity and preserves 
 
 test('popup can cancel an in-progress capture without retaining track data', async () => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     const messages: PopupMessage[] = [];
@@ -1221,7 +1222,7 @@ test('popup can cancel an in-progress capture without retaining track data', asy
 for (const obsoleteReply of ['progress', 'failure']) {
     test(`cancelled capture ignores obsolete status and start ${obsoleteReply} replies`, async t => {
         const dom = fixtureDom(html, {
-            url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+            url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only',
         });
         t.after(() => dom.window.close());
         const nativeSet = dom.window.setTimeout.bind(dom.window);
@@ -1267,7 +1268,7 @@ for (const action of ['clear', 'open']) {
         let finishStart!: (value: unknown) => void;
         const start = new Promise(resolve => { finishStart = resolve; });
         const dom = fixtureDom(html, {
-            url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only',
+            url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only',
         });
         t.after(() => dom.window.close());
         dom.window.chrome = {
@@ -1320,7 +1321,7 @@ const readyJob = {
 
 const mountPopup = (respond: (message: PopupMessage) => unknown, job: Record<string, unknown> = readyJob) => {
     const dom = fixtureDom(html, {
-        url: 'chrome-extension://better-peakbagger/popup/popup.html',
+        url: 'https://popup.better-peakbagger.test/popup/popup.html',
         runScripts: 'outside-only'
     });
     dom.window.chrome = {
@@ -1453,7 +1454,7 @@ test('popup pending result actions retain focus and reject repeated activation',
 });
 
 test('capture progress keeps the same focused Cancel button across status polls', async t => {
-    const dom = fixtureDom(html, { url: 'chrome-extension://test/popup/popup.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(html, { url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only' });
     t.after(() => dom.window.close());
     let tick: TimerCallback | undefined;
     dom.window.setTimeout = ((callback: TimerCallback) => { tick = callback; return 1; }) as typeof setTimeout;
@@ -1485,7 +1486,7 @@ test('a failed capture deletion preserves the current summit selection', async t
 });
 
 test('opening popup and inbox never starts a capture', async () => {
-    const dom = fixtureDom(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(html, { url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only' });
     const messages: PopupMessage[] = [];
     dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
         messages.push(message);
@@ -1505,7 +1506,7 @@ test('opening popup and inbox never starts a capture', async () => {
 });
 
 test('the master switch hides the popup inbox and blocks opening it', async () => {
-    const dom = fixtureDom(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(html, { url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only' });
     const messages: PopupMessage[] = [], listeners: ((changes: Record<string, unknown>, area: string) => void)[] = []; let settings = { enableGarminInbox: false };
     dom.window.chrome = { tabs: { query: async () => [] }, runtime: { sendMessage: async (message: PopupMessage) => {
         messages.push(message); return { ok: true, configured: true, pending: 5, queued: 2 };
@@ -1526,7 +1527,7 @@ test('the master switch hides the popup inbox and blocks opening it', async () =
 });
 
 test('the inbox chip counts only activities waiting for peak checks', async () => {
-    const dom = fixtureDom(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(html, { url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only' });
     // Four reviewed activities (for example "No matching summits") with an empty queue.
     dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: {} }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
         if (message.type === 'CAPTURE_STATUS') return null;
@@ -1543,7 +1544,7 @@ test('the inbox chip counts only activities waiting for peak checks', async () =
 });
 
 const photoEntryPopup = (open: () => Promise<unknown>) => {
-    const dom = fixtureDom(html, { url: 'chrome-extension://better-peakbagger/popup/popup.html', runScripts: 'outside-only' });
+    const dom = fixtureDom(html, { url: 'https://popup.better-peakbagger.test/popup/popup.html', runScripts: 'outside-only' });
     const messages: PopupMessage[] = [];
     dom.window.chrome = { storage: { local: { get: async () => ({}) }, sync: { get: async () => ({ bpbSettings: { enableGarminInbox: false } }) }, onChanged: { addListener() {}, removeListener() {} } }, tabs: { query: async () => [{ id: 9 }] }, runtime: { sendMessage: async (message: PopupMessage) => {
         messages.push(message);
@@ -1597,14 +1598,17 @@ test('a failed photo editor open keeps the popup and offers a retry', async () =
 test('rendering a ready job does not echo its selection back, and a changed selection is written once', async () => {
     const selections: PopupMessage[] = [];
     const rejected: unknown[] = [];
-    const onRejection = (reason: unknown) => { rejected.push(reason); };
-    process.on('unhandledRejection', onRejection);
+    const dom = mountPopup(message => {
+        if (message.type !== 'CAPTURE_SELECTION') return { ok: true };
+        selections.push(message);
+        throw new Error(WORKER_UNREACHABLE);
+    }, { ...readyJob, matches: [...readyJob.matches, { ...readyJob.matches[0], id: 2, name: 'Two Peak' }] });
+    // An unhandled rejection is reported on the realm owning the promise: the
+    // stubbed sendMessage's own lives in this test page, the popup's in its frame.
+    const onRejection = (event: PromiseRejectionEvent) => { event.preventDefault(); rejected.push(event.reason); };
+    window.addEventListener('unhandledrejection', onRejection);
+    dom.window.addEventListener('unhandledrejection', onRejection);
     try {
-        const dom = mountPopup(message => {
-            if (message.type !== 'CAPTURE_SELECTION') return { ok: true };
-            selections.push(message);
-            throw new Error(WORKER_UNREACHABLE);
-        }, { ...readyJob, matches: [...readyJob.matches, { ...readyJob.matches[0], id: 2, name: 'Two Peak' }] });
         await startIfOffered(dom);
         const openButton = dom.window.document.getElementById('open-drafts')!;
         await waitFor(() => openButton.textContent === 'Open 1 draft');
@@ -1616,6 +1620,5 @@ test('rendering a ready job does not echo its selection back, and a changed sele
         assert.deepEqual(selections.map(message => [...(message.selectedIds as number[])]), [[1, 2]]);
         await new Promise(resolve => setTimeout(resolve, 20));
         assert.deepEqual(rejected, [], 'a refused selection write is handled');
-        dom.window.close();
-    } finally { process.off('unhandledRejection', onRejection); }
+    } finally { window.removeEventListener('unhandledrejection', onRejection); dom.window.close(); }
 });

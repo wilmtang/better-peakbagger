@@ -9,15 +9,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import vm from 'node:vm';
-import { fixtureDom } from '../helpers/page-dom.mts';
+import { fixtureDom } from '../helpers/fixture-dom.mts';
 import { reportMarkup as Markup } from '../../src/reports/report-markup.ts';
 
-const browserDom = fixtureDom('');
-globalThis.DOMParser = browserDom.window.DOMParser;
-const markedContext = vm.createContext({});
-vm.runInContext(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'), markedContext);
-(globalThis as unknown as { marked: unknown }).marked = markedContext.marked;
+// The extension loads marked as a classic script that defines a global.
+(0, eval)(await readFile(new URL('../../node_modules/marked/lib/marked.umd.js', import.meta.url), 'utf8'));
 
 const VIDEO_ATTRIBUTES = ' controls preload="metadata" playsinline referrerpolicy="no-referrer"';
 const YOUTUBE_ATTRIBUTES = ' title="YouTube video" loading="lazy"'
@@ -660,7 +656,7 @@ test('captioned images preserve text, links and dimensions through every convers
                 for (let cycle = 0; cycle < 3; cycle++) {
                     roundTrip = Markup.markdownToBracket(Markup.bracketToMarkdown(roundTrip));
                     assert.equal(roundTrip, canonical);
-                    const doc = new browserDom.window.DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
+                    const doc = new DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
                     roundTrip = Markup.domToBracket(doc.body);
                     assert.equal(roundTrip, canonical);
                     assert.equal(doc.querySelectorAll('figure').length, 1);
@@ -688,12 +684,12 @@ test('formatted captions survive every conversion and stay inline', () => {
         for (let cycle = 0; cycle < 3; cycle++) {
             roundTrip = Markup.markdownToBracket(Markup.bracketToMarkdown(roundTrip));
             assert.equal(roundTrip, canonical);
-            const doc = new browserDom.window.DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
+            const doc = new DOMParser().parseFromString(Markup.bracketToEditorHtml(roundTrip), 'text/html');
             roundTrip = Markup.domToBracket(doc.body);
             assert.equal(roundTrip, canonical);
         }
     }
-    const preview = new browserDom.window.DOMParser().parseFromString(Markup.bracketToPreviewHtml(figure), 'text/html');
+    const preview = new DOMParser().parseFromString(Markup.bracketToPreviewHtml(figure), 'text/html');
     const rendered = preview.querySelector('figcaption');
     assert.equal(rendered!.querySelector('b i')!.textContent, 'from');
     assert.equal(rendered!.querySelector('a[target="_blank"]')!.getAttribute('rel'), 'noopener noreferrer');
