@@ -1713,7 +1713,7 @@ The focused automated evidence is deliberately split by boundary:
   normalization, TTL edge behavior, URL/input parsing, synthetic Buddy parsing,
   merge/mirror and Buddy-mutation semantics, effective source selection,
   comparators, and fuzzy scoring.
-- `test/favorites/favorites-store.test.mjs` covers serialized concurrent
+- `test/favorites/favorites-store.test.mts` covers serialized concurrent
   operations, stale-signature replacement rejection, bounds, and queue recovery
   after a failed storage write.
 - `test/profile/profile-backup-core.browser.mts` covers Buddy/climber response acceptance

@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { climberCardTarget, climberCardState } from '../../src/favorites/climber-card-state.ts';
+import { climberCardTarget, climberCardState, type ClimberCardStateOptions, type ClimberListEntry } from '../../src/favorites/climber-card-state.ts';
+import type { BuddyIntent } from '../../src/favorites/buddy-state.ts';
 
 const cid = 900002, ownerCid = 900001;
 const entry = { cid, name: 'Casey Alpine', addedAt: 1, source: 'manual' };
-const state = (flags = {}, overrides = {}) => climberCardState({ cid, ownerCid,
+const state = (flags: { favorite?: boolean; ignored?: boolean; buddy?: boolean; pending?: boolean } = {},
+    overrides: ClimberCardStateOptions = {}) => climberCardState({ cid, ownerCid,
     settings: { favoritesSource: 'custom' }, membership: {
         favorites: { entries: flags.favorite ? [entry] : [] },
         ignored: { entries: flags.ignored ? [entry] : [] },
@@ -15,17 +17,19 @@ const state = (flags = {}, overrides = {}) => climberCardState({ cid, ownerCid,
     }, ...overrides });
 
 test('active, expired and confirmed intents all protect Ignore but only active work disables checking', () => {
-    const membership = { favorites: { entries: [] }, ignored: { entries: [] }, pendingIds: new Set(), error: '',
-        buddyIntents: [{ cid, status: 'prepared', leaseUntil: Date.now() + 30000 }] };
+    const intent: BuddyIntent = { cid, ownerCid, action: 'add', name: entry.name, token: 'intent', tabId: 1,
+        status: 'prepared', checkOnly: false, leaseUntil: Date.now() + 30000 };
+    const membership = { favorites: { entries: [] }, ignored: { entries: [] }, pendingIds: new Set<number>(), error: '',
+        buddyIntents: [intent] };
     const active = state({}, { membership });
     assert.equal(active.buddyInFlight, true); assert.equal(active.ignoreDisabled, true);
     assert.match(active.note, /in progress/);
-    membership.buddyIntents[0].leaseUntil = 0;
+    intent.leaseUntil = 0;
     assert.equal(state({}, { membership }).buddyInFlight, false);
     assert.equal(state({}, { membership }).ignoreDisabled, true);
-    membership.buddyIntents[0].status = 'confirmed';
+    intent.status = 'confirmed';
     assert.equal(state({}, { membership }).ignoreDisabled, true);
-    membership.buddyIntents[0].leaseUntil = Date.now() + 30000;
+    intent.leaseUntil = Date.now() + 30000;
     assert.equal(state({}, { membership }).buddyInFlight, true, 'confirmed-status recovery can still own a live lease');
 });
 
@@ -94,8 +98,8 @@ test('self links, busy actions, and list ceilings retain safe removals', () => {
     assert.equal(state({}, { ownerCid: cid }).self, true);
     assert.equal(state({}, { ownerCid: cid }).favoriteDisabled, true);
     assert.equal(state({}, { busy: true }).ignoreDisabled, true);
-    const entries = Array.from({ length: 1500 }, (_, index) => ({ ...entry, cid: index + 1 }));
-    const membership = { favorites: { entries }, ignored: { entries }, pendingIds: new Set(), error: '' };
+    const entries: ClimberListEntry[] = Array.from({ length: 1500 }, (_, index) => ({ ...entry, cid: index + 1 }));
+    const membership = { favorites: { entries }, ignored: { entries }, pendingIds: new Set<number>(), error: '' };
     assert.equal(state({}, { membership }).favoriteDisabled, true);
     assert.equal(state({}, { membership }).ignoreDisabled, true);
     membership.favorites.entries[0] = entry;

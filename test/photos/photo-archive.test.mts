@@ -24,9 +24,9 @@ test('builds a CSP-safe project archive with the original and JSON sidecars', as
         'photo.json',
         'project.json',
     ]);
-    assert.deepEqual(JSON.parse(await zip.file('project.json').async('text')), project);
-    assert.deepEqual(JSON.parse(await zip.file('photo.json').async('text')), photo);
-    assert.equal(await zip.file('original.png').async('text'), 'original bytes');
+    assert.deepEqual(JSON.parse(await zip.file('project.json')!.async('text')), project);
+    assert.deepEqual(JSON.parse(await zip.file('photo.json')!.async('text')), photo);
+    assert.equal(await zip.file('original.png')!.async('text'), 'original bytes');
 });
 
 test('rejects duplicate or unsafe names instead of emitting an ambiguous archive', async () => {

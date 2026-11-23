@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.ts';
-const entry = (cid, name = `Climber ${cid}`) => ({ cid, name, addedAt: cid });
+const entry = (cid: number, name = `Climber ${cid}`) => ({ cid, name, addedAt: cid });
 
 test('ignored storage distinguishes missing, valid empty, and malformed data', () => {
     assert.deepEqual(I.readList(undefined), I.emptyList());
@@ -12,8 +12,8 @@ test('ignored storage distinguishes missing, valid empty, and malformed data', (
         { schemaVersion: 1, revision: 0, entries: [entry(1), entry(1)] }]) {
         assert.equal(I.readList(value), null);
     }
-    assert.equal(I.readList(I.emptyList()).entries.length, 0);
-    assert.equal(I.validateEntries(Array.from({ length: 1500 }, (_, i) => entry(i + 1))).length, 1500);
+    assert.equal(I.readList(I.emptyList())?.entries.length, 0);
+    assert.equal(I.validateEntries(Array.from({ length: 1500 }, (_, i) => entry(i + 1)))?.length, 1500);
     assert.equal(I.validateEntries(Array.from({ length: 1501 }, (_, i) => entry(i + 1))), null);
 });
 test('profile ids require exact secure origin, path, and a unique safe positive id', () => {
@@ -38,13 +38,16 @@ test('strict UTF-8 backup parsing and allowlisted serialization preserve names a
         assert.equal(I.parseBackup(JSON.stringify({ ...JSON.parse(text), ...patch })), null);
     }
     assert.equal(I.parseBackup('山'.repeat(I.MAX_BYTES / 2)), null);
-    assert.equal(I.signature(values), I.signature(I.parseBackup(text)));
+    const parsed = I.parseBackup(text);
+    assert.ok(parsed);
+    assert.equal(I.signature(values), I.signature(parsed));
 });
 test('one visibility predicate counts overlap once and keeps unknown authors visible', () => {
     const records = Array.from({ length: 12 }, (_, i) => ({ climberId: i + 1, favorite: i < 4 }));
     const ignored = new Set([1, 5, 6]);
-    for (const [fav, reveal, shown, ih, oh] of [[false,false,9,3,0], [true,false,3,3,6],
-        [true,true,4,0,8], [false,true,12,0,0]]) {
+    const cases: [favorite: boolean, reveal: boolean, shown: number, ignoreHidden: number, otherHidden: number][] = [
+        [false,false,9,3,0], [true,false,3,3,6], [true,true,4,0,8], [false,true,12,0,0]];
+    for (const [fav, reveal, shown, ih, oh] of cases) {
         const result = I.visibility(records, ignored, r => !fav || r.favorite, reveal);
         assert.equal(result.visible.length, shown);
         assert.equal(result.ignoreHidden, ih);

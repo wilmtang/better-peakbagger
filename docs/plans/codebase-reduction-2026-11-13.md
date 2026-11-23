@@ -76,8 +76,8 @@ and several steps were wrong. The phases below are the corrected version.
 - scripts/prototypes/ has no tracked files. The 11,100-line figure for
   experiments, evidence, mocks and prototypes counted PNG bytes as lines; the
   text is 5,560 lines.
-- `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mjs` and
-  `test/garmin/zip-csp.test.mjs`. `docs/plans/evidence/` is referenced by
+- `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mts` and
+  `test/garmin/zip-csp.test.mts`. `docs/plans/evidence/` is referenced by
   `src/weather/summit-cloud-models.ts`, `test/weather/summit-cloud.test.mts` and
   the TypeScript policy. Neither can simply be deleted.
 - 77 links in 20 maintained documents point into docs/archive/, not the four

@@ -136,7 +136,9 @@ const fileServer = async (dist: string) => {
 // shipped bundle evaluates dist/, so it runs what the Vite build produced.
 const iifeServer = async () => {
     const root = await realpath(projectRoot);
-    const allowedRoots = [path.join(root, 'test', 'helpers') + path.sep, path.join(root, 'test', 'dom', 'runtime') + path.sep];
+    // Test harnesses, and showcase page scripts (fixtures, never shipped).
+    const allowedRoots = [path.join(root, 'test', 'helpers') + path.sep, path.join(root, 'test', 'dom', 'runtime') + path.sep,
+        path.join(root, 'scripts', 'showcase') + path.sep];
     const cache = new Map<string, string>();
     return async (pathname: string, globalName: string | null): Promise<string | null> => {
         if (globalName !== null && !GLOBAL_NAME_PATTERN.test(globalName)) return null;

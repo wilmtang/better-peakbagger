@@ -5,6 +5,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { trustedActions as TrustedActions } from '../../src/background/trusted-actions.ts';
+import type { TrustedActionSender } from '../../src/background/trusted-actions.ts';
+
+// A result's token whichever variant it is; a refused result has none, which
+// is what a case reusing it proves.
+const token = (result: object) => (result as { token?: string }).token;
+const grant = (result: object) => (result as { grantToken?: string }).grantToken;
 
 const peakbagger = (tabId = 5, frameId = 0, documentId = 'document-a') => ({
     tab: { id: tabId },
@@ -14,12 +20,12 @@ const peakbagger = (tabId = 5, frameId = 0, documentId = 'document-a') => ({
 });
 
 const createStorage = () => {
-    const values = {};
+    const values: Record<string, unknown> = {};
     return {
         values,
         area: {
-            async get(key) { return { [key]: structuredClone(values[key]) }; },
-            async set(patch) { Object.assign(values, structuredClone(patch)); },
+            async get(key: string) { return { [key]: structuredClone(values[key]) }; },
+            async set(patch: Record<string, unknown>) { Object.assign(values, structuredClone(patch)); },
         },
     };
 };
@@ -29,11 +35,11 @@ const create = ({ storage = createStorage(), start = 1000 } = {}) => {
     let sequence = 0;
     const actions = TrustedActions.create({
         storage: () => storage.area,
-        isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/'),
+        isPeakbaggerSender: (sender: TrustedActionSender | null | undefined) => sender?.url?.startsWith('https://www.peakbagger.com/') === true,
         now: () => current,
         randomToken: () => `token-${++sequence}`,
     });
-    return { actions, storage, advance: ms => { current += ms; } };
+    return { actions, storage, advance: (ms: number) => { current += ms; } };
 };
 
 test('activation capabilities are sender-bound, generation-bound, short-lived, and one-use', async () => {
@@ -43,11 +49,11 @@ test('activation capabilities are sender-bound, generation-bound, short-lived, a
 
     assert.deepEqual(issued, { ok: true, token: 'token-1', expiresAt: 6000 });
     assert.equal(actions.consumeCapability({
-        activationToken: issued.token,
+        activationToken: token(issued),
         generation: '1',
     }, peakbagger(9), TrustedActions.ACTIONS.ASCENT_BACKUP), false);
     assert.equal(actions.consumeCapability({
-        activationToken: issued.token,
+        activationToken: token(issued),
         generation: '1',
     }, sender, TrustedActions.ACTIONS.ASCENT_BACKUP), false, 'a mismatch consumes the token');
 
@@ -56,14 +62,14 @@ test('activation capabilities are sender-bound, generation-bound, short-lived, a
         generation: 'settings-1',
     }, sender);
     assert.equal(actions.consumeCapability({
-        activationToken: wrongGeneration.token,
+        activationToken: token(wrongGeneration),
         generation: 'settings-2',
     }, sender, TrustedActions.ACTIONS.BETA_SETTINGS), false);
 
     const expired = actions.issue({ action: TrustedActions.ACTIONS.BETA_SETTINGS, generation: 'settings-3' }, sender);
     advance(TrustedActions.CAPABILITY_TTL_MS);
     assert.equal(actions.consumeCapability({
-        activationToken: expired.token,
+        activationToken: token(expired),
         generation: 'settings-3',
     }, sender, TrustedActions.ACTIONS.BETA_SETTINGS), false);
 });
@@ -78,13 +84,13 @@ test('workflow grants survive worker restart but remain bound and revocable', as
     const begun = await first.actions.begin({
         action: TrustedActions.ACTIONS.PROFILE_BACKUP,
         generation: 'profile-4',
-        activationToken: issued.token,
+        activationToken: token(issued),
     }, sender);
 
     assert.equal(begun.ok, true);
     const restarted = create({ storage: first.storage });
     assert.equal(await restarted.actions.consumeGrant({
-        grantToken: begun.grantToken,
+        grantToken: grant(begun),
         generation: 'profile-4',
     }, peakbagger(5, 0, 'document-b'), TrustedActions.ACTIONS.PROFILE_BACKUP), false);
 
@@ -95,18 +101,18 @@ test('workflow grants survive worker restart but remain bound and revocable', as
     const replacement = await restarted.actions.begin({
         action: TrustedActions.ACTIONS.PROFILE_BACKUP,
         generation: 'profile-5',
-        activationToken: replacementIssued.token,
+        activationToken: token(replacementIssued),
     }, sender);
     assert.equal(await restarted.actions.consumeGrant({
-        grantToken: replacement.grantToken,
+        grantToken: grant(replacement),
         generation: 'profile-5',
     }, sender, TrustedActions.ACTIONS.PROFILE_BACKUP), true);
     assert.deepEqual(await restarted.actions.end({
-        grantToken: replacement.grantToken,
+        grantToken: grant(replacement),
         generation: 'profile-5',
     }, sender), { ok: true });
     assert.equal(await restarted.actions.consumeGrant({
-        grantToken: replacement.grantToken,
+        grantToken: grant(replacement),
         generation: 'profile-5',
     }, sender, TrustedActions.ACTIONS.PROFILE_BACKUP), false);
 });
@@ -114,7 +120,7 @@ test('workflow grants survive worker restart but remain bound and revocable', as
 test('one-use workflow grants cannot be replayed and tab cleanup revokes authority', async () => {
     const { actions } = create();
     const sender = peakbagger();
-    const beginGrant = async generation => {
+    const beginGrant = async (generation: string) => {
         const issued = actions.issue({
             action: TrustedActions.ACTIONS.ASCENT_BACKUP,
             generation,
@@ -122,12 +128,12 @@ test('one-use workflow grants cannot be replayed and tab cleanup revokes authori
         return actions.begin({
             action: TrustedActions.ACTIONS.ASCENT_BACKUP,
             generation,
-            activationToken: issued.token,
+            activationToken: token(issued),
         }, sender);
     };
 
     const oneUse = await beginGrant('ascent-1');
-    const message = { grantToken: oneUse.grantToken, generation: 'ascent-1' };
+    const message = { grantToken: grant(oneUse), generation: 'ascent-1' };
     assert.equal(await actions.consumeGrant(
         message,
         sender,
@@ -144,7 +150,7 @@ test('one-use workflow grants cannot be replayed and tab cleanup revokes authori
     const forgotten = await beginGrant('ascent-2');
     await actions.forgetTab(5);
     assert.equal(await actions.consumeGrant({
-        grantToken: forgotten.grantToken,
+        grantToken: grant(forgotten),
         generation: 'ascent-2',
     }, sender, TrustedActions.ACTIONS.ASCENT_BACKUP), false);
 });
@@ -162,15 +168,15 @@ for (const [name, action] of [
         const begun = await actions.begin({
             action,
             generation: 'map-1',
-            activationToken: issued.token,
+            activationToken: token(issued),
         }, sender);
         assert.equal(begun.ok, true);
         assert.equal(await actions.consumeGrant({
-            grantToken: begun.grantToken,
+            grantToken: grant(begun),
             generation: 'map-1',
         }, sender, action, { oneUse: true }), true);
         assert.equal(await actions.consumeGrant({
-            grantToken: begun.grantToken,
+            grantToken: grant(begun),
             generation: 'map-1',
         }, sender, action, { oneUse: true }), false);
     });

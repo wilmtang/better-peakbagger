@@ -130,7 +130,7 @@ test('every showcase server speaks HTTPS on a Peakbagger host, or the analyzer r
         // copies), so each server is pinned to obtaining a certificate through
         // that helper and disposing of it, rather than to spelling out openssl.
         assert.match(source, /createFixtureCertificate\(/,
-            `${relative} must mint its fixture certificate through browser-verification-fixtures.mjs`);
+            `${relative} must mint its fixture certificate through browser-verification-fixtures.mts`);
         assert.match(source, /certificate\.remove\(\)/,
             `${relative} must delete its fixture key and certificate after the run`);
     }

@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 import JSZip from 'jszip';
 import { patchJsZipCsp, jsZipCspPlugin } from '../../scripts/jszip-csp-patch.mts';
-import { fixtures } from '../../docs/plans/experiments/fit-decoders/fixtures.mjs';
+import { fixtures } from '../../docs/plans/experiments/fit-decoders/fixtures.mts';
 import { decodeFitActivity } from '../../src/garmin/fit-activity.ts';
 
 test('browser ZIP decoding works with dynamic code disabled and rejects string callbacks', async () => {
@@ -18,6 +18,7 @@ test('browser ZIP decoding works with dynamic code disabled and rejects string c
     context.self = context;
     vm.runInContext(code, context);
     const fixture = fixtures().find(item => item.name === 'ordinary-enhanced-altitude');
+    assert.ok(fixture);
     const zip = new JSZip(); zip.file('activity.fit', fixture.bytes);
     const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
     const actual = await context.Decoder.decodeGarminRecording(bytes);

@@ -4,12 +4,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as I from '../../src/favorites/ignored-climbers.ts';
 import { createIgnoredStore } from '../../src/background/ignored-store.ts';
-import { observeIgnored } from '../../src/favorites/ignored-client.ts';
-const entry = cid => ({ cid, name: `Climber ${cid}`, addedAt: cid });
+import { observeIgnored, type IgnoredStorageApi, type ObservedIgnoredState } from '../../src/favorites/ignored-client.ts';
+import { fieldsOf } from '../helpers/result-fields.mts';
+const entry = (cid: number) => ({ cid, name: `Climber ${cid}`, addedAt: cid });
 const harness = () => {
-    const values = {};
+    const values: Record<string, unknown> = {};
     const storage = { get: async () => structuredClone(values),
-        set: async patch => Object.assign(values, structuredClone(patch)) };
+        set: async (patch: Record<string, unknown>) => { Object.assign(values, structuredClone(patch)); } };
     return { values, storage, store: createIgnoredStore({ storage }) };
 };
 test('parallel operations compose and duplicate adds do not advance revision', async () => {
@@ -17,7 +18,7 @@ test('parallel operations compose and duplicate adds do not advance revision', a
     await Promise.all(Array.from({ length: 20 }, (_, i) => store.mutate({ kind: 'add', entry: entry(i + 1) })));
     assert.equal((await store.read()).entries.length, 20);
     assert.equal((await store.read()).revision, 20);
-    assert.equal((await store.mutate({ kind: 'add', entry: entry(1) })).alreadyPresent, true);
+    assert.equal(fieldsOf(await store.mutate({ kind: 'add', entry: entry(1) })).alreadyPresent, true);
     assert.equal((await store.read()).revision, 20);
 });
 test('reviewed replacements and whole-list undo reject intervening writes', async () => {
@@ -26,7 +27,7 @@ test('reviewed replacements and whole-list undo reject intervening writes', asyn
     await store.mutate({ kind: 'add', entry: entry(1) });
     const result = await store.mutate({ kind: 'replace', entries: [], expectedRevision: reviewed.revision,
         expectedSignature: I.signature(reviewed.entries) });
-    assert.equal(result.error.code, 'stale');
+    assert.equal(fieldsOf(result).error?.code, 'stale');
     assert.equal((await store.read()).entries.length, 1);
 });
 test('entry-level undo preserves unrelated additions and rejects a changed entry', async () => {
@@ -36,7 +37,7 @@ test('entry-level undo preserves unrelated additions and rejects a changed entry
     await store.mutate({ kind: 'add', entry: entry(2) });
     assert.equal((await store.mutate({ kind: 'add', entry: entry(1), expectedEntry: 'absent' })).ok, true);
     assert.deepEqual((await store.read()).entries.map(e => e.cid), [1,2]);
-    assert.equal((await store.mutate({ kind: 'add', entry: entry(1), expectedEntry: 'absent' })).error.code, 'stale');
+    assert.equal(fieldsOf(await store.mutate({ kind: 'add', entry: entry(1), expectedEntry: 'absent' })).error?.code, 'stale');
 });
 test('malformed storage and failed reads or writes never confirm an empty list', async () => {
     const { store, values, storage } = harness();
@@ -46,18 +47,19 @@ test('malformed storage and failed reads or writes never confirm an empty list',
     storage.set = async () => { throw new Error('write failed'); };
     assert.equal((await store.mutate({ kind: 'add', entry: entry(1) })).ok, false);
     assert.equal(values[I.IGNORED_KEY], undefined);
-    assert.equal((await store.preference('true')).error.code, 'invalid');
+    assert.equal(fieldsOf(await store.preference('true')).error?.code, 'invalid');
 });
 test('storage notification wins over a stale initial async read', async () => {
-    let resolveRead, listener;
-    const states = [];
-    const api = { storage: { local: { get: () => new Promise(resolve => { resolveRead = resolve; }) },
+    let resolveRead!: (values: Record<string, unknown>) => void;
+    let listener!: Parameters<IgnoredStorageApi['storage']['onChanged']['addListener']>[0];
+    const states: ObservedIgnoredState[] = [];
+    const api: IgnoredStorageApi = { storage: { local: { get: () => new Promise(resolve => { resolveRead = resolve; }) },
         onChanged: { addListener: fn => { listener = fn; }, removeListener: () => {} } } };
-    const observer = observeIgnored(api, state => states.push(state));
+    const observer = observeIgnored(api, state => { states.push(state); });
     listener({ [I.IGNORED_KEY]: { newValue: { schemaVersion: 1, revision: 1, entries: [entry(1)] } } }, 'local');
     resolveRead({ [I.IGNORED_KEY]: I.emptyList() });
     await Promise.resolve();
     assert.equal(states.length, 1);
-    assert.equal(states[0].list.revision, 1);
+    assert.equal(fieldsOf(states[0]!).list?.revision, 1);
     observer.stop();
 });

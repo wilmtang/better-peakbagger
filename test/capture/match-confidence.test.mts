@@ -20,7 +20,7 @@ test('every classification has a name and a tone', () => {
 // Naming a 41%-confidence brush past a summit "Probable" is the specific
 // failure this owner exists to prevent.
 test('a below-bar match is never named as a confident one', () => {
-    for (const classification of ['possible', 'weak']) {
+    for (const classification of ['possible', 'weak'] as const) {
         assert.notEqual(matchLabel(classification), 'Probable');
         assert.notEqual(matchLabel(classification), 'Strong');
     }
@@ -45,7 +45,7 @@ test('the classification list covers every value capture-core assigns', async ()
         .map(match => match[1]));
     assert.ok(assigned.size >= 4, `capture-core assigned only ${assigned.size} classifications`);
     for (const classification of assigned) {
-        assert.ok(CLASSIFICATIONS.includes(classification),
+        assert.ok((CLASSIFICATIONS as readonly string[]).includes(classification!),
             `capture-core can assign '${classification}', which match-confidence.js does not list`);
     }
 });
@@ -69,10 +69,10 @@ test('each banner tone is styled in every theme block', async () => {
     const css = await readFile(
         new URL('../../src/reports/report-editor.css', import.meta.url), 'utf8');
     const blocks = [
-        { name: 'base', pattern: tone => new RegExp(`^\\.bpb-draft-banner-${tone} \\{`, 'm') },
-        { name: 'prefers-dark', pattern: tone => new RegExp(`^ {4}\\.bpb-draft-banner-${tone} \\{`, 'm') },
-        { name: 'data-theme dark', pattern: tone => new RegExp(`\\[data-bpb-theme="dark"\\] \\.bpb-draft-banner-${tone} \\{`) },
-        { name: 'data-theme light', pattern: tone => new RegExp(`\\[data-bpb-theme="light"\\] \\.bpb-draft-banner-${tone} \\{`) },
+        { name: 'base', pattern: (tone: string) => new RegExp(`^\\.bpb-draft-banner-${tone} \\{`, 'm') },
+        { name: 'prefers-dark', pattern: (tone: string) => new RegExp(`^ {4}\\.bpb-draft-banner-${tone} \\{`, 'm') },
+        { name: 'data-theme dark', pattern: (tone: string) => new RegExp(`\\[data-bpb-theme="dark"\\] \\.bpb-draft-banner-${tone} \\{`) },
+        { name: 'data-theme light', pattern: (tone: string) => new RegExp(`\\[data-bpb-theme="light"\\] \\.bpb-draft-banner-${tone} \\{`) },
     ];
     for (const tone of new Set(CLASSIFICATIONS.map(matchTone))) {
         for (const block of blocks) {

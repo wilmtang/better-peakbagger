@@ -12,6 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { transform as transformScript } from 'esbuild';
 import type { BrowserContext, Page } from 'playwright';
 
 /* global document */
@@ -1067,20 +1068,35 @@ export const fixtureContentTypes = new Map<string, string>([
 export const fixtureContentType = (file: string): string =>
     fixtureContentTypes.get(path.extname(file).toLowerCase()) || 'application/octet-stream';
 
+// Showcase page scripts are authored in TypeScript and served at their .js URL.
+const SHOWCASE_SCRIPTS = `${path.sep}scripts${path.sep}showcase${path.sep}`;
+
+const isFile = async (file: string) => {
+    try {
+        return (await stat(file)).isFile();
+    } catch {
+        return false;
+    }
+};
+
 // Resolve a request path to a real file inside `root`, or null. Rejects
-// traversal out of the root and anything that is not a regular file.
+// traversal out of the root and anything that is not a regular file. A
+// showcase script's .js URL resolves to its .ts source, which
+// sendFixtureFile transpiles.
 export async function resolveFixtureFile(pathname: string, root: string = projectRoot): Promise<string | null> {
     let decoded = pathname;
     try { decoded = decodeURIComponent(pathname); } catch { /* keep the raw spelling */ }
     if (decoded.includes('\0')) return null;
     const resolved = path.resolve(root, `.${decoded}`);
     if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) return null;
-    try {
-        return (await stat(resolved)).isFile() ? resolved : null;
-    } catch {
-        return null;
-    }
+    if (await isFile(resolved)) return resolved;
+    const source = resolved.replace(/\.js$/, '.ts');
+    return source !== resolved && source.startsWith(`${root}${SHOWCASE_SCRIPTS}`) && await isFile(source) ? source : null;
 }
+
+// A showcase script's TypeScript source as the classic script pages load.
+export const transpileShowcaseScript = async (source: string): Promise<string> =>
+    (await transformScript(source, { loader: 'ts', target: 'es2022', legalComments: 'inline' })).code;
 
 export function sendFixtureText(
     response: ServerResponse,
@@ -1129,11 +1145,13 @@ export async function sendFixtureFile(
     { transform = null, cacheControl = 'no-store' }: SendFixtureFileOptions = {},
 ): Promise<void> {
     if (!file) throw new TypeError('Fixture file path is required');
+    const script = file.endsWith('.ts') && file.includes(SHOWCASE_SCRIPTS);
+    const source = script ? await transpileShowcaseScript(await readFile(file, 'utf8')) : null;
     const contents = transform
-        ? Buffer.from(transform(await readFile(file, 'utf8')))
-        : await readFile(file);
+        ? Buffer.from(transform(source ?? await readFile(file, 'utf8')))
+        : source !== null ? Buffer.from(source) : await readFile(file);
     response.writeHead(200, {
-        'content-type': fixtureContentType(file),
+        'content-type': script ? fixtureContentType('script.js') : fixtureContentType(file),
         'cache-control': cacheControl,
     });
     response.end(contents);

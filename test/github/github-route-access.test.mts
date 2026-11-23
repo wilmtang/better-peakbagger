@@ -19,8 +19,10 @@ test('every GitHub route must declare its access policy beside its handler', () 
     assert.equal(table.isExtensionOnly('PEAKBAGGER_ROUTE'), false);
     assert.equal(table.isExtensionOnly('UNKNOWN_ROUTE'), false);
 
-    assert.throws(() => createGithubRouteTable({ UNCLASSIFIED: () => {} }),
+    // Malformed tables on purpose: the runtime check is what is under test.
+    type Routes = Parameters<typeof createGithubRouteTable>[0];
+    assert.throws(() => createGithubRouteTable({ UNCLASSIFIED: () => {} } as unknown as Routes),
         /must declare its access policy/);
-    assert.throws(() => createGithubRouteTable({ MISSING_HANDLER: { extensionOnly: true } }),
+    assert.throws(() => createGithubRouteTable({ MISSING_HANDLER: { extensionOnly: true } } as unknown as Routes),
         /must declare its access policy/);
 });

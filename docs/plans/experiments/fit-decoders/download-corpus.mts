@@ -4,9 +4,10 @@ import assert from 'node:assert/strict';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-assert.equal(process.argv.length, 3, 'Usage: node download-corpus.mjs /temporary-evaluation-root');
-const root = path.resolve(process.argv[2]);
-const manifest = JSON.parse(await readFile(new URL('./corpus-manifest.json', import.meta.url)));
+assert.equal(process.argv.length, 3, 'Usage: node download-corpus.mts /temporary-evaluation-root');
+const root = path.resolve(process.argv[2]!);
+const manifest = JSON.parse(await readFile(new URL('./corpus-manifest.json', import.meta.url), 'utf8')) as
+    { file: string; url: string; bytes: number; sha256: string }[];
 assert.equal(manifest.length, 12);
 await mkdir(path.join(root, 'corpus'), { recursive: true });
 for (const item of manifest) {
@@ -16,7 +17,8 @@ for (const item of manifest) {
     assert(url.pathname.startsWith('/ThomasKuehne/FIT-test-files/69d2c723230a55e2a3a5c46d3e80e1bc253109fd/'));
     const response = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(30000) });
     assert(response.ok, `Corpus request failed: HTTP ${response.status}`);
-    const chunks = []; let size = 0;
+    const chunks: Uint8Array[] = []; let size = 0;
+    assert(response.body, 'Corpus response has no body');
     const reader = response.body.getReader();
     try {
         while (true) {

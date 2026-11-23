@@ -4,14 +4,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    classifyProviderBody,
-    classifyProviderResponse,
+    classifyProviderBody as classifyBody,
+    classifyProviderResponse as classifyResponse,
 } from '../../src/capture/provider-response.ts';
 
-const response = (status, {
+// Every field a classification can carry, readable whichever variant it is:
+// the assertions compare the fields themselves.
+type Classification = { ok: boolean; code?: string; needsBodyProbe?: boolean; retryAt?: number };
+const classifyProviderResponse = (...args: Parameters<typeof classifyResponse>): Classification => classifyResponse(...args);
+const classifyProviderBody = (...args: Parameters<typeof classifyBody>): Classification => classifyBody(...args);
+
+const response = (status: number, {
     headers = {},
     url = 'https://www.strava.com/activities/123/export_gpx',
-} = {}) => ({ status, ok: status >= 200 && status < 300, headers, url });
+}: { headers?: Record<string, string>; url?: string } = {}) => ({ status, ok: status >= 200 && status < 300, headers, url });
 
 test('provider response classification separates auth, challenge, rate, and endpoint failures', () => {
     assert.equal(classifyProviderResponse(response(401), { provider: 'strava' }).code,

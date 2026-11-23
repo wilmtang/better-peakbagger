@@ -2,33 +2,38 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBuddyCacheStore } from '../../src/background/buddy-cache-store.ts';
+import { createBuddyCacheStore, type BuddyCacheActionResult } from '../../src/background/buddy-cache-store.ts';
+import type { BuddyCacheSnapshot } from '../../src/favorites/buddy-cache.ts';
 import { createBuddyStore } from '../../src/background/buddy-store.ts';
 import { createIgnoredStore } from '../../src/background/ignored-store.ts';
 import { BUDDY_CACHE_EPOCH_KEY } from '../../src/favorites/buddy-cache.ts';
 
+interface Cache { ownerCid: number; entries: { cid: number; name: string }[]; fetchedAt: number }
+type Store = ReturnType<typeof createBuddyCacheStore>;
 const target = { cid: 3, name: 'New Buddy' };
-const cache = (entries, fetchedAt = 1) => ({ ownerCid: 1, entries, fetchedAt });
-const harness = initial => {
-    const values = { bpbBuddyCache: structuredClone(initial) };
+const cache = (entries: Cache['entries'], fetchedAt = 1): Cache => ({ ownerCid: 1, entries, fetchedAt });
+const harness = (initial: Cache | undefined) => {
+    const values: { bpbBuddyCache?: Cache; [key: string]: unknown } = { bpbBuddyCache: structuredClone(initial) };
     const storage = { get: async () => structuredClone(values),
-        set: async patch => Object.assign(values, structuredClone(patch)) };
+        set: async (patch: Record<string, unknown>) => { Object.assign(values, structuredClone(patch)); } };
     let clock = 100;
     const create = () => createBuddyCacheStore({ storage, now: () => clock });
     const buddy = createBuddyStore({ storage, settings: async () => ({ favoritesSource: 'buddies' }), now: () => clock });
-    const change = async action => {
+    const change = async (action: string) => {
         const sender = { tab: { id: 1 } };
-        const lease = await buddy.action({ phase: 'begin', ownerCid: 1, ...target, action }, sender);
+        const lease: { ok: boolean; token?: string } = await buddy.action({ phase: 'begin', ownerCid: 1, ...target, action }, sender);
         assert.equal(lease.ok, true);
         assert.equal((await buddy.action({ phase: 'dispatch', token: lease.token }, sender)).ok, true);
         assert.equal((await buddy.action({ phase: 'complete', token: lease.token, buddy: action === 'add' }, sender)).ok, true);
     };
     return { values, create, store: create(), change, ignored: createIgnoredStore({ storage }), advance: () => { clock++; } };
 };
-const begin = (store, observedAt = null) => store.action({ phase: 'begin', observedAt }).then(result => {
-    assert.equal(result.ok, true); return result.snapshot;
+const begin = (store: Store, observedAt: number | null = null) => store.action({ phase: 'begin', observedAt }).then((result: BuddyCacheActionResult) => {
+    assert.equal(result.ok, true); return (result as { snapshot?: BuddyCacheSnapshot }).snapshot;
 });
-const publish = (store, snapshot, value) => store.action({ phase: 'publish', snapshot, cache: value });
+// Every field a publish result can carry, whichever variant it is.
+const publish = (store: Store, snapshot: BuddyCacheSnapshot | undefined, value: Cache | null): Promise<{ ok: boolean; written?: boolean }> =>
+    store.action({ phase: 'publish', snapshot, cache: value });
 
 test('late refreshes cannot undo confirmed Buddy additions or removals, including after worker restart', async () => {
     for (const action of ['add', 'remove']) {
@@ -48,8 +53,8 @@ test('refresh publication and Buddy confirmation share one lane in either order'
     const h = harness(cache([])), snapshot = await begin(h.store);
     assert.equal((await publish(h.store, snapshot, cache([], 100))).written, true);
     await h.change('add');
-    assert.deepEqual(h.values.bpbBuddyCache.entries, [target]);
-    assert.equal(h.values.bpbBuddyCache.fetchedAt, 100, 'target confirmation preserves report age');
+    assert.deepEqual(h.values.bpbBuddyCache?.entries, [target]);
+    assert.equal(h.values.bpbBuddyCache?.fetchedAt, 100, 'target confirmation preserves report age');
 });
 
 test('concurrent refreshes preserve the first accepted result instead of letting an older response win', async () => {
@@ -69,7 +74,7 @@ test('an older rendered report cannot overwrite a change completed before its co
     await h.change('add'); h.advance();
     const snapshot = await begin(h.store, 99);
     assert.equal((await publish(h.store, snapshot, cache([], 101))).written, false);
-    assert.deepEqual(h.values.bpbBuddyCache.entries, [target]);
+    assert.deepEqual(h.values.bpbBuddyCache?.entries, [target]);
     const fresh = await begin(h.store, 101);
     assert.equal((await publish(h.store, fresh, cache([target], 101))).written, true);
 });

@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { FixtureDom, iifeBundle } from '../helpers/fixture-dom.mts';
 import { createSettingsStore } from '../../src/settings/settings.ts';
 import { createPageSettingsClient } from '../../src/settings/page-settings-client.ts';
 import { instrumentTerrainFrameHtml } from '../../scripts/terrain-frame-instrumentation.mts';
@@ -21,7 +21,7 @@ const terrainShowcase = await readFile(new URL('../../scripts/showcase/terrain.h
 
 test('analyzer showcases deliver settings and writes through the production revisioned bridge', { timeout: 5000 }, async t => {
     const bridge = await readFile(new URL('../../dist/content/ascent-bridge.js', import.meta.url), 'utf8');
-    const activation = await readFile(new URL('../../scripts/showcase/terrain-activation-fixture.js', import.meta.url), 'utf8');
+    const activation = await iifeBundle('scripts/showcase/terrain-activation-fixture.ts');
     for (const [name, source, expected] of [
         ['terrain', terrainShowcase, { theme: 'dark', mapViewportWidth: 800 }],
         ['gpx', gpxShowcase, { theme: 'light' }],

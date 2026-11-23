@@ -7,6 +7,7 @@ for (const system of ['metric', 'imperial']) for (const metric of ['wind', 'gust
     test(`${system} ${metric} scales retain distinct ticks for zero and constant samples`, () => {
         for (const value of [0, .4, 20]) {
             const range = weatherChartRange([null, value, value], metric);
+            assert.ok(range);
             const labels = weatherChartTicks(range).map(tick => units.formatWeather(tick, metric === 'gust' ? 'wind' : metric, system));
             assert.equal(new Set(labels).size, 3, labels.join(', '));
             assert.ok(range.low <= value && range.high >= value);

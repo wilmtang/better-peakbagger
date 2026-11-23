@@ -156,7 +156,7 @@ summit lookup and draft UX:
 | Production hardening of an owned reader | Another 1–2 weeks | Streaming/allocation profiling, cancellation/isolation on the actual extension surface, fuzz/property tests, long and multisport recordings, Chrome/Firefox integration and regression evidence |
 | General FIT SDK replacement | Months plus maintenance | Broad message profiles, developer-field interpretation, component expansion, encoding and ongoing device compatibility; unnecessary for this feature |
 
-The field projection in [projection.mjs](projection.mjs) is deliberately short.
+The field projection in [projection.mts](projection.mts) is deliberately short.
 The difficult work is guaranteeing that an apparently plausible route is correct
 and that damaged or unusual files cannot freeze the extension or join unrelated
 activity legs. The raw reader already supplies much of that framing work. My
@@ -194,9 +194,9 @@ extension's dependency tree. Example commands from the repository root:
 ```sh
 FIT_EVAL_DIR=$(mktemp -d /tmp/bpb-fit-evaluation-XXXXXX)
 npm install --prefix "$FIT_EVAL_DIR" --ignore-scripts --no-audit --no-fund fit-file-parser@6.2.3 fit-decoder@1.0.5
-node docs/plans/experiments/fit-decoders/download-corpus.mjs "$FIT_EVAL_DIR"
-node docs/plans/experiments/fit-decoders/evaluate.mjs "$FIT_EVAL_DIR"
-node docs/plans/experiments/fit-decoders/browser.mjs "$FIT_EVAL_DIR"
+node docs/plans/experiments/fit-decoders/download-corpus.mts "$FIT_EVAL_DIR"
+node docs/plans/experiments/fit-decoders/evaluate.mts "$FIT_EVAL_DIR"
+node docs/plans/experiments/fit-decoders/browser.mts "$FIT_EVAL_DIR"
 ```
 
 The browser command must use the approved execution path outside macOS Seatbelt;
@@ -204,7 +204,7 @@ its launch guard fails before launching inside that sandbox. It uses the existin
 Playwright browser installations, closes its browsers/server, and removes its
 temporary certificate. Inspect remaining processes/profiles after a run.
 
-`private-probe.mjs "$FIT_EVAL_DIR"` is an **optional manual live request**, requiring
+`private-probe.mts "$FIT_EVAL_DIR"` is an **optional manual live request**, requiring
 the account owner's authorization. It reads the key from stdin with terminal
 echo disabled, requests one newest and one oldest activity, and prints aggregate
 results only. Do not put the key in a command argument, source file or checked-in

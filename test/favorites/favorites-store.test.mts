@@ -5,13 +5,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFavoritesStore } from '../../src/background/favorites-store.ts';
 import { favoriteClimbers as F } from '../../src/favorites/favorite-climbers.ts';
+import { fieldsOf } from '../helpers/result-fields.mts';
 
-const entry = (cid, name = `Climber ${cid}`, addedAt = cid, source = 'manual') => ({
+interface Entry { cid: number; name: string; addedAt: number; source: string }
+interface Envelope { schemaVersion: number; entries: Entry[] }
+
+const entry = (cid: number, name = `Climber ${cid}`, addedAt = cid, source = 'manual'): Entry => ({
     cid, name, addedAt, source,
 });
-const envelope = entries => ({ schemaVersion: F.SCHEMA_VERSION, entries });
+const envelope = (entries: unknown[]) => ({ schemaVersion: F.SCHEMA_VERSION, entries });
 
-const createStorage = (initial = envelope([])) => {
+// Tests seed unreadable values too; what they read back is the worker's list.
+const createStorage = (initial: unknown = envelope([])) => {
     let value = structuredClone(initial);
     let failNextSet = false;
     return {
@@ -19,7 +24,7 @@ const createStorage = (initial = envelope([])) => {
             await Promise.resolve();
             return { [F.FAVORITES_KEY]: structuredClone(value) };
         },
-        async set(patch) {
+        async set(patch: Record<string, unknown>) {
             await Promise.resolve();
             if (failNextSet) {
                 failNextSet = false;
@@ -27,7 +32,7 @@ const createStorage = (initial = envelope([])) => {
             }
             value = structuredClone(patch[F.FAVORITES_KEY]);
         },
-        read: () => structuredClone(value),
+        read: () => structuredClone(value) as Envelope,
         failOnce: () => { failNextSet = true; },
     };
 };
@@ -75,10 +80,10 @@ test('a destructive replacement rejects a stale reviewed signature', async () =>
     });
 
     assert.equal(result.ok, false);
-    assert.equal(result.error.code, 'stale');
-    assert.match(result.error.message, /changed in another tab/i);
+    assert.equal(fieldsOf(result).error?.code, 'stale');
+    assert.match(fieldsOf(result).error?.message ?? '', /changed in another tab/i);
     assert.deepEqual(storage.read().entries.map(value => value.cid), [2, 1]);
-    assert.deepEqual(result.favorites.entries.map(value => value.cid), [2, 1]);
+    assert.deepEqual(result.favorites?.entries.map(value => value.cid), [2, 1]);
 });
 
 test('a failed storage write does not poison the next queued mutation', async () => {
@@ -90,7 +95,7 @@ test('a failed storage write does not poison the next queued mutation', async ()
     const recovered = await store.mutate({ kind: 'add', entry: entry(3) });
 
     assert.equal(failed.ok, false);
-    assert.equal(failed.error.code, 'storage');
+    assert.equal(fieldsOf(failed).error?.code, 'storage');
     assert.equal(recovered.ok, true);
     assert.deepEqual(storage.read().entries.map(value => value.cid), [3, 1]);
 });
@@ -107,10 +112,10 @@ test('invalid or over-capacity mutations fail without truncating stored favorite
         expectedSignature: F.backupSignature(full),
     });
 
-    assert.equal(overLimit.error.code, 'limit');
-    assert.equal(duplicateReplacement.error.code, 'invalid');
+    assert.equal(fieldsOf(overLimit).error?.code, 'limit');
+    assert.equal(fieldsOf(duplicateReplacement).error?.code, 'invalid');
     assert.equal(storage.read().entries.length, F.LIMIT);
-    assert.equal(storage.read().entries.at(-1).cid, F.LIMIT);
+    assert.equal(storage.read().entries.at(-1)?.cid, F.LIMIT);
 });
 
 test('ordinary edits and replacements preserve unreadable saved favorites exactly', async () => {
@@ -131,7 +136,7 @@ test('ordinary edits and replacements preserve unreadable saved favorites exactl
             const storage = createStorage(original);
             const result = await createFavoritesStore({ storage }).mutate(mutation);
             assert.equal(result.ok, false);
-            assert.equal(result.error.code, 'storage');
+            assert.equal(fieldsOf(result).error?.code, 'storage');
             assert.deepEqual(storage.read(), original);
         }
     }

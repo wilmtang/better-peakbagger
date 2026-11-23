@@ -6,5 +6,5 @@
 import assert from 'node:assert/strict';
 import { verifyReportSecurity } from '../../../../scripts/verify-report-security.mts';
 const args=process.argv.slice(2);
-assert(args.length<=1&&(!args.length||args[0]==='--baseline'),'Usage: security-probe.mjs [--baseline]');
+assert(args.length<=1&&(!args.length||args[0]==='--baseline'),'Usage: security-probe.mts [--baseline]');
 await verifyReportSecurity('chrome',{baseline:args.includes('--baseline')});
