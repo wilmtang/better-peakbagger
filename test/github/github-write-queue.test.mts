@@ -8,14 +8,14 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { githubWriteQueue as Queue } from '../../src/github/github-write-queue.ts';
+import { githubWriteQueue as Queue, type CommitFilesFn, type QueuedFilePayload, type QueuedCommitResult } from '../../src/github/github-write-queue.ts';
 
 // A commit recorder whose window is a promise the test resolves by hand, so a
 // batch stays open exactly as long as the test wants it to.
-const harness = ({ commit } = {}) => {
-    const commits = [];
-    let release = null;
-    const window = () => new Promise(resolve => { release = resolve; });
+const harness = ({ commit }: { commit?: (files: QueuedFilePayload[], message: string, count: number) => QueuedCommitResult } = {}) => {
+    const commits: { files: QueuedFilePayload[]; message: string }[] = [];
+    let release: (() => void) | null = null;
+    const window = () => new Promise<void>(resolve => { release = resolve; });
     const queue = Queue.createGithubWriteQueue({
         coalesceWindowMs: 0,
         delay: () => window(),
@@ -29,7 +29,7 @@ const harness = ({ commit } = {}) => {
     const closeWindow = async () => {
         for (let i = 0; i < 20 && !release; i += 1) await Promise.resolve();
         assert.ok(release, 'the batch never reached its collecting window');
-        const open = release;
+        const open: () => void = release!;
         release = null;
         open();
     };
@@ -87,7 +87,7 @@ test('a write submitted after the batch closes starts a new commit', async () =>
 });
 
 test('an exclusive operation closes the batch and keeps submission order', async () => {
-    const order = [];
+    const order: string[] = [];
     const { queue, commits, closeWindow } = harness({
         commit: files => { order.push(`files:${files.map(file => file.path).join(',')}`); return { sha: 'x' }; },
     });
@@ -134,9 +134,9 @@ test('the queue refuses to be built without a commit function', () => {
 
 
 test('different connection scopes never coalesce or supersede each other', async () => {
-    const commits = [];
-    const queue = Queue.createGithubWriteQueue({ delay: async () => {},
-        commitFiles: async (files, message, scope) => { commits.push({ files, scope }); return { sha: scope }; } });
+    const commits: { files: QueuedFilePayload[]; scope: unknown }[] = [];
+    const commitFiles: CommitFilesFn = async (files, _message, scope) => { commits.push({ files, scope }); return { sha: scope as string }; };
+    const queue = Queue.createGithubWriteQueue({ delay: async () => {}, commitFiles });
     const first = queue.putFile({ path: 'settings.json', content: 'first', scope: 'epoch-1' });
     const second = queue.putFile({ path: 'settings.json', content: 'second', scope: 'epoch-2' });
     const third = queue.putFile({ path: 'favorites.json', content: 'third', scope: 'epoch-2' });

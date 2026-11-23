@@ -7,11 +7,17 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+// @ts-expect-error js-yaml ships no declarations; the parsed workflow is typed below.
 import yaml from 'js-yaml';
 import { stageSkillUpdate, main } from '../../scripts/stage-ui-ux-skill-update.mts';
 import { SKILL_PATH } from '../../scripts/update-ui-ux-skill.mts';
 
-function git(root, args) {
+// The workflow fields these tests read.
+type WorkflowStep = { id?: string; name?: string; uses?: string; run?: string; env?: Record<string, string> };
+type Workflow = { on: Record<string, unknown>; permissions: unknown;
+    jobs: Record<string, { needs?: string; environment?: string; steps: WorkflowStep[] }> };
+
+function git(root: string, args: string[]) {
     const result = spawnSync('git', [
         '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=/dev/null',
         '-c', 'user.name=Skill test', '-c', 'user.email=skill-test@example.invalid', ...args,
@@ -20,7 +26,7 @@ function git(root, args) {
     return result.stdout;
 }
 
-async function fixture(t) {
+async function fixture(t: test.TestContext) {
     const temporary = await mkdtemp(path.join(tmpdir(), 'bpb-skill-publisher-'));
     t.after(() => rm(temporary, { recursive: true, force: true }));
     await mkdir(path.join(temporary, 'repo'));
@@ -75,7 +81,7 @@ test('publisher CLI makes one skill-only commit with the checked base and no app
         path.join(f.root, 'scripts/stage-ui-ux-skill-update.mts'), f.patch, f.base,
     ], { cwd: f.root, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
-    const published = JSON.parse(result.stdout.trim().split('\n').at(-1));
+    const published = JSON.parse(result.stdout.trim().split('\n').at(-1)!);
     assert.equal(git(f.root, ['rev-parse', 'HEAD^']).trim(), f.base);
     assert.equal(git(f.root, ['rev-parse', 'HEAD']).trim(), published.commit);
     assert.deepEqual(published.files, [`${SKILL_PATH}/scripts/core.py`]);
@@ -143,26 +149,26 @@ test('publisher rejects empty patches, dirty checkouts and unknown CLI usage', a
 });
 
 test('GitHub cron keeps validation read-only and grants the key only to the final direct-main push', async () => {
-    const workflow = yaml.load(await readFile(new URL('../../.github/workflows/update-ui-ux-skill.yml', import.meta.url), 'utf8'));
+    const workflow: Workflow = yaml.load(await readFile(new URL('../../.github/workflows/update-ui-ux-skill.yml', import.meta.url), 'utf8'));
     assert.deepEqual(workflow.on.schedule, [{ cron: '17 15 1 * *' }]);
     assert.ok(Object.hasOwn(workflow.on, 'workflow_dispatch'));
     assert.deepEqual(workflow.permissions, { contents: 'read' });
     assert.doesNotMatch(JSON.stringify(workflow.jobs.prepare), /SKILL_UPDATE_SSH_KEY|secrets\./);
-    assert.equal(workflow.jobs.publish.needs, 'prepare');
-    assert.equal(workflow.jobs.publish.environment, 'skill-updates');
-    const patch = workflow.jobs.prepare.steps.find(step => step.id === 'patch');
-    assert.match(patch.run, /git add --all/);
-    assert.match(patch.run, /git diff --cached --binary --no-renames/,
+    assert.equal(workflow.jobs.publish?.needs, 'prepare');
+    assert.equal(workflow.jobs.publish?.environment, 'skill-updates');
+    const patch = workflow.jobs.prepare!.steps.find(step => step.id === 'patch');
+    assert.match(patch?.run ?? '', /git add --all/);
+    assert.match(patch?.run ?? '', /git diff --cached --binary --no-renames/,
         'newly added helpers must be included in the transferred patch');
-    const publish = workflow.jobs.publish.steps;
+    const publish = workflow.jobs.publish!.steps;
     assert.ok(!publish.some(step => /\bpython3?\b|\bnpm\b/.test(step.run || '')),
         'the credential-bearing job must not execute candidate helpers');
     assert.equal(publish.filter(step => JSON.stringify(step).includes('secrets.SKILL_UPDATE_SSH_KEY')).length, 1);
-    const push = publish.at(-1);
-    assert.equal(push.env.SKILL_UPDATE_SSH_KEY, '${{ secrets.SKILL_UPDATE_SSH_KEY }}');
-    assert.match(push.run, /HEAD:refs\/heads\/main/);
-    assert.doesNotMatch(push.run, /--force|StrictHostKeyChecking=no|ssh-keyscan/);
-    assert.match(push.run, /trap 'rm -rf "\$key_dir"' EXIT/);
+    const push = publish.at(-1)!;
+    assert.equal(push.env?.SKILL_UPDATE_SSH_KEY, '${{ secrets.SKILL_UPDATE_SSH_KEY }}');
+    assert.match(push.run ?? '', /HEAD:refs\/heads\/main/);
+    assert.doesNotMatch(push.run ?? '', /--force|StrictHostKeyChecking=no|ssh-keyscan/);
+    assert.match(push.run ?? '', /trap 'rm -rf "\$key_dir"' EXIT/);
     for (const job of Object.values(workflow.jobs)) {
         for (const step of job.steps) {
             if (step.uses) assert.match(step.uses, /^[^@]+@[a-f0-9]{40}$/);

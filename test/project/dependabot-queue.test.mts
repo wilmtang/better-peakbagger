@@ -7,20 +7,25 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+// @ts-expect-error js-yaml ships no declarations; the parsed workflow is typed below.
 import yaml from 'js-yaml';
 
-const workflow = yaml.load(await readFile(
+type Workflow = { concurrency: unknown; defaults: { run: { shell: string } }; jobs: Record<string, { steps: { name?: string; run?: string }[] }> };
+// The pull request state the GitHub CLI stub replays.
+type PullState = { state: string; headRefOid: string; autoMergeRequest: { mergeMethod: string } | null; [field: string]: unknown };
+type Scenario = Record<string, unknown> & { states?: PullState[] };
+const workflow: Workflow = yaml.load(await readFile(
     new URL('../../.github/workflows/dependabot-auto-merge.yml', import.meta.url), 'utf8',
 ));
-const step = name => workflow.jobs['auto-merge'].steps.find(item => item.name === name).run;
+const step = (name: string) => workflow.jobs['auto-merge']!.steps.find(item => item.name === name)!.run!;
 const head = 'a'.repeat(40);
-const state = (autoMergeRequest = null, extra = {}) => ({
+const state = (autoMergeRequest: PullState['autoMergeRequest'] = null, extra: Record<string, unknown> = {}): PullState => ({
     state: 'OPEN', headRefOid: head, autoMergeRequest, ...extra,
 });
 
 // Execute the actual trusted workflow shell against an isolated GitHub CLI stub.
 // The stub covers API failures and postconditions, not GitHub's ruleset enforcement.
-async function runStep(name, scenario) {
+async function runStep(name: string, scenario: Scenario) {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'bpb-dependabot-queue-'));
     const callsPath = path.join(directory, 'calls.jsonl');
     try {
@@ -53,7 +58,7 @@ if (args[0] === 'pr' && args[1] === 'view') {
             },
         });
         assert.ifError(result.error);
-        const calls = (await readFile(callsPath, 'utf8')).trim().split('\n').map(JSON.parse);
+        const calls = (await readFile(callsPath, 'utf8')).trim().split('\n').map(line => JSON.parse(line));
         return { ...result, calls };
     } finally {
         await rm(directory, { recursive: true, force: true });

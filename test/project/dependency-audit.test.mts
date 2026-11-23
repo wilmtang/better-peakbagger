@@ -5,13 +5,20 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import test from 'node:test';
-import { satisfies } from 'semver';
 
 import {
     evaluateAudit,
+    type AuditReport,
 } from '../../scripts/check-npm-audit.mts';
 
-const auditWith = (vulnerabilities, counts = {}) => ({
+// semver ships no declarations; this is the one call these tests make.
+const { satisfies } = createRequire(import.meta.url)('semver') as { satisfies(version: string, range: string): boolean };
+// The lockfile fields these tests read.
+interface LockEntry { version: string; dev?: boolean }
+interface Lockfile { packages: Record<string, LockEntry> }
+const readLockfile = () => readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(text => JSON.parse(text) as Lockfile);
+
+const auditWith = (vulnerabilities: NonNullable<AuditReport['vulnerabilities']>, counts: Record<string, number> = {}): AuditReport => ({
     metadata: {
         vulnerabilities: {
             info: 0,
@@ -42,7 +49,8 @@ test('the npm audit gate rejects every finding, including the former exception',
 test('the npm audit gate fails closed on unusable audit output', () => {
     for (const audit of [null, {}, { metadata: {} }, { metadata: { vulnerabilities: {} } },
         auditWith({}, { total: -1 }), auditWith({}, { total: NaN })]) {
-        assert.throws(() => evaluateAudit(audit), /no usable vulnerability metadata/);
+        // Malformed reports on purpose.
+        assert.throws(() => evaluateAudit(audit as AuditReport | null), /no usable vulnerability metadata/);
     }
 });
 
@@ -52,11 +60,11 @@ test('the npm audit gate fails closed on unusable audit output', () => {
 test('the vulnerable dev-only brace-expansion path stays pinned to a patched release', async () => {
     const [packageJson, lockfile] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
-        readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
+        readLockfile(),
     ]);
     assert.deepEqual(packageJson.overrides['minimatch@^3.0.0'], { 'brace-expansion': '1.1.21' });
 
-    const entry = lockfile.packages['node_modules/brace-expansion'];
+    const entry = lockfile.packages['node_modules/brace-expansion']!;
     assert.equal(entry.version, '1.1.21');
     assert.equal(entry.dev, true, 'brace-expansion must never become a production dependency');
     const patchedRange = '^1.1.21 || ^5.0.12';
@@ -75,7 +83,7 @@ const patchedTools = {
     'adm-zip': '^0.6.1', 'js-yaml': '^4.3.2', 'fast-uri': '^3.1.9', 'undici': '^7.30.1 || ^8.12.3',
     'shell-quote': '^1.12.0', 'node-forge': '^1.4.2',
 };
-const checkPatchedTools = lockfile => {
+const checkPatchedTools = (lockfile: Lockfile) => {
     for (const [name, range] of Object.entries(patchedTools)) {
         const entries = Object.entries(lockfile.packages)
             .filter(([key]) => key === `node_modules/${name}` || key.endsWith(`/node_modules/${name}`));
@@ -90,18 +98,18 @@ const checkPatchedTools = lockfile => {
 test('patched lint dependencies stay dev-only within reviewed release lines', async () => {
     const [packageJson, lockfile] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
-        readFile(new URL('../../package-lock.json', import.meta.url), 'utf8').then(JSON.parse),
+        readLockfile(),
     ]);
     assert.equal(packageJson.overrides['firefox-profile'], undefined,
         'firefox-profile must resolve patched adm-zip releases through its maintained range');
-    assert.ok(satisfies(lockfile.packages['node_modules/web-ext'].version, packageJson.devDependencies['web-ext']));
+    assert.ok(satisfies(lockfile.packages['node_modules/web-ext']!.version, packageJson.devDependencies['web-ext']));
     checkPatchedTools(lockfile);
     const patched = structuredClone(lockfile);
-    patched.packages['node_modules/image-size'].version = '2.0.5';
-    patched.packages['node_modules/adm-zip'].version = '0.6.2';
+    patched.packages['node_modules/image-size']!.version = '2.0.5';
+    patched.packages['node_modules/adm-zip']!.version = '0.6.2';
     assert.doesNotThrow(() => checkPatchedTools(patched));
     for (const version of ['2.0.3', '3.0.0', '2.0.5-beta.1']) {
-        patched.packages['node_modules/image-size'].version = version;
+        patched.packages['node_modules/image-size']!.version = version;
         assert.throws(() => checkPatchedTools(patched), /outside reviewed range/);
     }
 });

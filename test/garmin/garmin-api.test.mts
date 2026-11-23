@@ -1,9 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore, GARMIN_DB } from '../../src/garmin/garmin-store.ts';
+import { createGarminStore, GARMIN_DB, type GarminConnection } from '../../src/garmin/garmin-store.ts';
 import { createGarminClient, garminActivityLabel } from '../../src/garmin/garmin-api.ts';
 const key = 'fictional-personal-key-for-tests';
+// The client calls fetch with a string URL and options.
+const fetcher = (stub: (url: string, options?: RequestInit) => Promise<Response>) => stub as typeof fetch;
+type ClientError = { code?: string; message: string; retryAt?: number };
 const jwt = () => `a.${btoa(JSON.stringify({ exp: Date.now() / 1000 + 3600, garmin_guid: 'test-owner-guid' }))}.b`;
 test('mountain activity inbox labels distinguish climbing and backcountry sports', () => {
     assert.equal(garminActivityLabel('mountaineering'), 'Mountaineering');
@@ -11,31 +14,31 @@ test('mountain activity inbox labels distinguish climbing and backcountry sports
     assert.equal(garminActivityLabel('backcountry_skiing_snowboarding'), 'Backcountry ski / snowboard');
 });
 test('API uses isolated transport, bounded token renewal and generic rejection', async () => {
-    const calls = []; let exchange = 0;
-    const client = createGarminClient({ key, fetcher: async (url, options) => {
+    const calls: [string, RequestInit | undefined][] = []; let exchange = 0;
+    const client = createGarminClient({ key, fetcher: fetcher(async (url, options) => {
         calls.push([url, options]);
         if (url.endsWith('/token')) return new Response(++exchange === 1 ? jwt() : '', { status: exchange === 1 ? 200 : 401 });
         return new Response('', { status: 401 });
-    } });
-    await assert.rejects(client.owner(), error => error.code === 'key-rejected' && !/expired/.test(error.message));
+    }) });
+    await assert.rejects(client.owner(), (error: ClientError) => error.code === 'key-rejected' && !/expired/.test(error.message));
     assert.equal(calls.length, 3);
-    for (const [url, options] of calls) { assert(url.startsWith('https://personal.connectapi.garmin.com/')); assert.equal(options.credentials, 'omit'); assert.equal(options.redirect, 'error'); }
+    for (const [url, options] of calls) { assert(url.startsWith('https://personal.connectapi.garmin.com/')); assert.equal(options?.credentials, 'omit'); assert.equal(options?.redirect, 'error'); }
 });
 test('owner verified through authenticated API; list drops names and coordinates', async () => {
     let tokens = 0;
-    const client = createGarminClient({ key, fetcher: async url => {
+    const client = createGarminClient({ key, fetcher: fetcher(async url => {
         if (url.endsWith('/token')) { tokens++; return new Response(jwt()); }
         return Response.json(url.includes('userprofile') ? { displayName: 'not-used-as-identity' }
             : url.includes('/activity-service/') ? { activityId: 45, userProfileId: 123 }
                 : [{ activityId: 45, ownerId: 123, startTimeLocal: '2026-10-23 08:00:00', activityName: 'private name', startLatitude: 48, averageHR: 120, activityType: { typeKey: 'hiking' } }]);
-    } });
+    }) });
     assert.deepEqual(await client.owner(), { subject: 'test-owner-guid', owner: '123' });
     const list = await client.list({ from: '2026-10-01', to: '2026-10-23' });
-    assert.deepEqual(Object.keys(list[0]), ['id', 'owner', 'date', 'localStart', 'utcStart', 'type']); assert.equal(tokens, 1);
+    assert.deepEqual(Object.keys(list[0]!), ['id', 'owner', 'date', 'localStart', 'utcStart', 'type']); assert.equal(tokens, 1);
 });
 test('network errors, limits and successful renewal do not claim rejected key', async () => {
-    await assert.rejects(createGarminClient({ key, fetcher: async () => { throw new Error(key); } }).owner(), e => e.code === 'offline' && !e.message.includes(key));
-    await assert.rejects(createGarminClient({ key, fetcher: async () => new Response('', { status: 429, headers: { 'retry-after': '120' } }) }).owner(), e => e.code === 'rate' && e.retryAt > Date.now());
+    await assert.rejects(createGarminClient({ key, fetcher: fetcher(async () => { throw new Error(key); }) }).owner(), (e: ClientError) => e.code === 'offline' && !e.message.includes(key));
+    await assert.rejects(createGarminClient({ key, fetcher: fetcher(async () => new Response('', { status: 429, headers: { 'retry-after': '120' } })) }).owner(), (e: ClientError) => e.code === 'rate' && (e.retryAt ?? 0) > Date.now());
 });
 test('IndexedDB mutations serialize and survive a new store instance', async () => {
     const factory = new IDBFactory(); const a = createGarminStore(factory), b = createGarminStore(factory);
@@ -44,19 +47,20 @@ test('IndexedDB mutations serialize and survive a new store instance', async () 
 });
 test('legacy cached summaries treat a saved key as enabled without rewriting credentials', async () => {
     const factory = new IDBFactory(), store = createGarminStore(factory);
-    let database;
+    let database: IDBDatabase | undefined;
     try {
-        await store.mutate(state => { state.connection = { key, enabled: false }; });
-        database = await new Promise((resolve, reject) => {
+        // A legacy connection that still carries its former enabled flag.
+        await store.mutate(state => { state.connection = { key, enabled: false } as GarminConnection; });
+        database = await new Promise<IDBDatabase>((resolve, reject) => {
             const request = factory.open(GARMIN_DB, 1);
             request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
         });
         await new Promise((resolve, reject) => {
-            const tx = database.transaction('state', 'readwrite');
+            const tx = database!.transaction('state', 'readwrite');
             tx.objectStore('state').put({ configured: true, enabled: false, queued: 0 }, 'summary');
             tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
         });
         assert.equal((await store.summary()).enabled, true);
-        assert.equal((await store.read()).connection.enabled, false);
+        assert.equal(((await store.read()).connection as { enabled?: boolean } | null)?.enabled, false);
     } finally { database?.close(); await store.close(); }
 });

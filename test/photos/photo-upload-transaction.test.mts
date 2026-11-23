@@ -26,7 +26,7 @@ const uploadedPhoto = () => {
         },
         now: NOW,
     });
-    return Library.completeUpload(draft, {
+    const photo = Library.completeUpload(draft, {
         mime: 'image/jpeg',
         bytes: 8,
         width: 1600,
@@ -42,6 +42,8 @@ const uploadedPhoto = () => {
         uploadedAt: NOW,
         expiresAt: null,
     }, NOW);
+    assert.ok(photo, 'the fixture upload completes');
+    return photo;
 };
 
 const operation = {
@@ -58,20 +60,20 @@ const inserted = {
 
 test('a failed report insertion preserves the committed upload', async () => {
     const photo = uploadedPhoto();
-    const writes = [];
+    const writes: unknown[] = [];
     await assert.rejects(Transaction.finishCommittedUpload({
         store: {
-            putPhoto: async value => writes.push(value),
+            putPhoto: async (value: unknown) => { writes.push(value); },
             deleteOperation: async () => {},
         },
         operation,
         photo,
         insert: async () => ({ ok: false }),
         now: () => LATER,
-    }), error => error.code === 'not-inserted' && /uploaded and saved in the library/.test(error.message));
+    }), (error: { code?: string; message: string }) => error.code === 'not-inserted' && /uploaded and saved in the library/.test(error.message));
     assert.equal(photo.remote.state, 'uploaded');
     assert.equal(photo.remote.url, 'https://i.ibb.co/a/topo.jpg');
-    assert.equal(photo.export.sha256, EXPORT_HASH);
+    assert.equal(photo.export?.sha256, EXPORT_HASH);
     assert.deepEqual(writes, []);
 });
 
@@ -87,17 +89,17 @@ test('reference persistence failure cannot downgrade a committed upload', async 
         photo,
         insert: async () => inserted,
         now: () => LATER,
-    }), error => error.code === 'reference-pending' && /uploaded and inserted/.test(error.message));
+    }), (error: { code?: string; message: string }) => error.code === 'reference-pending' && /uploaded and inserted/.test(error.message));
     assert.equal(photo.remote.state, 'uploaded');
     assert.equal(photo.remote.url, 'https://i.ibb.co/a/topo.jpg');
     assert.equal(deleted, false, 'the journal stays available to repair the reference');
 });
 
 test('journal cleanup failure preserves success and recovery does not duplicate its reference', async () => {
-    const writes = [];
+    const writes: unknown[] = [];
     const first = await Transaction.finishCommittedUpload({
         store: {
-            putPhoto: async value => writes.push(value),
+            putPhoto: async (value: unknown) => { writes.push(value); },
             deleteOperation: async () => { throw new Error('cleanup blocked'); },
         },
         operation,
@@ -112,7 +114,7 @@ test('journal cleanup failure preserves success and recovery does not duplicate 
     let deleted = false;
     const recovered = await Transaction.finishCommittedUpload({
         store: {
-            putPhoto: async value => writes.push(value),
+            putPhoto: async (value: unknown) => { writes.push(value); },
             deleteOperation: async () => { deleted = true; },
         },
         operation,

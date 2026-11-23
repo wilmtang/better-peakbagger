@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+// @ts-expect-error js-yaml ships no declarations; parsed documents are read as data.
 import yaml from 'js-yaml';
 import {
     applySkillUpdate, blobHash, main, mergeSkillMarkdown, parseProvenance,
@@ -29,7 +30,7 @@ const provenance = `# Upstream source
 const upstreamMarkdown = '# Skill\n\nSearch guidance.\n\n## Details\n\nOriginal guidance.\n';
 const localMarkdown = upstreamMarkdown.replace('## Details', '## Better Peakbagger integration\n\nFollow AGENTS.md.\n\n## Details');
 
-function tree(files) {
+function tree(files: Map<string, string>) {
     return {
         truncated: false,
         tree: [...files].map(([file, content]) => ({
@@ -39,7 +40,7 @@ function tree(files) {
     };
 }
 
-async function fixture(t) {
+async function fixture(t: test.TestContext) {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-skill-test-'));
     t.after(() => rm(directory, { recursive: true, force: true }));
     const files = new Map([
@@ -57,12 +58,15 @@ async function fixture(t) {
     return { directory, files };
 }
 
-function options(directory, baseFiles, headFiles) {
+function options(directory: string, baseFiles: Map<string, string>, headFiles: Map<string, string>) {
     return {
         root: directory, revision, date: new Date('2026-10-31T15:00:00Z'),
         baseTree: tree(baseFiles), headTree: tree(headFiles),
-        readUpstream: async (commit, file) => (commit === previous ? baseFiles : headFiles)
-            .get(file.slice(source.length + 1)),
+        readUpstream: async (commit: string, file: string) => {
+            const content = (commit === previous ? baseFiles : headFiles).get(file.slice(source.length + 1));
+            if (content === undefined) throw new Error(`The fixture tree has no ${file} at ${commit}`);
+            return content;
+        },
     };
 }
 
@@ -132,7 +136,7 @@ test('license changes and corrupted downloads cannot be integrated', async t => 
     const next = new Map(files);
     next.set('LICENSE', 'different terms\n');
     await assert.rejects(planSkillUpdate(options(directory, files, next)), /license changed/);
-    next.set('LICENSE', files.get('LICENSE'));
+    next.set('LICENSE', files.get('LICENSE')!);
     next.set('scripts/core.py', 'new core\n');
     const corrupt = { ...options(directory, files, next), readUpstream: async () => 'corrupt download\n' };
     await assert.rejects(planSkillUpdate(corrupt), /did not match its pinned blob/);
@@ -176,7 +180,7 @@ test('provenance and CLI selections reject ambiguity instead of silently succeed
     assert.equal((await mergeSkillMarkdown('local\n', 'base\n', 'base\n')).toString(), 'local\n');
 });
 
-function python(args) {
+function python(args: string[]) {
     const result = spawnSync('python3', ['-B', ...args], {
         cwd: tmpdir(), encoding: 'utf8', timeout: 30_000, maxBuffer: 10 * 1024 * 1024,
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
@@ -204,7 +208,7 @@ test('the installed skill validates its datasets and supports normal and isolate
     ]) {
         const result = JSON.parse(python(['-I', path.join(scripts, 'search.py'), query, '--stack', stack, '--json']));
         assert.ok(result.count > 0, query);
-        assert.ok(result.results.every(row => row.Status !== 'deprecated'), query);
+        assert.ok(result.results.every((row: { Status?: string }) => row.Status !== 'deprecated'), query);
     }
     const design = JSON.parse(python([
         '-I', path.join(scripts, 'search.py'), 'internal analytics dashboard', '--design-system', '--json',

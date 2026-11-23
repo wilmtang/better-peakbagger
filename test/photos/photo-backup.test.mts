@@ -42,7 +42,7 @@ const bundle = ({ localId = 'photo-1', title = 'North face topo', now = TIME } =
     };
 };
 
-const payload = values => Backup.buildPayload({
+const payload = (values: NonNullable<Parameters<typeof Backup.buildPayload>[0]>['bundles']) => Backup.buildPayload({
     bundles: values,
     exportedAt: TIME,
     extensionVersion: '3.2.0',
@@ -58,7 +58,7 @@ test('serializes deterministic metadata and annotation projects without local se
 
     assert.equal(parsed.ok, true);
     assert.deepEqual(parsed.payload.photos.map(value => value.localId), ['photo-a', 'photo-b']);
-    assert.equal(parsed.payload.photos[0].project.localId, 'photo-a');
+    assert.equal(parsed.payload.photos[0].project?.localId, 'photo-a');
     assert.equal(parsed.payload.photos[0].caption, 'The ridge above camp');
     assert.equal(text.includes('private-key'), false);
     assert.equal(text.includes('private pixels'), false);
@@ -189,6 +189,7 @@ test('restore reconstructs a catalog record without claiming pixels or deletion 
         signature,
         restoredAt: LATER,
     });
+    assert.ok(restored);
 
     assert.equal(restored.photo.backup.state, 'restored');
     assert.equal(restored.photo.backup.signature, signature);
@@ -197,5 +198,5 @@ test('restore reconstructs a catalog record without claiming pixels or deletion 
         projectRetained: true,
         thumbnailRetained: false,
     });
-    assert.equal(restored.project.localId, restored.photo.localId);
+    assert.equal(restored.project?.localId, restored.photo.localId);
 });

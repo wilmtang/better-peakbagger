@@ -19,7 +19,8 @@ import { githubBackup as Backup } from '../../src/github/github-backup.ts';
 const baseSnapshot = () => ({
     ascent: {
         id: 1234567,
-        date: '2026-07-12',
+        // Form values: cases blank or remove them.
+        date: '2026-07-12' as string | null,
         suffix: '',
         type: 'successful-summit',
         route: 'Disappointment Cleaver',
@@ -33,7 +34,7 @@ const baseSnapshot = () => ({
         quality: '9',
         gear: ['Ice Axe', 'Crampons'],
         companions: { registered: [{ id: 42, name: 'Ada' }], others: 'Rope team' },
-        weather: { precip: 'None', temperature: 'Cold', wind: 'Breezy', visibility: 'Clear', description: 'Clouds lifted' },
+        weather: { precip: 'None', temperature: 'Cold', wind: 'Breezy', visibility: 'Clear', description: 'Clouds lifted' } as Record<string, string>,
     },
     peak: { id: 2296, name: 'Mount Rainier', elevationFt: '14411', location: 'Washington, USA' },
     report: { markdown: '**Great climb**' },
@@ -304,7 +305,7 @@ test('backup comparison treats validated Peakbagger URL variants as the same der
 test('backup comparison rejects URLs that do not prove the backed-up entity', () => {
     const contents = Object.fromEntries(Backup.buildFiles(baseSnapshot(), { gpx: '<gpx/>' })
         .map(file => [file.name, file.content]));
-    const replace = (from, to) => ({
+    const replace = (from: string | RegExp, to: string) => ({
         ...contents,
         'report.md': contents['report.md'].replace(from, to),
     });

@@ -6,12 +6,12 @@ import assert from 'node:assert/strict';
 import { imgbbAuth as Auth } from '../../src/photos/imgbb-auth.ts';
 
 const fakeArea = () => {
-    const values = {};
+    const values: Record<string, unknown> = {};
     return {
         values,
-        async get(key) { return { [key]: values[key] }; },
-        async set(patch) { Object.assign(values, structuredClone(patch)); },
-        async remove(key) { delete values[key]; },
+        async get(key: string) { return { [key]: values[key] }; },
+        async set(patch: Record<string, unknown>) { Object.assign(values, structuredClone(patch)); },
+        async remove(key: string) { delete values[key]; },
     };
 };
 
