@@ -1,9 +1,13 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { settingsTransfer as transfer } from '../../src/settings/settings-transfer.ts';
-import * as helpers from '../helpers/options-helpers.mjs';
+import * as helpers from '../helpers/options-page.mts';
+import { fireTrustedEvent } from '../helpers/fixture-page.mts';
 import { computedStyle, rect, type ChromeStub, type LoadPage, type PageDom, type PageElement, type StubMessage, type WaitFor } from '../helpers/page-types.mts';
 
 const { optionsCss, registerCleanup, root, evalBundle } = helpers;
@@ -1174,7 +1178,9 @@ test('refresh lands the anchored subsection even when the browser restores the p
     // Chrome can finish restoration without emitting scroll or scrollend.
     content.scrollTop = 0;
     dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow'));
-    await waitFor(dom, () => content.scrollTop === 3145).catch(() => {
+    // Load and pageshow each schedule a landing frame; the restored one
+    // finishes by clearing its scroll-behavior override.
+    await waitFor(dom, () => content.scrollTop === 3145 && content.style.scrollBehavior === '').catch(() => {
         assert.equal(content.scrollTop, 3145, 'refresh must move the pane from the restored top to the requested subsection');
     });
     assert.equal(content.style.scrollBehavior, '');
@@ -1198,6 +1204,23 @@ test('an early native scrollend cannot finish alignment before document restorat
     await waitFor(dom, () => pane.scrollTop === 3145 && pane.style.scrollBehavior === '');
 });
 
+// Scrolls the settings pane as a reader does, with the mouse wheel, and
+// resolves with where it settled. A script's scrollTop write is not a reader's
+// scroll: the browser keeps re-landing on the URL's fragment until a user
+// scrolls, which this test's later layout changes would trigger.
+const scrollPane = async (dom: { window: { setTimeout(callback: () => void, delay: number): number } },
+    content: Element & { scrollTop: number }, deltaY: number) => {
+    const start = content.scrollTop;
+    await fireTrustedEvent(content, { type: 'wheel', deltaY });
+    let last = -1;
+    for (let turn = 0; turn < 100 && !(content.scrollTop !== start && content.scrollTop === last); turn++) {
+        last = content.scrollTop;
+        await new Promise(resolve => dom.window.setTimeout(() => resolve(null), 30));
+    }
+    assert.notEqual(content.scrollTop, start, 'the wheel moved the pane');
+    return content.scrollTop;
+};
+
 test('restoring the document from history re-reads the current fragment and preserves later manual reading positions', async () => {
     const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
         const content = window.document.querySelector('.content');
@@ -1215,9 +1238,10 @@ test('restoring the document from history re-reads the current fragment and pres
         assert.equal(content.scrollTop, 3776, 'history restoration must align the current fragment rather than leave the pane at the top');
     });
     assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers');
-    content.scrollTop = 4000;
+    // A reader's scroll is delivered (a frame later) before any later update.
+    const reading = await scrollPane(dom, content, 300);
     await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
-    assert.equal(content.scrollTop, 4000, 'later settings updates must not keep snapping the reader to the hash');
+    assert.equal(content.scrollTop, reading, 'later settings updates must not keep snapping the reader to the hash');
 });
 
 test('a drafts deep link activates the TR-drafts manager', async () => {
@@ -1429,9 +1453,9 @@ for (const hash of ['#capture-garmin', '#general']) {
         if (hash === '#capture-garmin') assert.equal(content.style.scrollBehavior, '',
             'initial scrolling must finish without requiring a native scrollend');
         assert.equal(activeLinks(dom)[0].hash, hash);
-        content.scrollTop = 400;
+        const reading = await scrollPane(dom, content, 300);
         await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
-        assert.equal(content.scrollTop, 400, 'an unrelated settings update must preserve the reading position');
+        assert.equal(content.scrollTop, reading, 'an unrelated settings update must preserve the reading position');
     });
 }
 
@@ -1452,23 +1476,26 @@ test('nested ignored-climber backup fragments activate their owning sidebar sect
 });
 
 test('a trailing scroll event at a clamped fragment landing preserves its active owner', async () => {
-    const dom = await loadOptions({}, { hash: '#ignored-github', prepareWindow: (window: PageWindow) => {
-        const content = window.document.querySelector('.content');
-        Object.defineProperty(content, 'clientHeight', { value: 1000 });
-        Object.defineProperty(content, 'scrollHeight', { value: 7649 });
-        content.getBoundingClientRect = () => rect({ top: 0 });
-        window.document.getElementById('ignored-github').getBoundingClientRect = () => rect({ top: 24 });
-    } });
+    // Real layout: this last subsection before About cannot reach the top, so
+    // its deep link lands where the pane bottoms out.
+    const dom = await loadOptions({}, { hash: '#github-photos-backup' });
     const content = dom.window.document.querySelector('.content');
-    content.scrollTop = 6649;
+    await waitFor(dom, () => activeLinks(dom)[0]?.hash === '#github-photos-backup' && content.style.scrollBehavior === '');
+    const landed = content.scrollTop;
+    assert.ok(Math.abs(landed - (content.scrollHeight - content.clientHeight)) <= 1, 'the deep link lands clamped at the bottom of the pane');
     content.dispatchEvent(new dom.window.Event('scroll'));
     content.dispatchEvent(new dom.window.Event('scrollend'));
     content.dispatchEvent(new dom.window.Event('scroll'));
-    assert.equal(activeLinks(dom)[0].hash, '#github-favorites-backup',
+    assert.equal(activeLinks(dom)[0].hash, '#github-photos-backup',
         'a duplicate final scroll notification must not replace an explicit deep link with About');
-    content.scrollTop = 6500;
-    content.dispatchEvent(new dom.window.Event('scroll'));
-    assert.equal(activeLinks(dom)[0].hash, '#about', 'actual pane movement resumes the scroll spy');
+    assert.equal(content.scrollTop, landed);
+    // A reader scrolls up: the spy resumes and follows the section under its marker.
+    await scrollPane(dom, content, -600);
+    await waitFor(dom, () => activeLinks(dom)[0]?.hash !== '#github-photos-backup');
+    const marker = content.getBoundingClientRect().top + 40;
+    const sections = activeLinks(dom).map(link => dom.window.document.getElementById(link.hash.slice(1))!);
+    assert.notEqual(activeLinks(dom)[0].hash, '#github-photos-backup', 'actual pane movement resumes the scroll spy');
+    assert.ok(sections[0]!.getBoundingClientRect().top <= marker, 'the spy highlights a section that has reached its marker');
 });
 
 test('Instagram loading stays opt-in independently of the report editor',async()=>{

@@ -296,6 +296,8 @@ export type TrustedAction =
     | { type: 'mouse'; action: 'down' | 'move' | 'up'; x?: number; y?: number; steps?: number }
     // A key or chord in Playwright's syntax, for example 'Shift+Enter'.
     | { type: 'press'; key: string }
+    // A mouse-wheel turn over the target's center, scrolling what is under it.
+    | { type: 'wheel'; deltaX?: number; deltaY?: number }
     | { type: 'type'; text: string }
     | { type: 'files'; files: { name: string; mimeType?: string; text: string; size?: number; lastModified?: number }[] };
 

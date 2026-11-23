@@ -1,11 +1,24 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import type { OptionsPage } from '../helpers/options-page.mts';
+import type { PageChrome } from '../helpers/chrome-stub.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 import {
     loadFavoritesPage, el, favoriteRow, waitFor, registerCleanup,
     accelerateTimeout, siteTabChrome, buddyCacheFrom, signedOutFetch,
     favoriteKey, buddyCacheKey, favoriteStore, peakbaggerFetch, pageResponse, buddyPageFixture
-} from '../helpers/options-helpers.mjs';
+} from '../helpers/options-page.mts';
+
+type Callback = (value?: unknown) => void;
+type Tabs = Record<string, (...args: never[]) => unknown>;
+// The favorites mutations and site-tab log the chrome stub records.
+const lastMutation = (dom: OptionsPage) => dom.chrome._favoriteMutations.at(-1) as { kind: string; entry: { cid: number }; entries: unknown[] };
+const siteTab = (dom: OptionsPage) => dom.chrome._siteTab as { created: { url?: string; active?: boolean }[]; removed: number[] };
+const tabsOf = (chrome: PageChrome) => chrome.tabs as Tabs;
 
 registerCleanup();
 const cloudflareBody = await readFile(new URL('../fixtures/peakbagger-managed-challenge.html', import.meta.url), 'utf8');
@@ -16,14 +29,14 @@ test('favorite removal transfers focus to Undo and restoration to the same row',
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(entries) },
     });
-    const remove = favoriteRow(dom, 900002).querySelector('[data-action="delete"]');
+    const remove = favoriteRow(dom, 900002)!.querySelector('[data-action="delete"]');
     remove.focus(); remove.click();
     await waitFor(dom, () => favoriteRow(dom, 900002)?.querySelector('[data-action="undo"]'));
-    const undo = favoriteRow(dom, 900002).querySelector('[data-action="undo"]');
+    const undo = favoriteRow(dom, 900002)!.querySelector('[data-action="undo"]');
     assert.equal(dom.window.document.activeElement, undo);
     undo.click();
     await waitFor(dom, () => favoriteRow(dom, 900002)?.querySelector('[data-action="delete"]'));
-    assert.equal(dom.window.document.activeElement, favoriteRow(dom, 900002).querySelector('a'));
+    assert.equal(dom.window.document.activeElement, favoriteRow(dom, 900002)!.querySelector('a'));
 });
 
 test('favorite refresh retains the focused identity and leaves unrelated controls alone', async () => {
@@ -32,12 +45,12 @@ test('favorite refresh retains the focused identity and leaves unrelated control
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([first, second]) },
     });
-    favoriteRow(dom, first.cid).querySelector('[data-action="delete"]').focus();
+    favoriteRow(dom, first.cid)!.querySelector('[data-action="delete"]').focus();
     await dom.chrome.storage.local.set({ [favoriteKey]: favoriteStore([
         { ...first, name: 'First renamed', addedAt: 0 }, second,
     ]) });
     await waitFor(dom, () => favoriteRow(dom, first.cid)?.textContent.includes('First renamed'));
-    assert.equal(dom.window.document.activeElement, favoriteRow(dom, first.cid).querySelector('[data-action="delete"]'));
+    assert.equal(dom.window.document.activeElement, favoriteRow(dom, first.cid)!.querySelector('[data-action="delete"]'));
     const search = el(dom, 'favorites-search'); search.focus();
     await dom.chrome.storage.local.set({ [favoriteKey]: favoriteStore([second]) });
     await waitFor(dom, () => !favoriteRow(dom, first.cid));
@@ -45,22 +58,22 @@ test('favorite refresh retains the focused identity and leaves unrelated control
 });
 
 test('focused favorite Undo expiry moves to a nearby row or the search field', async () => {
-    let expire;
+    let expire!: () => void;
     const entries = [{ cid: 900002, name: 'First', addedAt: 2, source: 'manual' },
         { cid: 900003, name: 'Second', addedAt: 1, source: 'manual' }];
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore(entries) }, prepareWindow: win => {
             const nativeSet = win.setTimeout.bind(win);
-            win.setTimeout = (fn, ms, ...args) => ms === 6000 ? (expire = fn, -1234) : nativeSet(fn, ms, ...args);
+            win.setTimeout = ((fn: () => void, ms?: number, ...args: unknown[]) => ms === 6000 ? (expire = fn, -1234) : nativeSet(fn, ms, ...args)) as typeof win.setTimeout;
         },
     });
     for (const cid of [900002, 900003]) {
-        const remove = favoriteRow(dom, cid).querySelector('[data-action="delete"]');
+        const remove = favoriteRow(dom, cid)!.querySelector('[data-action="delete"]');
         remove.focus(); remove.click();
         await waitFor(dom, () => favoriteRow(dom, cid)?.querySelector('[data-action="undo"]'));
         expire();
         assert.equal(dom.window.document.activeElement, cid === 900002
-            ? favoriteRow(dom, 900003).querySelector('a') : el(dom, 'favorites-search'));
+            ? favoriteRow(dom, 900003)!.querySelector('a') : el(dom, 'favorites-search'));
     }
 });
 
@@ -79,14 +92,14 @@ test('favorite manager follows external source and buddy-removal settings in bot
 });
 
 test('a stale initial settings read cannot overwrite an external favorite-source change', async () => {
-    let releaseRead;
+    let releaseRead: (() => void) | undefined;
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareChrome: chrome => {
             const get = chrome.storage.sync.get;
             let reads = 0;
             chrome.storage.sync.get = async key => {
                 const snapshot = await get(key);
-                if (++reads === 2) await new Promise(resolve => { releaseRead = resolve; });
+                if (++reads === 2) await new Promise<void>(resolve => { releaseRead = resolve; });
                 return snapshot;
             };
         },
@@ -95,7 +108,7 @@ test('a stale initial settings read cannot overwrite an external favorite-source
     await dom.chrome.storage.sync.set({ bpbSettings: {
         favoritesSource: 'buddies', removeFavoriteWhenBuddyRemoved: true,
     } });
-    releaseRead();
+    releaseRead!();
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:checked').value, 'buddies');
     assert.equal(el(dom, 'favorites-remove-with-buddy').checked, true);
@@ -116,9 +129,9 @@ test('favorite setting rollback uses the latest external confirmed values', asyn
 
 test('an old setting write reply cannot replace a newer external preference', async () => {
     const dom = await loadFavoritesPage({ favoritesSource: 'buddies' });
-    let finishWrite;
+    let finishWrite: Callback | undefined;
     const nativeSend = dom.chrome.runtime.sendMessage;
-    Object.defineProperty(dom.chrome.runtime, 'sendMessage', { value: message =>
+    Object.defineProperty(dom.chrome.runtime, 'sendMessage', { value: (message: StubMessage) =>
         message.type === 'SETTINGS_PATCH' ? new Promise(resolve => { finishWrite = resolve; }) : nativeSend(message),
     });
     const custom = dom.window.document.querySelector('input[name="favorites-source"][value="custom"]');
@@ -127,7 +140,7 @@ test('an old setting write reply cannot replace a newer external preference', as
     await dom.chrome.storage.sync.set({ bpbSettings: {
         favoritesSource: 'buddies', removeFavoriteWhenBuddyRemoved: true,
     } });
-    finishWrite({ ok: true, settings: { favoritesSource: 'custom' } });
+    finishWrite!({ ok: true, settings: { favoritesSource: 'custom' } });
     await new Promise(resolve => dom.window.setTimeout(resolve, 0));
     assert.equal(dom.window.document.querySelector('input[name="favorites-source"]:checked').value, 'buddies');
     assert.equal(el(dom, 'favorites-remove-with-buddy').checked, true);
@@ -138,10 +151,10 @@ test('favorite Undo explains an intervening ignore and preserves both lists', as
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([entry]) },
     });
-    favoriteRow(dom, 900002).querySelector('[data-action="delete"]').click();
-    await waitFor(dom, () => favoriteRow(dom, 900002).querySelector('[data-action="undo"]'));
+    favoriteRow(dom, 900002)!.querySelector('[data-action="delete"]').click();
+    await waitFor(dom, () => favoriteRow(dom, 900002)!.querySelector('[data-action="undo"]'));
     await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: [entry] } });
-    favoriteRow(dom, 900002).querySelector('[data-action="undo"]').click();
+    favoriteRow(dom, 900002)!.querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => /Unignore/.test(el(dom, 'status-error-text').textContent));
     assert.match(el(dom, 'status-error-text').textContent, /Casey Alpine.*Unignore/);
     assert.equal(dom.chrome._localStore[favoriteKey].entries.length, 0);
@@ -185,10 +198,10 @@ test('adding a climber by id resolves and validates the public profile', async (
     assert.equal(entry.cid, 900002);
     assert.equal(entry.name, 'Alex Doe');
     assert.equal(entry.source, 'manual');
-    assert.equal(dom.chrome._favoriteMutations.at(-1).kind, 'add');
-    assert.equal(dom.chrome._favoriteMutations.at(-1).entry.cid, 900002);
-    assert.equal(favoriteRow(dom, 900002).querySelector('.favorite-name').textContent, 'Alex Doe');
-    assert.match(favoriteRow(dom, 900002).textContent, /#900002.*Manual/);
+    assert.equal(lastMutation(dom).kind, 'add');
+    assert.equal(lastMutation(dom).entry.cid, 900002);
+    assert.equal(favoriteRow(dom, 900002)!.querySelector('.favorite-name').textContent, 'Alex Doe');
+    assert.match(favoriteRow(dom, 900002)!.textContent, /#900002.*Manual/);
 });
 
 test('removing a custom favorite is reversible and list sorting is explicit', async () => {
@@ -207,12 +220,12 @@ test('removing a custom favorite is reversible and list sorting is explicit', as
     assert.deepEqual(Array.from(dom.window.document.querySelectorAll('.favorite-name'), node => node.textContent),
         ['Alpha Climber', 'Zulu Climber']);
 
-    const remove = favoriteRow(dom, 900002).querySelector('[data-action="delete"]');
+    const remove = favoriteRow(dom, 900002)!.querySelector('[data-action="delete"]');
     assert.equal(remove.textContent, 'Remove');
     remove.click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 1);
-    assert.match(favoriteRow(dom, 900002).textContent, /Favorite removed\s*Undo/);
-    favoriteRow(dom, 900002).querySelector('[data-action="undo"]').click();
+    assert.match(favoriteRow(dom, 900002)!.textContent, /Favorite removed\s*Undo/);
+    favoriteRow(dom, 900002)!.querySelector('[data-action="undo"]').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey].entries.length === 2
         && favoriteRow(dom, 900002)?.querySelector('.favorite-name'));
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === 900002), true);
@@ -259,8 +272,8 @@ test('custom favorites show source counts and compose source filtering with sear
         local: { [favoriteKey]: favoriteStore(entries) },
     });
     await waitFor(dom, () => dom.window.document.querySelectorAll('.favorite-item').length === 3);
-    const filter = source => dom.window.document.querySelector(`[data-favorites-source-filter="${source}"]`);
-    const sourceCount = source => filter(source).querySelector('[data-favorites-source-count]').textContent;
+    const filter = (source: string) => dom.window.document.querySelector(`[data-favorites-source-filter="${source}"]`);
+    const sourceCount = (source: string) => filter(source)!.querySelector('[data-favorites-source-count]').textContent;
 
     assert.deepEqual(['all', 'buddy', 'manual'].map(sourceCount), ['3', '1', '2']);
     assert.equal(filter('all').getAttribute('aria-pressed'), 'true');
@@ -290,11 +303,11 @@ test('custom favorites show source counts and compose source filtering with sear
 });
 
 test('Refresh now stores the signed-in owner Buddy List cache', async () => {
-    const requests = [];
+    const requests: string[] = [];
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
             const respond = peakbaggerFetch();
-            window.fetch = url => {
+            window.fetch = (url: RequestInfo | URL) => {
                 requests.push(String(url));
                 return respond(url);
             };
@@ -308,10 +321,10 @@ test('Refresh now stores the signed-in owner Buddy List cache', async () => {
 });
 
 test('failed Buddy refresh links to the Buddy List instead of the home page', async () => {
-    const requests = [];
+    const requests: string[] = [];
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
-            window.fetch = async url => {
+            window.fetch = async (url: RequestInfo | URL) => {
                 requests.push(String(url));
                 return pageResponse('', 500);
             };
@@ -374,7 +387,7 @@ test('an unavailable Buddy worker reports reload guidance without fetching or im
                 local: { [buddyCacheKey]: originalCache, [favoriteKey]: originalFavorites },
                 prepareChrome: chrome => {
                     const send = chrome.runtime.sendMessage.bind(chrome.runtime);
-                    Object.defineProperty(chrome.runtime, 'sendMessage', { configurable: true, value: async message => {
+                    Object.defineProperty(chrome.runtime, 'sendMessage', { configurable: true, value: async (message: StubMessage) => {
                         if (message?.type === 'BUDDY_CACHE_UPDATE' && message.phase === phase) {
                             if (reply === 'transport-error') throw new Error('Could not establish connection. Receiving end does not exist.');
                             return reply;
@@ -384,7 +397,7 @@ test('an unavailable Buddy worker reports reload guidance without fetching or im
                 },
                 prepareWindow: window => {
                     const fetchBuddies = peakbaggerFetch();
-                    window.fetch = (...args) => { fetches++; return fetchBuddies(...args); };
+                    window.fetch = (url: RequestInfo | URL) => { fetches++; return fetchBuddies(url); };
                 },
             });
             el(dom, 'favorites-merge-buddies').click();
@@ -439,18 +452,18 @@ test('a Buddy cache write failure is not mislabeled as a Peakbagger request fail
 });
 
 test('an options refresh cannot replace a Buddy change confirmed while its report was loading', async () => {
-    let release;
+    let release: ((response: Response) => void) | undefined;
     const dom = await loadFavoritesPage({ favoritesSource: 'buddies' }, {
-        prepareWindow: window => { window.fetch = () => new Promise(resolve => { release = resolve; }); },
+        prepareWindow: window => { window.fetch = () => new Promise<Response>(resolve => { release = resolve; }); },
     });
     el(dom, 'favorites-refresh-buddies').click();
     await waitFor(dom, () => release);
-    const send = message => dom.chrome.runtime.sendMessage({ type: 'CLIMBER_BUDDY_ACTION', ...message });
+    const send = (message: Record<string, unknown>) => dom.chrome.runtime.sendMessage({ type: 'CLIMBER_BUDDY_ACTION', ...message }) as Promise<{ token?: string }>;
     const lease = await send({ phase: 'begin', ownerCid: 900001, cid: 900002, name: 'Confirmed Buddy', action: 'add' });
     await send({ phase: 'dispatch', token: lease.token });
     await send({ phase: 'complete', token: lease.token, buddy: true });
     const confirmed = structuredClone(dom.chrome._localStore[buddyCacheKey]);
-    release(pageResponse('<div>Logged in: Test | <a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a></div>'
+    release!(pageResponse('<div>Logged in: Test | <a href="https://www.peakbagger.com/climber/climber.aspx?cid=900001">My Home Page</a></div>'
         + '<h1>Buddy List</h1><table id="RGridView"><tr><th>Climber</th></tr></table>'));
     await waitFor(dom, () => !el(dom, 'favorites-refresh-buddies').disabled
         && /1 buddy.*changed during refresh/.test(el(dom, 'favorites-buddy-status').textContent));
@@ -483,8 +496,8 @@ test('merge is additive while mirror requires destructive confirmation and suppo
 
     el(dom, 'favorites-merge-buddies').click();
     await waitFor(dom, () => dom.chrome._localStore[favoriteKey]?.entries?.length === 7);
-    assert.equal(dom.chrome._favoriteMutations.at(-1).kind, 'merge-buddies');
-    assert.equal(dom.chrome._favoriteMutations.at(-1).entries.length, 6);
+    assert.equal(lastMutation(dom).kind, 'merge-buddies');
+    assert.equal(lastMutation(dom).entries.length, 6);
     assert.equal(el(dom, 'favorites-import-status').textContent,
         'Merge complete: 6 added, 0 removed. Custom list now has 7 climbers.');
     assert.equal(dom.chrome._localStore[favoriteKey].entries[0].cid, manual.cid,
@@ -529,22 +542,22 @@ test('merge is additive while mirror requires destructive confirmation and suppo
 test('a failed Buddy mirror keeps its reviewed replacement visible and retryable', async () => {
     const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
     let buddyLoads = 0;
-    let rejectFirstWrite;
+    let rejectFirstWrite: ((error: Error) => void) | undefined;
     let favoriteWriteAttempts = 0;
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         local: { [favoriteKey]: favoriteStore([manual]) },
         prepareChrome: chrome => {
             const nativeSet = chrome.storage.local.set;
-            chrome.storage.local.set = patch => {
+            chrome.storage.local.set = (patch: Record<string, unknown>) => {
                 if (!(favoriteKey in patch) || favoriteWriteAttempts++ > 0) return nativeSet(patch);
                 return new Promise((resolve, reject) => { rejectFirstWrite = reject; });
             };
         },
         prepareWindow: window => {
             const fetchBuddyList = peakbaggerFetch();
-            window.fetch = (...args) => {
+            window.fetch = (url: RequestInfo | URL) => {
                 buddyLoads++;
-                return fetchBuddyList(...args);
+                return fetchBuddyList(url);
             };
         },
     });
@@ -571,7 +584,7 @@ test('a failed Buddy mirror keeps its reviewed replacement visible and retryable
     assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, false);
     assert.equal(el(dom, 'favorites-mirror-confirmation-detail').textContent, reviewedImpact);
 
-    rejectFirstWrite(new Error('storage unavailable'));
+    rejectFirstWrite!(new Error('storage unavailable'));
     await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').getAttribute('aria-busy') === null
         && dom.window.document.activeElement === el(dom, 'favorites-mirror-confirm'));
     assert.equal(el(dom, 'favorites-mirror-confirmation').hidden, false);
@@ -615,6 +628,8 @@ test('mirror reports additions and zero removals before and after replacement', 
 });
 
 test('a stale replacement preserves the prior Undo expiry and the concurrent edit', async () => {
+    // The six-second Undo timers the page schedules, held for the test to fire.
+    const undoTimers: { id: number; callback: () => void; cleared: boolean }[] = [];
     const manual = { cid: 900099, name: 'Manual Favorite', addedAt: 1, source: 'manual' };
     const concurrent = { cid: 900100, name: 'Other Tab Favorite', addedAt: 2, source: 'manual' };
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
@@ -624,18 +639,17 @@ test('a stale replacement preserves the prior Undo expiry and the concurrent edi
             const nativeSetTimeout = window.setTimeout.bind(window);
             const nativeClearTimeout = window.clearTimeout.bind(window);
             let nextUndoTimer = -1;
-            window.undoTimers = [];
-            window.setTimeout = (callback, delay = 0, ...args) => {
+            window.setTimeout = ((callback: () => void, delay = 0, ...args: unknown[]) => {
                 if (delay !== 6000) return nativeSetTimeout(callback, delay, ...args);
                 const timer = { id: nextUndoTimer--, callback, cleared: false };
-                window.undoTimers.push(timer);
+                undoTimers.push(timer);
                 return timer.id;
-            };
-            window.clearTimeout = id => {
-                const timer = window.undoTimers.find(candidate => candidate.id === id);
+            }) as typeof window.setTimeout;
+            window.clearTimeout = ((id?: number) => {
+                const timer = undoTimers.find(candidate => candidate.id === id);
                 if (timer) timer.cleared = true;
                 else nativeClearTimeout(id);
-            };
+            }) as typeof window.clearTimeout;
         },
     });
 
@@ -643,7 +657,7 @@ test('a stale replacement preserves the prior Undo expiry and the concurrent edi
     await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
     el(dom, 'favorites-mirror-confirm').click();
     await waitFor(dom, () => el(dom, 'favorites-undo-all').hidden === false);
-    assert.equal(dom.window.undoTimers.length, 1);
+    assert.equal(undoTimers.length, 1);
 
     el(dom, 'favorites-mirror-buddies').click();
     await waitFor(dom, () => el(dom, 'favorites-mirror-confirmation').hidden === false);
@@ -654,11 +668,11 @@ test('a stale replacement preserves the prior Undo expiry and the concurrent edi
     el(dom, 'favorites-mirror-confirm').click();
 
     await waitFor(dom, () => /changed in another tab/i.test(el(dom, 'status-error-text').textContent));
-    assert.equal(dom.window.undoTimers[0].cleared, false,
+    assert.equal(undoTimers[0].cleared, false,
         'a rejected replacement must not cancel the prior successful replacement expiry');
     assert.equal(dom.chrome._localStore[favoriteKey].entries.some(entry => entry.cid === concurrent.cid), true);
 
-    dom.window.undoTimers[0].callback();
+    undoTimers[0].callback();
     assert.equal(el(dom, 'favorites-undo-all').hidden, true);
 });
 
@@ -686,11 +700,8 @@ test('merge reports buddies skipped when custom favorites are full', async () =>
 test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadata', async () => {
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareWindow: window => {
-            window.fetch = async () => ({
-                status: 200,
-                headers: { 'cf-mitigated': 'challenge' },
-                text: async () => `${buddyPageFixture}<script>window._cf_chl_opt={}</script>`,
-            });
+            window.fetch = async () => new Response(`${buddyPageFixture}<script>window._cf_chl_opt={}</script>`,
+                { status: 200, headers: { 'cf-mitigated': 'challenge' } });
         },
     });
 
@@ -701,14 +712,14 @@ test('custom import accepts a valid 200 Buddy report carrying Cloudflare metadat
 });
 
 test('custom import opens a first-party helper when extension cookies look signed out', async () => {
-    const opened = [];
-    const updated = [];
-    const removed = [];
+    const opened: unknown[] = [];
+    const updated: unknown[] = [];
+    const removed: number[] = [];
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareChrome: chrome => {
-            chrome.runtime.getURL = path => `chrome-extension://test-extension/${path}`;
+            chrome.runtime.getURL = (path: string) => `chrome-extension://test-extension/${path}`;
             chrome.tabs = {
-                create: (details, callback) => {
+                create: (details: { url: string }, callback: Callback) => {
                     opened.push(structuredClone(details));
                     callback({ id: 77 });
                     setTimeout(() => { void chrome.storage.local.set({
@@ -722,12 +733,12 @@ test('custom import opens a first-party helper when extension cookies look signe
                         },
                     }); }, 0);
                 },
-                update: (tabId, details) => { updated.push({ tabId, details }); },
-                remove: (tabId, callback) => {
+                update: (tabId: number, details: unknown) => { updated.push({ tabId, details }); },
+                remove: (tabId: number, callback: Callback) => {
                     removed.push(tabId);
                     callback();
                 },
-                sendMessage: (tabId, message, callback) => callback({
+                sendMessage: (_tabId: number, _message: unknown, callback: Callback) => callback({
                     url: 'https://www.peakbagger.com/report/report.aspx?r=b',
                     cache: chrome._localStore[buddyCacheKey],
                 }),
@@ -750,14 +761,14 @@ test('custom import opens a first-party helper when extension cookies look signe
 });
 
 test('Buddy fallback starts the packaged helper without racing an initial blank navigation', async () => {
-    const created = [], removed = [];
-    let cache = null;
+    const created: unknown[] = [], removed: number[] = [];
+    let cache: unknown = null;
     const dom = await loadFavoritesPage({ favoritesSource: 'custom' }, {
         prepareWindow: window => { window.fetch = signedOutFetch(); },
         prepareChrome: chrome => {
-            chrome.runtime.getURL = page => `chrome-extension://test-extension/${page}`;
+            chrome.runtime.getURL = (page: string) => `chrome-extension://test-extension/${page}`;
             chrome.tabs = {
-                create(details, callback) {
+                create(details: { url: string }, callback: Callback) {
                     created.push(structuredClone(details));
                     // Model an early helper response before create's callback.
                     // A second update while the original blank is provisional
@@ -765,11 +776,11 @@ test('Buddy fallback starts the packaged helper without racing an initial blank 
                     if (details.url.endsWith('/options/buddy-refresh.html')) cache = buddyCacheFrom();
                     callback({ id: 77, url: details.url });
                 },
-                update(_id, _details, callback) { callback?.({ id: 77, status: 'loading' }); },
-                sendMessage(_id, _message, callback) {
+                update(_id: number, _details: unknown, callback?: Callback) { callback?.({ id: 77, status: 'loading' }); },
+                sendMessage(_id: number, _message: unknown, callback: Callback) {
                     callback({ url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache });
                 },
-                remove(id, callback) { removed.push(id); callback?.(); },
+                remove(id: number, callback?: Callback) { removed.push(id); callback?.(); },
             };
         },
     });
@@ -807,10 +818,10 @@ test('a cookie-blocked Buddy read recovers through the first-party helper tab', 
     await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
     // The first navigation is a packaged document, with no provisional blank
     // followed by a competing update.
-    assert.equal(dom.chrome._siteTab.created.length, 1);
-    assert.equal(dom.chrome._siteTab.created[0].url, 'chrome-extension://test-extension/options/buddy-refresh.html');
-    assert.equal(dom.chrome._siteTab.created[0].active, false);
-    assert.deepEqual(dom.chrome._siteTab.removed, [77], 'the helper tab must never be left open');
+    assert.equal(siteTab(dom).created.length, 1);
+    assert.equal(siteTab(dom).created[0].url, 'chrome-extension://test-extension/options/buddy-refresh.html');
+    assert.equal(siteTab(dom).created[0].active, false);
+    assert.deepEqual(siteTab(dom).removed, [77], 'the helper tab must never be left open');
 });
 
 test('a managed-challenge 403 recovers through its own first-party Buddy tab', async () => {
@@ -824,26 +835,26 @@ test('a managed-challenge 403 recovers through its own first-party Buddy tab', a
     await waitFor(dom, () => /6 buddies/.test(el(dom, 'favorites-buddy-status').textContent));
     assert.doesNotMatch(el(dom, 'favorites-buddy-status').textContent, /human check/);
     assert.equal(el(dom, 'status-error').hidden, true);
-    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+    assert.deepEqual(siteTab(dom).removed, [77]);
 });
 
 test('challenge recovery also supports the Firefox promise-based tab API', async () => {
-    const removed = [];
+    const removed: number[] = [];
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => {
-            window.browser = window.chrome;
+            (window as { browser?: unknown }).browser = window.chrome;
             window.fetch = async () => pageResponse(cloudflareBody, 403);
         },
         prepareChrome: chrome => {
             chrome.tabs = {
                 query: async () => [],
-                create: async details => {
+                create: async (details: { active?: boolean }) => {
                     assert.equal(details.active, false);
                     await chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
                     return { id: 77 };
                 },
                 sendMessage: async () => ({ url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache: buddyCacheFrom() }),
-                remove: async tabId => { removed.push(tabId); },
+                remove: async (tabId: number) => { removed.push(tabId); },
             };
         },
     });
@@ -854,23 +865,23 @@ test('challenge recovery also supports the Firefox promise-based tab API', async
 });
 
 test('challenge recovery keeps the working Buddy List hostname and reads only its helper', async () => {
-    const navigations = [], reads = [];
+    const navigations: { url?: string; active?: boolean }[] = [], reads: unknown[] = [];
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
         prepareChrome: chrome => {
-            siteTabChrome({ onNavigate: ({ chrome, details }) => {
+            siteTabChrome({ onNavigate: ({ chrome: tabChrome, details }) => {
                 navigations.push(details);
-                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+                void tabChrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
             } })(chrome);
-            chrome.tabs.query = (query, callback) => callback([
+            tabsOf(chrome).query = ((_query: unknown, callback: Callback) => callback([
                 { id: 5, url: 'https://www.peakbagger.com/Peak.aspx?pid=1', active: true },
                 { id: 6, url: 'https://peakbagger.com/report/report.aspx?r=b', active: false },
                 { id: 7, url: 'https://evil.test/report/report.aspx?r=b', active: true },
-            ]);
-            chrome.tabs.sendMessage = (tabId, message, callback) => {
+            ])) as Tabs[string];
+            tabsOf(chrome).sendMessage = ((tabId: number, message: unknown, callback: Callback) => {
                 reads.push({ tabId, message: structuredClone(message) });
                 callback({ url: 'https://peakbagger.com/report/report.aspx?r=b', cache: buddyCacheFrom() });
-            };
+            }) as Tabs[string];
         },
     });
     el(dom, 'favorites-refresh-buddies').click();
@@ -878,19 +889,19 @@ test('challenge recovery keeps the working Buddy List hostname and reads only it
     assert.equal(navigations[0].url, 'chrome-extension://test-extension/options/buddy-refresh.html#origin=https%3A%2F%2Fpeakbagger.com');
     assert.equal(navigations[0].active, false);
     assert.deepEqual(reads, [{ tabId: 77, message: { type: 'BUDDY_PAGE_READ' } }]);
-    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+    assert.deepEqual(siteTab(dom).removed, [77]);
 });
 
 test('an unrelated cache update cannot complete a still-challenged helper tab', async () => {
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
         prepareChrome: chrome => {
-            siteTabChrome({ onNavigate: ({ chrome }) => {
-                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            siteTabChrome({ onNavigate: ({ chrome: tabChrome }) => {
+                void tabChrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
             } })(chrome);
-            chrome.tabs.sendMessage = (tabId, message, callback) => callback({
+            tabsOf(chrome).sendMessage = ((_tabId: number, _message: unknown, callback: Callback) => callback({
                 url: 'https://www.peakbagger.com/report/report.aspx?r=b', cache: null,
-            });
+            })) as Tabs[string];
         },
     });
     accelerateTimeout(dom, 8000);
@@ -898,25 +909,25 @@ test('an unrelated cache update cannot complete a still-challenged helper tab', 
     await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
     assert.match(el(dom, 'favorites-buddy-status').textContent, /human check/);
     assert.equal(dom.chrome._localStore[favoriteKey], undefined);
-    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+    assert.deepEqual(siteTab(dom).removed, [77]);
 });
 
 test('a helper read from another report cannot complete challenge recovery', async () => {
     const dom = await loadFavoritesPage({}, {
         prepareWindow: window => { window.fetch = async () => pageResponse(cloudflareBody, 403); },
         prepareChrome: chrome => {
-            siteTabChrome({ onNavigate: ({ chrome }) => {
-                void chrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
+            siteTabChrome({ onNavigate: ({ chrome: tabChrome }) => {
+                void tabChrome.storage.local.set({ [buddyCacheKey]: buddyCacheFrom() });
             } })(chrome);
-            chrome.tabs.sendMessage = (tabId, message, callback) => callback({
+            tabsOf(chrome).sendMessage = ((_tabId: number, _message: unknown, callback: Callback) => callback({
                 url: 'https://www.peakbagger.com/report/report.aspx?r=b&cid=900002', cache: buddyCacheFrom(),
-            });
+            })) as Tabs[string];
         },
     });
     accelerateTimeout(dom, 8000);
     el(dom, 'favorites-refresh-buddies').click();
     await waitFor(dom, () => /human check/.test(el(dom, 'status-error-text').textContent));
-    assert.deepEqual(dom.chrome._siteTab.removed, [77]);
+    assert.deepEqual(siteTab(dom).removed, [77]);
 });
 
 test('a newer same-owner Buddy List clears the old challenge warning and banner', async () => {
@@ -993,7 +1004,7 @@ test('a wedged helper tab reports the timeout, never “sign in”', async () =>
     const status = el(dom, 'favorites-buddy-status').textContent;
     assert.match(status, /took too long to return the Buddy List/i);
     assert.doesNotMatch(status, /sign in/i);
-    assert.deepEqual(dom.chrome._siteTab.removed, [77], 'a timed-out helper tab is still closed');
+    assert.deepEqual(siteTab(dom).removed, [77], 'a timed-out helper tab is still closed');
 });
 
 test('without a helper tab available the original diagnosis still stands', async () => {

@@ -1,10 +1,13 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as nextTask } from 'node:timers/promises';
-import { loadOptions, el, waitFor, registerCleanup } from '../helpers/options-helpers.mjs';
-import { harness } from '../helpers/ignored-sync-harness.mts';
+import { loadOptions, el, waitFor, registerCleanup, type OptionsPage } from '../helpers/options-page.mts';
+import { harness, syncState } from '../helpers/ignored-sync-harness.mts';
+import type { PageChrome } from '../helpers/chrome-stub.mts';
+import type { StubMessage } from '../helpers/page-types.mts';
 import { createClimberListSync } from '../../src/background/climber-list-sync.ts';
 
 registerCleanup();
@@ -16,22 +19,31 @@ const syncControls = [
     ['github-delete-backup', 'removeGithubBackupOnDelete'],
 ];
 
-const controlPage = async ({ connected = false, granted = false, settings = {}, local } = {}) => {
-    const h = harness({ syncEnabled: true });
-    h.connected = connected; h.granted = granted;
-    h.authReads = 0;
-    h.permissionListeners = { added: new Set(), removed: new Set() };
+type Listener = (details: { origins: string[] }) => void;
+type Reply = (reply: unknown) => void;
+// The device settings the page writes, read back by key.
+const deviceSetting = (dom: OptionsPage, key: string) =>
+    (dom.chrome._localStore.bpbDeviceSettings?.settings as Record<string, unknown> | undefined)?.[key];
+const controlPage = async ({ connected = false, granted = false, settings = {}, local }:
+    { connected?: boolean; granted?: boolean; settings?: Record<string, unknown>; local?: Record<string, unknown> } = {}) => {
+    const h = Object.assign(harness({ syncEnabled: true }), {
+        connected, granted, authReads: 0,
+        permissionListeners: { added: new Set<Listener>(), removed: new Set<Listener>() },
+        authReply: null as (() => unknown) | null,
+        photosReply: null as (() => unknown) | null,
+        dom: undefined as unknown as OptionsPage,
+    });
     h.engine = createClimberListSync({ ...h.engineOptions,
         getAccess: async () => h.connected && h.granted ? h.engineOptions.getAccess()
             : { error: { code: 'not-connected' } },
     });
-    h.dom = await loadOptions({ autoFavoritesBackup: true, autoSettingsBackup: true, autoPhotoLibraryBackup: true, ...settings }, { local: local || h.values, prepareChrome: chrome => {
+    h.dom = await loadOptions({ autoFavoritesBackup: true, autoSettingsBackup: true, autoPhotoLibraryBackup: true, ...settings }, { local: local || h.values, prepareChrome: (chrome: PageChrome) => {
         h.storage.get = chrome.storage.local.get; h.storage.set = chrome.storage.local.set;
         chrome.permissions = { contains: async () => h.granted,
-            onAdded: { addListener: listener => h.permissionListeners.added.add(listener) },
-            onRemoved: { addListener: listener => h.permissionListeners.removed.add(listener) },
+            onAdded: { addListener: (listener: Listener) => h.permissionListeners.added.add(listener) },
+            onRemoved: { addListener: (listener: Listener) => h.permissionListeners.removed.add(listener) },
         };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') h.authReads++;
             if (message.type === 'GITHUB_AUTH_STATUS' && h.authReply) return h.authReply();
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: h.connected, hasToken: h.connected,
@@ -40,7 +52,7 @@ const controlPage = async ({ connected = false, granted = false, settings = {}, 
                 ? h.engine.status() : h.engine.action(message);
             if (message.type === 'GITHUB_PHOTOS_STATUS' && h.photosReply) return h.photosReply();
             if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true,
-                auto: chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup === true, state: null };
+                auto: (chrome._localStore.bpbDeviceSettings?.settings as { autoPhotoLibraryBackup?: boolean } | undefined)?.autoPhotoLibraryBackup === true, state: null };
             if (message.type === 'GITHUB_ASCENT_BACKUP_SUMMARY') return { ok: true, count: 0 };
             return { ok: true };
         };
@@ -65,7 +77,7 @@ test('disconnected and permission-denied GitHub controls retain preferences with
         assert.equal(el(h.dom, 'settings-backup-github-actions').hidden, true);
         assert.equal(el(h.dom, 'photos-github-actions').hidden, true);
         for (const id of ['settings-backup-auto', 'photos-auto-backup']) {
-            assert.equal(el(h.dom, id).closest('.backup-automatic').hidden, true,
+            assert.equal(el(h.dom, id).closest('.backup-automatic')!.hidden, true,
                 `${id} stays hidden with its disconnected backup actions`);
         }
         assert.equal(el(h.dom, 'github-auto-backup'), null);
@@ -73,7 +85,7 @@ test('disconnected and permission-denied GitHub controls retain preferences with
         assert.equal(el(h.dom, 'settings-backup-auto').checked, true);
         assert.equal(el(h.dom, 'photos-auto-backup').checked, true);
         assert.equal(h.reads, 0); assert.equal(h.writes, 0);
-        assert.equal((await h.engine.status()).state.enabled, true);
+        assert.equal(syncState(await h.engine.status()).enabled, true);
     }
 });
 
@@ -89,12 +101,13 @@ test('unrelated host permission changes do not refresh GitHub setup', async () =
     assert.equal(accessSettled(h, true), true);
 });
 
-const accessSettled = (h, connected) => ['favorites-auto-backup', 'ignored-sync-enable']
+type ControlPage = Awaited<ReturnType<typeof controlPage>>;
+const accessSettled = (h: ControlPage, connected: boolean) => ['favorites-auto-backup', 'ignored-sync-enable']
     .every(id => el(h.dom, id).disabled === !connected)
     && el(h.dom, 'settings-backup-github-actions').hidden === !connected
     && el(h.dom, 'photos-github-actions').hidden === !connected
     && ['settings-backup-auto', 'photos-auto-backup']
-        .every(id => el(h.dom, id).closest('.backup-automatic').hidden === !connected)
+        .every(id => el(h.dom, id).closest('.backup-automatic')!.hidden === !connected)
     && !!el(h.dom, 'github-delete-backup') === connected
     && /Connected as/.test(el(h.dom, 'github-panel').textContent) === connected;
 
@@ -120,19 +133,19 @@ test('host access revocation and regrant refresh every optional GitHub control w
 
 test('access notifications during device setup preserve the code until host access is revoked', async () => {
     let granted = false, hasToken = false;
-    const added = new Set(), removed = new Set();
-    const dom = await loadOptions({}, { prepareChrome: chrome => {
+    const added = new Set<Listener>(), removed = new Set<Listener>();
+    const dom = await loadOptions({}, { prepareChrome: (chrome: PageChrome) => {
         chrome.permissions = {
             contains: async () => granted,
-            onAdded: { addListener: listener => added.add(listener) },
-            onRemoved: { addListener: listener => removed.add(listener) },
+            onAdded: { addListener: (listener: Listener) => added.add(listener) },
+            onRemoved: { addListener: (listener: Listener) => removed.add(listener) },
             request: async () => {
                 granted = true;
                 for (const listener of added) listener({ origins: ['https://github.com/*'] });
                 return true;
             },
         };
-        chrome.runtime.sendMessage = async message => {
+        chrome.runtime.sendMessage = async (message: StubMessage) => {
             if (message.type === 'GITHUB_AUTH_STATUS') return { connected: false, hasToken };
             if (message.type === 'GITHUB_AUTH_BEGIN') {
                 await chrome.storage.local.set({ bpbGithubAuth: null });
@@ -161,7 +174,7 @@ test('access notifications during device setup preserve the code until host acce
 test('older connection replies cannot repaint any section after a newer access refresh', async () => {
     const h = await controlPage({ connected: true, granted: true, settings: { enableGithubBackup: true } });
     await waitFor(h.dom, () => accessSettled(h, true));
-    const pending = [];
+    const pending: Reply[] = [];
     h.authReply = () => new Promise(resolve => pending.push(resolve));
     await h.dom.chrome.storage.local.set({ bpbGithubAuth: { repo: { owner: 'me', name: 'backup' } } });
     await waitFor(h.dom, () => pending.length === 5);
@@ -190,13 +203,13 @@ test('connection changes from another settings tab preserve climber opt-outs thr
     await waitFor(h.dom, () => accessSettled(h, true));
     for (const [id] of syncControls) assert.equal(el(h.dom, id).checked, false, id);
     assert.equal(el(h.dom, 'ignored-sync-enable').checked, false);
-    assert.equal((await h.engine.status()).state.enabled, false);
+    assert.equal(syncState(await h.engine.status()).enabled, false);
     assert.equal(h.reads, reads); assert.equal(h.writes, writes);
 });
 
 test('delayed connected replies cannot reopen backup controls after a newer disconnection', async () => {
     const h = await controlPage({ connected: true, granted: true });
-    const pending = [];
+    const pending: Reply[] = [];
     h.authReply = () => new Promise(resolve => pending.push(resolve));
     h.dom.window.dispatchEvent(new h.dom.window.Event('focus'));
     await waitFor(h.dom, () => pending.length === 2);
@@ -215,17 +228,17 @@ test('delayed connected replies cannot reopen backup controls after a newer disc
 test('a photo status snapshot cannot overwrite a newer automatic backup preference', async () => {
     const h = await controlPage({ connected: true, granted: true,
         settings: { autoPhotoLibraryBackup: false } });
-    let resolve;
+    let resolve: Reply | undefined;
     h.photosReply = () => new Promise(done => { resolve = done; });
     h.dom.window.dispatchEvent(new h.dom.window.Event('focus'));
     await waitFor(h.dom, () => !!resolve);
     el(h.dom, 'photos-auto-backup').click();
-    await waitFor(h.dom, () => h.dom.chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup === true
+    await waitFor(h.dom, () => deviceSetting(h.dom, 'autoPhotoLibraryBackup') === true
         && el(h.dom, 'photos-auto-backup').checked);
-    resolve({ ok: true, auto: false, state: null });
+    resolve!({ ok: true, auto: false, state: null });
     await nextTask(0);
     assert.equal(el(h.dom, 'photos-auto-backup').checked, true);
-    assert.equal(h.dom.chrome._localStore.bpbDeviceSettings.settings.autoPhotoLibraryBackup, true);
+    assert.equal(deviceSetting(h.dom, 'autoPhotoLibraryBackup'), true);
 });
 
 test('connected optional GitHub choices toggle both ways and preserve opt-outs on reload', async () => {
@@ -237,7 +250,7 @@ test('connected optional GitHub choices toggle both ways and preserve opt-outs o
         assert.equal(el(h.dom, id).checked, initial, `${id} has the intended default`);
         for (const next of [!initial, initial, false]) {
             if (el(h.dom, id).checked !== next) el(h.dom, id).click();
-            await waitFor(h.dom, () => h.dom.chrome._localStore.bpbDeviceSettings.settings[key] === next
+            await waitFor(h.dom, () => deviceSetting(h.dom, key) === next
                 && el(h.dom, id)?.checked === next);
         }
     }
@@ -245,7 +258,7 @@ test('connected optional GitHub choices toggle both ways and preserve opt-outs o
         el(h.dom, 'ignored-sync-enable').click();
         await waitFor(h.dom, () => !el(h.dom, 'ignored-github').hasAttribute('aria-busy')
             && el(h.dom, 'ignored-sync-enable').checked === next);
-        assert.equal((await h.engine.status()).state.enabled, next);
+        assert.equal(syncState(await h.engine.status()).enabled, next);
     }
     const reload = await controlPage({ connected: true, granted: true,
         settings: h.dom.chrome._store.bpbSettings, local: h.dom.chrome._localStore });

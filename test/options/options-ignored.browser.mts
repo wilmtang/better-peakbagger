@@ -1,8 +1,10 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadFavoritesPage, el, waitFor, registerCleanup, peakbaggerFetch, pageResponse, climberPageFixture } from '../helpers/options-helpers.mjs';
+import type { StubMessage } from '../helpers/page-types.mts';
+import { loadFavoritesPage, el, waitFor, registerCleanup, peakbaggerFetch, pageResponse, climberPageFixture } from '../helpers/options-page.mts';
 registerCleanup();
 for (const kind of ['favorite', 'saved buddy', 'live buddy']) {
     test(`Ignored manager rejects a ${kind} with an actionable reason`, async () => {
@@ -39,7 +41,7 @@ test('Ignored tab adds confirmed identities, supports search, and undoes only th
     assert.equal(el(dom, 'ignored-list').querySelector('.favorite-name').textContent, 'Alex Doe');
     el(dom, 'ignored-list').querySelector('button').click();
     await waitFor(dom, () => !el(dom, 'ignored-undo').hidden);
-    const current = dom.chrome._localStore.bpbIgnoredClimbers;
+    const current = dom.chrome._localStore.bpbIgnoredClimbers as unknown as { revision: number };
     await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { ...current, revision: current.revision + 1,
         entries: [{ cid: 900003, name: '<script>other</script>', addedAt: 1 }] } });
     el(dom, 'ignored-undo-button').click();
@@ -50,27 +52,27 @@ test('Ignored tab adds confirmed identities, supports search, and undoes only th
     assert.equal(el(dom, 'ignored-list').children.length, 1);
 });
 
-const ignoredEntry = cid => ({ cid, name: `Climber ${cid}`, addedAt: cid });
+const ignoredEntry = (cid: number) => ({ cid, name: `Climber ${cid}`, addedAt: cid });
 const loadDeferredIgnored = async (ids = [1, 2, 3]) => {
-    const calls = [];
+    const calls: { resolve: (reply: unknown) => void; apply: () => Promise<unknown> }[] = [];
     const dom = await loadFavoritesPage({}, {
         local: { bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: ids.map(ignoredEntry) } },
         prepareChrome: chrome => {
             const send = chrome.runtime.sendMessage.bind(chrome.runtime);
             Object.defineProperty(chrome.runtime, 'sendMessage', {
-                value: message => message.type === 'IGNORED_MUTATE'
-                    ? new Promise(resolve => calls.push({ resolve, apply: () => send(message) }))
+                value: (message: StubMessage) => message.type === 'IGNORED_MUTATE'
+                    ? new Promise(resolve => calls.push({ resolve, apply: async () => send(message) }))
                     : send(message),
             });
         },
     });
     el(dom, 'ignored-tab').click();
     await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
-    const finish = async (index, error = '') => {
-        calls[index].resolve(error ? { ok: false, error: { message: error } } : await calls[index].apply());
+    const finish = async (index: number, error = '') => {
+        calls[index]!.resolve(error ? { ok: false, error: { message: error } } : await calls[index]!.apply());
         await waitFor(dom, () => el(dom, 'ignored-list').getAttribute('aria-busy') === 'false');
     };
-    const control = (cid, kind = 'button') => el(dom, 'ignored-list').querySelector(`[data-cid="${cid}"] ${kind}`);
+    const control = (cid: number, kind = 'button') => el(dom, 'ignored-list').querySelector(`[data-cid="${cid}"] ${kind}`);
     return { dom, calls, finish, control };
 };
 

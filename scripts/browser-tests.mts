@@ -204,6 +204,13 @@ async function performTrustedInput(page: Page, action: TrustedAction, stageFiles
             break;
         }
         case 'press': await element.press(action.key); break;
+        case 'wheel': {
+            const box = await element.boundingBox();
+            if (!box) throw new Error('The trusted wheel target has no box.');
+            await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+            await page.mouse.wheel(action.deltaX ?? 0, action.deltaY ?? 0);
+            break;
+        }
         case 'type': await element.focus(); await page.keyboard.type(action.text); break;
         case 'files': {
             // Real paths drive Playwright through native browser file-chooser

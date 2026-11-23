@@ -1,7 +1,10 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
-import * as helpers from '../helpers/options-helpers.mjs';
+import * as helpers from '../helpers/options-page.mts';
 
 import type { ChromeStub, LoadPage, PageDom, PageElement, StubMessage, WaitFor } from '../helpers/page-types.mts';
 

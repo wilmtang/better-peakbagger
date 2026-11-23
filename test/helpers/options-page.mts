@@ -47,16 +47,9 @@ export const registerCleanup = () => {
 
 export const favoriteStore = (entries: unknown[] = []) => ({ schemaVersion: 1, entries });
 
-export interface PageResponse {
-    status: number;
-    headers: { get(name: string): string | null; [name: string]: unknown };
-    text(): Promise<string>;
-}
-export const pageResponse = (text: string, status = 200, headers: Record<string, string> = {}): PageResponse => ({
-    status,
-    headers: { get: name => headers[name.toLowerCase()] ?? null, ...headers },
-    text: async () => text,
-});
+// A real response, as the page's fetch would receive it.
+export const pageResponse = (text: string, status = 200, headers: Record<string, string> = {}): Response =>
+    new Response(text, { status, headers });
 export const peakbaggerFetch = ({ climberCid = 900002 } = {}) => async (rawUrl: RequestInfo | URL) => {
     const url = new URL(String(rawUrl));
     if (url.pathname === '/report/report.aspx') return pageResponse(buddyPageFixture);
