@@ -33,7 +33,7 @@ const siteOf = (hostname: string) => hostname.split('.').slice(-2).join('.');
 const RUNNER_PATH = '/__bpb_test__/';
 const RUNNER_SCRIPT = '/__bpb_test__/test.js';
 const RUN_TIMEOUT_MS = 10 * 60_000;
-// Like jsdom's outside-only pages, fixture markup cannot run code: inline
+// Fixture markup cannot run code: inline
 // <script>, on* handler attributes and javascript: URLs are refused. The test
 // and the bundles it evaluates still run (same-origin scripts and eval).
 // About:blank fixture frames inherit this policy from the runner page.

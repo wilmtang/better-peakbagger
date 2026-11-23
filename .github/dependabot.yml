@@ -10,7 +10,7 @@
 # rehearsal fails and the cause has to be attributed. Both runtime groups are
 # third-party code shipped with the extension; their names distinguish Vite
 # bundling from copying a prebuilt browser file intact. `package.json` lists
-# every dependency under devDependencies; `tooling` and `jsdom` are genuinely
+# every dependency under devDependencies; `tooling` is genuinely
 # development-only, while the `svelte` group ships only the `svelte` client
 # runtime (`svelte`, `clsx`, `esm-env`) into bundles importing components.
 #
@@ -41,7 +41,7 @@ updates:
     # resolved newer siblings despite this strategy (PR #19).
     versioning-strategy: increase
     # One per version-update group.
-    open-pull-requests-limit: 6
+    open-pull-requests-limit: 5
     # Version updates wait out their initial release churn. Security updates
     # ignore cooldown and still arrive immediately.
     cooldown:
@@ -51,14 +51,6 @@ updates:
     # Keep the compiler within the peer range admitted by the TS/Svelte tools.
     ignore:
       - dependency-name: typescript
-        update-types: [version-update:semver-major]
-      # The jsdom tests are typed by @types/jsdom, which trails jsdom's majors
-      # (jsdom 31 exists; @types/jsdom 31 does not). Hold both majors and lift
-      # both rules together once matching majors exist; the `jsdom` group then
-      # moves them in one pull request.
-      - dependency-name: jsdom
-        update-types: [version-update:semver-major]
-      - dependency-name: "@types/jsdom"
         update-types: [version-update:semver-major]
     groups:
       # Bundled into the shipped extension by Vite (direct and transitive).
@@ -128,12 +120,6 @@ updates:
           - svelte-check
           - eslint-plugin-svelte
           - svelte-eslint-parser
-
-      # Test only. jsdom and its declarations must change majors together.
-      jsdom:
-        patterns:
-          - jsdom
-          - "@types/jsdom"
 
       # GitHub assigns an update to the first matching group. Keep this last
       # among version-update rules so named release-path groups retain their

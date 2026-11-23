@@ -1852,7 +1852,7 @@ interface DraftMutationReply { ok?: boolean; written?: boolean; removed?: boolea
         mdEditor.view.scrollDOM.addEventListener('scroll', syncPreviewScroll);
 
         // Test-only handle. Content scripts run in an isolated world, so page
-        // scripts on Peakbagger can never observe this expando; the jsdom
+        // scripts on Peakbagger can never observe this expando; the test
         // harness (one shared world) drives the editors through it instead of
         // synthesizing keystrokes. `rich` is a getter because rich-mode entry
         // rebuilds its editor.

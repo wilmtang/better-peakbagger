@@ -90,7 +90,7 @@ details:
 9. **Returning to 2D is bounded.** An active stop asks the frame for its latest
    center and zoom, but a missing reply cannot trap the user; the coordinator
    falls back after one second.
-10. **No change is verified by one green command.** jsdom, a real unpacked
+10. **No change is verified by one green command.** Browser fixture pages, a real unpacked
     extension, and a hardware-GPU terrain run cover different failure classes.
 
 ## Runtime topology
@@ -922,7 +922,7 @@ receiver check.
 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
-| `npm test` | Builds shipped IIFEs; pure algorithms, jsdom fixtures, protocol/state tests, worker logic | Real manifest interpretation, actual WebGL, browser worker lifecycle |
+| `npm test` | Builds shipped IIFEs; pure algorithms, protocol/state tests, worker logic | DOM behavior (the DOM tier's browser fixtures cover it), real manifest interpretation, actual WebGL, browser worker lifecycle |
 | `npm run lint` | Source JavaScript and built extension/package lint | User interaction or renderer output |
 | `npm run verify -- chrome` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
 | `npm run verify -- browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |

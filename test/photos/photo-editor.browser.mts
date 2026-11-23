@@ -2078,9 +2078,9 @@ test('imported annotations enter the same semantic keyboard selection list', asy
             });
         },
     });
-    // fake-indexeddb clones the seeded records in Node's Blob realm. Bind the
-    // page to that same constructor for this pre-existing/imported-bundle path;
-    // ordinary file-picking tests keep jsdom's native File/Blob realm.
+    // fake-indexeddb clones the seeded records in the test realm's Blob. Bind
+    // the page to that same constructor for this pre-existing/imported-bundle
+    // path; ordinary file-picking tests keep the page's own File/Blob realm.
     Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
     page.doc.getElementById('show-library').click();
     await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
@@ -3277,7 +3277,7 @@ test('clipboard round trips text wrapping, route controls, and freehand geometry
         const transfer = annotationTransfer();
         assert.equal(dispatchClipboard(source, 'copy', transfer).defaultPrevented, true);
         const original = JSON.parse(transfer.getData('text/plain')).object;
-        // Each jsdom page otherwise restarts the same deterministic id counter.
+        // Each fixture page otherwise restarts the same deterministic id counter.
         target.win.crypto.randomUUID = (() => `pasted-${type}`) as typeof target.win.crypto.randomUUID;
         target.doc.getElementById('photo-viewport').focus();
         assert.equal(dispatchClipboard(target, 'paste', transfer).defaultPrevented, true);
@@ -3638,8 +3638,8 @@ test('dragging one route vertex moves only that vertex', async () => {
     const before = page.routePath();
     assert.ok(before, 'the route is drawn');
 
-    // Grab the middle vertex by its own handle — jsdom does no hit testing, so
-    // the press has to land on the element the editor routes drags from — and
+    // Grab the middle vertex by its own handle — the synthetic press is not
+    // hit tested, so it has to land on the element the editor routes drags from — and
     // pull it down.
     const handles = [...page.overlay.querySelectorAll('.vertex-handle')];
     assert.equal(handles.length, 3);

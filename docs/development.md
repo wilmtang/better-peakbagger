@@ -18,7 +18,7 @@ Better Peakbagger module uses a global as an internal dependency.
   TypeScript from authored `.ts`/`.mts` tooling and tests; type checking remains
   a separate required command.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
-  (Vite, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+  (Vite, runtime vendor packages, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
   which makes `.githooks/pre-commit` scan staged contents and paths and
   `.githooks/commit-msg` scan the proposed message through
@@ -86,7 +86,7 @@ mount, prop updates and BFCache-aware disposal, and removes a half-mounted
 component if its first update throws. ESLint forbids other runtime TypeScript
 from importing components or rune modules. Svelte resolves to its server build
 in Node and rune modules only run compiled, so test an island's owner through
-its built bundle or the browser DOM tier, not unbundled jsdom imports. Scoped
+its built bundle in the browser DOM tier, not unbundled imports. Scoped
 style names hash the CSS, so builds are identical from any working directory,
 and the runtime's development flag is pinned off. Test-only components live in `test/fixtures/svelte/`, with
 `valid.check.json` and `invalid.check.json` as their explicitly selected checking
@@ -110,15 +110,13 @@ owner changes.
 
 `npm run typecheck` checks separate browser/Node projects without emitting files.
 [typecheck-node.mts](../scripts/typecheck-node.mts) splits the Node project by
-import closure: a script or test that imports `jsdom` or extension source, or
-declares `/// <reference lib="dom" />` for browser callbacks, is checked with the
+import closure: a script or test that imports extension source, or declares
+`/// <reference lib="dom" />` (browser tests and callbacks), is checked with the
 DOM library through `tsconfig.dom.check.json`; every other Node file is checked
-without DOM globals. jsdom tests use the published `@types/jsdom` declarations;
+without DOM globals.
 [fixture-dom.mts](../test/helpers/fixture-dom.mts) and
 [page-types.mts](../test/helpers/page-types.mts) type fixture pages as known
-markup, and [load-page.mts](../test/helpers/load-page.mts) keeps its
-trusted-event internals behind one local declaration pinned to jsdom's major.
-Do not suppress a jsdom import or hand-type its constructor.
+markup. jsdom is not a dependency: DOM behavior is tested in real browsers.
 The current Chrome definitions include the cross-browser `browser` alias; do not
 install conflicting global definitions or assume these types prove Firefox API
 support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
@@ -381,8 +379,8 @@ script is added or removed without updating it.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
-| `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
-| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
+| `npm test` | Builds `dist/`, then runs the normal pure/project suite in `.test.mjs` and `.test.mts` files under `test/`; DOM behavior runs in the browser tier (`npm run verify -- dom`). Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a DOM program; runs in Test CI and release verification. |
 | `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
 | `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library. Runs the Node `*.scale.mts` tests, then the `*.scale.browser.mts` tests in hidden Chromium and Firefox (`npm run verify -- dom --scale`); the default browser run leaves them out. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
@@ -442,8 +440,7 @@ runtime is checked against `node:assert/strict` by
 
 Fixture documents are frames from
 [fixture-dom.mts](../test/helpers/fixture-dom.mts) with real layout, at the
-fixture URL as their own URL and base URL. Like jsdom's outside-only pages,
-fixture markup cannot run code: the runner's CSP refuses inline scripts,
+fixture URL as their own URL and base URL. Fixture markup cannot run code: the runner's CSP refuses inline scripts,
 handler attributes and `javascript:` URLs, while evaluated bundles run.
 `await FixtureDom.open()` navigates a real frame, which an extension page with
 its own CSP needs and which reaches same-site hosts such as peakbagger.com.
@@ -784,10 +781,11 @@ build config does not ship.
 ### Testing a module
 
 - **Pure logic** (no DOM/chrome/vendor globals): `import` it directly in a
-  `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
-  module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
-- **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
-  with `evalBundle` from `test/helpers/load-page.mts`. This runs exactly what
+  `test/<domain>/*.test.mts` and call it. A module that needs a browser global
+  (`DOMParser`, `location`, …) is tested in the browser tier instead.
+- **Content-script behaviour**: evaluate the *built bundle* into a fixture page
+  in a `*.browser.mts` test, with `loadPage`/`evalBundle` from
+  `test/helpers/fixture-page.mts`. This runs exactly what
   ships and needs no Better Peakbagger module globals. Feed settings through a
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.
@@ -801,8 +799,7 @@ build config does not ship.
   path. The browser tier runs separately from `npm test`.
 
 Routing rule: pure logic stays in `node:test` with no DOM; DOM behaviour uses
-the browser tier; legacy jsdom tests stay on typed jsdom until M7.5 of the
-[stack adoption plan](plans/modern-stack-adoption.md) moves them.
+the browser tier ([M7.5](plans/modern-stack-adoption.md) retired jsdom).
 
 Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals
@@ -981,7 +978,6 @@ attributed:
 | `bundled-runtime` | bundled by Vite | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
 | `tooling` | Vite, Rolldown, and other build and test tooling | no |
-| `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
 | `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by Vite | yes (runtime only) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
@@ -1169,10 +1165,11 @@ add it to the merge-step condition, for example
 
 ## What each check can and cannot see
 
-- `npm test` builds `dist/` first and runs in jsdom. It evaluates
-  the shipped bundles, but it does not exercise the real manifest — execution
+- `npm test` builds `dist/` first and runs pure logic and Node-side state;
+  `npm run verify -- dom` evaluates the shipped bundles in hidden Chromium and
+  Firefox fixture pages. Neither exercises the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
-  to it.
+  to them.
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   100,000-point GPX completeness case, 100,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path and 1,200-photo library out of

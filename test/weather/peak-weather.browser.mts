@@ -55,8 +55,8 @@ const reply = (url: string, _init?: RequestOptions) => {
         elevation: query.has('elevation') ? Number(query.get('elevation')) : 1200 })), { headers: { 'content-type': 'application/json' } });
 };
 function setup({ html = peak, fetchFn = reply, lazy = false, now = '2024-11-05T12:00:00Z', storedSettings = {}, readSettings, localModels = {}, readModels, saveModels, metadataFn, aqiFn }: SetupOptions = {}) {
-    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
-    const win = jsdom.window as WeatherWindow;
+    const fixture = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
+    const win = fixture.window as WeatherWindow;
     win.document.head.append(Object.assign(win.document.createElement('style'), { textContent: weatherCss }));
     const requests: CapturedRequest[] = [], metadataRequests: CapturedRequest[] = [], listeners: StorageListener[] = [];
     const observers: { callback: (entries: { isIntersecting: boolean }[]) => void; disconnected: boolean }[] = [], resizeObservers: { callback: () => void; disconnected: boolean }[] = [];

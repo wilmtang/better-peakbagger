@@ -1741,7 +1741,7 @@ The focused automated evidence is deliberately split by boundary:
   fixture-privacy guard pin the default/allowlist, isolated-world routes and
   bundle composition, and synthetic third-party fixture data.
 
-Those tests use jsdom, stubbed fetch/storage, and a reduced synthetic Buddy
+Those tests use browser fixture pages, stubbed fetch/storage, and a reduced synthetic Buddy
 fixture. They do not prove the current live Peakbagger markup, an authenticated
 cookie flow, Cloudflare behavior, real browser interpretation of the manifest,
 simultaneous multi-tab conflict behavior, or the empty-list-versus-markup-drift
@@ -1827,9 +1827,10 @@ missing bytes are a cache miss, not corrupt product state.
 
 No single green command proves the extension works:
 
-- `npm test` builds `dist/`, imports pure modules, and evaluates shipped IIFE
-  bundles in jsdom. It covers algorithms, fixtures, privacy gates, DOM behavior,
-  and worker state, but no browser interprets the real manifest.
+- `npm test` builds `dist/` and runs pure modules, privacy gates and worker
+  state in Node. `npm run verify -- dom` evaluates the shipped IIFE bundles in
+  hidden Chromium and Firefox fixture pages for DOM behavior. Neither lets a
+  browser interpret the real manifest.
 - `npm run test:scale` separately exercises the 4,145-row ascent fixture, a
   synthetic 100,000-point provider GPX, and the complete 1,500-entry favorite
   manager/search/backup path so the default local loop can stay fast without

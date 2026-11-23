@@ -83,18 +83,17 @@ test('CI checks both projects and release inherits the exact checked CI packages
     assert.match(updates, /dependency-name: typescript\n\s+update-types: \[version-update:semver-major\]/);
 });
 
-test('the Node typecheck gives DOM types only to files that reach jsdom, extension source or a DOM lib reference', async () => {
+test('the Node typecheck gives DOM types only to files that reach extension source or a DOM lib reference', async () => {
     const { domRootFiles, parseProject } = await import('../../scripts/typecheck-node.mts');
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typecheck-split-'));
     try {
         const files: Record<string, string> = {
-            'page.mts': "import { JSDOM } from 'jsdom';\nexport const page = new JSDOM('');\n",
-            'helper.mjs': "export { page } from './page.mts';\n",
+            'helper.mjs': "export { default as page } from './extension.mts';\n",
             'through-js.mts': "import { page } from './helper.mjs';\nexport default page;\n",
             'browser-callback.mts': '/// <reference lib="dom" />\nexport const title = (): string => document.title;\n',
             'extension.mts': "import { units } from './src/units.ts';\nexport default units;\n",
             'src/units.ts': 'export const units = 1;\n',
-            'cycle-a.mts': "import './cycle-b.mts';\nimport type { DOMWindow } from 'jsdom';\nexport type W = DOMWindow;\n",
+            'cycle-a.mts': "import './cycle-b.mts';\nimport type { units } from './src/units.ts';\nexport type W = typeof units;\n",
             'cycle-b.mts': "import './cycle-a.mts';\nexport const b = 1;\n",
             'pure.mts': "import { readFile } from 'node:fs/promises';\nexport const read = readFile;\n",
         };
@@ -105,7 +104,7 @@ test('the Node typecheck gives DOM types only to files that reach jsdom, extensi
         const { options } = parseProject(path.join(root, 'tsconfig.node.check.json'));
         const roots = Object.keys(files).filter(name => name.endsWith('.mts')).map(name => path.join(directory, name));
         const marked = domRootFiles(roots, options, directory).map(file => path.relative(directory, file)).sort();
-        assert.deepEqual(marked, ['browser-callback.mts', 'cycle-a.mts', 'cycle-b.mts', 'extension.mts', 'page.mts', 'through-js.mts']);
+        assert.deepEqual(marked, ['browser-callback.mts', 'cycle-a.mts', 'cycle-b.mts', 'extension.mts', 'through-js.mts']);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }
@@ -129,29 +128,25 @@ test('the Node program is rejected when a dependency pulls DOM declarations into
     }
 });
 
-test('jsdom tests use the published declarations, with no suppressed or hand-typed jsdom import', async () => {
+test('the DOM project only adds the DOM library, and nothing depends on jsdom', async () => {
     const { parseProject } = await import('../../scripts/typecheck-node.mts');
     const dom = JSON.parse(await readFile(path.join(root, 'tsconfig.dom.check.json'), 'utf8'));
     assert.deepEqual(dom.compilerOptions.lib, ['ES2023', 'DOM', 'DOM.Iterable']);
     assert.equal(dom.extends, './tsconfig.node.check.json');
     const node = JSON.parse(await readFile(path.join(root, 'tsconfig.node.check.json'), 'utf8'));
     assert.deepEqual(node.compilerOptions.lib, ['ES2023'], 'the Node project itself has no DOM globals');
+    // DOM behavior is tested in real browsers (M7.5); jsdom is not a stand-in.
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-    assert.equal(pkg.devDependencies['@types/jsdom'].split('.')[0], pkg.devDependencies.jsdom.replace(/^\^/, '').split('.')[0],
-        'jsdom and its declarations share a major');
+    for (const name of ['jsdom', '@types/jsdom']) {
+        assert.equal(pkg.dependencies?.[name] ?? pkg.devDependencies?.[name], undefined, `${name} is not a dependency`);
+    }
     const offenders: string[] = [];
-    // This file names the forbidden patterns in its own fixtures.
+    // This file names the forbidden module in its own patterns.
     const self = fileURLToPath(import.meta.url);
     for (const file of parseProject(path.join(root, 'tsconfig.node.check.json')).fileNames.filter(name => path.resolve(name) !== self)) {
-        const text = await readFile(file, 'utf8');
-        const jsdomImport = /^.*['"]jsdom(?:\/[^'"]*)?['"].*$/gm;
-        const lines = text.split('\n');
-        const suppressedImport = [...text.matchAll(jsdomImport)].some(match => {
-            const line = text.slice(0, match.index).split('\n').length - 1;
-            return lines.slice(Math.max(0, line - 3), line).some(previous => /@ts-(?:expect-error|ignore)/.test(previous));
-        });
-        if (suppressedImport || /@ts-nocheck/.test(text) || /declare\s+module\s+['"]jsdom['"]/.test(text)
-            || (/createRequire/.test(text) && /\(\s*['"]jsdom['"]\s*\)/.test(text))) offenders.push(path.relative(root, file));
+        if (/^\s*(?:import|export)\b[^;]*['"]jsdom(?:\/[^'"]*)?['"]|\bimport\(\s*['"]jsdom|\brequire\(\s*['"]jsdom/m.test(await readFile(file, 'utf8'))) {
+            offenders.push(path.relative(root, file));
+        }
     }
     assert.deepEqual(offenders, []);
 });

@@ -921,7 +921,7 @@ test('capture guard intercepts native header sort links but lets year links navi
     let preventedByGuard = null;
     jump.addEventListener('click', event => {
         preventedByGuard = event.defaultPrevented;
-        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+        event.preventDefault(); // Keep the fixture frame from really navigating.
     });
     const jumpEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
     jump.dispatchEvent(jumpEvent);
@@ -947,7 +947,7 @@ test('a modified click on a native header sort link is left to the browser', asy
         let preventedByGuard: boolean | null = null;
         const observe = (event: Event) => {
             preventedByGuard = event.defaultPrevented;
-            event.preventDefault(); // Keep jsdom from attempting a real navigation.
+            event.preventDefault(); // Keep the fixture frame from really navigating.
         };
         header.addEventListener('click', observe);
         header.dispatchEvent(new MouseEvent('click', {
@@ -977,7 +977,7 @@ test('a modified click on a native header sort link is left to the browser', asy
 });
 
 test('sort clicks fall back to native navigation when initialization fails', async () => {
-    // Force a deterministic fault inside setupInstantTableSort. The JSDOM
+    // Force a deterministic fault inside setupInstantTableSort. The fixture
     // window has its own intrinsics, so this cannot leak into other tests.
     const dom = await loadPage(SMALL, {
         url: SMALL_URL,
@@ -994,7 +994,7 @@ test('sort clicks fall back to native navigation when initialization fails', asy
     let preventedByGuard = null;
     header.addEventListener('click', event => {
         preventedByGuard = event.defaultPrevented;
-        event.preventDefault(); // Keep jsdom from attempting a real navigation.
+        event.preventDefault(); // Keep the fixture frame from really navigating.
     });
     header.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }));
     assert.equal(preventedByGuard, false,

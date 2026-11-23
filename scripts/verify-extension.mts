@@ -2205,7 +2205,7 @@ try {
         // Cloudflare can accept a request from a signed-in Peakbagger page
         // while rejecting the extension worker. Exercise the shipped MAIN-
         // world bridge in real Chrome: exact allowlist, browser credential
-        // policy, and bundle path all remain invisible to jsdom worker tests.
+        // policy, and bundle path all remain invisible to Node worker tests.
         const captureLoginUrl = 'https://www.peakbagger.com/Default.aspx';
         const capturePeaksUrl = 'https://www.peakbagger.com/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4';
         let captureLoginRequests = 0;

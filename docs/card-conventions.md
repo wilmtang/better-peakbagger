@@ -332,7 +332,7 @@ live regions containing all hidden alternatives.
    and Firefox, light/dark, narrow columns and enlarged text. Compare geometry of
    controls, card, following content and scroll through applicable transitions.
 5. Run `npm run verify -- chrome` after manifest, bundle or startup changes. A
-   jsdom test or stubbed fixture does not establish real extension startup.
+   browser fixture test or stubbed fixture does not establish real extension startup.
 6. Record checks actually run, browser/viewports, hidden versus visible execution,
    remaining live-provider or native-UI gaps, and confirm process/profile teardown.
 

@@ -15,8 +15,8 @@ const wait = async (predicate: () => unknown) => {
     while (!predicate()) { if (Date.now() > end) throw new Error('Summit cloud UI did not settle'); await new Promise(resolve => setTimeout(resolve, 0)); }
 };
 function setup({ preferences = {}, now = '2026-10-24T18:00Z', lazy = false, manualClock = false } = {}) {
-    const jsdom = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
-    const win = jsdom.window;
+    const fixture = fixtureDom(html, { url: 'https://www.peakbagger.com/peak.aspx?pid=2296' });
+    const win = fixture.window;
     const requests: { url: string; options: RequestInit & { signal: AbortSignal }; mode: string }[] = [], writes: Record<string, unknown>[] = [];
     const listeners = new Set<(changes: unknown, area: string) => void>(), observers: { fn: (entries: { isIntersecting: boolean }[]) => void }[] = [], held: (() => void)[] = [];
     let stored = settingsSchema.clean(preferences), mode = 'complete';

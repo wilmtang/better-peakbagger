@@ -59,10 +59,10 @@ evidence.
 
 ## Current progress
 
-**M7 and M7.5 remain open.** The Units settings panel and Summit Cloud controls ship
+**M7 remains open.** The Units settings panel and Summit Cloud controls ship
 through checked TypeScript and Svelte. The production runtime and root Node
-tooling have moved to TypeScript. Test and evidence tooling conversion and
-jsdom retirement remain open.
+tooling have moved to TypeScript, and jsdom is retired (M7.5). Test and
+evidence tooling conversion remains open.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -75,7 +75,7 @@ jsdom retirement remain open.
 | M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. The Vite builder uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
 | M7 | In progress | Runtime and root Node tooling are converted. At `7f20e5f6`, 208 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
-| M7.5 | In progress | The browser tier discovers nested suites and can run an individual owner. At `7f20e5f6`, 88 test files directly import or re-export jsdom, with more consumers through helpers. The request-count evidence probe now uses the browser tier. |
+| M7.5 | Done | Complete on November 22, 2026. No file imports jsdom, and `jsdom` and `@types/jsdom` are gone. DOM tests run as in-page browser tests in hidden Chromium and Firefox; the production-scale ones run on the `--scale` lane of `npm run test:scale`. See [M7.5](#m75--retire-jsdom). |
 | M8 | Done locally | Vite builds development and release generations ([vite-build.mts](../../scripts/vite-build.mts)); WXT (`133384ab`) was removed after it proved to be only a scheduler. Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-vite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
@@ -284,7 +284,7 @@ Step 1 status (November 13, 2026):
   DOM program from import closures (jsdom, extension source, or a
   `/// <reference lib="dom" />`) instead of a hand-kept list, so the remaining
   Node files are checked without DOM globals. The page loader is
-  [load-page.mts](../../test/helpers/load-page.mts) with typed `LoadedPage`
+  `load-page.mts` (since removed) with typed `LoadedPage`
   and `PageChrome`; its trusted-dispatch internals sit behind one declaration
   that throws on a different jsdom major. All suppressed jsdom imports and both
   hand-typed constructors are gone; `test-dom.mts` only re-exports jsdom's
@@ -302,7 +302,7 @@ Step 1 status (November 13, 2026):
   follows imports, Node release tooling that imports one extension-source
   module (for example `publish-chrome.mts`) is checked in the DOM program.
   `fireTrustedEvent` is pinned to jsdom's major, and
-  [jsdom-trusted-event.test.mts](../../test/project/jsdom-trusted-event.test.mts)
+  `jsdom-trusted-event.test.mts` (since removed)
   proves on every run that it still dispatches trusted events of the right
   interface.
 - **Changed but not fully proven:** type-only changes; no runtime behavior of
@@ -353,11 +353,11 @@ converted tests suppressed the import (for example
 [page-lifecycle.browser.mts](../../test/ui/page-lifecycle.browser.mts)) and two files
 hand-typed a constructor:
 [map-layer-inspection.browser.mts](../../test/maps/map-layer-inspection.browser.mts)
-and the shared [test-dom.mts](../../test/helpers/test-dom.mts), which 14 tests
+and the shared `test-dom.mts` (since removed), which 14 tests
 imported as an interim stand-in. Every M7 test batch would have repeated one of
 those. jsdom also has no layout, mints only
 untrusted events and is not Firefox; the shared
-[page loader](../../test/helpers/load-page.mts) already reaches into jsdom
+page loader (`load-page.mts`, since removed) already reaches into jsdom
 internals to dispatch trusted input. Settle both before M5 adds component tests
 and before M7 converts DOM tests to TypeScript. This milestone changes test tooling only; no
 shipped output changes.
@@ -370,7 +370,7 @@ shipped output changes.
    typed page objects so callers drop their `as unknown` casts, and keep its
    trusted-dispatch internals behind one narrow local declaration pinned to the
    locked jsdom version. Remove every suppressed import and both hand-typed
-   constructors, retiring `test/helpers/test-dom.mts` or reducing it to a
+   constructors, retiring `test-dom.mts` or reducing it to a
    re-export of the real types. Group `jsdom` and `@types/jsdom` in Dependabot
    so their majors move together; this holds jsdom at 30 while `@types/jsdom`
    has no 31 (jsdom 31.0.1 is already published). Add `@types/jsdom` to
@@ -651,6 +651,16 @@ Teardown removed the browser profiles. Native window focus, live provider
 permissions and hosted Linux browser-floor results require separate evidence.
 
 ### M7.5 — Retire jsdom
+
+Status: complete on November 22, 2026. The last owners moved in `e3934460`
+(options pages), `c0a9d66a` (photo page, popup, report markup, peak weather
+and Summit Cloud), `76c001c9` (scale tests, on a new `--scale` lane that the
+default browser run leaves out) and the removal commit, which also splits the
+fixture privacy suite (its parser checks run in the browser tier against an
+XML fixture list that the Node half pins), deletes the jsdom-only page loader
+and trusted-event check, removes the packages, their Dependabot group and
+audit entries, and drops jsdom from the Node typecheck's DOM split. Every
+port kept its assertions; the ledger below records each intentional change.
 
 Split from M7's exit on November 13 ([owner decision](#owner-decisions)). This
 is a test-environment migration, independent of the language conversion: it may

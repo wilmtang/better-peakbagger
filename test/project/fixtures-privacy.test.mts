@@ -14,7 +14,7 @@ import { execFileSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from '../helpers/test-dom.mts';
+import { FORBIDDEN_XML_ELEMENTS, XML_FIXTURES } from '../helpers/fixture-privacy-xml.mts';
 import { containsFixtureBannedIdentifier } from '../../scripts/privacy-guard.mts';
 import { decideHookInstall, HOOKS_PATH } from '../../scripts/install-git-hooks.mts';
 import {
@@ -103,27 +103,22 @@ test('every fixture format is registered and encoded XML is structurally sanitiz
     assert.ok(xmlFixtures.some(({ relative }) => relative.endsWith('.gpx.gz.b64')),
         'expected the encoded GPX fixture to be decoded and inspected');
 
-    const forbiddenElements = [
-        'metadata', 'author', 'copyright', 'link', 'email', 'name',
-        'desc', 'cmt', 'wpt', 'rte',
-    ];
-    for (const { relative, format, text } of xmlFixtures) {
+    for (const { relative, text } of xmlFixtures) {
         assert.equal(containsFixtureBannedIdentifier(text), false,
             `${relative} contains a known personal identifier after decoding`);
-        const document = new JSDOM(text, { contentType: 'application/xml' }).window.document;
-        assert.equal(document.querySelector('parsererror'), null,
-            `${relative} must decode to valid XML`);
-        if (format === 'gpx+xml') {
-            assert.equal(document.documentElement.localName, 'gpx',
-                `${relative} must decode to GPX`);
-        }
-        assert.equal(document.documentElement.hasAttribute('creator'), false,
-            `${relative} retains creator metadata`);
-        for (const tag of forbiddenElements) {
-            assert.equal(document.getElementsByTagNameNS('*', tag).length, 0,
+        // A text-level backstop so npm test still guards a push: the real
+        // XML parse in fixtures-privacy.browser.mts is the authoritative check.
+        const root = /<(?![?!])[^>]*>/.exec(text)?.[0] ?? '';
+        assert.doesNotMatch(root, /\screator\s*=/, `${relative} retains creator metadata`);
+        for (const tag of FORBIDDEN_XML_ELEMENTS) {
+            assert.doesNotMatch(text, new RegExp(`<(?:[\\w.-]+:)?${tag}[\\s/>]`),
                 `${relative} retains forbidden <${tag}> data`);
         }
     }
+    // Their structure is checked with a real XML parser in
+    // fixtures-privacy.browser.mts, which reads exactly this list.
+    assert.deepEqual(xmlFixtures.map(({ relative }) => relative.split(path.sep).join('/')).sort(), [...XML_FIXTURES].sort(),
+        'register every XML fixture in test/helpers/fixture-privacy-xml.mts');
 });
 
 test('JSON fixtures are validated and decoded before their text is privacy-scanned', () => {
@@ -176,68 +171,25 @@ test('masking actually ran: live captures carry the masked climber id, and only 
     }
 });
 
-test('the Buddy List fixture contains only the reviewed synthetic row data', async () => {
-    const html = await readFile(path.join(FIXTURES, 'pages', 'report-buddy-list.html'), 'utf8');
-    const document = new JSDOM(html).window.document;
-    const rows = [...document.querySelectorAll<HTMLTableRowElement>('#RGridView tr')].slice(1);
-    assert.equal(rows.length, 6);
-
-    const values = (column: number) => rows.map(row => row.cells[column].textContent!.trim());
-    assert.deepEqual(values(0), [
-        'Alpine, Casey', 'Example, Rowan', 'Fixture, Sol',
-        'Mock, Quinn', 'Sample, Juniper', 'Synthetic, Arden'
-    ]);
-    assert.deepEqual(values(2), [
-        '2021-03-14', '2024-11-02', '2019-07-28',
-        '2023-01-09', '2020-05-21', '2025-08-30'
-    ]);
-    assert.deepEqual(values(3), [
-        'Granite Point', 'Juniper Dome', 'Echo Ridge',
-        'Fiction Peak', 'Northwind Hill', 'Placeholder Butte'
-    ]);
-    assert.deepEqual(values(5), [
-        'Test Range-North', 'Example Basin-West', 'Sample County-East',
-        'Mock Range-South', 'Fixture District-Central', 'Synthetic Province-North'
-    ]);
-
-    for (const row of rows) {
-        assert.match(row.cells[0].querySelector<HTMLAnchorElement>('a')!.href, /[?&]cid=710\d{3}$/);
-        assert.match(row.cells[1].querySelector<HTMLAnchorElement>('a')!.href, /[?&]cid=710\d{3}&sort=AscentDateD$/);
-        assert.match(row.cells[2].querySelector<HTMLAnchorElement>('a')!.href, /[?&]aid=810\d{3}$/);
-        assert.match(row.cells[3].querySelector<HTMLAnchorElement>('a')!.href, /[?&]pid=610\d{3}$/);
+// The reviewed synthetic rows are pinned in fixtures-privacy.browser.mts. This
+// text-level backstop keeps their identifiers within the synthetic ranges in
+// npm test, which runs before a push.
+test('the Buddy List and Peak List fixtures link only synthetic identifiers', async () => {
+    const ids = (html: string, key: string) => [...html.matchAll(new RegExp(`(?:[?&]|&amp;)${key}=(\\d+)`, 'g'))].map(match => match[1]!);
+    const buddy = await readFile(path.join(FIXTURES, 'pages', 'report-buddy-list.html'), 'utf8');
+    for (const [key, range] of [['cid', /^710\d{3}$/], ['aid', /^810\d{3}$/], ['pid', /^610\d{3}$/]] as const) {
+        assert.ok(ids(buddy, key).length > 0, `the Buddy List links ${key} values`);
+        for (const value of ids(buddy, key)) {
+            if (key === 'cid' && value === MASKED_CLIMBER_ID) continue;
+            assert.match(value, range, `Buddy List ${key}=${value} is outside the synthetic range`);
+        }
     }
-});
-
-test('the Peak List fixture contains only the reviewed synthetic row data', async () => {
-    const html = await readFile(path.join(FIXTURES, 'pages', 'list-peak-list.html'), 'utf8');
-    const document = new JSDOM(html).window.document;
-    const table = document.querySelector<HTMLTableElement>('table.gray');
-    assert.ok(table);
-    const rows = [...table.rows].filter(row => row.cells.length === 8 && row.cells[0].tagName === 'TD');
-    assert.equal(rows.length, 5);
-
-    const values = (column: number) => rows.map(row => row.cells[column].textContent!.trim());
-    assert.deepEqual(values(1), [
-        'Juniper Dome', 'Alpine Point', 'Placeholder Butte', 'Echo Ridge', 'Fiction Peak'
-    ]);
-    assert.deepEqual(values(3), [
-        'Example Basin', 'Test Range', 'Mock Highlands', 'Sample Mountains', 'Synthetic Range'
-    ]);
-    assert.deepEqual(values(5), [
-        'North County', 'West County', 'Central District', 'East County', 'South County'
-    ]);
-    assert.deepEqual(values(7), [
-        '2018', '2019-06-09', '2021-09', '2023-01-09', '2025-08-30'
-    ]);
-
-    const expectedPeakIds = ['610104', '610101', '610105', '610102', '610103'];
-    for (const [index, row] of rows.entries()) {
-        assert.match(row.cells[1].querySelector<HTMLAnchorElement>('a')!.href, new RegExp(`[?&]pid=${expectedPeakIds[index]}$`));
-        assert.match(row.cells[7].querySelector<HTMLAnchorElement>('a')!.href, /[?&]aid=81010\d$/);
+    const peaks = await readFile(path.join(FIXTURES, 'pages', 'list-peak-list.html'), 'utf8');
+    assert.deepEqual([...new Set(ids(peaks, 'cid'))], [MASKED_CLIMBER_ID]);
+    for (const [key, range] of [['aid', /^81010\d$/], ['pid', /^610\d{3}$/]] as const) {
+        assert.ok(ids(peaks, key).length > 0, `the Peak List links ${key} values`);
+        for (const value of ids(peaks, key)) assert.match(value, range, `Peak List ${key}=${value} is outside the synthetic range`);
     }
-    const climberIds = [...html.matchAll(/[?&]cid=(\d+)/g)].map(match => match[1]);
-    assert.ok(climberIds.length > 0);
-    assert.ok(climberIds.every(cid => cid === MASKED_CLIMBER_ID));
 });
 
 // The staged scan above is only half the guard. The other half is that

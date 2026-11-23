@@ -13,7 +13,7 @@
 // the race (so callers still fail on an injected or non-conforming fetch that
 // ignores `signal`). Pure with respect to the extension: no DOM, no extension
 // APIs, and every timing primitive is looked up defensively so the module works
-// unchanged in the worker, page world, and jsdom tests.
+// unchanged in the worker, page world, and tests.
 
 export interface TimeoutError extends Error {
     name: 'TimeoutError';

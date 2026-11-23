@@ -153,9 +153,9 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
     const frameOrigin = () => {
         try {
             const parsed = new URL(globalThis.chrome.runtime.getURL('terrain/terrain.html'));
-            // Node/jsdom follows the generic URL standard and reports opaque
-            // origins for browser-extension schemes. Browsers give extension
-            // documents their scheme+host origin; spell out that equivalent so
+            // Node and ordinary web pages follow the generic URL standard and
+            // can report opaque origins for browser-extension schemes. Browsers
+            // give extension documents their scheme+host origin; spell out that equivalent so
             // the same exact-origin contract is testable outside a browser.
             if (parsed.origin !== 'null') return parsed.origin;
             return parsed.protocol.endsWith('-extension:') && parsed.host

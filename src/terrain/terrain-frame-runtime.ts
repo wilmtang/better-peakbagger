@@ -66,7 +66,7 @@ const authorizeThroughWorker = async ({ token, action }: { token?: unknown; acti
 
 // The production entry passes the statically imported MapLibre namespace and
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
-// and an explicit authorization decision so jsdom never allocates WebGL.
+// and an explicit authorization decision so tests never allocate WebGL.
 export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = authorizeThroughWorker }: { authorize?: (request: { token?: unknown; action: string }) => Promise<boolean> } = {}) => {
     let snowConditions = new Set<string>();
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
