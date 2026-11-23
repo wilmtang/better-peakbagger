@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 //
 // The photo catalog is intentionally lifetime-sized, while the visible grid
 // is not. This scale gate records the two-transaction render contract, bounded
@@ -10,18 +11,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from '../../helpers/test-dom.mts';
 import { byId } from '../../helpers/page-types.mts';
-import type { ChromeStub, StubMessage } from '../../helpers/page-types.mts';
-import {
-    IDBDatabase,
-    IDBFactory,
-    IDBKeyRange,
-    IDBTransaction,
-} from 'fake-indexeddb';
-import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mts';
+import type { StubMessage } from '../../helpers/page-types.mts';
+import { FixtureDom, evalBundle } from '../../helpers/fixture-dom.mts';
+import { makeChromeStub } from '../../helpers/chrome-stub.mts';
+import { waitFor } from '../../helpers/fixture-page.mts';
 import { photoLibrary as Library } from '../../../src/photos/photo-library.ts';
 import { photoStore as Store } from '../../../src/photos/photo-store.ts';
 
@@ -36,6 +31,12 @@ const transactionDone = (transaction: IDBTransaction) => new Promise<void>((reso
     transaction.onabort = () => reject(transaction.error);
 });
 
+const deleteDatabase = () => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase('betterPeakbaggerPhotos');
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+});
+
 const openDatabase = (indexedDB: IDBFactory) => new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
     request.onsuccess = () => resolve(request.result);
@@ -43,17 +44,13 @@ const openDatabase = (indexedDB: IDBFactory) => new Promise<IDBDatabase>((resolv
 });
 
 test('a 1,200-photo library renders and filters through bounded pages and transactions', async () => {
-    const dom = new JSDOM(html, {
-        url: 'chrome-extension://scale/photos/photos.html?mode=library',
-        runScripts: 'outside-only',
-        pretendToBeVisual: true,
+    // The page and this test share an origin, so they share its IndexedDB:
+    // the test seeds the real database the page then reads.
+    await deleteDatabase();
+    const dom = await FixtureDom.open(html, {
+        url: 'https://options.better-peakbagger.test/photos/photos.html?mode=library',
     });
-    const { window: win } = dom;
-    // fake-indexeddb keeps Node's Blob instances. Use that same constructor in
-    // the page realm so the store's trust-boundary check exercises real blobs
-    // instead of rejecting a cross-realm jsdom stand-in.
-    win.Blob = Blob;
-    const indexedDB = new IDBFactory();
+    const win = dom.window;
     const schema = await Store.createPhotoStore({ indexedDB });
     schema.close();
     const database = await openDatabase(indexedDB);
@@ -89,8 +86,10 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
     database.close();
 
     const transactions: { names: string[]; mode: string }[] = [];
-    const originalTransaction = IDBDatabase.prototype.transaction;
-    IDBDatabase.prototype.transaction = function instrumentedTransaction(this: IDBDatabase, ...args: Parameters<IDBDatabase['transaction']>) {
+    // The page's own realm opens the database the page reads.
+    const PageDatabase = (win as unknown as typeof globalThis).IDBDatabase;
+    const originalTransaction = PageDatabase.prototype.transaction;
+    PageDatabase.prototype.transaction = function instrumentedTransaction(this: IDBDatabase, ...args: Parameters<IDBDatabase['transaction']>) {
         const [storeNames, mode] = args;
         transactions.push({
             names: typeof storeNames === 'string' ? [storeNames] : [...storeNames],
@@ -107,19 +106,12 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         createdUrls.push(url);
         return url;
     };
-    win.URL.revokeObjectURL = url => revokedUrls.push(url);
-    (win as { indexedDB: unknown }).indexedDB = indexedDB;
-    win.IDBKeyRange = IDBKeyRange;
-    win.structuredClone = globalThis.structuredClone;
-    Object.defineProperty(win.crypto, 'subtle', {
-        value: globalThis.crypto.subtle,
-        configurable: true,
-    });
+    win.URL.revokeObjectURL = (url: string) => { revokedUrls.push(url); };
     Object.defineProperty(win.navigator, 'storage', {
         value: { estimate: async () => ({ usage: 1_000_000 }) },
         configurable: true,
     });
-    const chrome = makeChromeStub() as unknown as ChromeStub;
+    const chrome = makeChromeStub();
     chrome.runtime.sendMessage = async (message: StubMessage) => {
         if (message?.type === 'PHOTO_IMGBB_STATUS') {
             return { ok: true, configured: false, permissionGranted: false };
@@ -199,6 +191,7 @@ test('a 1,200-photo library renders and filters through bounded pages and transa
         observer.disconnect();
         win.dispatchEvent(new win.Event('beforeunload'));
         dom.window.close();
-        IDBDatabase.prototype.transaction = originalTransaction;
+        PageDatabase.prototype.transaction = originalTransaction;
+        await deleteDatabase();
     }
 });

@@ -61,9 +61,11 @@ export interface BrowserTestFile {
     readonly origin: string;
 }
 
-export async function findBrowserTests(directory = path.join(projectRoot, 'test')): Promise<BrowserTestFile[]> {
+// Production-scale files (`*.scale.browser.mts`) are found only when asked for.
+export async function findBrowserTests(directory = path.join(projectRoot, 'test'), { scale = false } = {}): Promise<BrowserTestFile[]> {
     const entries = await readdir(directory, { recursive: true, withFileTypes: true });
-    const files = entries.filter(entry => entry.isFile() && entry.name.endsWith('.browser.mts'))
+    const files = entries.filter(entry => entry.isFile() && entry.name.endsWith('.browser.mts')
+        && entry.name.endsWith('.scale.browser.mts') === scale)
         .map(entry => path.relative(projectRoot, path.join(entry.parentPath, entry.name)).split(path.sep).join('/')).sort();
     return Promise.all(files.map(async file => {
         const header = /^\/\/ @browser-origin (https:\/\/[^\s/]+)\s*$/m.exec(await readFile(path.join(projectRoot, file), 'utf8'));
@@ -368,7 +370,7 @@ async function openTestPage(browser: Browser, test: BrowserTestFile, serve: Awai
 
 export async function runBrowserTests(selection: DomSelection, report: (record: Record<string, unknown>) => void,
     files?: readonly BrowserTestFile[]): Promise<number> {
-    const discovered = files ?? await findBrowserTests();
+    const discovered = files ?? await findBrowserTests(undefined, { scale: selection.scale });
     const selected = discovered.filter(test => !selection.suite || test.file.includes(selection.suite));
     if (!selected.length) return 0;
     const serve = await fileServer(selection.dist);

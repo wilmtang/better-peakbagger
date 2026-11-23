@@ -1731,7 +1731,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/favorites/climber-favorite.browser.mts` covers manual add/remove, self exclusion,
   Buddy-mode absence, live source/list changes, native action detection, owner
   validation, and both Buddy-removal policies.
-- `test/scale/favorites/favorite-climbers.scale.mjs` renders the full 1,500-entry options
+- `test/scale/favorites/favorite-climbers.scale.browser.mts` renders the full 1,500-entry options
   list, searches it, and serializes all entries through the explicit GitHub
   backup action.
 - `test/github/github-client.test.mts` and `test/github/github-backup-integration.test.mjs`

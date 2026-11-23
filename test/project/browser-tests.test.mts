@@ -22,9 +22,13 @@ test('browser tests are discovered by suffix with their declared fixture origin'
     await writeFile(path.join(directory, 'nested', 'a.browser.mts'), '// @browser-origin https://www.strava.com\n');
     await writeFile(path.join(directory, 'b.browser.mts'), '');
     await writeFile(path.join(directory, 'c.test.mts'), '');
+    await writeFile(path.join(directory, 'd.scale.browser.mts'), '');
     assert.deepEqual(await findBrowserTests(directory), [
         { file: relative(path.join(directory, 'b.browser.mts')), origin: 'https://www.peakbagger.com' },
         { file: relative(path.join(directory, 'nested', 'a.browser.mts')), origin: 'https://www.strava.com' },
+    ], 'production-scale files stay out of the default run');
+    assert.deepEqual(await findBrowserTests(directory, { scale: true }), [
+        { file: relative(path.join(directory, 'd.scale.browser.mts')), origin: 'https://www.peakbagger.com' },
     ]);
 });
 

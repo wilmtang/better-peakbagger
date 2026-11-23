@@ -141,17 +141,23 @@ export interface DomSelection {
     filter: string | null;
     suite: string | null;
     dist: string;
+    // Only the production-scale browser tests (`*.scale.browser.mts`), which
+    // the default run leaves to `npm run test:scale`.
+    scale: boolean;
 }
 
 // Rejects unknown arguments rather than running a narrower set than asked.
 export function domSelection(args: readonly string[], cwd = projectRoot): DomSelection {
     const engines: DomEngine[] = [];
-    let filter: string | null = null, suite: string | null = null, dist = path.join(cwd, 'dist');
+    let filter: string | null = null, suite: string | null = null, dist = path.join(cwd, 'dist'), scale = false;
     for (let index = 0; index < args.length; index++) {
         const value = args[index]!;
         if ((DOM_ENGINES as readonly string[]).includes(value)) {
             if (engines.includes(value as DomEngine)) throw new Error(`DOM tier engine ${value} was selected twice.`);
             engines.push(value as DomEngine);
+        } else if (value === '--scale') {
+            if (scale) throw new Error('DOM tier --scale was given twice.');
+            scale = true;
         } else if (value === '--suite' || value.startsWith('--suite=')) {
             if (suite !== null) throw new Error('DOM tier --suite was given twice.');
             const selection = value === '--suite' ? args[++index] : value.slice('--suite='.length);
@@ -163,9 +169,9 @@ export function domSelection(args: readonly string[], cwd = projectRoot): DomSel
                 if (filter !== null) throw new Error('DOM tier --case was given twice.');
                 filter = args[++index]!;
             } else dist = path.resolve(cwd, args[++index]!);
-        } else throw new Error(`Unknown DOM tier argument: ${value}. Usage: verify -- dom [chrome] [firefox] [--suite TEXT] [--case TEXT] [--dist DIR]`);
+        } else throw new Error(`Unknown DOM tier argument: ${value}. Usage: verify -- dom [chrome] [firefox] [--scale] [--suite TEXT] [--case TEXT] [--dist DIR]`);
     }
-    return { engines: engines.length ? engines : [...DOM_ENGINES], filter, suite, dist };
+    return { engines: engines.length ? engines : [...DOM_ENGINES], filter, suite, dist, scale };
 }
 
 export async function loadDomSuites(directory = path.join(projectRoot, 'test', 'dom')): Promise<DiscoveredDomSuite[]> {

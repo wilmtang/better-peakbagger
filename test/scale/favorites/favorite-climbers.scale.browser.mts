@@ -1,5 +1,6 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
 //
 // The custom-list product bound is intentionally above ordinary fixture size.
 // Keep its full DOM/render and explicit GitHub serialization cost in the scale
@@ -10,8 +11,10 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
-import { evalBundle, makeChromeStub, waitFor } from '../../helpers/load-page.mts';
+import { FixtureDom, evalBundle } from '../../helpers/fixture-dom.mts';
+import { makeChromeStub } from '../../helpers/chrome-stub.mts';
+import { waitFor, type LoadedPage, type PageWindow } from '../../helpers/fixture-page.mts';
+import type { StubMessage } from '../../helpers/page-types.mts';
 import { favoriteClimbers as F } from '../../../src/favorites/favorite-climbers.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -43,21 +46,20 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
     // stub backs both so the 1,500-entry store and the backup round trip stay
     // consistent across them.
     const favoritesHtml = await readFile(path.join(root, 'options', 'favorites.html'), 'utf8');
-    const dom = new JSDOM(favoritesHtml, {
+    const favoritesFixture = await FixtureDom.open(favoritesHtml, {
         url: 'https://options.better-peakbagger.test/options/favorites.html',
-        runScripts: 'outside-only',
     });
     const chrome = makeChromeStub({ bpbSettings: { favoritesSource: 'custom' } }, {
         [FAVORITES_KEY]: favorites,
     });
-    let backupMessage = null;
+    let backupMessage: StubMessage | null = null;
     chrome.permissions = {
         request: async () => true,
         contains: async () => true,
         remove: async () => true,
     };
-    chrome.runtime.sendMessage = (message, callback) => {
-        let response = {};
+    chrome.runtime.sendMessage = (message: StubMessage, callback?: (response: unknown) => void) => {
+        let response: unknown = {};
         if (message.type === 'GITHUB_AUTH_STATUS') {
             response = {
                 enabled: true,
@@ -79,9 +81,14 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
         if (typeof callback === 'function') Promise.resolve().then(() => callback(response));
         return Promise.resolve(response);
     };
-    dom.chrome = chrome;
-    dom.window.chrome = chrome;
-    dom.window.caches = { keys: async () => [] };
+    // Like the options helpers: the page realm sees the stub as its chrome.
+    const page = (fixture: FixtureDom): LoadedPage => {
+        const window = fixture.window as unknown as PageWindow;
+        (window as { chrome?: unknown }).chrome = chrome;
+        Object.defineProperty(window, 'caches', { configurable: true, value: { keys: async () => [] } });
+        return { window, chrome, serialize: () => fixture.serialize() };
+    };
+    const dom = page(favoritesFixture);
 
     await evalBundle(dom.window, 'options/options-head.js');
     await evalBundle(dom.window, 'options/favorites-page.js');
@@ -92,7 +99,7 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
     assert.equal(rows[LIMIT - 1].dataset.cid, '100000');
     assert.match(dom.window.document.getElementById('favorites-add-form').textContent, /1,500 climbers/);
     assert.equal(dom.window.document.getElementById('favorites-count').textContent, '1,500 favorites');
-    const sourceCount = source => dom.window.document.querySelector(
+    const sourceCount = (source: string) => dom.window.document.querySelector(
         `[data-favorites-source-filter="${source}"] [data-favorites-source-count]`
     ).textContent;
     assert.deepEqual(['all', 'buddy', 'manual'].map(sourceCount), ['1,500', '750', '750']);
@@ -116,21 +123,19 @@ test('the favorites page renders the full 1,500-entry custom list; Settings back
     // the same 1,500-entry store and confirm the page hands serialization to the
     // worker rather than shipping the list itself.
     const optionsHtml = await readFile(path.join(root, 'options', 'options.html'), 'utf8');
-    const optionsDom = new JSDOM(optionsHtml, {
+    const optionsDom = page(await FixtureDom.open(optionsHtml, {
         url: 'https://options.better-peakbagger.test/options/options.html#github-favorites-backup',
-        runScripts: 'outside-only',
-    });
-    optionsDom.chrome = chrome;
-    optionsDom.window.chrome = chrome;
-    optionsDom.window.caches = { keys: async () => [] };
+    }));
     await evalBundle(optionsDom.window, 'options/options-head.js');
     await evalBundle(optionsDom.window, 'options/options.js');
 
     await waitFor(optionsDom, () => !optionsDom.window.document.getElementById('favorites-backup').disabled);
     optionsDom.window.document.getElementById('favorites-backup').click();
     await waitFor(optionsDom, () => backupMessage != null);
-    assert.equal(backupMessage.type, 'GITHUB_FAVORITES_BACKUP');
-    assert.deepEqual(Object.keys(backupMessage), ['type'],
+    // Assigned by the stub above, which the compiler cannot see.
+    const sent = backupMessage as StubMessage | null;
+    assert.equal(sent?.type, 'GITHUB_FAVORITES_BACKUP');
+    assert.deepEqual(Object.keys(sent!), ['type'],
         'the Settings page must leave serialization in the extension worker');
     await waitFor(optionsDom, () => /Favorites backed up ✓/.test(
         optionsDom.window.document.getElementById('favorites-github-status').textContent

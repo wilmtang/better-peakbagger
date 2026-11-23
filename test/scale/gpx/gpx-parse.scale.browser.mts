@@ -1,17 +1,15 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Production-scale parser coverage is intentionally separate from npm test:
-// jsdom's DOMParser makes this case expensive, while ordinary parser behavior
-// and the no-upload-cap boundary stay in the fast default suite.
+// Production-scale parser coverage is intentionally separate from the default
+// browser tests: a 100,000-point document is expensive to parse, while
+// ordinary parser behavior and the no-upload-cap boundary stay in the fast
+// default suite. This runs against the browser's native XML parser.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
 import { gpxParse } from '../../../src/gpx/gpx-parse.ts';
 import { MAX_GPX_TRACK_POINTS } from '../../../src/capture/capture-resource-limits.ts';
-
-globalThis.DOMParser = new JSDOM('').window.DOMParser;
 
 test('a 100,000-point provider track parses completely', () => {
     const points = Array.from({ length: MAX_GPX_TRACK_POINTS }, (_, index) =>
@@ -26,6 +24,6 @@ test('a provider track one point above the contract is rejected', () => {
         `<trkpt lat="${(47 + index * 1e-5).toFixed(5)}" lon="-121"/>`).join('');
     assert.throws(
         () => gpxParse.parseGpxData(`<gpx><trk><trkseg>${points}</trkseg></trk></gpx>`),
-        error => error.code === 'gpx-too-large',
+        (error: { code?: string }) => error.code === 'gpx-too-large',
     );
 });

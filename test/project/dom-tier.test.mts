@@ -16,9 +16,11 @@ import { verificationPlan } from '../../scripts/verify.mts';
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
 test('DOM tier selection defaults to both engines and rejects anything it would not run', () => {
-    assert.deepEqual(domSelection([], root), { engines: ['chrome', 'firefox'], filter: null, suite: null, dist: path.join(root, 'dist') });
+    assert.deepEqual(domSelection([], root), { engines: ['chrome', 'firefox'], filter: null, suite: null, dist: path.join(root, 'dist'), scale: false });
     assert.deepEqual(domSelection(['firefox', '--suite=test/dom/map-access/provider-access.dom.mts', '--case', 'Gaia', '--dist', 'tmp/copy'], root),
-        { engines: ['firefox'], filter: 'Gaia', suite: 'map-access/provider-access.dom.mts', dist: path.join(root, 'tmp/copy') });
+        { engines: ['firefox'], filter: 'Gaia', suite: 'map-access/provider-access.dom.mts', dist: path.join(root, 'tmp/copy'), scale: false });
+    assert.equal(domSelection(['chrome', '--scale'], root).scale, true);
+    assert.throws(() => domSelection(['--scale', '--scale'], root), /--scale was given twice/);
     for (const args of [['safari'], ['--case'], ['--case', '--dist'], ['--retries', '2'], ['--headed']]) {
         assert.throws(() => domSelection(args, root), /Unknown DOM tier argument/, args.join(' '));
     }

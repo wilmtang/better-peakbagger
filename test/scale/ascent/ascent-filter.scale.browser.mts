@@ -8,22 +8,24 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { loadPageWithBar } from '../../helpers/load-page.mts';
+import { loadPageWithBar, type LoadedPage } from '../../helpers/fixture-page.mts';
+
+type Page = LoadedPage;
 
 const FIXTURE = '2296-rainier-y9999-sort-ascentdate.html';
 const URL = 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=2296&sort=AscentDate&u=ft&y=9999';
-const table = dom => dom.window.document.querySelector('table.gray');
-const dataRows = dom => [...table(dom).rows].filter(row =>
+const table = (dom: Page) => dom.window.document.querySelector<HTMLTableElement>('table.gray')!;
+const dataRows = (dom: Page) => [...table(dom).rows].filter(row =>
     row.cells.length > 1 && row.cells[0].tagName === 'TD');
-const visibleRows = dom => dataRows(dom).filter(row => row.style.display === '');
-const sectionRows = dom => [...table(dom).rows].filter(row => row.cells.length === 1 && !row.parentElement.dataset.bpbEmpty);
-const dateTexts = dom => dataRows(dom).map(row => row.cells[1].textContent.trim());
-const sectionLabels = dom => sectionRows(dom).map(row => row.textContent.trim());
-const chip = (dom, label) => [...dom.window.document.querySelectorAll('.pbaf-chip')]
+const visibleRows = (dom: Page) => dataRows(dom).filter(row => row.style.display === '');
+const sectionRows = (dom: Page) => [...table(dom).rows].filter(row => row.cells.length === 1 && !row.parentElement!.dataset.bpbEmpty);
+const dateTexts = (dom: Page) => dataRows(dom).map(row => row.cells[1].textContent.trim());
+const sectionLabels = (dom: Page) => sectionRows(dom).map(row => row.textContent.trim());
+const chip = (dom: Page, label: string) => [...dom.window.document.querySelectorAll('.pbaf-chip')]
     .find(control => control.textContent.includes(label));
-const chipCount = (dom, label) => chip(dom, label).querySelector('.pbaf-count').textContent;
-const sortControl = dom => [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
-    .find(control => control.firstChild.textContent.trim() === 'Ascent Date');
+const chipCount = (dom: Page, label: string) => chip(dom, label)!.querySelector('.pbaf-count')!.textContent;
+const sortControl = (dom: Page) => [...dom.window.document.querySelectorAll('.pbaf-table-sort')]
+    .find(control => control.firstChild?.textContent?.trim() === 'Ascent Date');
 
 test('the full Rainier table filters and sorts completely', async () => {
     const displayWrites = { rows: 0, sections: 0 };
@@ -42,10 +44,10 @@ test('the full Rainier table filters and sorts completely', async () => {
         },
     });
 
-    const instrumentDisplay = (style, key) => Object.defineProperty(style, 'display', {
+    const instrumentDisplay = (style: CSSStyleDeclaration, key: keyof typeof displayWrites) => Object.defineProperty(style, 'display', {
         configurable: true,
         get: () => style.getPropertyValue('display'),
-        set: value => {
+        set: (value: string) => {
             displayWrites[key]++;
             if (value) style.setProperty('display', value);
             else style.removeProperty('display');
@@ -64,14 +66,14 @@ test('the full Rainier table filters and sorts completely', async () => {
         'first use must preserve every production-scale host row');
     assert.ok(sectionRows(dom).every(row => row.style.display === ''));
 
-    chip(dom, 'Has beta').click();
+    chip(dom, 'Has beta')!.click();
     assert.equal(visibleRows(dom).length, 1339);
     assert.ok(sectionRows(dom).some(row => row.style.display === 'none'));
     dom.window.document.querySelector('.pbaf-reset').click();
     assert.equal(visibleRows(dom).length, 4145);
     assert.ok(sectionRows(dom).every(row => row.style.display === ''));
 
-    chip(dom, 'Trip report').click();
+    chip(dom, 'Trip report')!.click();
     const beforeRows = dataRows(dom).map(row => row.style.display);
     const beforeSections = sectionRows(dom).map(row => row.style.display);
     displayWrites.rows = 0;
@@ -84,7 +86,7 @@ test('the full Rainier table filters and sorts completely', async () => {
         wordsInput.dispatchEvent(new dom.window.Event('input'));
     }
     assert.equal(frames.scheduled, 1, 'one typing burst schedules one render frame');
-    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')).minWords, 100,
+    assert.equal(JSON.parse(dom.window.localStorage.getItem('pbAscentBetaFilter.v1')!).minWords, 100,
         'the accessible control state is persisted immediately');
     await new Promise(resolve => dom.window.requestAnimationFrame(resolve));
     assert.equal(frames.painted, 2, 'the second frame is only the test wait, not another product render');
@@ -110,7 +112,7 @@ test('the full Rainier table filters and sorts completely', async () => {
 
     const datesBefore = dateTexts(dom);
     const sectionsBefore = sectionLabels(dom);
-    sortControl(dom).click();
+    sortControl(dom)!.click();
     assert.deepEqual(dateTexts(dom), datesBefore.slice().reverse());
     assert.deepEqual(sectionLabels(dom), sectionsBefore.slice().reverse());
     assert.equal(visibleRows(dom).length, 4145);
