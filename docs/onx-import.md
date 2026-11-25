@@ -97,7 +97,7 @@ before injection; an uncertain outcome is never replayed after worker restart
 or downgraded by a late reply. Explicit continuation reuses only an owned
 untouched importer; Open and Check only focus the target and never resend.
 
-Focused coverage lives in `test/onx/`, `test/background/onx-routes.test.mjs`,
+Focused coverage lives in `test/onx/`, `test/background/onx-routes.test.mts`,
 and `test/ascent/ascent-gaia.browser.mts`. `npm run verify -- onx` exercises cold startup, authentication, deadlines,
 manual Import and transition geometry in hidden Chrome and Firefox.
 `npm run verify -- map-handoffs` loads the

@@ -11,6 +11,7 @@ import type {
 export interface MapImportHarnessOptions {
     outcome?: GpxHandoffImportResult;
     redirectUrl?: string;
+    injectError?: Error;
 }
 
 interface HarnessProvider<Routes> {
@@ -42,10 +43,12 @@ export const savedAscentSender = {
 
 export const createMapImportHarness = <Routes,>(
     { createRoutes, permission, action }: HarnessProvider<Routes>,
-    { outcome = { ok: true, supplied: true, code: 'prepared', message: 'Ready.' }, redirectUrl }: MapImportHarnessOptions = {},
+    { outcome = { ok: true, supplied: true, code: 'prepared', message: 'Ready.' }, redirectUrl, injectError }: MapImportHarnessOptions = {},
 ) => {
     const tabs = new Map<number, FixtureTab>();
     const created: chrome.tabs.CreateProperties[] = [];
+    const updated: [number, chrome.tabs.UpdateProperties][] = [];
+    const focused: [number, chrome.windows.UpdateInfo][] = [];
     const injections: ImportInjection[] = [];
     const consumed: ConsumedGrant[] = [];
     let nextId = 20;
@@ -68,11 +71,18 @@ export const createMapImportHarness = <Routes,>(
                 return { ...tab };
             },
             get: async (id: number) => ({ ...tabs.get(id) }),
-            update: async () => {},
+            update: async (id: number, patch: chrome.tabs.UpdateProperties) => {
+                updated.push([id, patch]);
+                return { ...tabs.get(id), ...patch };
+            },
         },
-        windows: { update: async () => {} },
+        windows: { update: async (id: number, patch: chrome.windows.UpdateInfo) => { focused.push([id, patch]); } },
         scripting: {
-            executeScript: async (details: ImportInjection) => { injections.push(details); return [{ result: outcome }]; },
+            executeScript: async (details: ImportInjection) => {
+                injections.push(details);
+                if (injectError) throw injectError;
+                return [{ result: outcome }];
+            },
         },
     };
     const routes = createRoutes({
@@ -84,5 +94,5 @@ export const createMapImportHarness = <Routes,>(
         },
         action,
     });
-    return { ext, routes, created, injections, consumed };
+    return { ext, routes, created, updated, focused, injections, consumed };
 };

@@ -238,7 +238,7 @@ handoffs, control placement, BFCache restoration, and access-page behavior:
 
 ```text
 test/ascent/ascent-gaia.browser.mts
-test/background/gaia-routes.test.mjs
+test/background/gaia-routes.test.mts
 test/gaia/gaia-access.test.mts
 test/gpx/saved-gpx-source.browser.mts
 test/project/manifest-capture.test.mts
