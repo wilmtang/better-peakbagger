@@ -3,39 +3,48 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createReportDraftRoutes, reportDraftRoutes as Routes }
+import { createReportDraftRoutes, reportDraftRoutes as Routes, type PendingDraftSave }
     from '../../src/background/report-draft-routes.ts';
-import { reportDrafts as Drafts } from '../../src/reports/report-drafts.ts';
+import { reportDrafts as Drafts, type ReportDraftRecord } from '../../src/reports/report-drafts.ts';
+import { deferred } from '../helpers/deferred.mts';
+import { required } from '../helpers/required.mts';
 
 const CLOCK = Date.parse('2026-08-08T12:00:00.000Z');
 
-const makeArea = initial => {
-    const values = structuredClone(initial || {});
+const removeValues = (values: Record<string, unknown>, keys: string | string[]) => {
+    for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
+};
+const makeArea = (initial: Record<string, unknown> = {}) => {
+    const values = structuredClone(initial);
     return {
         values,
-        async get(key) {
+        async get(key?: string | string[] | null) {
             if (key === null) return structuredClone(values);
             if (Array.isArray(key)) {
                 return Object.fromEntries(key.map(item => [item, structuredClone(values[item])]));
             }
-            return { [key]: structuredClone(values[key]) };
+            const name = String(key);
+            return { [name]: structuredClone(values[name]) };
         },
-        async set(patch) { Object.assign(values, structuredClone(patch)); },
-        async remove(key) {
-            for (const item of Array.isArray(key) ? key : [key]) delete values[item];
-        },
+        async set(patch: Record<string, unknown>) { Object.assign(values, structuredClone(patch)); },
+        async remove(key: string | string[]) { removeValues(values, key); },
     };
 };
 
-const harness = ({ localInitial, localRemove } = {}) => {
+type StorageFixture = ReturnType<typeof makeArea>;
+interface HarnessOptions {
+    localInitial?: Record<string, unknown>;
+    localRemove?: (key: string | string[], area: StorageFixture) => Promise<void>;
+}
+const harness = ({ localInitial, localRemove }: HarnessOptions = {}) => {
     const local = makeArea(localInitial);
     if (localRemove) local.remove = key => localRemove(key, local);
     const session = makeArea();
     let clock = CLOCK;
-    let queue = Promise.resolve();
-    const mutateMap = (key, mutate) => {
+    let queue: Promise<unknown> = Promise.resolve();
+    const mutateMap = <Result, Value>(key: string, mutate: (map: Record<string, Value>) => Result | Promise<Result>) => {
         const operation = queue.then(async () => {
-            const map = structuredClone(session.values[key] || {});
+            const map = structuredClone((session.values[key] || {}) as Record<string, Value>);
             const result = await mutate(map);
             await session.set({ [key]: map });
             return result;
@@ -46,17 +55,21 @@ const harness = ({ localInitial, localRemove } = {}) => {
     const routes = createReportDraftRoutes({
         ext: { storage: { local } },
         now: () => clock,
-        isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/'),
-        isExtensionPage: sender => sender?.url?.startsWith('chrome-extension://test/'),
+        isPeakbaggerSender: sender => sender?.url?.startsWith('https://www.peakbagger.com/') === true,
+        isExtensionPage: sender => sender?.url?.startsWith('chrome-extension://test/') === true,
         mutateMap,
     });
     return {
         routes,
         local,
         session,
-        advance(ms) { clock += ms; },
+        advance(ms: number) { clock += ms; },
     };
 };
+
+type Harness = ReturnType<typeof harness>;
+const storedDraft = (h: Harness, key: string) => h.local.values[key] as ReportDraftRecord;
+const pendingSaves = (h: Harness) => h.session.values[Routes.PENDING_KEY] as Record<string, PendingDraftSave>;
 
 const addSender = {
     url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=33&cid=22',
@@ -68,16 +81,16 @@ const editSender = {
 };
 const extensionSender = { url: 'chrome-extension://test/options/drafts.html' };
 const ADD_ATTEMPT = 'add-attempt-1';
-const pendingRecord = (text, attemptId = ADD_ATTEMPT) => ({
+const pendingRecord = (text: string, attemptId = ADD_ATTEMPT) => ({
     text,
     savedAt: 1,
     pendingSave: { attemptId },
 });
 
-const registerAdd = h => h.routes.handlers.REPORT_DRAFT_SAVE_PENDING({
+const registerAdd = (h: ReturnType<typeof harness>, attemptId = ADD_ATTEMPT) => h.routes.handlers.REPORT_DRAFT_SAVE_PENDING({
     draftKey: 'bpbReportDraft:22:p33',
     identity: { cid: '22', aid: null, pid: '33' },
-    attemptId: ADD_ATTEMPT,
+    attemptId,
 }, addSender);
 
 test('editor versions guard first writes, equal-time replacements, and empty-content removal', async () => {
@@ -100,7 +113,7 @@ test('editor versions guard first writes, equal-time replacements, and empty-con
     const restored = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey,
         expectedVersion: removed.version, record: { text: 'edit after clearing', savedAt: CLOCK } }, editSender);
     assert.equal(restored.written, true, 'a matching version orders same-millisecond edits after deletion');
-    assert.equal(h.local.values[draftKey].text, 'edit after clearing');
+    assert.equal(storedDraft(h, draftKey).text, 'edit after clearing');
 });
 
 test('snapshot cleanup preserves a newer draft, including a same-timestamp generation', async () => {
@@ -115,19 +128,19 @@ test('snapshot cleanup preserves a newer draft, including a same-timestamp gener
     for (const sender of [editSender, extensionSender]) {
         const result = await h.routes.handlers.REPORT_DRAFT_REMOVE({
             draftKey: key,
-            expectedSavedAt: first.record.savedAt,
-            expectedGeneration: first.record.storageGeneration,
+            expectedSavedAt: required(first.record).savedAt,
+            expectedGeneration: required(first.record).storageGeneration,
         }, sender);
         assert.equal(result.removed, false);
-        assert.equal(h.local.values[key].text, 'newer work');
+        assert.equal(storedDraft(h, key).text, 'newer work');
     }
-    const current = h.local.values[key];
+    const current = storedDraft(h, key);
     const removed = await h.routes.handlers.REPORT_DRAFT_REMOVE({
         draftKey: key, expectedSavedAt: current.savedAt,
         expectedGeneration: current.storageGeneration,
     }, extensionSender);
     assert.equal(removed.removed, true);
-    assert.ok(h.local.values[key].deletedGeneration);
+    assert.ok(storedDraft(h, key).deletedGeneration);
 });
 
 test('pending Save metadata rewrites cannot replace a newer same-timestamp generation', async () => {
@@ -138,12 +151,12 @@ test('pending Save metadata rewrites cannot replace a newer same-timestamp gener
     }, editSender);
     const detached = { ...first.record };
     delete detached.pendingSave;
-    const expectation = { expectedSavedAt: first.record.savedAt, expectedGeneration: first.record.storageGeneration };
+    const expectation = { expectedSavedAt: required(first.record).savedAt, expectedGeneration: required(first.record).storageGeneration };
     const current = await h.routes.handlers.REPORT_DRAFT_WRITE({
         draftKey: key, record: detached, ...expectation,
     }, editSender);
     assert.equal(current.written, true);
-    assert.equal(current.record.pendingSave, undefined);
+    assert.equal(required(current.record).pendingSave, undefined);
 
     await h.routes.handlers.REPORT_DRAFT_WRITE({
         draftKey: key, record: { text: 'newer report from another tab', savedAt: CLOCK },
@@ -152,12 +165,12 @@ test('pending Save metadata rewrites cannot replace a newer same-timestamp gener
         draftKey: key, record: detached, ...expectation,
     }, editSender);
     assert.equal(stale.written, false);
-    assert.equal(h.local.values[key].text, 'newer report from another tab');
+    assert.equal(storedDraft(h, key).text, 'newer report from another tab');
     const malformed = await h.routes.handlers.REPORT_DRAFT_WRITE({
         draftKey: key, record: detached, expectedSavedAt: CLOCK, expectedGeneration: 'malformed',
     }, editSender);
     assert.equal(malformed.ok, false);
-    assert.equal(h.local.values[key].text, 'newer report from another tab');
+    assert.equal(storedDraft(h, key).text, 'newer report from another tab');
 });
 
 test('malformed cleanup expectations cannot become an unconditional removal', async () => {
@@ -170,14 +183,14 @@ test('malformed cleanup expectations cannot become an unconditional removal', as
         assert.equal((await h.routes.handlers.REPORT_DRAFT_REMOVE({
             draftKey: key, ...patch,
         }, extensionSender)).ok, false);
-        assert.equal(h.local.values[key].text, 'keep me');
+        assert.equal(storedDraft(h, key).text, 'keep me');
     }
 });
 
 test('pending Save accepts only the exact ascent editor identity and source tab', async () => {
     const h = harness();
     assert.equal((await registerAdd(h)).ok, true);
-    const stored = h.session.values[Routes.PENDING_KEY]['41'];
+    const stored = pendingSaves(h)['41'];
     assert.equal(stored.draftKey, 'bpbReportDraft:22:p33');
     assert.deepEqual(stored.identity, { cid: '22', aid: null, pid: '33' });
     assert.equal(stored.attemptId, ADD_ATTEMPT);
@@ -193,7 +206,7 @@ test('pending Save accepts only the exact ascent editor identity and source tab'
         [{ draftKey: 'bpbReportDraft:22:p33', identity: { cid: '22', pid: '33' }, attemptId: 'attempt' }, {
             ...addSender, tab: {},
         }],
-    ]) {
+    ] as const) {
         assert.equal((await h.routes.handlers.REPORT_DRAFT_SAVE_PENDING(message, sender)).ok, false);
     }
 });
@@ -218,7 +231,7 @@ test('Add success consumes only the pending draft from the matching tab and form
         { ok: true, draftKey: key, removed: true },
     );
     assert.equal(h.local.values[key], undefined);
-    assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
+    assert.equal(pendingSaves(h)['41'], undefined);
     assert.equal((await h.routes.handlers.REPORT_DRAFT_SAVE_CONFIRMED({ aid: '778899' }, addSender)).ok, false,
         'a duplicate success postback must be idempotent');
 });
@@ -254,8 +267,8 @@ test('confirmed success retains a newer same-key draft from another tab', async 
         await h.routes.handlers.REPORT_DRAFT_SAVE_CONFIRMED({ aid: '778899' }, addSender),
         { ok: true, draftKey: key, removed: false },
     );
-    assert.equal(h.local.values[key].text, 'newer tab recovery');
-    assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
+    assert.equal(storedDraft(h, key).text, 'newer tab recovery');
+    assert.equal(pendingSaves(h)['41'], undefined);
 });
 
 test('a failed local removal keeps the confirmation retryable', async () => {
@@ -268,7 +281,7 @@ test('a failed local removal keeps the confirmation retryable', async () => {
                 fail = false;
                 throw new Error('storage unavailable');
             }
-            delete area.values[item];
+            removeValues(area.values, item);
         },
     });
     await registerAdd(h);
@@ -278,7 +291,7 @@ test('a failed local removal keeps the confirmation retryable', async () => {
         /storage unavailable/,
     );
     assert.ok(h.local.values[key]);
-    assert.ok(h.session.values[Routes.PENDING_KEY]['41']);
+    assert.ok(pendingSaves(h)['41']);
 
     assert.equal((await h.routes.handlers.REPORT_DRAFT_SAVE_CONFIRMED({ aid: '778899' }, addSender)).ok, true);
     assert.equal(h.local.values[key], undefined);
@@ -286,30 +299,32 @@ test('a failed local removal keeps the confirmation retryable', async () => {
 
 test('replacement registration waits until an earlier confirmation is fully consumed', async () => {
     const key = 'bpbReportDraft:22:p33';
-    let releaseRemoval;
+    const removalStarted = deferred<void>(), removalHeld = deferred<void>();
     const h = harness({
         localInitial: { [key]: pendingRecord('first attempt') },
         localRemove: async (item, area) => {
-            await new Promise(resolve => { releaseRemoval = resolve; });
-            delete area.values[item];
+            removalStarted.resolve();
+            await removalHeld.promise;
+            removeValues(area.values, item);
         },
     });
     await registerAdd(h);
     const confirmation = h.routes.handlers.REPORT_DRAFT_SAVE_CONFIRMED({ aid: '778899' }, addSender);
-    while (!releaseRemoval) await new Promise(resolve => setTimeout(resolve, 0));
+    await removalStarted.promise;
 
     let replacementDone = false;
-    const replacement = registerAdd(h).then(result => {
+    const replacementAttempt = 'add-attempt-2';
+    const replacement = registerAdd(h, replacementAttempt).then(result => {
         replacementDone = true;
         return result;
     });
     await new Promise(resolve => setTimeout(resolve, 0));
     assert.equal(replacementDone, false);
 
-    releaseRemoval();
+    removalHeld.resolve();
     assert.equal((await confirmation).ok, true);
     assert.equal((await replacement).ok, true);
-    assert.ok(h.session.values[Routes.PENDING_KEY]['41']);
+    assert.equal(pendingSaves(h)['41']?.attemptId, replacementAttempt);
 });
 
 test('discard, tab close, and expiry remove only pending worker state', async () => {
@@ -318,16 +333,16 @@ test('discard, tab close, and expiry remove only pending worker state', async ()
     await registerAdd(h);
     assert.equal((await h.routes.handlers.REPORT_DRAFT_SAVE_CANCEL({ draftKey: key }, addSender)).ok, true);
     assert.ok(h.local.values[key], 'explicit editor deletion owns the local removal');
-    assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
+    assert.equal(pendingSaves(h)['41'], undefined);
 
     await registerAdd(h);
     await h.routes.forgetTab(41);
-    assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
+    assert.equal(pendingSaves(h)['41'], undefined);
 
     await registerAdd(h);
     h.advance(Routes.TTL_MS + 1);
     await h.routes.cleanup(Date.parse('2026-08-08T12:00:00.000Z') + Routes.TTL_MS + 1);
-    assert.equal(h.session.values[Routes.PENDING_KEY]['41'], undefined);
+    assert.equal(pendingSaves(h)['41'], undefined);
     assert.ok(h.local.values[key], 'worker-state expiry must not delete recovery data');
 });
 
@@ -343,14 +358,14 @@ test('delete and restore use a generation barrier that preserves a newer same-ke
         expectedSavedAt: older.savedAt,
     }, extensionSender);
     assert.equal(deletion.deleted, true);
-    assert.equal(h.local.values[key].deletedGeneration, deletion.generation);
+    assert.equal(storedDraft(h, key).deletedGeneration, deletion.generation);
 
     const delayed = await h.routes.handlers.REPORT_DRAFT_WRITE({
         draftKey: key,
         record: { ...older, text: 'delayed pre-delete write' },
     }, editSender);
     assert.equal(delayed.written, false);
-    assert.equal(h.local.values[key].deletedGeneration, deletion.generation);
+    assert.equal(storedDraft(h, key).deletedGeneration, deletion.generation);
 
     const write = await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey: key, record: newer }, editSender);
     assert.equal(write.ok, true);
@@ -360,7 +375,7 @@ test('delete and restore use a generation barrier that preserves a newer same-ke
         record: deletion.record,
     }, extensionSender);
     assert.deepEqual(restore, { ok: true, draftKey: key, restored: false, reason: 'changed' });
-    assert.equal(h.local.values[key].text, 'newer editor work');
+    assert.equal(storedDraft(h, key).text, 'newer editor work');
 });
 
 test('a second manager cannot delete or restore through another manager generation', async () => {
@@ -398,23 +413,23 @@ test('bulk restore resolves conflicts per key without suppressing unrelated reco
         { draftKey: firstKey, expectedGeneration: null, expectedSavedAt: first.savedAt },
         { draftKey: secondKey, expectedGeneration: null, expectedSavedAt: second.savedAt },
     ] }, extensionSender);
-    assert.equal(deletion.results.filter(result => result.deleted).length, 2);
+    assert.equal(required(deletion.results).filter(result => result.deleted).length, 2);
 
     await h.routes.handlers.REPORT_DRAFT_WRITE({
         draftKey: firstKey,
         record: { text: 'first newer', mode: 'rich', savedAt: CLOCK + 1 },
     }, editSender);
     const restoration = await h.routes.handlers.REPORT_DRAFT_RESTORE_MANY({
-        entries: deletion.results.map(result => ({
+        entries: required(deletion.results).map(result => ({
             draftKey: result.draftKey,
             generation: result.generation,
             record: result.record,
         })),
     }, extensionSender);
-    assert.equal(restoration.results.find(result => result.draftKey === firstKey).restored, false);
-    assert.equal(restoration.results.find(result => result.draftKey === secondKey).restored, true);
-    assert.equal(h.local.values[firstKey].text, 'first newer');
-    assert.equal(h.local.values[secondKey].text, 'second old');
+    assert.equal(required(restoration.results).find(result => result.draftKey === firstKey)?.restored, false);
+    assert.equal(required(restoration.results).find(result => result.draftKey === secondKey)?.restored, true);
+    assert.equal(storedDraft(h, firstKey).text, 'first newer');
+    assert.equal(storedDraft(h, secondKey).text, 'second old');
 });
 
 test('Undo expiry removes only its exact tombstone generation', async () => {
@@ -441,7 +456,7 @@ test('Undo expiry removes only its exact tombstone generation', async () => {
         draftKey: key,
         generation: deletion.generation,
     }, extensionSender)).finalized, false);
-    assert.equal(h.local.values[key].text, 'newer');
+    assert.equal(storedDraft(h, key).text, 'newer');
 });
 
 test('pruning bounds old markers, protects recent Undo and keepKey, and retires expired markers', async () => {
@@ -449,7 +464,7 @@ test('pruning bounds old markers, protects recent Undo and keepKey, and retires 
     const keys = Array.from({ length: 100 }, (_, index) => `bpbReportDraft:22:p${index + 1}`);
     for (const draftKey of keys) await h.routes.handlers.REPORT_DRAFT_REMOVE({ draftKey }, extensionSender);
     const recent = await h.routes.handlers.REPORT_DRAFT_PRUNE({}, extensionSender);
-    assert.equal(recent.removed.length, 0, 'fresh Undo barriers survive bursts');
+    assert.equal(required(recent.removed).length, 0, 'fresh Undo barriers survive bursts');
     h.advance(60_001);
     await h.routes.handlers.REPORT_DRAFT_PRUNE({ keepKey: keys[99] }, extensionSender);
     assert.equal(keys.filter(key => h.local.values[key]).length, 61);
@@ -486,7 +501,7 @@ test('a failed deletion-epoch write leaves the marker in place and cannot reopen
         return set(patch);
     };
     await assert.rejects(h.routes.handlers.REPORT_DRAFT_FINALIZE_DELETE({ draftKey, generation: removal.generation }, extensionSender), /disk full/);
-    assert.equal(h.local.values[draftKey].deletedGeneration, removal.generation);
+    assert.equal(storedDraft(h, draftKey).deletedGeneration, removal.generation);
     assert.equal((await h.routes.handlers.REPORT_DRAFT_WRITE({ draftKey, expectedVersion: Drafts.version(undefined),
         record: { text: 'stale', savedAt: CLOCK + 1 } }, editSender)).written, false);
 });
