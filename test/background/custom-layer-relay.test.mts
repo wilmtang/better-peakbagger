@@ -4,37 +4,78 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { indexedDB } from 'fake-indexeddb';
 import { createCustomPrivateStore } from '../../src/background/custom-private-store.ts';
-import { createCustomOverlayStore } from '../../src/background/custom-overlay-store.ts';
-import { createCustomLayerRelay } from '../../src/background/custom-layer-relay.ts';
-import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS } from '../../src/maps/custom-overlay-private.ts';
+import { createCustomOverlayStore, type CustomOverlayHandleResult, type CustomOverlayPrivateStore, type CustomOverlayStorage, type PrivateSourceRecord } from '../../src/background/custom-overlay-store.ts';
+import { createCustomLayerRelay, type CustomLayerRelayOptions, type RelayExt } from '../../src/background/custom-layer-relay.ts';
+import { publicPrivateSource, privateRequestUrl, readPrivateParameters, readRelayResource, PRIVATE_LIMITS, type PrivateParameter } from '../../src/maps/custom-overlay-private.ts';
 import { customLayerBackup } from '../../src/maps/custom-overlay-transfer.ts';
+import { fieldsOf } from '../helpers/result-fields.mts';
+import { required } from '../helpers/required.mts';
 const id = 'custom:0537a032-271c-4d11-9b8c-0edc566b47c1';
 const source = { id, revision: 1, name: 'Private topo', kind: 'raster',
     source: { tiles: ['https://tiles.example.com/tiles/{z}/{x}/{y}.png'], minNativeZoom: 0, maxNativeZoom: 18, scheme: 'xyz', tileSize: 256 },
     approvedOrigins: ['https://tiles.example.com'], attribution: { text: '' }, appearance: { opacity: 60, rules: [] } };
 const secret = [{ key: 'api_key', value: 'private+key/DO_NOT_LEAK' }];
-const page = { id: 'extension', frameId: 0, documentId: 'doc', url: 'https://www.peakbagger.com/Peak.aspx?pid=1', tab: { id: 7, url: 'https://www.peakbagger.com/Peak.aspx?pid=1' } };
-const access = { id: 'extension', frameId: 0, url: 'chrome-extension://extension/custom-overlay/access.html', tab: { id: 99 } };
+const fixtureTab = (tabId: number): chrome.tabs.Tab => ({
+    id: tabId, index: 0, windowId: 1, groupId: -1, lastAccessed: 0, active: true, highlighted: true,
+    selected: true, pinned: false, frozen: false, incognito: false, discarded: false, autoDiscardable: true,
+});
+const page = { id: 'extension', frameId: 0, documentId: 'doc', url: 'https://www.peakbagger.com/Peak.aspx?pid=1', tab: { ...fixtureTab(7), url: 'https://www.peakbagger.com/Peak.aspx?pid=1' } };
+const access = { id: 'extension', frameId: 0, url: 'chrome-extension://extension/custom-overlay/access.html', tab: fixtureTab(99) };
 function harness() {
-    let time = 1000000, allowed = true, active = true, currentUrl = page.tab.url, issued, calls = 0, fetcher;
-    const records = new Map(), requestUrls = [], storage = { get: async keys => Object.fromEntries(keys.map(key => [key, structuredClone(records.get(key))])),set: async patch => { for (const [key, value] of Object.entries(patch)) records.set(key, structuredClone(value)); } };
-    const privateRecords = new Map(), privateStore = { get: async key => structuredClone(privateRecords.get(key)),put: async (key, value) => { if (value == null) privateRecords.delete(key);else privateRecords.set(key, structuredClone(value)); },
-        mutate: async (key, fn) => { const next = fn(structuredClone(privateRecords.get(key)));privateRecords.set(key, next);return next; } };
-    const editor = { id: 'extension', frameId: 0, url: 'chrome-extension://extension/options/options.html', tab: { id: 8 } };
+    let time = 1000000, allowed = true, active = true, currentUrl = page.tab.url, calls = 0;
+    let issued: string | undefined;
+    let fetcher: CustomLayerRelayOptions['fetchImpl'];
+    const records = new Map<string, unknown>(), requestUrls: [string, RequestInit][] = [];
+    const storage: CustomOverlayStorage = {
+        get: async keys => Object.fromEntries(keys.map(key => [key, structuredClone(records.get(key))])),
+        set: async patch => { for (const [key, value] of Object.entries(patch)) records.set(key, structuredClone(value)); },
+    };
+    const privateRecords = new Map<string, unknown>();
+    const privateStore: CustomOverlayPrivateStore = {
+        // The fixture uses the same per-key type chosen by the private store's callers.
+        get: async <T = unknown,>(key: string) => structuredClone(privateRecords.get(key)) as T | undefined,
+        put: async (key, value) => {
+            if (value == null) privateRecords.delete(key); else privateRecords.set(key, structuredClone(value));
+            return value;
+        },
+        mutate: async <T = unknown, R = T | undefined>(key: string, change: (current: T | undefined) => R) => {
+            const next = change(structuredClone(privateRecords.get(key)) as T | undefined);
+            privateRecords.set(key, next);
+            return next;
+        },
+    };
+    const editor = { id: 'extension', frameId: 0, url: 'chrome-extension://extension/options/options.html', tab: fixtureTab(8) };
     const catalog = createCustomOverlayStore({ storage, privateStore, canRead: () => true, canEdit: sender => sender === editor, canReadPrivate: sender => sender === editor });
-    const ext = { runtime: { id: 'extension', getURL: path => `chrome-extension://extension/${path}` }, permissions: { contains: async () => allowed }, tabs: {
+    const ext: RelayExt = { runtime: { id: 'extension', getURL: path => `chrome-extension://extension/${path}` }, permissions: { contains: async () => allowed }, tabs: {
         get: async () => ({ url: currentUrl, active }),create: async value => { issued = value.url.split('#')[1];return { id: 99 }; }, update: async () => { active = true; } } };
-    const create = () => createCustomLayerRelay({ ext, privateStore, catalog, isPage: sender => sender?.id === 'extension' && sender.url?.startsWith('https://www.peakbagger.com/'),isTerrain: () => false,
-        isEditor: sender => sender === editor,isAccess: sender => sender === access, trustedActions: { consumeCapability: message => message.activationToken === 'trusted' },action: 'custom-layer-access',now: () => time,
-        fetchImpl: async (url, options) => { calls++;requestUrls.push([url, options]);return fetcher ? fetcher(url, options) : new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } }); } });
+    const create = () => {
+        const owner = createCustomLayerRelay({
+            ext, privateStore, catalog,
+            isPage: sender => sender?.id === 'extension' && sender.url?.startsWith('https://www.peakbagger.com/') === true,
+            isTerrain: () => false, isEditor: sender => sender === editor, isAccess: sender => sender === access,
+            trustedActions: { consumeCapability: message => message.activationToken === 'trusted' },
+            action: 'custom-layer-access', now: () => time,
+            fetchImpl: async (url, options) => {
+                calls++;
+                requestUrls.push([url, required(options)]);
+                return fetcher ? fetcher(url, options) : new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'image/png' } });
+            },
+        });
+        return { ...owner, handle: (...args: Parameters<typeof owner.handle>) => owner.handle(...args).then(fieldsOf) };
+    };
     let relay = create();
-    const save = (params = secret, body = source, revision = 0) => catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id, expectedRevision: revision, source: body, requestParameters: params }, editor);
-    const grant = async (selectedId = id, sender = page) => { assert((await relay.handle({ type: 'CUSTOM_PRIVATE_OPEN', id: selectedId, revision: 1, activationToken: 'trusted' }, sender)).ok);
+    const save = (params: PrivateParameter[] = secret, body: unknown = source, revision = 0) => catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE', id, expectedRevision: revision, source: body, requestParameters: params }, editor);
+    const grant = async (selectedId = id, sender: chrome.runtime.MessageSender = page) => { assert((await relay.handle({ type: 'CUSTOM_PRIVATE_OPEN', id: selectedId, revision: 1, activationToken: 'trusted' }, sender)).ok);
         assert((await relay.handle({ type: 'CUSTOM_PRIVATE_REVIEW', token: issued }, access)).ok);assert((await relay.handle({ type: 'CUSTOM_PRIVATE_APPROVE', token: issued }, access)).ok); };
-    const get = (patch = {}, sender = page) => relay.handle({ type: 'CUSTOM_PRIVATE_GET', id, revision: 1, resource: 'tile', coordinates: { z: 2, x: 1, y: 1 },requestId: crypto.randomUUID(), ...patch }, sender);
+    const get = (patch: Record<string, unknown> = {}, sender: chrome.runtime.MessageSender = page) => relay.handle({ type: 'CUSTOM_PRIVATE_GET', id, revision: 1, resource: 'tile', coordinates: { z: 2, x: 1, y: 1 },requestId: crypto.randomUUID(), ...patch }, sender);
     return { records, privateRecords, privateStore, editor, catalog, save, grant, get, relay: () => relay, restart: () => { relay = create(); },calls: () => calls,urls: requestUrls,
-        time: next => { time = next; },permission: value => { allowed = value; },active: value => { active = value; },navigate: value => { currentUrl = value; },fetch: fn => { fetcher = fn; },token: () => issued };
+        time: (next: number) => { time = next; },permission: (value: boolean) => { allowed = value; },active: (value: boolean) => { active = value; },navigate: (value: string) => { currentUrl = value; },fetch: (fn: CustomLayerRelayOptions['fetchImpl']) => { fetcher = fn; },token: () => issued };
 }
+function firstSource(reply: CustomOverlayHandleResult) {
+    assert.ok(reply.ok);
+    return required(reply.registry).sources[0];
+}
+
 test('trusted source refresh invalidates bytes and signed metadata without resetting authority or budgets', async () => {
     const h = harness(), metadataSource = { ...source, source: { ...source.source, tiles: [], metadataUrl: 'https://tiles.example.com/meta.json' } };
     await h.save(secret, metadataSource); await h.grant();
@@ -42,29 +83,29 @@ test('trusted source refresh invalidates bytes and signed metadata without reset
     h.fetch(async url => url.includes('/meta.json') ? Response.json({ tilejson: '3.0.0', minzoom: 1, maxzoom: 14,
         bounds: [-125, 40, -115, 50], tileSize: 512, tiles: [`https://tiles.example.com/${version}/{z}/{x}/{y}.png?signed=${version}`] })
         : new Response(version, { headers: { 'content-type': 'image/png' } }));
-    assert((await h.get({ resource: 'metadata' })).ok); assert.equal(atob((await h.get()).bytes), 'old');
+    assert((await h.get({ resource: 'metadata' })).ok); assert.equal(atob(required((await h.get()).bytes)), 'old');
     const ledger = await h.privateStore.get('budget:tiles.example.com');
-    const refresh = extra => h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, requestId: 'refresh', ...extra }, page);
+    const refresh = (extra: Record<string, unknown> = {}) => h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, requestId: 'refresh', ...extra }, page);
     assert.equal((await refresh()).ok, false, 'page messages alone cannot bypass caches');
     version = 'new'; assert((await refresh({ activationToken: 'trusted' })).ok);
     assert.deepEqual(await h.privateStore.get('budget:tiles.example.com'), ledger, 'refresh does not reset or charge counters');
     const metadata = await h.get({ resource: 'metadata' }); assert(metadata.ok);
-    const publicData = JSON.parse(atob(metadata.bytes));
+    const publicData = JSON.parse(atob(required(metadata.bytes)));
     assert.deepEqual(publicData.bounds, [-125, 40, -115, 50]); assert.equal(publicData.tileSize, 512);
     assert(!JSON.stringify(publicData).includes('signed='));
-    assert.equal(atob((await h.get()).bytes), 'new'); assert(h.urls.at(-1)[0].includes('/new/'));
+    assert.equal(atob(required((await h.get()).bytes)), 'new'); assert(required(h.urls.at(-1))[0].includes('/new/'));
     h.permission(false); assert.equal((await refresh({ activationToken: 'trusted' })).ok, false);
     h.permission(true); h.relay().forgetTab(7); assert.equal((await refresh({ activationToken: 'trusted' })).ok, false);
 });
 
 test('refresh prevents late old transports from publishing or repopulating their source cache', async () => {
-    const h = harness(); await h.save(); await h.grant(); let release;
-    h.fetch(async () => { await new Promise(resolve => { release = resolve; }); return new Response('old', { headers: { 'content-type': 'image/png' } }); });
+    const h = harness(); await h.save(); await h.grant(); let release: (() => void) | undefined;
+    h.fetch(async () => { await new Promise<void>(resolve => { release = resolve; }); return new Response('old', { headers: { 'content-type': 'image/png' } }); });
     const old = h.get(); await new Promise(resolve => setImmediate(resolve));
     assert((await h.relay().handle({ type: 'CUSTOM_PRIVATE_REFRESH', id, revision: 1, activationToken: 'trusted', requestId: 'refresh' }, page)).ok);
-    release(); assert.equal((await old).ok, false);
+    required(release)(); assert.equal((await old).ok, false);
     h.fetch(async () => new Response('new', { headers: { 'content-type': 'image/png' } }));
-    assert.equal(atob((await h.get()).bytes), 'new'); assert.equal(h.calls(), 2);
+    assert.equal(atob(required((await h.get()).bytes)), 'new'); assert.equal(h.calls(), 2);
 });
 
 test('refresh leaves other sources cached and cannot reset cooldowns or exhausted provider budgets', async () => {
@@ -76,7 +117,7 @@ test('refresh leaves other sources cached and cannot reset cooldowns or exhauste
     assert((await refresh()).ok); await h.get({ id: otherId }); assert.equal(h.calls(), 2, 'unrelated same-URL source remains cached');
     await h.privateStore.put('cooldown:tiles.example.com', 1000001); assert.equal((await refresh()).code, 'budget');
     await h.privateStore.put('cooldown:tiles.example.com', null);
-    const ledger = await h.privateStore.get('budget:tiles.example.com'); ledger.hourly = PRIVATE_LIMITS.hourlyRequests;
+    const ledger = required(await h.privateStore.get<{ hourly: number }>('budget:tiles.example.com')); ledger.hourly = PRIVATE_LIMITS.hourlyRequests;
     await h.privateStore.put('budget:tiles.example.com', ledger); assert((await refresh()).ok);
     assert.equal((await h.get()).code, 'budget'); assert.equal(h.calls(), 2, 'fresh cache cannot bypass the durable budget');
 });
@@ -86,11 +127,11 @@ test('private fields are validated, projected and excluded from public reads and
     assert.throws(() => readPrivateParameters([{ key: 'a', value: '' }]));
     const h = harness();assert((await h.save()).ok);
     const plain = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, page);
-    assert(plain.registry.sources[0].privateRequests);assert(!JSON.stringify(plain).includes('private+key'));assert(!JSON.stringify(plain).includes('tiles.example.com'));
-    const trusted = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.deepEqual(trusted.registry.sources[0].requestParameters, secret);
+    assert(firstSource(plain).privateRequests);assert(!JSON.stringify(plain).includes('private+key'));assert(!JSON.stringify(plain).includes('tiles.example.com'));
+    const trusted = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.deepEqual(firstSource(trusted).requestParameters, secret);
     assert(!JSON.stringify(customLayerBackup(await h.catalog.snapshot())).includes('private+key'));
     assert(!JSON.stringify([...h.records.values()]).includes('private+key'));
-    const projected = publicPrivateSource(source);assert(readRelayResource(projected.source.tiles[0].replaceAll('{z}', '2').replaceAll('{x}', '1').replaceAll('{y}', '1')));
+    const projected = publicPrivateSource(source);assert.ok('tiles' in projected.source);assert(readRelayResource(projected.source.tiles[0].replaceAll('{z}', '2').replaceAll('{x}', '1').replaceAll('{y}', '1')));
     assert.equal(readRelayResource('https://evil.example/tile/2/1/1'), null);
     const other = { ...source, source: { ...source.source, metadataUrl: 'https://meta.example.com/source.json' }, approvedOrigins: [...source.approvedOrigins, 'https://meta.example.com'] };
     assert(!privateRequestUrl(other, secret, { resource: 'tile', coordinates: { z: 2, x: 1, y: 1 } }).includes('api_key'));
@@ -99,7 +140,7 @@ test('no request before explicit extension approval; reject synthetic activation
     const h = harness();await h.save();assert.equal((await h.get()).code, 'approval');assert.equal(h.calls(), 0);
     assert.equal((await h.relay().handle({ type: 'CUSTOM_PRIVATE_OPEN', id, revision: 1 }, page)).ok, false);
     await h.grant();assert.equal((await h.relay().handle({ type: 'CUSTOM_PRIVATE_APPROVE', token: h.token() }, access)).ok, false);
-    assert.equal((await h.get({}, { ...page, tab: { id: 9 } })).ok, false);
+    assert.equal((await h.get({}, { ...page, tab: fixtureTab(9) })).ok, false);
     assert.equal((await h.get({}, { ...page, documentId: 'other' })).ok, false);
     for (const patch of [{ revision: 2 }, { resource: 'fetch', url: 'https://evil.example' }, { coordinates: { z: 99, x: 1, y: 1 } }, { coordinates: { z: 2, x: -1, y: 0 } }]) assert.equal((await h.get(patch)).ok, false);
     assert.equal(h.calls(), 0);
@@ -144,15 +185,15 @@ test('request budget caps attempts, rejects redirects/oversize/secret errors and
     o.fetch(async () => new Response('rate', { status: 429, headers: { 'retry-after': '120' } }));assert.equal((await o.get()).ok, false);const count = o.calls();assert.equal((await o.get()).ok, false);assert.equal(o.calls(), count);
 });
 test('concurrency, duplicate suppression, cancel and navigation terminate owned transports', async () => {
-    const h = harness();await h.save();await h.grant();let finish;
-    h.fetch((_url, { signal }) => new Promise((resolve, reject) => { finish = () => resolve(new Response('png', { headers: { 'content-type': 'image/png' } }));signal.addEventListener('abort', () => reject(new Error('abort'))); }));
-    const first = h.get(), duplicate = h.get();await new Promise(resolve => setImmediate(resolve));assert.equal(h.calls(), 1);finish();assert((await first).ok);assert((await duplicate).ok);
-    let aborted = false;h.fetch((_url, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => { aborted = true;reject(new Error()); })));
+    const h = harness();await h.save();await h.grant();let finish: (() => void) | undefined;
+    h.fetch((_url, options) => new Promise((resolve, reject) => { const signal = required(options?.signal); finish = () => resolve(new Response('png', { headers: { 'content-type': 'image/png' } }));signal.addEventListener('abort', () => reject(new Error('abort'))); }));
+    const first = h.get(), duplicate = h.get();await new Promise(resolve => setImmediate(resolve));assert.equal(h.calls(), 1);required(finish)();assert((await first).ok);assert((await duplicate).ok);
+    let aborted = false;h.fetch((_url, options) => new Promise((_, reject) => required(options?.signal).addEventListener('abort', () => { aborted = true;reject(new Error()); })));
     const active = h.get({ coordinates: { z: 2, x: 0, y: 0 } });await new Promise(resolve => setImmediate(resolve));h.relay().forgetTab(7);assert.equal((await active).ok, false);assert(aborted);
 });
 test('private IndexedDB keeps secrets out of extension storage and serializes durable budget updates', async () => {
     const store = createCustomPrivateStore(indexedDB);try { await store.put('fixture', { secret: 'test' });assert.deepEqual(await store.get('fixture'), { secret: 'test' });
-        await Promise.all(Array.from({ length: 8 }, () => store.mutate('counter', value => (value || 0) + 1)));assert.equal(await store.get('counter'), 8);
+        await Promise.all(Array.from({ length: 8 }, () => store.mutate<number, number>('counter', value => (value || 0) + 1)));assert.equal(await store.get('counter'), 8);
         await store.put('fixture', null);assert.equal(await store.get('fixture'), undefined);
     }finally { await store.close(); }
 });
@@ -161,9 +202,9 @@ test('TileJSON endpoint tokens stay private and newly discovered hosts cannot re
     const h = harness(), metadataSource = { ...source, source: { ...source.source, tiles: [], metadataUrl: 'https://tiles.example.com/meta.json' } };
     await h.save(secret, metadataSource);await h.grant();
     h.fetch(async () => new Response(JSON.stringify({ tilejson: '3.0.0', minzoom: 1, maxzoom: 14, tiles: ['https://tiles.example.com/{z}/{x}/{y}.png?signed=SECRET_METADATA'], extra: secret[0].value }), { headers: { 'content-type': 'application/json' } }));
-    const result = await h.get({ resource: 'metadata' });assert(result.ok);const visible = atob(result.bytes);
+    const result = await h.get({ resource: 'metadata' });assert(result.ok);const visible = atob(required(result.bytes));
     assert(!visible.includes('SECRET_METADATA'));assert(!visible.includes(secret[0].value));assert(visible.includes('relay.bpb.example'));
-    h.fetch(async () => new Response('png', { headers: { 'content-type': 'image/png' } }));assert((await h.get()).ok);assert(h.urls.at(-1)[0].includes('signed=SECRET_METADATA'));
+    h.fetch(async () => new Response('png', { headers: { 'content-type': 'image/png' } }));assert((await h.get()).ok);assert(required(h.urls.at(-1))[0].includes('signed=SECRET_METADATA'));
     const foreign = harness();await foreign.save(secret, metadataSource);await foreign.grant();
     foreign.fetch(async () => new Response(JSON.stringify({ tilejson: '3.0.0', tiles: ['https://other.example.com/{z}/{x}/{y}.png?key=OTHER_SECRET'] }), { headers: { 'content-type': 'application/json' } }));
     assert.equal((await foreign.get({ resource: 'metadata' })).ok, false);assert.equal(foreign.calls(), 1);
@@ -175,8 +216,9 @@ test('only Settings can auto-detect private metadata and receives bounded vector
     const message = { type: 'CUSTOM_PRIVATE_CHECK', source: input, requestParameters: secret, detection: { detectKind: true, styleAuto: true } };
     assert.equal((await h.relay().handle(message, page)).ok, false);assert.equal(h.calls(), 0);
     const result = await h.relay().handle(message, h.editor);assert(result.ok);
-    assert.equal(result.value.source.kind, 'mvt');assert.deepEqual(result.value.layers, ['trails']);assert.equal(result.value.source.source.minNativeZoom, 3);
-    assert(result.value.source.appearance.rules.every(rule => rule.sourceLayer === 'trails'));
+    const { source: detected, layers } = required(result.value);
+    assert.ok(detected.kind === 'mvt'); assert.deepEqual(layers, ['trails']); assert.equal(detected.source.minNativeZoom, 3);
+    assert(detected.appearance.rules.every(rule => rule.sourceLayer === 'trails'));
     assert(h.urls[0][0].includes('api_key='));assert.equal(h.calls(), 1);
 });
 test('private GeoJSON inspection does not enable metadata requests for a data-only layer', async () => {
@@ -184,7 +226,7 @@ test('private GeoJSON inspection does not enable metadata requests for a data-on
         appearance: { opacity: 60, rules: [{ geometry: 'point', color: '#26734d', width: 2, radius: 5, fillOpacity: .3 }] } };
     h.fetch(async () => new Response(JSON.stringify({ type: 'FeatureCollection', features: [] }), { headers: { 'content-type': 'application/geo+json' } }));
     const checked = await h.relay().handle({ type: 'CUSTOM_PRIVATE_CHECK', source: input, requestParameters: secret, detection: { detectKind: true } }, h.editor);
-    assert(checked.ok);assert.equal(checked.value.source.kind, 'geojson');assert.equal(h.calls(), 1);
+    assert(checked.ok);assert.equal(required(checked.value).source.kind, 'geojson');assert.equal(h.calls(), 1);
     await h.save(secret, input);await h.grant();assert.equal((await h.get({ resource: 'metadata' })).ok, false);assert.equal(h.calls(), 1);
     assert((await h.get({ resource: 'data' })).ok);assert.equal(h.calls(), 2);
 });
@@ -192,10 +234,10 @@ test('private GeoJSON inspection does not enable metadata requests for a data-on
 test('failed configuration writes preserve the previous private revision and restored descriptors cannot resurrect credentials', async () => {
     const h = harness();await h.save();const original = await h.catalog.snapshot();
     // Simulate a private next revision written before a failed public commit.
-    const previous = await h.privateStore.get(id);await h.privateStore.put(id, { versions: { ...previous.versions, 2: { source: { ...source, revision: 2 },parameters: [{ key: 'api_key',value: 'next' }], public: publicPrivateSource({ ...source,revision: 2 }) } } });
-    const restored = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.deepEqual(restored.registry.sources[0].requestParameters, secret);
+    const previous = required(await h.privateStore.get<PrivateSourceRecord>(id));await h.privateStore.put(id, { versions: { ...previous.versions, 2: { source: { ...source, revision: 2 },parameters: [{ key: 'api_key',value: 'next' }], public: publicPrivateSource({ ...source,revision: 2 }) } } });
+    const restored = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.deepEqual(firstSource(restored).requestParameters, secret);
     const backup = customLayerBackup(original);assert((await h.catalog.replaceIfCurrent(original, backup)).replaced);
-    const disconnected = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.equal(disconnected.registry.sources[0].reconnect, true);
+    const disconnected = await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_GET' }, h.editor);assert.equal(firstSource(disconnected).reconnect, true);
     assert.equal((await h.get()).ok, false);
 });
 
@@ -206,12 +248,13 @@ test('opening an approval tab does not invalidate its own pending review, but cl
 });
 
 test('a cancelled duplicate leaves its sibling alive, all cancellations abort; only four transports can run', async () => {
-    const h = harness();await h.save();await h.grant();const active = [];
-    h.fetch((_url, { signal }) => new Promise((resolve, reject) => { active.push({ done: () => resolve(new Response('png', { headers: { 'content-type': 'image/png' } })), signal });signal.addEventListener('abort', () => reject(new Error())); }));
+    const h = harness();await h.save();await h.grant();const active: { done: () => void; signal: AbortSignal }[] = [];
+    h.fetch((_url, options) => new Promise((resolve, reject) => { const signal = required(options?.signal); active.push({ done: () => resolve(new Response('png', { headers: { 'content-type': 'image/png' } })), signal });signal.addEventListener('abort', () => reject(new Error())); }));
     const a = h.get({ requestId: 'cancel-first' }), b = h.get({ requestId: 'sibling' });await new Promise(resolve => setImmediate(resolve));
     await h.relay().handle({ type: 'CUSTOM_PRIVATE_CANCEL', requestId: 'cancel-first' }, page);assert.equal((await a).ok, false);assert.equal(active[0].signal.aborted, false);
     active[0].done();assert((await b).ok);
     const rest = Array.from({ length: 4 }, (_, x) => h.get({ coordinates: { z: 3, x, y: 0 } }));await new Promise(resolve => setImmediate(resolve));
+    assert.equal(active.length, 5, 'all four new transports reached fetch');
     assert.equal((await h.get({ coordinates: { z: 3, x: 5, y: 0 } })).code, 'busy');
     h.relay().revoke();assert((await Promise.all(rest)).every(reply => !reply.ok));assert(active.slice(1).every(item => item.signal.aborted));
 });
@@ -220,15 +263,16 @@ test('untrusted readers cannot label arbitrary URLs as private; removing paramet
     const h = harness();await h.save();
     const schema = await import('../../src/maps/custom-overlay-schema.ts');
     assert.equal(schema.readCustomSource({ ...source, privateRequests: true }), null);
-    const projected = publicPrivateSource(source);projected.source.tiles[0] += '?api_key=LEAK';assert.equal(schema.readCustomSource(projected), null);
-    assert((await h.save([], source, 1)).ok);const retained = await h.privateStore.get(id);assert.deepEqual(retained.versions[2].parameters, []);assert.equal(retained.versions[1], undefined, 'committed removal erases the previous key');assert((await h.catalog.snapshot()).registry.sources[0].privateRequests);
+    const projected = publicPrivateSource(source);assert.ok('tiles' in projected.source);projected.source.tiles[0] += '?api_key=LEAK';assert.equal(schema.readCustomSource(projected), null);
+    assert((await h.save([], source, 1)).ok);const retained = required(await h.privateStore.get<PrivateSourceRecord>(id));
+    const versions = required(retained.versions); assert.deepEqual(versions[2].parameters, []); assert.equal(versions[1], undefined, 'committed removal erases the previous key');assert((await h.catalog.snapshot()).registry.sources[0].privateRequests);
     assert((await h.save(secret, source, 2)).ok);assert((await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_REMOVE', id, expectedRevision: 3 }, h.editor)).ok);
     assert.equal(await h.privateStore.get(id), undefined);
 });
 
 
 test('two explicitly approved tabs and separate layers share one durable provider budget', async () => {
-    for (const [counter, limit] of [['hourly', PRIVATE_LIMITS.hourlyRequests], ['daily', PRIVATE_LIMITS.dailyRequests]]) {
+    for (const [counter, limit] of [['hourly', PRIVATE_LIMITS.hourlyRequests], ['daily', PRIVATE_LIMITS.dailyRequests]] as const) {
         const h = harness();await h.save();await h.grant();
         const otherId = 'custom:1537a032-271c-4d11-9b8c-0edc566b47c1', otherPage = { ...page, documentId: 'doc-other', tab: { ...page.tab, id: 9 } };
         assert((await h.catalog.handle({ type: 'CUSTOM_OVERLAYS_SAVE',id: otherId,source: { ...source,id: otherId },expectedRevision: 0,requestParameters: secret }, h.editor)).ok);
