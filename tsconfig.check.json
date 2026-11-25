@@ -6,8 +6,6 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["chrome"],
     "moduleDetection": "force",
-    "allowJs": true,
-    "checkJs": false,
     "strict": true,
     "noEmit": true,
     "isolatedModules": true,

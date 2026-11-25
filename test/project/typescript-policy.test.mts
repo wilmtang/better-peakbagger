@@ -8,21 +8,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { changedPolicyPaths, policySelection, typescriptPolicyViolations, isMechanicalTypeScriptReferenceUpdate } from '../../scripts/typescript-policy.mts';
+import { policySelection, trackedPolicyPaths, typescriptPolicyViolations } from '../../scripts/typescript-policy.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const script = path.join(root, 'scripts/typescript-policy.mts');
-
-test('only exact filename-reference upgrades can remain in existing JavaScript', () => {
-    const before = "import { value } from './value.js';\nconst source = 'src/source.mjs';\n";
-    const after = "import { value } from './value.ts';\nconst source = 'src/source.mts';\n";
-    assert.equal(isMechanicalTypeScriptReferenceUpdate(before, after), true);
-    for (const changed of [after + '// comment\n', after.replace('const source', 'let source'),
-        after.replace('value.ts', 'other.ts'), before, after.replace('source.mts', 'source.mjs').replace('value.ts', 'value.js')]) {
-        assert.equal(isMechanicalTypeScriptReferenceUpdate(before, changed), false);
-    }
-    assert.equal(isMechanicalTypeScriptReferenceUpdate(after, before), false);
-});
 
 async function fixture() {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typescript-policy-'));
@@ -39,8 +28,9 @@ async function fixture() {
     await write('legacy.js');
     git('add', '.');
     git('commit', '--quiet', '-m', 'baseline');
-    const base = git('rev-parse', 'HEAD');
-    return { directory, git, write, base, close: () => rm(directory, { recursive: true, force: true }) };
+    const check = (args: string[], cwd = directory, env = process.env) =>
+        spawnSync(process.execPath, [script, ...args], { cwd, env, encoding: 'utf8' });
+    return { directory, git, write, check, close: () => rm(directory, { recursive: true, force: true }) };
 }
 
 test('authored JavaScript is rejected across all surfaces with only generated/upstream exclusions', () => {
@@ -53,96 +43,114 @@ test('authored JavaScript is rejected across all surfaces with only generated/up
     assert.deepEqual(typescriptPolicyViolations(['third_party-lookalike/a.js']), ['third_party-lookalike/a.js']);
 });
 
-test('staged checks reject both new and modified JavaScript while allowing untouched legacy files', async () => {
+test('the staged guard rejects unchanged tracked JavaScript even after its working copy is removed', async () => {
     const f = await fixture();
     try {
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), []);
-        await f.write('new.mjs');
-        await f.write('legacy.js', 'export const value = 2;\n');
-        f.git('add', '.');
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)),
-            ['legacy.js', 'new.mjs']);
-        // An unstaged restoration must not hide what would actually be committed.
-        await f.write('legacy.js');
-        assert.ok(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)).includes('legacy.js'));
+        const unchanged = f.check([]);
+        assert.equal(unchanged.status, 1, unchanged.stdout + unchanged.stderr);
+        assert.match(unchanged.stderr, /legacy\.js/);
+
+        await rm(path.join(f.directory, 'legacy.js'));
+        const unstagedDeletion = f.check(['--staged']);
+        assert.equal(unstagedDeletion.status, 1, unstagedDeletion.stdout + unstagedDeletion.stderr);
+        assert.match(unstagedDeletion.stderr, /legacy\.js/);
+
+        f.git('add', '-u');
+        const stagedDeletion = f.check(['--staged']);
+        assert.equal(stagedDeletion.status, 0, stagedDeletion.stdout + stagedDeletion.stderr);
     } finally { await f.close(); }
 });
 
-test('deleting or converting a legacy module is allowed, but moving it to another JavaScript path is not', async () => {
+test('the staged index and committed tree are checked independently', async () => {
     const f = await fixture();
     try {
         f.git('mv', 'legacy.js', 'renamed.js');
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), ['renamed.js']);
+        assert.deepEqual(typescriptPolicyViolations(trackedPolicyPaths('staged', f.directory)), ['renamed.js']);
         f.git('mv', 'renamed.js', 'converted.ts');
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), []);
-        f.git('rm', '-f', 'converted.ts');
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), []);
+        assert.equal(f.check(['--staged']).status, 0);
+        const committedLegacy = f.check(['--committed']);
+        assert.equal(committedLegacy.status, 1, committedLegacy.stdout + committedLegacy.stderr);
+        assert.match(committedLegacy.stderr, /legacy\.js/);
+
+        f.git('commit', '--quiet', '-m', 'convert the module');
+        await f.write('untracked.mjs');
+        assert.equal(f.check(['--staged']).status, 0, 'an untracked file is outside the Git snapshot');
+        f.git('add', 'untracked.mjs');
+        const stagedJavaScript = f.check(['--staged']);
+        assert.equal(stagedJavaScript.status, 1);
+        assert.match(stagedJavaScript.stderr, /untracked\.mjs/);
+        assert.equal(f.check(['--committed']).status, 0);
+    } finally { await f.close(); }
+});
+
+test('both modes scan the repository root when invoked from a subdirectory', async () => {
+    const f = await fixture();
+    try {
+        await f.write('nested/checked.mts');
+        const nested = path.join(f.directory, 'nested');
+        const env = { ...process.env, GIT_LITERAL_PATHSPECS: '1' };
+        for (const mode of ['--staged', '--committed']) {
+            const rejected = f.check([mode], nested, env);
+            assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+            assert.match(rejected.stderr, /legacy\.js/);
+        }
+    } finally { await f.close(); }
+});
+
+test('both modes accept tracked generated output and upstream JavaScript', async () => {
+    const f = await fixture();
+    try {
+        f.git('rm', 'legacy.js');
+        await f.write('dist/background.js');
+        await f.write('third_party/vendor.mjs');
+        f.git('add', '-f', 'dist/background.js', 'third_party/vendor.mjs');
+        const staged = f.check(['--staged']);
+        assert.equal(staged.status, 0, staged.stdout + staged.stderr);
+        f.git('commit', '--quiet', '-m', 'retain excluded output and vendor files');
+        const committed = f.check(['--committed']);
+        assert.equal(committed.status, 0, committed.stdout + committed.stderr);
     } finally { await f.close(); }
 });
 
 test('NUL-delimited paths preserve whitespace, quotes and newlines', async () => {
     const f = await fixture();
     try {
+        f.git('rm', 'legacy.js');
         const file = 'scripts/two words "quoted"\nprobe.js';
         await f.write(file);
         f.git('add', '.');
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'staged' }, f.directory)), [file]);
+        assert.deepEqual(typescriptPolicyViolations(trackedPolicyPaths('staged', f.directory)), [file]);
+        const result = f.check(['--staged']);
+        assert.equal(result.status, 1);
+        assert.ok(result.stderr.includes(JSON.stringify(file)));
     } finally { await f.close(); }
 });
 
-test('the staged CLI permits a reference upgrade but rejects additional caller changes', async () => {
-    const f = await fixture();
-    try {
-        await f.write('caller.mjs', "import './legacy.js';\n");
-        f.git('add', '.'); f.git('commit', '--quiet', '-m', 'legacy caller');
-        f.git('mv', 'legacy.js', 'legacy.ts');
-        await f.write('caller.mjs', "import './legacy.ts';\n"); f.git('add', '.');
-        const run = () => spawnSync(process.execPath, [script, '--staged'], { cwd: f.directory, encoding: 'utf8' });
-        const passed = run(); assert.equal(passed.status, 0, passed.stderr);
-        await f.write('caller.mjs', "import './legacy.ts';\nconsole.log('changed');\n"); f.git('add', '.');
-        const failed = run(); assert.equal(failed.status, 1); assert.match(failed.stderr, /caller\.mjs/);
-    } finally { await f.close(); }
-});
-
-test('committed comparisons inspect the whole change even when the local hook was bypassed', async () => {
-    const f = await fixture();
-    try {
-        await f.write('new.js');
-        f.git('add', '.'); f.git('commit', '--quiet', '-m', 'bypass the local hook');
-        const failed = spawnSync(process.execPath, [script, '--base', f.base], { cwd: f.directory, encoding: 'utf8' });
-        assert.equal(failed.status, 1, failed.stdout + failed.stderr);
-        assert.match(failed.stderr, /new\.js/);
-        f.git('mv', 'new.js', 'new.ts'); f.git('commit', '--quiet', '-m', 'convert the module');
-        const passed = spawnSync(process.execPath, [script, '--base', f.base], { cwd: f.directory, encoding: 'utf8' });
-        assert.equal(passed.status, 0, passed.stdout + passed.stderr);
-    } finally { await f.close(); }
-});
-
-test('unknown arguments, missing revisions and initial-push comparisons cannot skip the guard', async () => {
-    for (const args of [['--skip'], ['--base'], ['--base', ''], ['--staged', '--skip']]) {
+test('unknown arguments and unavailable Git snapshots fail closed', async () => {
+    assert.equal(policySelection([]), 'staged');
+    assert.equal(policySelection(['--staged']), 'staged');
+    assert.equal(policySelection(['--committed']), 'committed');
+    for (const args of [['--skip'], ['--base', 'HEAD'], ['--committed', 'HEAD'], ['--staged', '--skip']]) {
         assert.throws(() => policySelection(args), /Usage:/);
     }
-    const f = await fixture();
+    const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typescript-policy-no-head-'));
     try {
-        assert.throws(() => changedPolicyPaths({ kind: 'committed', base: 'missing-revision' }, f.directory));
-        assert.deepEqual(typescriptPolicyViolations(changedPolicyPaths({ kind: 'committed', base: '0'.repeat(40) },
-            f.directory)), ['legacy.js']);
-        const result = spawnSync(process.execPath, [script, '--base', 'missing-revision'],
-            { cwd: f.directory, encoding: 'utf8' });
+        execFileSync('git', ['init', '--quiet'], { cwd: directory });
+        const result = spawnSync(process.execPath, [script, '--committed'], { cwd: directory, encoding: 'utf8' });
         assert.equal(result.status, 1);
-        assert.match(result.stderr, /could not inspect/);
-    } finally { await f.close(); }
+        assert.match(result.stderr, /could not inspect the requested Git snapshot/);
+    } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
-test('the existing pre-commit hook preserves privacy-first ordering and CI checks the committed base', async () => {
+test('pre-commit scans after privacy, and both CI and release require the committed policy', async () => {
     const hook = await readFile(path.join(root, '.githooks/pre-commit'), 'utf8');
     assert.ok(hook.indexOf('privacy-guard.mts') < hook.indexOf('typescript-policy.mts'));
     assert.match(hook, /typescript-policy\.mts" --staged/);
     const workflow = await readFile(path.join(root, '.github/workflows/test.yml'), 'utf8');
-    assert.match(workflow, /TYPESCRIPT_POLICY_BASE: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.before \}\}/);
-    assert.match(workflow, /npm run check:typescript-policy -- --base "\$TYPESCRIPT_POLICY_BASE"/);
     const release = await readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
-    assert.match(release, /npm run check:typescript-policy -- --base [0-9a-f]{40}/);
+    for (const file of [workflow, release]) {
+        assert.match(file, /npm run check:typescript-policy -- --committed/);
+    }
     const inventory = await readFile(path.join(root, 'scripts/README.md'), 'utf8');
     for (const file of (await readdir(path.join(root, 'scripts'))).filter(entry => entry.endsWith('.mts'))) {
         assert.ok(inventory.includes(`[${file}](${file})`), `missing TypeScript script inventory entry: ${file}`);

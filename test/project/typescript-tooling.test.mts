@@ -18,13 +18,14 @@ const compiler = path.join(root, 'node_modules/typescript/bin/tsc');
 test('strict browser checking covers the authored roots without changing build configuration', async () => {
     const config = JSON.parse(await readFile(path.join(root, 'tsconfig.check.json'), 'utf8'));
     assert.deepEqual([...config.include].sort(), [...AUTHORED_SOURCE_ROOTS].sort());
-    assert.equal(config.compilerOptions.checkJs, false);
+    assert.equal('allowJs' in config.compilerOptions, false);
+    assert.equal('checkJs' in config.compilerOptions, false);
     assert.equal(config.compilerOptions.strict, true);
     assert.equal(config.compilerOptions.erasableSyntaxOnly, true);
     await assert.rejects(readFile(path.join(root, 'tsconfig.json')), { code: 'ENOENT' });
 });
 
-test('the actual compiler accepts mixed imports and rejects type errors and undeclared names', async () => {
+test('the actual compiler accepts typed extension imports and rejects type errors and undeclared names', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typescript-check-'));
     try {
         const file = path.join(directory, 'feature.ts');
@@ -72,13 +73,14 @@ test('TypeScript lint covers every runtime root and Node tooling with typed rule
 test('CI checks both projects and release inherits the exact checked CI packages', async () => {
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
     assert.match(pkg.scripts.test, /test\/\*\*\/\*\.test\.mts/);
+    assert.doesNotMatch(pkg.scripts.test, /\.test\.mjs/);
     assert.match(pkg.scripts.typecheck, /--project tsconfig\.check\.json/);
     assert.match(pkg.scripts.typecheck, /node scripts\/typecheck-node\.mts/);
     const ci = await readFile(path.join(root, '.github/workflows/test.yml'), 'utf8');
     assert.match(ci, /run: npm run typecheck/);
     const release = await readFile(path.join(root, '.github/workflows/release.yml'), 'utf8');
     assert.match(release, /node scripts\/release-evidence\.mts/);
-    assert.match(release, /check:typescript-policy -- --base d7bc366311ccb384d9460eb17d68872e986d6a35/);
+    assert.match(release, /check:typescript-policy -- --committed/);
     const updates = await readFile(path.join(root, '.github/dependabot.yml'), 'utf8');
     assert.match(updates, /dependency-name: typescript\n\s+update-types: \[version-update:semver-major\]/);
 });
@@ -88,8 +90,8 @@ test('the Node typecheck gives DOM types only to files that reach extension sour
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-typecheck-split-'));
     try {
         const files: Record<string, string> = {
-            'helper.mjs': "export { default as page } from './extension.mts';\n",
-            'through-js.mts': "import { page } from './helper.mjs';\nexport default page;\n",
+            'helper.mts': "export { default as page } from './extension.mts';\n",
+            'through-helper.mts': "import { page } from './helper.mts';\nexport default page;\n",
             'browser-callback.mts': '/// <reference lib="dom" />\nexport const title = (): string => document.title;\n',
             'extension.mts': "import { units } from './src/units.ts';\nexport default units;\n",
             'src/units.ts': 'export const units = 1;\n',
@@ -104,7 +106,7 @@ test('the Node typecheck gives DOM types only to files that reach extension sour
         const { options } = parseProject(path.join(root, 'tsconfig.node.check.json'));
         const roots = Object.keys(files).filter(name => name.endsWith('.mts')).map(name => path.join(directory, name));
         const marked = domRootFiles(roots, options, directory).map(file => path.relative(directory, file)).sort();
-        assert.deepEqual(marked, ['browser-callback.mts', 'cycle-a.mts', 'cycle-b.mts', 'extension.mts', 'through-js.mts']);
+        assert.deepEqual(marked, ['browser-callback.mts', 'cycle-a.mts', 'cycle-b.mts', 'extension.mts', 'helper.mts', 'through-helper.mts']);
     } finally {
         await rm(directory, { recursive: true, force: true });
     }
@@ -135,6 +137,10 @@ test('the DOM project only adds the DOM library, and nothing depends on jsdom', 
     assert.equal(dom.extends, './tsconfig.node.check.json');
     const node = JSON.parse(await readFile(path.join(root, 'tsconfig.node.check.json'), 'utf8'));
     assert.deepEqual(node.compilerOptions.lib, ['ES2023'], 'the Node project itself has no DOM globals');
+    for (const config of [node, dom]) {
+        assert.equal('allowJs' in config.compilerOptions, false);
+        assert.equal('checkJs' in config.compilerOptions, false);
+    }
     // DOM behavior is tested in real browsers (M7.5); jsdom is not a stand-in.
     const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
     for (const name of ['jsdom', '@types/jsdom']) {

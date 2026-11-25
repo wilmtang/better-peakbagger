@@ -8,24 +8,17 @@ For audit-remediation work, keep an explicit closure ledger with three categorie
 
 ## TypeScript on creation and modification
 
-All new authored JavaScript-family code must be TypeScript: use `.ts` for browser
+All authored JavaScript-family code must be TypeScript: use `.ts` for browser
 modules and `.mts` for Node ESM scripts, tests and configuration. This includes
 code under documentation, fixtures and store-asset tooling. HTML, CSS, JSON,
 Markdown and other non-JavaScript formats keep their normal extensions.
 
-When modifying an existing authored `.js`, `.mjs`, `.cjs` or `.jsx` file, convert
-that module to TypeScript in the same focused change. Untouched legacy files
-can stay JavaScript. Pure filename-reference updates from `.js` to `.ts`, `.mjs`
-to `.mts`, or `.cjs` to `.cts` may remain in legacy callers: the policy guard
-requires every other byte to remain unchanged. This avoids cascading unrelated
-conversions while keeping substantive code edits in TypeScript. New
-TypeScript may import untouched legacy JavaScript without converting it.
-Update imports, entry aliases, command/workflow references,
-literal source readers, test discovery and documentation together. Preserve
-manifest output filenames and script order: generated extension bundles remain
-`.js`. Do not leave a JavaScript forwarding stub, rename unrelated callers, or
-use `@ts-nocheck`/blanket `any` to make a conversion appear complete. Preserve the
-owning module's behavior and run its relevant regression checks.
+When moving a module, update imports, entry aliases, command and workflow
+references, literal source readers, test discovery and documentation together.
+Preserve manifest output filenames and script order. Generated extension bundles
+keep their `.js` names. Preserve the owning module's behavior and run its
+regression checks. Do not leave a JavaScript forwarding stub or use
+`@ts-nocheck` or blanket `any` to bypass TypeScript checking.
 
 Generated output and upstream third-party code retain their required formats;
 the exact excluded roots are in `scripts/typescript-policy.mts`. An authored
@@ -40,10 +33,9 @@ TypeScript (lint-enforced). Shipping a Svelte UI is tracked separately in the
 adoption plan (M6).
 
 Run `npm run typecheck`, `npm run lint`, and the appropriate tests. Before
-committing, `npm run check:typescript-policy` checks staged additions and changes;
-the pre-commit hook runs it after the privacy scan. CI independently checks the
-complete PR/push diff, so an intermediate commit or skipped local hook cannot
-retain modified JavaScript in the final change.
+committing, `npm run check:typescript-policy` checks all tracked paths in the
+Git index. The pre-commit hook runs it after the privacy scan. CI and release
+verification check every path in the committed tree with `--committed`.
 
 For every new or changed map layer, evaluate point inspection. Applicable enabled
 layers must implement `InspectableMapLayer.rightClick()` in

@@ -64,7 +64,7 @@ jobs:
       - name: Check dependency advisories
         run: npm run audit:ci
       - name: Enforce the complete TypeScript adoption policy
-        run: npm run check:typescript-policy -- --base d7bc366311ccb384d9460eb17d68872e986d6a35
+        run: npm run check:typescript-policy -- --committed
       - name: Acquire trusted exact packages and verification evidence
         id: candidate
         env:

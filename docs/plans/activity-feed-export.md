@@ -333,9 +333,10 @@ Existing checks to run during implementation, scaled to each affected unit:
 
 ```sh
 npm run build
-node --test test/capture/provider-url.test.mts test/background/background-capture.test.mts test/popup/popup.test.mjs test/project/manifest-capture.test.mts
+node --test test/capture/provider-url.test.mts test/background/background-capture.test.mts test/project/manifest-capture.test.mts
 npm run verify -- dom --suite test/capture/provider-page
-node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mjs
+npm run verify -- dom --suite test/popup/popup
+node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mts
 npm test
 npm run lint
 npm run verify -- capture-flow

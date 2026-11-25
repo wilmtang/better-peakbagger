@@ -29,8 +29,8 @@ export const parseProject = (configPath: string): ts.ParsedCommandLine => {
 // Every root file that needs DOM types: it imports extension source (whose browser modules are written against DOM and
 // extension globals), or declares `/// <reference lib="dom" />` itself
 // (browser callbacks evaluated by a Playwright or WebDriver script); or it
-// imports such a file, statically, dynamically or type-only, through
-// JavaScript helpers too. A lib reference applies to its whole program, so
+// imports such a file directly or through helpers, statically, dynamically or
+// type-only. A lib reference applies to its whole program, so
 // leaving one in the Node program would give every Node file DOM globals.
 export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerOptions, cwd = root): string[] => {
     const browserRoots = AUTHORED_SOURCE_ROOTS.map(directory => path.join(cwd, directory) + path.sep);
