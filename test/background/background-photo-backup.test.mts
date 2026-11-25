@@ -4,15 +4,60 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGithubRoutes } from '../../src/background/github-routes.ts';
+import {
+    createGithubRoutes,
+    type CreateGithubRoutesOptions,
+    type GithubBackupClient,
+    type GithubAlarmsArea,
+} from '../../src/background/github-routes.ts';
 import { photoBackup as Backup } from '../../src/photos/photo-backup.ts';
 import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
 import { photoProject as Project } from '../../src/photos/photo-project.ts';
-import { photoStore as Store } from '../../src/photos/photo-store.ts';
+import { photoStore as Store, type PhotoCatalogState } from '../../src/photos/photo-store.ts';
+import { deferred } from '../helpers/deferred.mts';
+import { required } from '../helpers/required.mts';
+
+type PhotoStore = Awaited<ReturnType<typeof Store.createPhotoStore>>;
+type Sender = Omit<chrome.runtime.MessageSender, 'tab'> & { tab?: { id: number } };
+type Alarm = Parameters<GithubAlarmsArea['create']>[1] & { name: string };
+type Route = 'GITHUB_PHOTOS_BACKUP' | 'GITHUB_PHOTOS_CHANGED' | 'GITHUB_PHOTOS_STATUS'
+    | 'GITHUB_PHOTOS_RESTORE' | 'GITHUB_PHOTOS_RESTORE_PREVIEW';
+interface BackupState {
+    capacityBlockedGeneration?: number | null;
+    reconciliationPending?: boolean;
+    signature?: string;
+}
+interface StorageValues extends Record<string, unknown> {
+    bpbPhotoLibraryBackupState?: BackupState;
+}
+interface Commit {
+    sha: string;
+    commitUrl: string;
+    path: string;
+    message: string;
+    content: string;
+}
+interface HarnessOptions {
+    remoteText?: string | null;
+    remoteState?: { text: string | null };
+    seed?: ReturnType<typeof bundle>;
+    seeds?: ReturnType<typeof bundle>[];
+    localValues?: StorageValues;
+    localSetHook?: (patch: Record<string, unknown>, values: StorageValues) => unknown;
+    indexedDB?: IDBFactory;
+    databaseName?: string;
+    commits?: Commit[];
+    beforeRemoteUpdate?: (info: { calls: number }) => unknown;
+    decoratePhotoStore?: (store: PhotoStore) => PhotoStore;
+    autoEnabled?: boolean;
+    unreadableSettings?: boolean;
+}
+
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';
 const HASH = 'a'.repeat(64);
+const CATALOG_KEY = Store.CATALOG_STATE_KEY as PhotoCatalogState['key'];
 const photoSender = {
     id: 'test-extension', frameId: 0,
     url: 'chrome-extension://test-extension/photos/photos.html?mode=library',
@@ -24,26 +69,28 @@ const optionsSender = {
     tab: { id: 92 },
 };
 
-const makeStorageArea = ({ values = {}, setHook = null } = {}) => {
+const makeStorageArea = (values: StorageValues = {}, setHook?: HarnessOptions['localSetHook']) => {
     return {
         values,
-        async get(key) {
+        async get(key?: string | string[] | null) {
             if (key == null) return structuredClone(values);
             if (Array.isArray(key)) {
                 return Object.fromEntries(key.map(name => [name, structuredClone(values[name])]));
             }
             return { [key]: structuredClone(values[key]) };
         },
-        async set(patch) {
+        async set(patch: Record<string, unknown>) {
             if (setHook) await setHook(structuredClone(patch), values);
             Object.assign(values, structuredClone(patch));
         },
-        async remove(key) { delete values[key]; },
+        async remove(keys: string | string[]) {
+            for (const key of Array.isArray(keys) ? keys : [keys]) delete values[key];
+        },
     };
 };
 
 const bundle = (localId = 'photo-1', title = 'North face topo', now = TIME) => {
-    const photo = Library.createDraft({
+    const photo = required(Library.createDraft({
         localId,
         title,
         alt: 'North face route',
@@ -56,49 +103,43 @@ const bundle = (localId = 'photo-1', title = 'North face topo', now = TIME) => {
             sha256: HASH,
         },
         now,
-    });
-    const project = Project.createProject({
+    }));
+    const project = required(Project.createProject({
         localId,
         width: 1600,
         height: 1200,
         sourceSha256: HASH,
         updatedAt: now,
-    });
+    }));
     return { photo, project };
 };
 
 // onSettingsChanged fires the gate check without awaiting it (a storage
 // subscriber must not block). Drain the microtask/storage turns it needs.
 const waitForAlarms = async () => { for (let i = 0; i < 5; i++) await Promise.resolve(); };
-const waitFor = async (predicate, ms = 2000) => {
+const waitFor = async (predicate: () => boolean, ms = 2000) => {
     const started = Date.now();
     while (!predicate()) {
         if (Date.now() - started > ms) throw new Error('waitFor timed out');
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 };
-const deferred = () => {
-    let resolve;
-    const promise = new Promise(next => { resolve = next; });
-    return { promise, resolve };
-};
-
 const harness = async ({
     remoteText = null,
-    remoteState = null,
-    seed = null,
-    seeds = null,
-    localValues = null,
-    localSetHook = null,
-    indexedDB: sharedIndexedDB = null,
-    databaseName: sharedDatabaseName = null,
-    commits: sharedCommits = null,
-    beforeRemoteUpdate = null,
-    decoratePhotoStore = null,
+    remoteState,
+    seed,
+    seeds,
+    localValues,
+    localSetHook,
+    indexedDB: sharedIndexedDB,
+    databaseName: sharedDatabaseName,
+    commits: sharedCommits,
+    beforeRemoteUpdate,
+    decoratePhotoStore,
     autoEnabled = true,
     unreadableSettings = false,
-} = {}) => {
-    const local = makeStorageArea({ values: localValues || {}, setHook: localSetHook });
+}: HarnessOptions = {}) => {
+    const local = makeStorageArea(localValues, localSetHook);
     const session = makeStorageArea();
     const indexedDB = sharedIndexedDB || new IDBFactory();
     const databaseName = sharedDatabaseName || `photo-backup-${crypto.randomUUID()}`;
@@ -122,12 +163,13 @@ const harness = async ({
     let updateCalls = 0;
     let photoSettingsReads = 0;
     const client = {
-        async readRootFile(path, options) {
+        async readRootFile(path: string, options: Parameters<GithubBackupClient['readRootFile']>[1]) {
             assert.equal(path, Backup.BACKUP_PATH);
             assert.deepEqual(options, { maxBytes: Backup.MAX_BYTES });
             return remote.text;
         },
-        async updateRootFile(path, update, message, options) {
+        async updateRootFile(path: string, update: (text: string | null) => string | Promise<string>,
+            message: string, options: Parameters<GithubBackupClient['updateRootFile']>[3]) {
             updateCalls += 1;
             assert.equal(path, Backup.BACKUP_PATH);
             assert.deepEqual(options, { maxBytes: Backup.MAX_BYTES });
@@ -162,29 +204,30 @@ const harness = async ({
             throw new Error('coalesced writes are outside this photo-route test');
         },
     };
-    const alarmed = [];
-    const alarms = new Map();
+    const alarmed: string[] = [];
+    const alarms = new Map<string, Alarm>();
     const ext = {
         runtime: {
             id: 'test-extension',
-            getURL: path => `chrome-extension://test-extension/${path}`,
+            getURL: (path: string) => `chrome-extension://test-extension/${path}`,
             getManifest: () => ({ version: '3.2.0' }),
         },
         storage: { local },
         alarms: {
-            create(name, options = {}) {
+            create(name: string, options: Parameters<GithubAlarmsArea['create']>[1] = {}) {
                 alarmed.push(name);
                 alarms.set(name, { name, ...options });
             },
-            async get(name) { return alarms.get(name); },
-            async clear(name) { return alarms.delete(name); },
+            async get(name: string) { return alarms.get(name); },
+            async clear(name: string) { return alarms.delete(name); },
         },
     };
-    let queue = Promise.resolve();
-    const readMap = async key => (await session.get(key))[key] || {};
-    const mutateMap = (key, mutate) => {
+    let queue: Promise<unknown> = Promise.resolve();
+    const readMap: NonNullable<CreateGithubRoutesOptions['readMap']> = async <Value,>(key: string) =>
+        ((await session.get(key))[key] as Record<string, Value> | undefined) || {};
+    const mutateMap = <Result, Value>(key: string, mutate: (map: Record<string, Value>) => Result | Promise<Result>) => {
         const result = queue.then(async () => {
-            const value = await readMap(key);
+            const value = await readMap<Value>(key);
             const answer = await mutate(value);
             await session.set({ [key]: value });
             return answer;
@@ -207,7 +250,7 @@ const harness = async ({
         resolveGithubAccess: async () => {
             accessCalls += 1;
             return {
-                client,
+                client: client as unknown as GithubBackupClient,
                 repo: { owner: 'me', name: 'backup', branch: 'main' },
             };
         },
@@ -223,8 +266,24 @@ const harness = async ({
             },
         },
     });
+    const send = async (type: Route, message: Record<string, unknown>, sender: Sender) => {
+        const reply = await routes.handlers[type](message, sender as chrome.runtime.MessageSender);
+        assert.ok(reply && typeof reply === 'object' && 'ok' in reply);
+        return reply as {
+            ok: boolean;
+            error?: { code?: string; message?: string; actualBytes?: number; maxBytes?: number; conflictCount?: number };
+            unchanged?: boolean;
+            signature?: string;
+            reconciliationPending?: boolean;
+            current?: boolean;
+            remotePhotos?: number;
+            remoteTombstones?: number;
+            conflicts?: unknown[];
+        };
+    };
     return {
         routes,
+        send,
         local,
         commits,
         alarmed,
@@ -249,34 +308,34 @@ test('automatic photo backup fails closed when its default-on setting cannot be 
 
 test('manual backup reads IndexedDB itself and writes only the metadata recovery document', async () => {
     const h = await harness({ seed: bundle() });
-    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const response = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(response.ok, true);
     assert.equal(h.commits.length, 1);
     const parsed = Backup.parse(h.remoteText);
     assert.equal(parsed.ok, true);
     assert.deepEqual(parsed.payload.photos.map(value => value.localId), ['photo-1']);
-    assert.equal(h.remoteText.includes('private pixels'), false);
+    assert.equal(required(h.remoteText).includes('private pixels'), false);
     const store = await h.createPhotoStore();
-    assert.equal((await store.getBundle('photo-1')).photo.backup.state, 'current');
+    assert.equal(required((await store.getBundle('photo-1')).photo).backup.state, 'current');
     store.close();
 
-    const forbidden = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, {
+    const forbidden = await h.send('GITHUB_PHOTOS_BACKUP', {}, {
         url: 'chrome-extension://test-extension/popup/popup.html',
     });
-    assert.equal(forbidden.error.code, 'forbidden');
+    assert.equal(forbidden.error?.code, 'forbidden');
 });
 
 test('an oversized local catalog fails before GitHub and blocks automatic repeats by generation', async () => {
-    const bundles = [];
-    const revisions = {};
+    const bundles: ReturnType<typeof bundle>[] = [];
+    const revisions: Record<string, number> = {};
     for (let index = 0; index < 8000; index += 1) {
         const value = bundle(`capacity-photo-${index}`);
         bundles.push(value);
         revisions[value.photo.localId] = 0;
     }
     let generation = 1;
-    const catalog = () => ({
-        key: Store.CATALOG_STATE_KEY,
+    const catalog = (): PhotoCatalogState => ({
+        key: CATALOG_KEY,
         generation,
         confirmedGeneration: 0,
         signature: null,
@@ -297,13 +356,13 @@ test('an oversized local catalog fails before GitHub and blocks automatic repeat
         }),
     });
 
-    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const response = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(response.ok, false);
-    assert.equal(response.error.code, 'photo-backup-too-large');
-    assert.ok(response.error.actualBytes > response.error.maxBytes);
-    assert.match(response.error.message, /Recently Deleted/);
+    assert.equal(response.error?.code, 'photo-backup-too-large');
+    assert.ok(required(response.error?.actualBytes) > required(response.error?.maxBytes));
+    assert.match(required(response.error?.message), /Recently Deleted/);
     assert.equal(h.updateCalls(), 0, 'local capacity is checked before a GitHub update starts');
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.capacityBlockedGeneration, 1);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).capacityBlockedGeneration, 1);
 
     const accesses = h.accessCalls();
     await h.routes.onAlarm('bpb-photo-library-backup');
@@ -312,12 +371,12 @@ test('an oversized local catalog fails before GitHub and blocks automatic repeat
     generation = 2;
     await h.routes.onAlarm('bpb-photo-library-backup');
     assert.equal(h.accessCalls(), accesses + 1);
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.capacityBlockedGeneration, 2);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).capacityBlockedGeneration, 2);
     assert.equal(h.updateCalls(), 0);
 });
 
 test('a remote merge that exceeds capacity stops before the repository mutation', async () => {
-    const makeBundles = (prefix, count) => Array.from({ length: count }, (_, index) =>
+    const makeBundles = (prefix: string, count: number) => Array.from({ length: count }, (_, index) =>
         bundle(`${prefix}-${index}`));
     const localBundles = makeBundles('local-capacity', 4000);
     const remotePayload = Backup.buildPayload({
@@ -326,8 +385,8 @@ test('a remote merge that exceeds capacity stops before the repository mutation'
     });
     const originalRemote = Backup.serialize(remotePayload);
     const revisions = Object.fromEntries(localBundles.map(value => [value.photo.localId, 0]));
-    const catalog = {
-        key: Store.CATALOG_STATE_KEY,
+    const catalog: PhotoCatalogState = {
+        key: CATALOG_KEY,
         generation: 1,
         confirmedGeneration: 0,
         signature: null,
@@ -348,9 +407,9 @@ test('a remote merge that exceeds capacity stops before the repository mutation'
         }),
     });
 
-    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const response = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(response.ok, false);
-    assert.equal(response.error.code, 'photo-backup-too-large');
+    assert.equal(response.error?.code, 'photo-backup-too-large');
     assert.equal(h.updateCalls(), 1, 'the remote document must be read before its merge can be sized');
     assert.equal(h.commits.length, 0);
     assert.equal(h.remoteText, originalRemote);
@@ -370,9 +429,9 @@ test('overlapping manual backups serialize snapshot through local reconciliation
             }
         },
     });
-    const first = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const first = h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     await started.promise;
-    const second = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, optionsSender);
+    const second = h.send('GITHUB_PHOTOS_BACKUP', {}, optionsSender);
     release.resolve();
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
@@ -380,10 +439,11 @@ test('overlapping manual backups serialize snapshot through local reconciliation
     assert.equal(secondResult.ok, true);
     assert.equal(secondResult.unchanged, true);
     assert.equal(h.commits.length, 1);
-    const state = h.local.values.bpbPhotoLibraryBackupState;
+    assert.equal(h.updateCalls(), 1);
+    const state = required(h.local.values.bpbPhotoLibraryBackupState);
     assert.equal(state.reconciliationPending, false);
     const store = await h.createPhotoStore();
-    const saved = (await store.getBundle('photo-1')).photo;
+    const saved = required((await store.getBundle('photo-1')).photo);
     assert.equal(saved.backup.state, 'current');
     assert.equal(saved.backup.signature, state.signature);
     store.close();
@@ -403,15 +463,17 @@ test('manual and automatic backups share the complete transaction queue', async 
             }
         },
     });
-    const manual = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const manual = h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     await started.promise;
-    h.routes.onAlarm('bpb-photo-library-backup');
+    const automatic = h.routes.onAlarm('bpb-photo-library-backup');
     release.resolve();
     assert.equal((await manual).ok, true);
-    await waitFor(() => h.accessCalls() >= 2);
+    await automatic;
+    assert.equal(h.accessCalls(), 2);
 
     assert.equal(h.commits.length, 1);
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, false);
+    assert.equal(h.updateCalls(), 1);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).reconciliationPending, false);
     assert.deepEqual(h.alarmed, []);
 });
 
@@ -429,21 +491,23 @@ test('overlapping automatic alarm deliveries produce one remote commit', async (
             }
         },
     });
-    h.routes.onAlarm('bpb-photo-library-backup');
+    const first = h.routes.onAlarm('bpb-photo-library-backup');
     await started.promise;
-    h.routes.onAlarm('bpb-photo-library-backup');
+    const second = h.routes.onAlarm('bpb-photo-library-backup');
     release.resolve();
-    await waitFor(() => h.accessCalls() >= 2
-        && h.local.values.bpbPhotoLibraryBackupState?.reconciliationPending === false);
+    await Promise.all([first, second]);
+    assert.equal(h.accessCalls(), 2);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).reconciliationPending, false);
 
     assert.equal(h.commits.length, 1);
+    assert.equal(h.updateCalls(), 1);
     assert.deepEqual(h.alarmed, []);
 });
 
 test('an unchanged manual backup is coalesced without another remote write', async () => {
     const h = await harness({ seed: bundle() });
-    const first = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
-    const second = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const first = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
+    const second = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
 
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
@@ -462,10 +526,10 @@ test('a photo edit during the remote commit remains pending instead of failing t
             await release.promise;
         },
     });
-    const backingUp = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const backingUp = h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     await started.promise;
     const store = await h.createPhotoStore();
-    const current = (await store.getBundle('photo-1')).photo;
+    const current = required((await store.getBundle('photo-1')).photo);
     await store.putPhoto(Library.cleanPhoto({
         ...current,
         title: 'Edited while GitHub committed',
@@ -479,19 +543,20 @@ test('a photo edit during the remote commit remains pending instead of failing t
     assert.equal(result.ok, true);
     assert.equal(result.reconciliationPending, true);
     assert.equal(h.commits.length, 1);
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, true);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).reconciliationPending, true);
     const after = await h.createPhotoStore();
-    const edited = (await after.getBundle('photo-1')).photo;
+    const edited = required((await after.getBundle('photo-1')).photo);
     assert.equal(edited.title, 'Edited while GitHub committed');
     assert.equal(edited.backup.state, 'pending');
     after.close();
 
-    const retried = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const retried = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(retried.ok, true);
     assert.equal(retried.current, true);
     assert.equal(h.commits.length, 2);
-    assert.equal(Backup.parse(h.remoteText).payload.photos[0].title,
-        'Edited while GitHub committed');
+    const updated = Backup.parse(h.remoteText);
+    assert.ok(updated.ok);
+    assert.equal(updated.payload.photos[0].title, 'Edited while GitHub committed');
 });
 
 test('delete and restore during commit preserve the newer local record for retry', async () => {
@@ -504,10 +569,10 @@ test('delete and restore during commit preserve the newer local record for retry
             await release.promise;
         },
     });
-    const backingUp = h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const backingUp = h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     await started.promise;
     const store = await h.createPhotoStore();
-    const current = (await store.getBundle('photo-1')).photo;
+    const current = required((await store.getBundle('photo-1')).photo);
     const pending = Library.cleanPhoto({
         ...current,
         backup: { ...current.backup, state: 'pending' },
@@ -521,18 +586,18 @@ test('delete and restore during commit preserve the newer local record for retry
     assert.equal(result.ok, true);
     assert.equal(result.reconciliationPending, true);
     const after = await h.createPhotoStore();
-    const restored = (await after.getBundle('photo-1')).photo;
+    const restored = required((await after.getBundle('photo-1')).photo);
     assert.equal(restored.deletedAt, null);
     assert.notEqual(restored.backup.state, 'failed');
     after.close();
 
-    assert.equal((await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender)).current, true);
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, false);
+    assert.equal((await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender)).current, true);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).reconciliationPending, false);
 });
 
 test('a worker restart repairs state after a confirmed commit without another commit', async () => {
     let failStateWrites = true;
-    const localValues = {};
+    const localValues: StorageValues = {};
     const first = await harness({
         seed: bundle(),
         localValues,
@@ -542,7 +607,7 @@ test('a worker restart repairs state after a confirmed commit without another co
             }
         },
     });
-    const committed = await first.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const committed = await first.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(committed.ok, true);
     assert.equal(committed.reconciliationPending, true);
     assert.equal(first.commits.length, 1);
@@ -556,12 +621,12 @@ test('a worker restart repairs state after a confirmed commit without another co
         remoteState: first.remoteState,
         commits: first.commits,
     });
-    const repaired = await restarted.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const repaired = await restarted.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
 
     assert.equal(repaired.ok, true);
     assert.equal(repaired.current, true);
     assert.equal(restarted.commits.length, 1, 'the already-confirmed remote content is not recommitted');
-    assert.equal(localValues.bpbPhotoLibraryBackupState.reconciliationPending, false);
+    assert.equal(required(restarted.local.values.bpbPhotoLibraryBackupState).reconciliationPending, false);
 });
 
 test('partial catalog stamping is journaled and an automatic retry repairs only the remainder', async () => {
@@ -571,7 +636,7 @@ test('partial catalog stamping is journaled and an automatic retry repairs only 
         decoratePhotoStore: store => ({
             ...store,
             updatePhotoBackups: async args => {
-                if (failSecondStamp && args.localIds.includes('photo-2')) {
+                if (failSecondStamp && required(args?.localIds).includes('photo-2')) {
                     await store.updatePhotoBackups({ ...args, localIds: ['photo-1'] });
                     throw new Error('second catalog stamp failed');
                 }
@@ -579,14 +644,14 @@ test('partial catalog stamping is journaled and an automatic retry repairs only 
             },
         }),
     });
-    const first = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const first = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
     assert.equal(first.ok, true);
     assert.equal(first.reconciliationPending, true);
     assert.equal(h.commits.length, 1);
-    assert.equal(h.local.values.bpbPhotoLibraryBackupState.reconciliationPending, true);
+    assert.equal(required(h.local.values.bpbPhotoLibraryBackupState).reconciliationPending, true);
     let store = await h.createPhotoStore();
-    assert.equal((await store.getBundle('photo-1')).photo.backup.state, 'current');
-    assert.equal((await store.getBundle('photo-2')).photo.backup.state, 'off');
+    assert.equal(required((await store.getBundle('photo-1')).photo).backup.state, 'current');
+    assert.equal(required((await store.getBundle('photo-2')).photo).backup.state, 'off');
     store.close();
 
     failSecondStamp = false;
@@ -594,7 +659,7 @@ test('partial catalog stamping is journaled and an automatic retry repairs only 
     await waitFor(() => h.local.values.bpbPhotoLibraryBackupState?.reconciliationPending === false);
     assert.equal(h.commits.length, 1);
     store = await h.createPhotoStore();
-    assert.equal((await store.getBundle('photo-2')).photo.backup.state, 'current');
+    assert.equal(required((await store.getBundle('photo-2')).photo).backup.state, 'current');
     store.close();
 });
 
@@ -604,22 +669,22 @@ test('Settings drives the same recovery routes, and only the library announces a
     const h = await harness({ seed: bundle() });
     // STATUS reads the auth store this harness does not stand up, so reaching
     // its failure is itself proof the sender gate let it through.
-    await assert.rejects(h.routes.handlers.GITHUB_PHOTOS_STATUS({}, optionsSender),
+    await assert.rejects(h.send('GITHUB_PHOTOS_STATUS', {}, optionsSender),
         /authorization storage is unavailable/);
-    for (const type of ['GITHUB_PHOTOS_BACKUP', 'GITHUB_PHOTOS_RESTORE_PREVIEW']) {
-        const response = await h.routes.handlers[type]({}, optionsSender);
-        assert.notEqual(response.error?.code, 'forbidden', type);
+    for (const type of ['GITHUB_PHOTOS_BACKUP', 'GITHUB_PHOTOS_RESTORE_PREVIEW'] as const) {
+        const response = await h.send(type, {}, optionsSender);
+        assert.equal(response.ok, true, type);
     }
-    const restored = await h.routes.handlers.GITHUB_PHOTOS_RESTORE({ signature: 'x' }, optionsSender);
-    assert.equal(restored.error.code, 'invalid-restore', 'reached the route, not the gate');
+    const restored = await h.send('GITHUB_PHOTOS_RESTORE', { signature: 'x' }, optionsSender);
+    assert.equal(restored.error?.code, 'invalid-restore', 'reached the route, not the gate');
 
     // Announcing a catalog change stays with the page that writes the catalog.
     assert.equal(
-        (await h.routes.handlers.GITHUB_PHOTOS_CHANGED({}, optionsSender)).error.code,
+        (await h.send('GITHUB_PHOTOS_CHANGED', {}, optionsSender)).error?.code,
         'forbidden',
     );
-    assert.equal((await h.routes.handlers.GITHUB_PHOTOS_CHANGED({}, photoSender)).ok, true);
-    assert.equal(h.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
+    assert.equal((await h.send('GITHUB_PHOTOS_CHANGED', {}, photoSender)).ok, true);
+    assert.equal(required(h.alarms.get('bpb-photo-library-backup')).periodInMinutes, 30);
 
     for (const sender of [
         { url: 'https://www.peakbagger.com/climber/ascentedit.aspx', tab: { id: 4 } },
@@ -628,7 +693,7 @@ test('Settings drives the same recovery routes, and only the library announces a
         {},
     ]) {
         assert.equal(
-            (await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, sender)).error.code,
+            (await h.send('GITHUB_PHOTOS_BACKUP', {}, sender)).error?.code,
             'forbidden',
             JSON.stringify(sender),
         );
@@ -643,15 +708,15 @@ test('a divergent same-id remote edit stops backup without replacing the reposit
     });
     const originalRemote = Backup.serialize(remotePayload);
     const h = await harness({ seed: localBundle, remoteText: originalRemote });
-    const response = await h.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender);
+    const response = await h.send('GITHUB_PHOTOS_BACKUP', {}, photoSender);
 
     assert.equal(response.ok, false);
-    assert.equal(response.error.code, 'photo-backup-conflict');
-    assert.equal(response.error.conflictCount, 1);
+    assert.equal(response.error?.code, 'photo-backup-conflict');
+    assert.equal(response.error?.conflictCount, 1);
     assert.equal(h.remoteText, originalRemote);
     assert.equal(h.commits.length, 0);
     const store = await h.createPhotoStore();
-    assert.equal((await store.getBundle('photo-1')).photo.backup.state, 'failed',
+    assert.equal(required((await store.getBundle('photo-1')).photo).backup.state, 'failed',
         'only a backup that never reached GitHub is marked failed');
     store.close();
 });
@@ -663,24 +728,24 @@ test('restore previews counts then atomically imports metadata without original 
         exportedAt: TIME,
     });
     const h = await harness({ remoteText: Backup.serialize(remote) });
-    const preview = await h.routes.handlers.GITHUB_PHOTOS_RESTORE_PREVIEW({}, photoSender);
+    const preview = await h.send('GITHUB_PHOTOS_RESTORE_PREVIEW', {}, photoSender);
     assert.equal(preview.ok, true);
     assert.equal(preview.remotePhotos, 1);
     assert.equal(preview.remoteTombstones, 1);
     assert.deepEqual(preview.conflicts, []);
 
-    const restored = await h.routes.handlers.GITHUB_PHOTOS_RESTORE({
+    const restored = await h.send('GITHUB_PHOTOS_RESTORE', {
         signature: preview.signature,
         keepLocalConflicts: false,
     }, photoSender);
     assert.equal(restored.ok, true);
     const store = await h.createPhotoStore();
     const imported = await store.getBundle('remote-photo');
-    assert.equal(imported.photo.backup.state, 'restored');
+    assert.equal(required(imported.photo).backup.state, 'restored');
     assert.equal(imported.original, null);
     assert.equal(imported.thumbnail, null);
     assert.equal(imported.deleteUrl, null);
-    assert.equal(imported.project.localId, 'remote-photo');
+    assert.equal(required(imported.project).localId, 'remote-photo');
     assert.deepEqual((await store.listBackupBundles()).tombstones,
         [{ localId: 'deleted-elsewhere', deletedAt: LATER }]);
     store.close();
@@ -693,7 +758,9 @@ test('restore previews counts then atomically imports metadata without original 
 // settings write made toggling dark mode scan the whole library.
 test('only switching the photo backup toggle on re-arms the library scan', async () => {
     const h = await harness({ seed: bundle() });
-    const settings = enabled => ({ autoPhotoLibraryBackup: enabled });
+    const settings = (enabled: boolean) => ({
+        autoPhotoLibraryBackup: enabled,
+    }) as Parameters<typeof h.routes.onSettingsChanged>[0];
 
     h.routes.onSettingsChanged(settings(true));
     await waitForAlarms();
@@ -712,16 +779,16 @@ test('only switching the photo backup toggle on re-arms the library scan', async
     h.routes.onSettingsChanged(settings(true));
     await waitForAlarms();
     assert.deepEqual(h.alarmed, ['bpb-photo-library-backup', 'bpb-photo-library-backup']);
-    assert.equal(h.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
+    assert.equal(required(h.alarms.get('bpb-photo-library-backup')).periodInMinutes, 30);
 });
 
 test('the recurring watchdog backs up a durable mutation after its page notification is lost', async () => {
     const first = await harness({ seed: bundle() });
-    assert.equal((await first.routes.handlers.GITHUB_PHOTOS_BACKUP({}, photoSender)).ok, true);
+    assert.equal((await first.send('GITHUB_PHOTOS_BACKUP', {}, photoSender)).ok, true);
     assert.equal(first.commits.length, 1);
 
     const store = await first.createPhotoStore();
-    const current = (await store.getBundle('photo-1')).photo;
+    const current = required((await store.getBundle('photo-1')).photo);
     await store.putPhoto(Library.addReference(current, {
         kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
     }, LATER));
@@ -735,7 +802,7 @@ test('the recurring watchdog backs up a durable mutation after its page notifica
         commits: first.commits,
     });
     await restarted.routes.startPhotoBackupWatchdog();
-    assert.equal(restarted.alarms.get('bpb-photo-library-backup').periodInMinutes, 30);
+    assert.equal(required(restarted.alarms.get('bpb-photo-library-backup')).periodInMinutes, 30);
 
     restarted.routes.onAlarm('bpb-photo-library-backup');
     await waitFor(() => restarted.commits.length === 2
@@ -744,7 +811,7 @@ test('the recurring watchdog backs up a durable mutation after its page notifica
     const confirmed = await restarted.createPhotoStore();
     const catalog = await confirmed.getCatalogState();
     assert.equal(catalog.generation, catalog.confirmedGeneration);
-    assert.equal((await confirmed.getBundle('photo-1')).photo.backup.state, 'current');
+    assert.equal(required((await confirmed.getBundle('photo-1')).photo).backup.state, 'current');
     confirmed.close();
 });
 
