@@ -21,9 +21,8 @@
 
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
-  — production runtime and root Node tooling use TypeScript. Test and support
-  script conversion and jsdom retirement remain open. Production builds use
-  Vite directly.
+  — TypeScript conversion and jsdom retirement are complete locally. Vite
+  builds production directly. Hosted Linux and store verification remain open.
 
 - [Weather guide and open API optimizations](../weather.md)
   — cloud-request cost and cross-card/page caching remain open in its ledger.

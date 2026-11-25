@@ -58,10 +58,10 @@ evidence.
 
 ## Current progress
 
-**M7 remains open.** The Units settings panel and Summit Cloud controls ship
-through checked TypeScript and Svelte. The production runtime and root Node
-tooling have moved to TypeScript, and jsdom is retired (M7.5). The remaining
-authored JavaScript is in Node tests.
+**M7 is complete locally.** The runtime, Node tooling and tests use TypeScript.
+The Units settings panel and Summit Cloud controls ship through checked Svelte
+and TypeScript. M7.5 retired jsdom. Vite builds the production bundles, and
+hosted and store verification remains in the release checklist.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -70,10 +70,10 @@ authored JavaScript is in Node tests.
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
 | M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.ts` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
-| M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
+| M4.5 | Done | Introduced typed jsdom and the hidden Chromium and Firefox DOM tier. [typecheck-node.mts](../../scripts/typecheck-node.mts) checks browser-driving tests with the DOM library and the remaining Node files without it. The `dom-tier` CI job gates the required `chrome-required` aggregate. M7.5 later retired the jsdom dependency. |
 | M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. The Vite builder uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | At `6ec95603`, 12 authored JavaScript test suites remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
+| M7 | Done locally | `9370d6d9` finished the last of 53 remaining test conversions. `8e7fe0a9` removed `allowJs` and enforced TypeScript across the staged index and committed tree. See the [M7 closure ledger](#m7-closure-ledger). |
 | M7.5 | Done | Complete on November 22, 2026. No file imports jsdom, and `jsdom` and `@types/jsdom` are gone. DOM tests run as in-page browser tests in hidden Chromium and Firefox; the production-scale ones run on the `--scale` lane of `npm run test:scale`. See [M7.5](#m75--retire-jsdom). |
 | M8 | Done locally | Vite builds development and release generations ([vite-build.mts](../../scripts/vite-build.mts)); WXT (`133384ab`) was removed after it proved to be only a scheduler. Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-vite). |
 
@@ -86,10 +86,9 @@ Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 | `test/` | 110 | 258 |
 | Other (root config, `docs/plans/`, `store-assets/`) | 3 | 15 |
 
-These are a dated snapshot, not a target to maintain by hand. At `0444ff28` there
-were no production Svelte components; `options/UnitSettingsPanel.svelte` is now
-the single shipped Svelte component. The build produces 67 outputs: 65 IIFEs
-and two ESM frames.
+These counts describe `0444ff28`, before the first production Svelte component
+shipped in `options/UnitSettingsPanel.svelte`. The build produces 67 outputs,
+including 65 IIFEs and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
@@ -109,7 +108,7 @@ engines. Hosted Linux jobs and their browser-floor results remain open.
 
 Limits of what is proven:
 
-- **Verified:** the last recorded full-suite runs are `4,165/4,165` at `c45d32ef`
+- **Earlier full-suite runs:** `4,165/4,165` at `c45d32ef`
   and `4,177/4,177` at `166e55fc` (without a recorded Node version), `3,874/3,874`
   on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), `4,208/4,208`
   on Node `v26.13.1` at `f599ca20` (November 17, 2026), and `4,209/4,209` on
@@ -634,14 +633,33 @@ A test converted alongside its runtime owner stays on typed jsdom, so a runtime
 batch does not also become a test-environment migration. Moving tests off jsdom
 is M7.5, not part of this milestone.
 
-Exit: no authored JavaScript remains anywhere in the repository, including
-`scripts/`, `test/`, `docs/plans/` and `store-assets/`, and the affected gates
-pass. TypeScript tests may still use typed jsdom. The exclusions in `scripts/typescript-policy.mts` stay explicit for generated
-and upstream code; a file a tool requires in JavaScript needs its own narrow
-documented exception. To keep the result, make the policy reject any authored
-JavaScript file rather than only changed ones, and remove `allowJs` from the
-checking projects. Svelte conversion remains per-surface, based on a useful
-ownership boundary rather than a percentage target.
+The exit gate requires zero tracked authored JavaScript across the repository,
+including scripts, tests, documentation, fixtures and store tooling. The Git
+index and committed tree each have a complete scan. The browser and Node
+checking projects run with TypeScript inputs. M7.5 tracks the separate jsdom
+exit, and Svelte conversion remains a per-surface decision.
+
+#### M7 closure ledger
+
+- **Fixed and verified.** Between `d3cff3f5` and `9370d6d9`, all 53 remaining
+  Node suites moved to strict TypeScript. The tracked inventory contains zero
+  `.js`, `.mjs`, `.cjs` or `.jsx` files. `8e7fe0a9` removes the JavaScript test
+  glob and `allowJs` from the checking projects. The pre-commit guard scans the
+  whole index after privacy checks. CI and release scan the committed tree with
+  `--committed`. A disposable repository proved both scans reject an unchanged
+  tracked JavaScript file accepted by the old diff check. On Node `24.22.0`,
+  2,177 Node tests, typecheck, lint and both policy modes passed. Lint rebuilt
+  67 bundles and reported the 10 owned `web-ext` warnings. A subagent reviewed
+  every conversion and the policy change.
+- **Intentionally not changed.** Generated bundle filenames and manifest load
+  order follow the existing distribution contract. The policy keeps explicit
+  exclusions for generated output and upstream code. The M7 verification
+  covers test and tooling changes alongside the earlier owner-specific browser
+  evidence below.
+- **Changed but not fully proven.** The CI and release workflow commands are
+  covered by local policy and workflow tests. Hosted Actions and Linux browser
+  floors, Firefox Android and signed store delivery still require release
+  environments. The plan stays active while that evidence is open.
 
 Local owner verification at `b66b506e` used Node 24.22.3 and freshly built
 esbuild bundles. The checks ran hidden, with isolated browser profiles.
@@ -968,27 +986,23 @@ verified publisher until the failure is fixed.
   and [the transform-affecting options](https://esbuild.github.io/content-types/#tsconfig-json).
 - Keep browser checking scoped to `src/`, `options/`, `popup/` and `photos/`,
   matching `AUTHORED_SOURCE_ROOTS`; retain the existing divergence guard.
-  Use `allowJs: true`, `checkJs: false`, `strict: true`, `noEmit: true`,
-  `isolatedModules: true`, `erasableSyntaxOnly: true`,
+  Use `strict: true`, `noEmit: true`, `isolatedModules: true`, `erasableSyntaxOnly: true`,
   `verbatimModuleSyntax: true`, explicit-extension support and bundler resolution.
   TypeScript 6 changed several defaults and deprecated older options, so set
   every option this plan depends on explicitly, including `types`, rather than
   inheriting defaults that a later major may change again.
-  Keep the existing browser targets in esbuild and the separate Node checking
-  project for tooling/tests. Do not merge their globals into one project.
-- `checkJs: false` leaves legacy JS outside strict checking; it does not make
-  everything imported from JS safe. Keep declarations beside their owners or
-  use a narrow adapter in that domain. Prefer inferred types and signatures
-  checked against real behavior; use `unknown` plus validation for untrusted
-  replies. Avoid blanket ambient modules or `as SomeResponse` at trust boundaries.
+  Keep the browser targets in the Vite builder and the separate Node checking
+  project for tooling and tests. Keep their globals scoped to each project.
+- Keep declarations beside their owners or use a narrow adapter in that domain.
+  Prefer inferred types and signatures checked against real behavior. Validate
+  untrusted replies from `unknown` at the trust boundary.
 - Cover both the `chrome` and `browser` names actually used. Keep MAIN-world
   adapters free of extension APIs; compiler globals alone cannot enforce the
   execution world. Add declarations for existing `Chart`/`marked` globals only
   where consumed, preserving their manifest preload order.
-- Keep the Node runner for pure and legacy jsdom tests, and untouched `.mjs`
-  tests until M7 converts them to `.mts`; new/substantively changed Node tests use `.mts`.
-  New DOM-behavior tests use M4.5's browser tier once it exists. Plain erasable `.ts` domain modules can be tested
-  directly. Components and rune modules must be compiled
+- Keep the Node runner for `.test.mts` suites and the browser tier for DOM
+  behavior. Plain erasable `.ts` domain modules can be tested directly.
+  Components and rune modules must be compiled
   first and exercised through client bundles. Do not let a Node-imported
   controller transitively import `.svelte` or `.svelte.ts`.
 - Add compiler-failure fixtures that run the actual check commands with nonzero
