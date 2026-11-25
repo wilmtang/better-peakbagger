@@ -1065,7 +1065,7 @@ shows the exact bracket source.
   modes through native editing, pending autosave, Save snapshot, page exit, and
   restore. They drive the TipTap and CodeMirror instances through the mount's
   test handle.
-- `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
+- `test/reports/report-drafts.test.mts` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
 - `test/options/options-github.browser.mts` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
