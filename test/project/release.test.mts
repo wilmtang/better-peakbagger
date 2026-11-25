@@ -10,16 +10,16 @@ import {
     buildFirefoxPackage,
     createFirefoxManifest,
     requirePackagePaths,
-} from '../../scripts/build-firefox-package.mjs';
+} from '../../scripts/build-firefox-package.mts';
 import {
     AMO_APPROVAL_NOTES_MAX_LENGTH,
     buildAmoMetadata,
 } from '../../scripts/create-amo-metadata.mts';
-import { createAmoJwt, inspectAmoVersion } from '../../scripts/check-amo-version.mjs';
+import { createAmoJwt, inspectAmoVersion } from '../../scripts/check-amo-version.mts';
 import {
     dependencyVersionsFromLock,
     validateReviewedDependencyMetadata,
-} from '../../scripts/dependency-metadata.mjs';
+} from '../../scripts/dependency-metadata.mts';
 import { WEB_EXT_WARNING_BASELINE } from '../../scripts/check-web-ext-lint.mts';
 import {
     ChromeWebStoreRequestError,
@@ -29,28 +29,28 @@ import {
     assertReleasedSectionsUnchanged,
     releaseSection,
     stampUnreleased,
-} from '../../scripts/release-changelog.mjs';
+} from '../../scripts/release-changelog.mts';
 import {
     exactReleaseTags,
     requireCompleteHistory,
-} from '../../scripts/check-changelog-history.mjs';
+} from '../../scripts/check-changelog-history.mts';
 import {
     validateRelease,
     validateProtectedMainAncestry,
     validateTagAtHead,
-} from '../../scripts/release-check.mjs';
+} from '../../scripts/release-check.mts';
 import {
     atomicReleasePushArgs,
     resolveReleaseDate,
     validateReleasePreflight,
-} from '../../scripts/release-bump.mjs';
-import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mjs';
+} from '../../scripts/release-bump.mts';
+import { validatePackageNoticeMetadata } from '../../scripts/third-party-notices.mts';
 import {
     isRetryableFirefoxStartup,
     ownedFirefoxPids,
-} from '../../scripts/firefox-verifier-processes.mjs';
-import { prepareFirefoxSource } from '../../scripts/run-firefox.mjs';
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.js';
+} from '../../scripts/firefox-verifier-processes.mts';
+import { prepareFirefoxSource } from '../../scripts/run-firefox.mts';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../../src/terrain/terrain-lifecycle.ts';
 import {
     AUTHORED_SOURCE_ROOTS,
     ENTRIES,
@@ -62,7 +62,7 @@ import {
     requireArchiveArguments,
     validateArchiveEntries,
     verifyReleaseArchive,
-} from '../../scripts/verify-release-archive.mjs';
+} from '../../scripts/verify-release-archive.mts';
 
 function releaseState(overrides = {}) {
     return {
@@ -171,7 +171,7 @@ test('release history authority is the complete exact-semver tag inventory', () 
 test('release history checker rejects a deleted tagged section and shallow history', async () => {
     const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'better-peakbagger-history-'));
     const shallowRoot = `${fixtureRoot}-shallow`;
-    const script = new URL('../../scripts/check-changelog-history.mjs', import.meta.url).pathname;
+    const script = new URL('../../scripts/check-changelog-history.mts', import.meta.url).pathname;
     try {
         runGit(fixtureRoot, ['init', '--initial-branch=main']);
         runGit(fixtureRoot, ['config', 'user.name', 'Release Test']);
@@ -328,7 +328,7 @@ test('release bump dry-run validates without writing or tagging', async () => {
         const result = spawnSync(
             process.execPath,
             [
-                new URL('../../scripts/release-bump.mjs', import.meta.url).pathname,
+                new URL('../../scripts/release-bump.mts', import.meta.url).pathname,
                 '1.5.0',
                 '--dry-run',
                 '--date',
@@ -380,6 +380,7 @@ test("Firefox metadata preserves the project's or-later license grant", async ()
         ['MapLibre GL JS', 'maplibre'],
         ['tz-lookup', 'tzLookup'],
         ['SunCalc', 'sunCalc'],
+        ['Svelte', 'svelte'],
     ]) {
         assert.ok(metadata.version.approval_notes.includes(`${label} ${dependencyVersions[key]}`),
             `approval notes must name locked ${label} ${dependencyVersions[key]}`);
@@ -509,11 +510,11 @@ test('release and browser development commands use the dist build', async () => 
     const [packageJson, workflow, releaseBump] = await Promise.all([
         readFile(new URL('../../package.json', import.meta.url), 'utf8').then(JSON.parse),
         readFile(new URL('../../.github/workflows/release.yml', import.meta.url), 'utf8'),
-        readFile(new URL('../../scripts/release-bump.mjs', import.meta.url), 'utf8'),
+        readFile(new URL('../../scripts/release-bump.mts', import.meta.url), 'utf8'),
     ]);
 
     assert.match(packageJson.scripts.package, /build:release.*--source-dir dist/);
-    assert.equal(packageJson.scripts.start, 'node scripts/run-development.mjs');
+    assert.equal(packageJson.scripts.start, 'node scripts/run-development.mts');
     assert.match(packageJson.scripts.test, /^npm run build && node --test /);
     assert.match(packageJson.scripts['test:scale'], /^npm run build && node --test --test-concurrency=1 /);
     assert.match(workflow, /node scripts\/release-evidence\.mts "\$BPB_MODE"/);
@@ -610,7 +611,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.notEqual(end, -1);
     const analyzerProbe = verifier.slice(start, end);
 
-    assert.match(analyzerProbe, /await waitForScript\(driver,/);
+    assert.match(analyzerProbe, /await waitForScript(?:<\{[^}]+\}>)?\(driver,/);
     assert.match(analyzerProbe, /ready: state\.analyzer/);
     assert.ok(analyzerProbe.includes('Interactive Stats: 17\\\\.53 miles'),
         'the Firefox verifier must wait for the exact Capitol metric signature');
@@ -628,7 +629,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.notEqual(terrainStart, -1);
     assert.notEqual(terrainEnd, -1);
     const terrainProbe = verifier.slice(terrainStart, terrainEnd);
-    assert.match(terrainProbe, /await waitForScript\(driver,/);
+    assert.match(terrainProbe, /await waitForScript(?:<\{[^}]+\}>)?\(driver,/);
     assert.match(terrainProbe, /frames\.length === 1 && origin\.startsWith\('moz-extension:\/\/'\)/);
     assert.doesNotMatch(terrainProbe, /until\.elementLocated/);
 
@@ -638,7 +639,7 @@ test('Firefox verification waits for rendered postconditions instead of fixed fr
     assert.notEqual(navigationEnd, -1);
     const navigationProbe = verifier.slice(navigationStart, navigationEnd);
 
-    assert.match(navigationProbe, /await waitForScript\(driver,/);
+    assert.match(navigationProbe, /await waitForScript(?:<\{[^}]+\}>)?\(driver,/);
     assert.match(navigationProbe, /ready: Math\.abs\(state\.distance\) <= 2/);
     assert.match(navigationProbe, /state => state\?\.ready/);
     assert.doesNotMatch(navigationProbe, /requestAnimationFrame/);
@@ -887,6 +888,9 @@ test('generated notices cover the real editor and copied runtime graph', async (
         'marked',
         'tz-lookup',
         'suncalc',
+        'svelte',
+        'esm-env',
+        'clsx',
         'BetaCreator symbol geometry',
     ]) {
         assert.ok(components.includes(required), `missing notice for ${required}`);
@@ -931,6 +935,16 @@ test('generated notices cover the real editor and copied runtime graph', async (
         warningBaseline: WEB_EXT_WARNING_BASELINE,
         noticeInventory: notices,
     }), /must derive Marked versions from package-lock\.json instead of hardcoding 18\.0\.10/);
+
+    const missingSvelteNotice = notices.replace(/^Component: svelte$/m, 'Component: removed-svelte');
+    assert.throws(() => validateReviewedDependencyMetadata({
+        packageLock,
+        approvalNotes,
+        acknowledgements,
+        reportEditorDocs,
+        warningBaseline: WEB_EXT_WARNING_BASELINE,
+        noticeInventory: missingSvelteNotice,
+    }), /THIRD_PARTY_NOTICES\.txt does not contain svelte@/);
 });
 
 test('notice generation fails closed for missing package metadata or notice text', () => {

@@ -1,7 +1,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { PEAK_WEATHER_MODELS } from './peak-weather-models.js';
+import { PEAK_WEATHER_MODELS } from './peak-weather-models.ts';
 
 // `water`: reported humidity is relative to liquid water, so saturated cold air
 // reads well below 100%. Other models reach 100% at every temperature.

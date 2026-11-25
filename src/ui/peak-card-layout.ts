@@ -1,0 +1,449 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { createLayoutMenu, type LayoutMenu } from './layout-menu.ts';
+import { mountPeakTableSplit } from './peak-table-split.ts';
+import { createPageLifecycle, type PageLifecycle } from './page-lifecycle.ts';
+import { createCardPointerDrag } from './card-pointer-drag.ts';
+
+type PeakCardKey = 'sun' | 'weather' | 'cloud' | 'snow';
+type PeakCardColumn = 'map' | 'details' | 'details-bottom';
+type CollapsedSettingKey = 'peakSunCollapsed' | 'peakWeatherCollapsed' | 'peakCloudCollapsed' | 'peakSnowCollapsed';
+
+interface CardDefinition {
+    selector: string;
+    name: string;
+    collapsed: CollapsedSettingKey;
+}
+
+export interface PeakCardPreferences {
+    peakCardOrder: readonly string[];
+    peakCardColumns: Record<string, string>;
+    peakSunCollapsed: boolean;
+    peakWeatherCollapsed: boolean;
+    peakCloudCollapsed: boolean;
+    peakSnowCollapsed: boolean;
+}
+
+export interface PeakCardSettingsStore {
+    DEFAULTS: PeakCardPreferences;
+    clean(raw: unknown): PeakCardPreferences;
+    requireCurrent(): Promise<PeakCardPreferences>;
+    subscribe(cb: (next: PeakCardPreferences) => void): () => void;
+    set(patch: Record<string, unknown>): Promise<unknown>;
+}
+
+interface CardItem {
+    key: PeakCardKey;
+    card: HTMLElement;
+    row: HTMLTableRowElement;
+    header: HTMLElement;
+    handle: HTMLButtonElement;
+    toggle: HTMLButtonElement;
+    body?: HTMLElement;
+    definition: CardDefinition;
+    restoring: boolean;
+    pendingToggle: boolean;
+    toggleTimer: number | null;
+    menu?: LayoutMenu;
+}
+
+interface PeakDragTarget {
+    index: number;
+    column: PeakCardColumn;
+}
+
+interface PeakDragState {
+    item: CardItem;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    active: boolean;
+    target: PeakDragTarget | null;
+}
+
+// Only standalone extension cards participate. Native map, legend, links and
+// peak details keep their DOM and owning execution context.
+const definitions: Record<PeakCardKey, CardDefinition> = {
+    sun: { selector: '.bpb-sun-calculator--peak', name: 'Sun & Moon', collapsed: 'peakSunCollapsed' },
+    weather: { selector: '#bpb-peak-weather', name: 'Summit weather', collapsed: 'peakWeatherCollapsed' },
+    cloud: { selector: '#bpb-summit-cloud', name: 'Summit Cloud Cover', collapsed: 'peakCloudCollapsed' },
+    snow: { selector: '#bpb-peak-snow', name: 'Nearby snow', collapsed: 'peakSnowCollapsed' },
+};
+
+export function createPeakCardLayout({
+    document: doc,
+    settings,
+}: {
+    document: Document;
+    settings: PeakCardSettingsStore;
+}): { lifecycle: PageLifecycle } | null {
+    if (doc.getElementById('bpb-peak-card-help')) return null;
+    mountPeakTableSplit(doc);
+    const view = doc.defaultView!, cards = new Map<PeakCardKey, CardItem>(), disposers: (() => void)[] = [];
+    const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className: string, text = ''): HTMLElementTagNameMap[K] => {
+        const node = doc.createElement(tag); node.className = className; node.textContent = text; return node;
+    };
+    const help = make('span', 'bpb-peak-card-sr', 'Drag to move, or click for move options. Use arrow keys to change position or column; Home and End move within a column. Escape cancels a drag.');
+    help.id = 'bpb-peak-card-help';
+    const status = make('div', 'bpb-peak-card-status bpb-peak-card-sr'); status.setAttribute('role', 'status');
+    const message = make('span', ''), dismiss = make('button', 'bpb-peak-card-dismiss', '×');
+    dismiss.type = 'button'; dismiss.hidden = true; dismiss.setAttribute('aria-label', 'Dismiss card layout message');
+    const dismissMessage = () => { status.classList.add('bpb-peak-card-sr'); dismiss.hidden = true; };
+    dismiss.addEventListener('click', dismissMessage); status.append(message, dismiss);
+    const ghost = make('div', 'bpb-peak-card-ghost'); ghost.setAttribute('aria-hidden', 'true'); ghost.hidden = true;
+    const indicator = make('div', 'bpb-peak-card-insertion'); indicator.setAttribute('aria-hidden', 'true'); indicator.hidden = true;
+    doc.body.append(help, status, ghost, indicator);
+    let preference = settings.clean(settings.DEFAULTS), received = false, revision = 0, writeRevision = 0;
+    const pendingWrites = new Map<string, { revision: number; value: unknown }>(), failedFields = new Set<string>();
+    let anchor: Comment | null = null, drag: PeakDragState | null = null, scanning = false, suppressClick = false;
+    const detailsAnchors: Partial<Record<'details' | 'details-bottom', Comment>> = {};
+    const columnOf = (key: PeakCardKey): PeakCardColumn =>
+        doc.getElementById('bpb-peak-table-split') ? preference.peakCardColumns[key] as PeakCardColumn : 'map';
+    const columnName = (column: PeakCardColumn) =>
+        column === 'map' ? 'right column' : `left column, ${column === 'details' ? 'above' : 'below'} peak details`;
+    const nativeDetails = () => doc.querySelector('#bpb-peak-details-column > .bpb-peak-native-table');
+    const anchors = (): Record<PeakCardColumn, Comment | null> => {
+        const details = doc.getElementById('bpb-peak-details-column');
+        if (details) for (const column of ['details', 'details-bottom'] as const) if (!detailsAnchors[column]) {
+            const table = doc.createElement('table'); table.id = `bpb-peak-${column}-cards`;
+            table.className = 'bpb-peak-details-cards'; table.setAttribute('role', 'presentation');
+            const body = doc.createElement('tbody'); detailsAnchors[column] = doc.createComment('Better Peakbagger left cards');
+            body.append(detailsAnchors[column]!); table.append(body);
+            if (column === 'details') details.prepend(table); else details.append(table);
+        }
+        return { details: detailsAnchors.details ?? null, 'details-bottom': detailsAnchors['details-bottom'] ?? null, map: anchor };
+    };
+    const visible = () => preference.peakCardOrder
+        .map(key => cards.get(key as PeakCardKey))
+        .filter((item): item is CardItem => Boolean(item && !item.card.hidden && !item.row.hidden));
+    const save = (patch: Record<string, unknown>) => {
+        revision++;
+        const ownWrite = ++writeRevision;
+        for (const [key, value] of Object.entries(patch)) pendingWrites.set(key, { revision: ownWrite, value });
+        preference = settings.clean({ ...preference, ...patch });
+        const settle = (failed: boolean) => {
+            if (lifecycle.state === 'disposed') return;
+            for (const key of Object.keys(patch)) if (pendingWrites.get(key)?.revision === ownWrite) {
+                pendingWrites.delete(key);
+                if (failed) failedFields.add(key); else failedFields.delete(key);
+            }
+            if (failedFields.size) {
+                message.textContent = 'Card layout could not be saved. Move or toggle the affected card again to retry.';
+                dismiss.hidden = false;
+                status.setAttribute('data-error', ''); status.classList.remove('bpb-peak-card-sr');
+            } else { dismissMessage(); status.removeAttribute('data-error'); }
+        };
+        void settings.set(patch).then(() => settle(false)).catch(() => settle(true));
+    };
+    const announce = (text: string) => { if (!status.hasAttribute('data-error')) message.textContent = text; };
+    const focus = (item: CardItem) => item.handle.focus({ preventScroll: true });
+    const applyOrder = () => {
+        if (!anchor?.isConnected) return;
+        const active = doc.activeElement;
+        const previous: Record<PeakCardColumn, ChildNode | null> = { ...anchors() };
+        for (const key of preference.peakCardOrder) {
+            const item = cards.get(key as PeakCardKey), column = columnOf(key as PeakCardKey);
+            if (!item || !previous[column]) continue;
+            if (previous[column]!.nextSibling !== item.row) previous[column]!.after(item.row);
+            previous[column] = item.row;
+        }
+        // A destination can have been hidden while empty. Reveal it before
+        // restoring focus or scrolling to the moved card, not on a later scan.
+        for (const column of ['details', 'details-bottom'] as const) {
+            const host = doc.getElementById(`bpb-peak-${column}-cards`);
+            if (host && host.hidden !== (inColumn(column).length === 0)) host.hidden = inColumn(column).length === 0;
+        }
+        if (active?.isConnected && doc.activeElement !== active) (active as HTMLElement).focus({ preventScroll: true });
+    };
+    const applyCollapse = (item: CardItem) => {
+        const collapsed = preference[item.definition.collapsed];
+        if (item.key === 'sun') {
+            // The calculator keeps ownership of its own disclosure and render
+            // lifecycle. Use its native toggle once it becomes available.
+            if (!item.pendingToggle && !item.toggle.disabled && item.toggle.getAttribute('aria-expanded') === String(collapsed)) {
+                item.restoring = true;
+                try { item.toggle.click(); } finally { item.restoring = false; }
+            }
+            if (item.row.hidden !== item.card.hidden) item.row.hidden = item.card.hidden;
+        } else {
+            if (item.toggle.getAttribute('aria-expanded') !== String(!collapsed)) item.toggle.setAttribute('aria-expanded', String(!collapsed));
+            if (item.body && item.body.hidden !== collapsed) item.body.hidden = collapsed;
+        }
+        item.card.setAttribute('data-bpb-card-collapsed', String(collapsed));
+    };
+    const inColumn = (column: PeakCardColumn) => visible().filter(item => columnOf(item.key) === column);
+    const move = (item: CardItem, index: number, column: PeakCardColumn = columnOf(item.key)) => {
+        if (!anchors()[column]) return;
+        const list = inColumn(column), from = list.indexOf(item), others = list.filter(card => card !== item);
+        if (index < 0 || index > others.length || from === index) return;
+        let order: string[];
+        if (columnOf(item.key) === column) {
+            const next = [...others]; next.splice(index, 0, item);
+            const ids = next.map(card => card.key), present = new Set<string>(ids);
+            order = preference.peakCardOrder.map(key => present.has(key) ? ids.shift()! : key);
+        } else {
+            order = preference.peakCardOrder.filter(key => key !== item.key);
+            const before = others[index]?.key, after = others.at(-1)?.key;
+            const at = before ? order.indexOf(before) : after ? order.indexOf(after) + 1 : order.length;
+            order.splice(at, 0, item.key);
+        }
+        save({ peakCardOrder: order, peakCardColumns: { ...preference.peakCardColumns, [item.key]: column } });
+        applyOrder(); focus(item);
+        item.handle.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'instant' });
+        announce(`${item.definition.name} moved to position ${index + 1} in the ${columnName(column)}.`);
+    };
+    const verticalTarget = (item: CardItem, direction: number): PeakDragTarget => {
+        const column = columnOf(item.key), list = inColumn(column), index = list.indexOf(item) + direction;
+        if (column === 'details' && index === list.length) return { column: 'details-bottom', index: 0 };
+        if (column === 'details-bottom' && index < 0) return { column: 'details', index: inColumn('details').length };
+        return { column, index };
+    };
+    const clearDrag = () => {
+        for (const item of cards.values()) item.menu?.close();
+        if (!drag) return;
+        const current = drag; drag = null;
+        if (current.active) suppressClick = true;
+        ghost.hidden = indicator.hidden = true;
+        current.item.card.removeAttribute('data-bpb-card-lifted');
+        doc.documentElement.classList.remove('bpb-peak-card-dragging');
+    };
+    const cancel = () => { pointer.cancel(); clearDrag(); };
+    const locate = () => {
+        if (!drag?.active) return;
+        const split = doc.getElementById('bpb-peak-table-split');
+        const initialRect = drag.item.row.getBoundingClientRect();
+        let column: PeakCardColumn | undefined = 'map';
+        let area: { left: number; width: number; top: number; bottom?: number } = initialRect;
+        let areaRight = initialRect.right;
+        if (split) {
+            const columns: ('details' | 'map')[] = ['details', 'map'];
+            const contains = (id: 'details' | 'map', tolerance: number) => {
+                const rect = doc.getElementById(`bpb-peak-${id}-column`)!.getBoundingClientRect();
+                return drag!.x >= rect.left - tolerance && drag!.x <= rect.right + tolerance && drag!.y >= rect.top
+                    && drag!.y <= (view.getComputedStyle(split).display === 'grid' ? split.getBoundingClientRect().bottom : rect.bottom);
+            };
+            column = columns.find(id => contains(id, 0)) || columns.find(id => contains(id, 24));
+            if (column) {
+                const colRect = doc.getElementById(`bpb-peak-${column}-column`)!.getBoundingClientRect();
+                area = colRect; areaRight = colRect.right;
+            }
+        }
+        if (!column || drag.x < area.left - 24 || drag.x > areaRight + 24) { indicator.hidden = true; drag.target = null; return; }
+        if (column === 'details') {
+            const native = nativeDetails()!.getBoundingClientRect();
+            if (drag.y > native.top + native.height / 2) {
+                column = 'details-bottom'; area = { left: area.left, width: area.width, top: native.bottom };
+            }
+        }
+        const list = inColumn(column).filter(item => item !== drag!.item);
+        const index = list.filter(item => { const r = item.card.getBoundingClientRect(); return drag!.y > r.top + r.height / 2; }).length;
+        drag.target = { index, column };
+        const target = list[index] || list.at(-1), bounds = target?.card.getBoundingClientRect() || area;
+        const y = Math.max(8, Math.min(view.innerHeight - 8, target ? (list[index] ? bounds.top : bounds.bottom!) : bounds.top));
+        ghost.textContent = `${drag.item.definition.name} · ${columnName(column)}`;
+        indicator.hidden = false;
+        Object.assign(indicator.style, { left: `${bounds.left}px`, top: `${y}px`, width: `${bounds.width}px` });
+    };
+    const pointerMove = (event: PointerEvent) => {
+        if (!drag) return;
+        drag.x = event.clientX; drag.y = event.clientY;
+        if (!drag.active) {
+            drag.active = true; ghost.hidden = false; ghost.textContent = drag.item.definition.name;
+            drag.item.card.setAttribute('data-bpb-card-lifted', '');
+            doc.documentElement.classList.add('bpb-peak-card-dragging');
+        }
+        Object.assign(ghost.style, { left: `${Math.min(view.innerWidth - 180, Math.max(8, drag.x + 12))}px`, top: `${Math.max(8, drag.y - 20)}px` });
+        locate();
+    };
+    const pointerUp = (event: PointerEvent) => {
+        if (!drag) return;
+        const current = drag; current.x = event.clientX; current.y = event.clientY; locate(); cancel();
+        if (current.active) suppressClick = true;
+        if (current.active && current.target !== null) move(current.item, current.target.index, current.target.column);
+    };
+    const pointer = createCardPointerDrag({ view, captureOnPress: true, enabled: () => lifecycle.state === 'active',
+        onMove: pointerMove, onFinish: pointerUp, onScroll: locate,
+        onCancel: event => { clearDrag(); if (event && 'key' in event && event.key === 'Escape') announce('Card reordering canceled.'); } });
+    const register = (key: PeakCardKey, card: HTMLElement) => {
+        const definition = definitions[key];
+        let row: HTMLTableRowElement | null = key === 'sun' ? null : card.closest('tr');
+        const mapRow = doc.getElementById('Gmap')?.closest('tr');
+        const parent = row?.parentNode || mapRow?.parentNode || cards.values().next().value?.row.parentNode;
+        if (!parent || parent.nodeName !== 'TBODY') return;
+        if (!anchor) {
+            anchor = doc.createComment('Better Peakbagger cards');
+            if (mapRow?.parentNode === parent) mapRow.after(anchor); else parent.insertBefore(anchor, row);
+        }
+        if (key === 'sun') {
+            card.id = 'bpb-peak-sun';
+            row = doc.createElement('tr'); row.id = 'bpb-peak-sun-row';
+            const cell = doc.createElement('td'); cell.colSpan = 2; cell.className = 'bpb-peak-card-cell'; cell.append(card); row.append(cell);
+            anchor.after(row);
+        }
+        if (!row || row.parentNode !== anchor.parentNode) return;
+        const handle = make('button', 'bpb-peak-card-grip'); handle.type = 'button';
+        handle.setAttribute('aria-label', `Reorder ${definition.name}`); handle.setAttribute('aria-describedby', help.id);
+        handle.title = 'Drag to move · Click for options · Arrow keys to move';
+        handle.setAttribute('aria-keyshortcuts', 'ArrowUp ArrowDown ArrowLeft ArrowRight Home End'); handle.append(make('span', 'bpb-peak-card-dots'));
+        let header: HTMLElement;
+        let toggle: HTMLButtonElement;
+        let body: HTMLElement | undefined;
+        if (key === 'sun') {
+            toggle = card.querySelector<HTMLButtonElement>('.bpb-sun-calculator__toggle')!;
+            header = make('div', 'bpb-peak-card-sun-header'); toggle.before(header); header.append(toggle, handle);
+        } else {
+            header = card.querySelector<HTMLElement>('header')!;
+            const heading = header.querySelector('h2')!;
+            toggle = make('button', 'bpb-peak-card-toggle'); toggle.type = 'button';
+            const title = make('span', 'bpb-peak-card-title'); title.append(...heading.childNodes);
+            const chevron = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            chevron.classList.add('bpb-peak-card-chevron'); chevron.setAttribute('viewBox', '0 0 16 16'); chevron.setAttribute('aria-hidden', 'true');
+            const line = doc.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            line.setAttribute('points', '3 6 8 11 13 6'); chevron.append(line);
+            toggle.append(title, chevron); heading.append(toggle);
+            body = make('div', 'bpb-peak-card-body'); body.id = `bpb-peak-${key}-body`;
+            toggle.setAttribute('aria-controls', body.id);
+            // Keep the first row solely a disclosure, like Sun & Moon. Move
+            // existing nodes so their owners retain listeners and live text.
+            const toolbar = make('div', 'bpb-peak-card-toolbar');
+            heading.remove(); toolbar.append(...header.children);
+            if (toolbar.childElementCount) body.append(toolbar);
+            header.append(heading, handle);
+            for (const child of [...card.children]) if (child !== header) body.append(child);
+            card.append(body);
+        }
+        header.classList.add('bpb-peak-card-header');
+        const item: CardItem = { key, card, row, header, handle, toggle, body, definition, restoring: false, pendingToggle: false, toggleTimer: null };
+        cards.set(key, item); card.setAttribute('data-bpb-peak-card', key);
+        const collapse = () => {
+            if (item.restoring || toggle.disabled) return;
+            if (key === 'sun') {
+                // Firefox may dispatch isolated listeners before MAIN-world
+                // listeners. Capture intent first, then read the calculator's
+                // final disclosure on the next task; observers must not undo
+                // its native click while that event is still being handled.
+                item.pendingToggle = true;
+                if (item.toggleTimer !== null) view.clearTimeout(item.toggleTimer);
+                item.toggleTimer = view.setTimeout(() => {
+                    item.pendingToggle = false; item.toggleTimer = null;
+                    if (lifecycle.state === 'disposed') return;
+                    save({ [definition.collapsed]: toggle.getAttribute('aria-expanded') !== 'true' }); applyCollapse(item);
+                }, 0);
+            } else {
+                save({ [definition.collapsed]: !preference[definition.collapsed] }); applyCollapse(item);
+            }
+        };
+        const reveal = () => {
+            if (!preference[definition.collapsed] || lifecycle.state !== 'active') return;
+            save({ [definition.collapsed]: false }); applyCollapse(item);
+        };
+        const down = (event: PointerEvent) => {
+            if ((visible().length < 2 && !doc.getElementById('bpb-peak-table-split')) || !pointer.start(event, handle)) return;
+            menu.close(); suppressClick = false; focus(item);
+            drag = { item, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, active: false, target: null };
+        };
+        const menu = createLayoutMenu({ handle, label: `Move ${definition.name}`, actions: () => {
+            const column = columnOf(key), list = inColumn(column), index = list.indexOf(item), other: PeakCardColumn = column === 'map' ? 'details' : 'map';
+            const up = verticalTarget(item, -1), downward = verticalTarget(item, 1);
+            const placement: PeakCardColumn = column === 'details-bottom' ? 'details' : 'details-bottom';
+            return [
+                { label: 'Move up', disabled: up.column === column && index <= 0, run: () => move(item, up.index, up.column) },
+                { label: 'Move down', disabled: downward.column === column && index >= list.length - 1, run: () => move(item, downward.index, downward.column) },
+                { label: `Move ${placement === 'details' ? 'above' : 'below'} peak details`, disabled: !anchors()[placement],
+                    run: () => move(item, inColumn(placement).length, placement) },
+                { label: `Move to ${other === 'details' ? 'left' : 'right'} column`, disabled: !anchors()[other], run: () => move(item, inColumn(other).length, other) },
+            ];
+        } });
+        item.menu = menu;
+        const click = (event: MouseEvent) => {
+            if (drag) return;
+            if (suppressClick && event.detail !== 0) { suppressClick = false; return; }
+            suppressClick = false; menu.toggle();
+        };
+        const keydown = (event: KeyboardEvent) => {
+            if (drag || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return;
+            const column = columnOf(key), list = inColumn(column);
+            const other: PeakCardColumn | null = event.key === 'ArrowLeft' ? 'details' : event.key === 'ArrowRight' ? 'map' : null;
+            if (other) { event.preventDefault(); if ((other === 'map') !== (column === 'map')) move(item, inColumn(other).length, other); return; }
+            if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault();
+                const target = verticalTarget(item, event.key === 'ArrowUp' ? -1 : 1);
+                move(item, target.index, target.column); return;
+            }
+            if (column !== 'map' && (event.key === 'Home' || event.key === 'End')) {
+                event.preventDefault();
+                const target: PeakCardColumn = event.key === 'Home' ? 'details' : 'details-bottom';
+                move(item, event.key === 'Home' ? 0 : inColumn(target).filter(entry => entry !== item).length, target); return;
+            }
+            const index = event.key === 'Home' ? 0 : event.key === 'End' ? list.length - 1 : null;
+            if (index === null) return;
+            event.preventDefault(); move(item, index);
+        };
+        toggle.addEventListener('click', collapse, key === 'sun'); handle.addEventListener('pointerdown', down);
+        card.addEventListener('bpb:reveal-card', reveal);
+        handle.addEventListener('click', click);
+        handle.addEventListener('keydown', keydown);
+        disposers.push(() => {
+            menu.dispose(); handle.removeEventListener('click', click);
+            if (item.toggleTimer !== null) view.clearTimeout(item.toggleTimer);
+            toggle.removeEventListener('click', collapse, key === 'sun'); handle.removeEventListener('pointerdown', down);
+            card.removeEventListener('bpb:reveal-card', reveal);
+            handle.removeEventListener('keydown', keydown);
+        });
+    };
+    const scan = () => {
+        if (scanning || lifecycle.state !== 'active') return;
+        scanning = true;
+        try {
+            for (const [key, item] of cards) if (!item.card.isConnected) {
+                if (drag?.item === item) cancel();
+                if (key === 'sun') item.row.remove();
+                cards.delete(key);
+            }
+            for (const key of settings.DEFAULTS.peakCardOrder) {
+                if (!Object.hasOwn(definitions, key)) continue;
+                const cardKey = key as PeakCardKey;
+                const card = doc.querySelector<HTMLElement>(definitions[cardKey].selector);
+                if (card && !cards.has(cardKey)) register(cardKey, card);
+            }
+            for (const item of cards.values()) {
+                applyCollapse(item);
+                const hidden = (!doc.getElementById('bpb-peak-table-split') && visible().length < 2) || item.card.hidden || item.row.hidden;
+                if (item.handle.hidden !== hidden) item.handle.hidden = hidden;
+            }
+            applyOrder();
+            if (drag && !visible().includes(drag.item)) cancel();
+        } finally { scanning = false; }
+    };
+    const observer = new (view as unknown as typeof globalThis).MutationObserver(scan);
+    const observe = () => observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'disabled', 'aria-expanded'] });
+    const applyPreference = (next: PeakCardPreferences) => {
+        if (lifecycle.state === 'disposed') return;
+        received = true; revision++;
+        const cleaned = settings.clean(next);
+        // Storage can publish an earlier queued click while a newer click is
+        // still being saved. Keep the newest intent for each independent field.
+        for (const [key, pending] of pendingWrites) (cleaned as unknown as Record<string, unknown>)[key] = pending.value;
+        if (preference.peakCardOrder.join() !== cleaned.peakCardOrder.join()
+            || JSON.stringify(preference.peakCardColumns) !== JSON.stringify(cleaned.peakCardColumns)
+            || Object.values(definitions).some(definition => preference[definition.collapsed] !== cleaned[definition.collapsed])) cancel();
+        preference = cleaned; scan();
+    };
+    const unsubscribe = settings.subscribe(applyPreference);
+    const lifecycle = createPageLifecycle({ ownerWindow: view, onSuspend: () => { cancel(); observer.disconnect(); },
+        onResume: () => { observe(); scan(); },
+        onDispose: () => {
+            cancel(); observer.disconnect(); unsubscribe(); disposers.forEach(dispose => dispose());
+            pointer.dispose();
+            dismiss.removeEventListener('click', dismissMessage);
+            help.remove(); status.remove(); ghost.remove(); indicator.remove();
+        },
+    });
+    observe(); scan();
+    const initialRevision = revision;
+    void settings.requireCurrent().then(next => { if (!received && revision === initialRevision) applyPreference(next); }).catch(() => {});
+    return { lifecycle };
+}

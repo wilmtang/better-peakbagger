@@ -1,0 +1,4574 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import vm from 'node:vm';
+import { IDBFactory } from 'fake-indexeddb';
+import { createGarminStore } from '../../src/garmin/garmin-store.ts';
+import type { createGarminImports, GarminImportState } from '../../src/garmin/garmin-imports.ts';
+import { createCaptureWriteFaults, type CaptureWriteFaults } from '../helpers/capture-write-faults.mts';
+import type { CaptureJob as CaptureJobFields, DraftTab as DraftTabFields, WorkerReply as CaptureReplyFields } from '../helpers/gpx-process-harness.mts';
+import { deferred } from '../helpers/deferred.mts';
+import { required } from '../helpers/required.mts';
+
+// The worker ships as one bundle (gpx-metrics + capture-core + settings-schema
+// + settings + background). Boot the built bundle in a worker-like vm context,
+// exactly as the service worker runs it.
+const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
+
+type Values = Record<string, unknown>;
+type Message = Values & { type: string };
+type Sender = Values & { url?: string; tab?: { id: number; windowId?: number } };
+type Tab = { id: number; url?: string; pendingUrl?: string; windowId?: number; active?: boolean; status?: string };
+type TabCreation = { url: string; windowId?: number; active?: boolean };
+type TabPatch = Partial<Tab>;
+type Badge = { tabId?: number; text?: string; color?: string | number[] };
+type TabUpdateListener = (id: number, patch: TabPatch, tab?: Tab) => unknown;
+type TabRemoveListener = (id: number, info?: { windowId?: number; isWindowClosing?: boolean }) => unknown;
+type TabActivateListener = (info: { tabId: number; windowId?: number }) => unknown;
+type AlarmListener = (alarm: { name: string }) => unknown;
+type ScriptInjection = { injectImmediately?: boolean; target: { tabId: number }; files?: string[]; args?: unknown[]; world?: string; func?: unknown };
+type ScriptCall = Pick<ScriptInjection, 'files' | 'args' | 'world'>;
+type ScriptHook = (call: { phase: string; number: number; tabId: number; details: ScriptInjection }) => unknown;
+type PeakbaggerCall = {
+    requestId: string; url: string; kind: string; number: number; options: { signal: AbortSignal };
+};
+type ProviderCall = {
+    number: number; options: Values; generation: string; timeoutMs: number; diagnostics: boolean;
+};
+type RequestHook = (call: { options: { signal?: AbortSignal }; number: number }) => unknown;
+type PeakbaggerFixture = Values | ((call: PeakbaggerCall) => Values);
+type WorkerTimer = (callback: (...args: unknown[]) => void, delay: number, ...args: unknown[]) => unknown;
+type PayloadKey = `bpbCapturePayload:${string}`;
+type CaptureError = { code: string; message: string; recoveryTabId?: number; retryAt?: number; retrySafety?: string };
+type TripInfo = { id?: string; name: string; sequence?: number };
+type DayStat = { date: string };
+type DraftFields = CaptureReplyFields['fields'] & { tripInfo?: TripInfo; time?: string; comment?: string; dayStats: DayStat[] };
+type Match = Omit<CaptureReplyFields['matches'][number], 'draftFields' | 'time'> & {
+    name: string; confidence: number; time: string | null | undefined; draftFields: DraftFields; closestApproachM?: number;
+};
+interface CaptureJob extends CaptureJobFields {
+    matches: Match[];
+    activityId?: string;
+    openedDraftTabIds: number[];
+    trackSummary: { originalPointCount: number; retainedPointCount: number; retainedWaypointCount: number; breakCounts: { missingElevation: number; missingTime: number } };
+    payloadKey: PayloadKey;
+    selectedIds: number[];
+    error: CaptureError;
+    progress?: { completed: number; total: number } | null;
+    capturePreferences?: Values;
+}
+interface DraftTab extends DraftTabFields {
+    tripInfo: TripInfo;
+    applyLease?: { token: string; expiresAt: number; documentKey?: string } | null;
+    complete?: boolean;
+    waitForSave?: boolean;
+}
+// Projection of the storage and message properties read by these cases. Seeds
+// stay raw so legacy or malformed records still go through worker validation.
+interface SessionValues extends Values {
+    bpbCaptureJobs: Record<string, CaptureJob>;
+    bpbDraftTabs: Record<string, DraftTab>;
+    bpbPeakbaggerHelperLeases?: Record<string, { generation: string; tabId: number; expiresAt: number }>;
+    bpbPeakbaggerCooldown?: { retryAt: number };
+    bpbBetaSettingsTabs?: Record<string, unknown>;
+    [key: PayloadKey]: { jobId: string; gpx: string; gpxWithoutTimestamps?: string };
+}
+interface LocalValues extends Values {
+    bpbFavoriteClimbers?: { entries: { cid: number }[] };
+    bpbIgnoredClimbers?: { entries: { cid: number }[]; revision: number };
+    bpbPeakReportFilter?: { favoritesOnly: boolean };
+}
+interface Reply extends CaptureReplyFields {
+    error: CaptureError;
+    fields: DraftFields;
+    matches: Match[];
+    selectedIds: number[];
+    activityId?: string;
+    job: CaptureJob;
+    tabId: number;
+    url: string;
+    token: string;
+    message: string;
+    dayStats: DayStat[];
+}
+type MessageListener = (message: Message, sender: Sender, reply: (value: Reply) => void) => boolean;
+interface Faults extends CaptureWriteFaults {
+    sessionGet?: string; syncGet?: string; payloadRemove?: string; cooldownSet?: string;
+    scripting?: string; peakbaggerScripting?: string; tabCreate?: string; tabUpdate?: string;
+    tabCreateAt?: number | null; tabCreateAtMessage?: string;
+    tabNavigateAt?: number | null; tabNavigateAtMessage?: string;
+}
+interface HarnessOptions {
+    peakXml?: string | null;
+    captureResult?: Values | ((call: ProviderCall) => Values) | null;
+    ownershipResult?: Values | null;
+    settings?: Values;
+    beforePeakFetch?: RequestHook | null;
+    beforePeakbaggerLogin?: ((call?: Parameters<RequestHook>[0]) => unknown) | null;
+    beforePeakbaggerAccountEvidence?: ((call: { number: number; tabId: number }) => unknown) | null;
+    beforePeakbaggerScript?: ScriptHook | null;
+    afterPeakbaggerScript?: ScriptHook | null;
+    beforeProviderScript?: ScriptHook | null;
+    afterProviderScript?: ScriptHook | null;
+    beforeProviderCapture?: ((call: ProviderCall) => unknown) | null;
+    beforeBadgeText?: ((call: { number: number; details: Badge }) => unknown) | null;
+    beforeTabGet?: ((call: { number: number; tabId: number; tabs: Map<number, Tab> }) => unknown) | null;
+    beforeTabCreate?: ((call: { number: number; details: TabCreation; tabs: Map<number, Tab> }) => unknown) | null;
+    afterSessionSet?: ((patch: Partial<SessionValues>) => unknown) | null;
+    clock?: { now: number } | null;
+    groupError?: string | null;
+    faults?: Faults;
+    sessionValues?: Values | null;
+    browserTabs?: Map<number, Tab> | null;
+    timerDelayCap?: number | null;
+    workerTimer?: WorkerTimer | null;
+    peakbaggerPageLoginResult?: PeakbaggerFixture | null;
+    peakbaggerPagePeakResult?: PeakbaggerFixture | null;
+    peakbaggerDocumentState?: Values | null;
+    peakbaggerAccountEvidence?: Values | ((state: { tab?: Tab }) => Values | null) | null;
+    dropPeakbaggerHelperBeforeKind?: string | null;
+    peakbaggerPageRequestError?: string | null;
+    captureDiagnostics?: boolean;
+    garminDatabase?: IDBFactory;
+    loginHtml?: string;
+}
+type Harness = ReturnType<typeof createHarness>;
+type GarminStore = NonNullable<Parameters<typeof createGarminImports>[0]['store']>;
+type GarminItem = Awaited<ReturnType<GarminStore['read']>>['items'][string];
+
+const event = <Listener,>() => {
+    const listeners: Listener[] = [];
+    return {
+        listeners,
+        addListener: (listener: Listener) => listeners.push(listener),
+        removeListener: (listener: Listener) => {
+            const index = listeners.indexOf(listener);
+            if (index !== -1) listeners.splice(index, 1);
+        },
+    };
+};
+
+const waitForCondition = async (predicate: () => unknown, timeoutMs = 2000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!predicate()) {
+        if (Date.now() >= deadline) throw new Error('condition not reached');
+        await new Promise(resolve => setTimeout(resolve, 1));
+    }
+};
+
+const createHarness = ({ peakXml = null, captureResult = null, ownershipResult = null, settings = {}, beforePeakFetch = null,
+    beforePeakbaggerLogin = null, beforePeakbaggerAccountEvidence = null,
+    beforePeakbaggerScript = null, afterPeakbaggerScript = null,
+    beforeProviderScript = null, afterProviderScript = null, beforeProviderCapture = null,
+    beforeBadgeText = null, beforeTabGet = null, beforeTabCreate = null,
+    afterSessionSet = null, clock = null, groupError = null, faults = {},
+    sessionValues = null, browserTabs = null, timerDelayCap = null, workerTimer = null,
+    peakbaggerPageLoginResult = null, peakbaggerPagePeakResult = null,
+    peakbaggerDocumentState = null,
+    peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
+    peakbaggerPageRequestError = null,
+    captureDiagnostics = false, garminDatabase = undefined,
+    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>' }: HarnessOptions = {}) => {
+    const values = (sessionValues || {}) as SessionValues;
+    const localValues: LocalValues = {};
+    let sessionGetCalls = 0;
+    let payloadSetCalls = 0;
+    let payloadRemoveCalls = 0;
+    const sessionSetPatches: Partial<SessionValues>[] = [];
+    const syncValues: Values & { bpbSettings: Values } = { bpbSettings: structuredClone(settings) };
+    const tabs = browserTabs || new Map<number, Tab>([[1, {
+        id: 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: true,
+        status: 'complete',
+    }], [5, {
+        id: 5,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77',
+        active: false,
+        status: 'complete',
+    }]]);
+    let nextTabId = Math.max(100, ...[...tabs.keys()].map(tabId => tabId + 1));
+    const runtimeMessage = event<MessageListener>();
+    const tabRemoved = event<TabRemoveListener>();
+    const tabUpdated = event<TabUpdateListener>();
+    const tabActivated = event<TabActivateListener>();
+    const alarmEvent = event<AlarmListener>();
+    const grouped: ({ tabIds: number[] })[] = [];
+    const groupUpdates: ([number, Values])[] = [];
+    const badgeCalls: ([string, Badge])[] = [];
+    const scriptCalls: (ScriptCall)[] = [];
+    const providerCaptureCalls: (ProviderCall)[] = [];
+    const providerCancelCalls: (unknown)[] = [];
+    const peakbaggerPageCalls: (PeakbaggerCall)[] = [];
+    const peakbaggerPageCancelCalls: (unknown)[] = [];
+    const peakbaggerPageRequests = new Map<string, AbortController>();
+    const peakbaggerPageInjected = new Set<number>();
+    const droppedPeakbaggerHelpers = new Set<string>();
+    const tabMessages: ({ tabId: number; message: Message })[] = [];
+    const removedTabs: (number)[] = [];
+    const windowCreates: ({ url?: string; tabId?: number; focused?: boolean })[] = [];
+    const windowUpdates: ([number, Values])[] = [];
+    let nextWindowId = 20;
+    let tabCreateCalls = 0;
+    let tabNavigationCalls = 0;
+    const checkSessionWrite = createCaptureWriteFaults(faults);
+    let badgeTextCalls = 0;
+    let tabGetCalls = 0;
+    let peakbaggerPageProbeCalls = 0;
+    let peakbaggerAccountEvidenceCalls = 0;
+    const peakbaggerScriptPhaseCalls = new Map<string, number>();
+    const providerScriptPhaseCalls = new Map<string, number>();
+    const loggedErrors: (unknown[])[] = [];
+    const runPeakbaggerScriptHook = async (hook: ScriptHook | null, phase: string, details: ScriptInjection, advance = false) => {
+        const number = (peakbaggerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
+        if (advance) peakbaggerScriptPhaseCalls.set(phase, number);
+        if (!hook) return;
+        await hook({ phase, number, tabId: details.target.tabId, details });
+    };
+    const runProviderScriptHook = async (hook: ScriptHook | null, phase: string, details: ScriptInjection, advance = false) => {
+        const number = (providerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
+        if (advance) providerScriptPhaseCalls.set(phase, number);
+        if (!hook) return;
+        await hook({ phase, number, tabId: details.target.tabId, details });
+    };
+    const capture = captureResult || {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+        metadata: { title: 'Test hike', localStart: '2026-07-01T08:00:00-07:00', utcOffsetMinutes: null },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+            { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+        ]]
+    };
+
+    const browser = {
+        storage: {
+            session: {
+                get: async (key: string | string[] | null) => {
+                    if (faults.sessionGet) throw new Error(faults.sessionGet);
+                    sessionGetCalls++;
+                    if (key === null) return structuredClone(values);
+                    if (Array.isArray(key)) {
+                        return Object.fromEntries(key.map(item => [item, structuredClone(values[item])]));
+                    }
+                    return { [key]: structuredClone(values[key]) };
+                },
+                set: async (patch: Partial<SessionValues>) => {
+                    if (patch.bpbPeakbaggerCooldown && faults.cooldownSet) {
+                        throw new Error(faults.cooldownSet);
+                    }
+                    if (Object.keys(patch).some(key => key.startsWith('bpbCapturePayload:'))) payloadSetCalls++;
+                    checkSessionWrite(patch);
+                    sessionSetPatches.push(structuredClone(patch));
+                    Object.assign(values, structuredClone(patch));
+                    if (afterSessionSet) await afterSessionSet(structuredClone(patch));
+                },
+                remove: async (keys: string | string[]) => {
+                    payloadRemoveCalls++;
+                    if (faults.payloadRemove) {
+                        const message = faults.payloadRemove;
+                        delete faults.payloadRemove;
+                        throw new Error(message);
+                    }
+                    (Array.isArray(keys) ? keys : [keys]).forEach(key => { delete values[key]; });
+                },
+            },
+            sync: {
+                get: async (key: string) => {
+                    if (faults.syncGet) throw new Error(faults.syncGet);
+                    return { [key]: structuredClone(syncValues[key]) };
+                },
+                set: async (patch: Values) => Object.assign(syncValues, structuredClone(patch))
+            },
+            local: {
+                get: async (key: string | string[] | null) => key === null ? structuredClone(localValues)
+                    : Array.isArray(key) ? Object.fromEntries(key.map(item => [item, structuredClone(localValues[item])]))
+                        : { [key]: structuredClone(localValues[key]) },
+                set: async (patch: Values) => Object.assign(localValues, structuredClone(patch))
+            },
+            onChanged: event()
+        },
+        runtime: {
+            id: 'test-extension',
+            onMessage: runtimeMessage,
+            getURL: (path: string) => `chrome-extension://test-extension/${path}`
+        },
+        scripting: {
+            executeScript: async (details: ScriptInjection) => {
+                if (faults.scripting) throw new Error(faults.scripting);
+                if (faults.peakbaggerScripting && details.target.tabId !== 1) {
+                    throw new Error(faults.peakbaggerScripting);
+                }
+                scriptCalls.push(structuredClone({ files: details.files, args: details.args, world: details.world }));
+                if (details.files) {
+                    if (details.files.includes('peakbagger-page.js')) {
+                        await runPeakbaggerScriptHook(beforePeakbaggerScript, 'injection', details, true);
+                        peakbaggerPageInjected.add(details.target.tabId);
+                        await runPeakbaggerScriptHook(afterPeakbaggerScript, 'injection', details);
+                    }
+                    if (details.files.includes('provider-page.js')) {
+                        await runProviderScriptHook(beforeProviderScript, 'injection', details, true);
+                        await runProviderScriptHook(afterProviderScript, 'injection', details);
+                    }
+                    return [];
+                }
+                const functionSource = String(details.func);
+                if (functionSource.includes('document.readyState')) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'readiness', details, true);
+                    const tab = tabs.get(details.target.tabId);
+                    const result = peakbaggerDocumentState || { url: tab?.url, readyState: 'interactive' };
+                    return [{ result: structuredClone(result) }];
+                }
+                const isOwnershipCheck = functionSource.includes('inspectOwnership')
+                    || functionSource.includes('inspectExpectedOwnership')
+                    || functionSource.includes('waitForOwnership');
+                const isProviderCapture = functionSource.includes('BPBProviderPage.capture');
+                const isProviderCancel = functionSource.includes('cancelCapture');
+                const isPeakbaggerAccountEvidence = functionSource.includes('accountEvidence');
+                const isPeakbaggerPageProbe = functionSource.includes('BPBPeakbaggerPage?.version');
+                const isPeakbaggerPageRequest = functionSource.includes('api.request')
+                    && functionSource.includes('bridge')
+                    && functionSource.includes('missing');
+                const isPeakbaggerPageCancel = functionSource.includes('BPBPeakbaggerPage?.cancel');
+                if (isPeakbaggerAccountEvidence) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'account-evidence', details, true);
+                    peakbaggerAccountEvidenceCalls++;
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'account-evidence', details);
+                    if (beforePeakbaggerAccountEvidence) {
+                        await beforePeakbaggerAccountEvidence({
+                            number: peakbaggerAccountEvidenceCalls,
+                            tabId: details.target.tabId,
+                        });
+                    }
+                    if (!peakbaggerPageInjected.has(details.target.tabId)) return [{ result: null }];
+                    const currentTab = tabs.get(details.target.tabId);
+                    const fallback = {
+                        pageUrl: currentTab?.url,
+                        links: [
+                            {
+                                label: 'My Home Page',
+                                href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                            },
+                            {
+                                label: 'Edit Account',
+                                href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                            },
+                        ],
+                    };
+                    const result = typeof peakbaggerAccountEvidence === 'function'
+                        ? peakbaggerAccountEvidence({ tab: structuredClone(currentTab) })
+                        : (peakbaggerAccountEvidence || fallback);
+                    return [{ result: structuredClone(result) }];
+                }
+                if (isPeakbaggerPageProbe) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'probe', details, true);
+                    peakbaggerPageProbeCalls++;
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'probe', details);
+                    return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
+                }
+                if (isPeakbaggerPageCancel) {
+                    const requestId = details.args?.[0] as string;
+                    peakbaggerPageCancelCalls.push(requestId);
+                    const controller = peakbaggerPageRequests.get(requestId);
+                    controller?.abort();
+                    return [{ result: !!controller }];
+                }
+                if (isPeakbaggerPageRequest) {
+                    await runPeakbaggerScriptHook(beforePeakbaggerScript, 'request', details, true);
+                    const [, requestId, url, kind] = details.args as [unknown, string, string, string];
+                    if (dropPeakbaggerHelperBeforeKind === kind
+                        && !droppedPeakbaggerHelpers.has(kind)) {
+                        droppedPeakbaggerHelpers.add(kind);
+                        peakbaggerPageInjected.delete(details.target.tabId);
+                    }
+                    if (!peakbaggerPageInjected.has(details.target.tabId)) {
+                        return [{ result: { bridge: 'missing' } }];
+                    }
+                    if (peakbaggerPageRequestError) throw new Error(peakbaggerPageRequestError);
+                    const controller = new AbortController();
+                    const number = peakbaggerPageCalls.filter(item => item.kind === kind).length + 1;
+                    peakbaggerPageRequests.set(requestId, controller);
+                    const call = { requestId, url, kind, number, options: { signal: controller.signal } };
+                    peakbaggerPageCalls.push(call);
+                    await runPeakbaggerScriptHook(afterPeakbaggerScript, 'request', details);
+                    const callback = kind === 'html' ? beforePeakbaggerLogin : beforePeakFetch;
+                    const callbackResult = callback?.({
+                        options: call.options,
+                        number,
+                    });
+                    if (callbackResult) {
+                        await Promise.race([
+                            callbackResult,
+                            new Promise<Event>(resolve => controller.signal.addEventListener('abort', resolve, { once: true })),
+                        ]);
+                    }
+                    peakbaggerPageRequests.delete(requestId);
+                    if (controller.signal.aborted) {
+                        return [{ result: { bridge: 'result', value: {
+                            kind: 'transient', requestedUrl: url, url, status: 0, redirected: false,
+                            error: { source: 'peakbagger', code: 'cancelled', resource: kind },
+                        } } }];
+                    }
+                    const injectedResult = kind === 'html'
+                        ? peakbaggerPageLoginResult
+                        : peakbaggerPagePeakResult;
+                    if (injectedResult) {
+                        const result = typeof injectedResult === 'function'
+                            ? injectedResult(call)
+                            : injectedResult;
+                        return [{ result: { bridge: 'result', value: structuredClone(result) } }];
+                    }
+                    const text = kind === 'html'
+                        ? loginHtml
+                        : (peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>');
+                    return [{ result: { bridge: 'result', value: {
+                        kind: 'ok', requestedUrl: url, url, status: 200, redirected: false, text,
+                    } } }];
+                }
+                if (isOwnershipCheck) {
+                    await runProviderScriptHook(beforeProviderScript, 'ownership', details, true);
+                    const result = ownershipResult || capture;
+                    await runProviderScriptHook(afterProviderScript, 'ownership', details);
+                    return [{ result: structuredClone(result) }];
+                }
+                if (isProviderCancel) {
+                    await runProviderScriptHook(beforeProviderScript, 'cancel', details, true);
+                    providerCancelCalls.push(details.args?.[0]);
+                    await runProviderScriptHook(afterProviderScript, 'cancel', details);
+                    return [{ result: true }];
+                }
+                if (isProviderCapture) {
+                    await runProviderScriptHook(beforeProviderScript, 'capture', details, true);
+                    const call: ProviderCall = {
+                        number: providerCaptureCalls.length + 1,
+                        options: structuredClone(details.args?.[0]) as Values,
+                        generation: details.args?.[1] as string,
+                        timeoutMs: details.args?.[2] as number,
+                        diagnostics: details.args?.[4] === true,
+                    };
+                    providerCaptureCalls.push(call);
+                    if (beforeProviderCapture) await beforeProviderCapture(call);
+                    const result = typeof captureResult === 'function'
+                        ? captureResult(call)
+                        : capture;
+                    await runProviderScriptHook(afterProviderScript, 'capture', details);
+                    return [{ result: structuredClone(result) }];
+                }
+                return [{ result: structuredClone(capture) }];
+            }
+        },
+        action: {
+            setBadgeBackgroundColor: async (details: Badge) => badgeCalls.push(['color', details]),
+            setBadgeText: async (details: Badge) => {
+                badgeCalls.push(['text', details]);
+                badgeTextCalls++;
+                if (beforeBadgeText) await beforeBadgeText({ number: badgeTextCalls, details });
+            }
+        },
+        tabs: {
+            get: async (tabId: number) => {
+                tabGetCalls++;
+                if (beforeTabGet) await beforeTabGet({ number: tabGetCalls, tabId, tabs });
+                return structuredClone(tabs.get(tabId));
+            },
+            create: async (details: TabCreation) => {
+                if (faults.tabCreate) throw new Error(faults.tabCreate);
+                tabCreateCalls++;
+                if (beforeTabCreate) await beforeTabCreate({ number: tabCreateCalls, details, tabs });
+                if (faults.tabCreateAt === tabCreateCalls) {
+                    const message = faults.tabCreateAtMessage || `tab create ${tabCreateCalls} failed`;
+                    faults.tabCreateAt = null;
+                    throw new Error(message);
+                }
+                const tab = {
+                    id: nextTabId++, windowId: details.windowId, url: details.url,
+                    active: details.active, status: 'complete',
+                };
+                tabs.set(tab.id, tab);
+                return structuredClone(tab);
+            },
+            query: async (details: { url?: string | string[]; windowId?: number }) => [...tabs.values()]
+                .filter(tab => details.windowId == null || tab.windowId === details.windowId)
+                .filter(tab => !details.url || tab.url?.startsWith(String(details.url).replace(/\*$/, '')))
+                .map(tab => structuredClone(tab)),
+            remove: async (tabId: number) => {
+                removedTabs.push(tabId);
+                tabs.delete(tabId);
+            },
+            update: async (tabId: number, patch: TabPatch) => {
+                if (faults.tabUpdate) throw new Error(faults.tabUpdate);
+                if (patch.url) {
+                    tabNavigationCalls++;
+                    if (faults.tabNavigateAt === tabNavigationCalls) {
+                        const message = faults.tabNavigateAtMessage || `tab navigation ${tabNavigationCalls} failed`;
+                        faults.tabNavigateAt = null;
+                        throw new Error(message);
+                    }
+                }
+                Object.assign(required(tabs.get(tabId)), patch);
+                return structuredClone(tabs.get(tabId));
+            },
+            sendMessage: async (tabId: number, message: Message) => {
+                tabMessages.push({ tabId, message: structuredClone(message) });
+                return true;
+            },
+            group: async (details: { tabIds: number[] }) => {
+                grouped.push(structuredClone(details));
+                if (groupError) throw new Error(groupError);
+                return 3;
+            },
+            onRemoved: tabRemoved,
+            onUpdated: tabUpdated,
+            onActivated: tabActivated,
+        },
+        tabGroups: { update: async (groupId: number, patch: Values) => groupUpdates.push([groupId, structuredClone(patch)]) },
+        windows: {
+            create: async (details: { url?: string; tabId?: number; focused?: boolean }) => {
+                const windowId = nextWindowId++;
+                windowCreates.push(structuredClone(details));
+                let tab;
+                if (typeof details.tabId === 'number' && Number.isInteger(details.tabId)) {
+                    tab = tabs.get(details.tabId);
+                    if (tab) Object.assign(tab, { windowId, active: true });
+                } else if (details.url) {
+                    tab = {
+                        id: nextTabId++, windowId, url: details.url,
+                        active: true, status: 'complete',
+                    };
+                    tabs.set(tab.id, tab);
+                }
+                return { id: windowId, focused: details.focused, tabs: tab ? [structuredClone(tab)] : [] };
+            },
+            update: async (windowId: number, patch: Values) => {
+                windowUpdates.push([windowId, structuredClone(patch)]);
+                return { id: windowId, ...structuredClone(patch) };
+            },
+        },
+        permissions: { contains: async () => true },
+        alarms: { create: () => {}, clear: async () => {}, onAlarm: alarmEvent }
+    };
+
+    const fetchCalls: (string)[] = [];
+    const fetch = async (url: string | URL, options: { signal?: AbortSignal } = {}) => {
+        const value = String(url);
+        fetchCalls.push(value);
+        if (value.includes('/Default.aspx')) {
+            if (beforePeakbaggerLogin) await beforePeakbaggerLogin();
+            return { ok: true, text: async () => loginHtml };
+        }
+        if (value.includes('/Async/pllbb2.aspx')) {
+            if (beforePeakFetch) await beforePeakFetch({ options, number: fetchCalls.filter(call => call.includes('/Async/pllbb2.aspx')).length });
+            return {
+                ok: true,
+                text: async () => peakXml || '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
+            };
+        }
+        throw new Error(`Unexpected fetch: ${value}`);
+    };
+
+    const workerConsole = Object.create(console);
+    workerConsole.error = (...args: unknown[]) => { loggedErrors.push(args); };
+    const loggedDiagnostics: (unknown[])[] = [];
+    workerConsole.debug = (...args: unknown[]) => { loggedDiagnostics.push(args); };
+    const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
+    const context = vm.createContext({
+        browser,
+        indexedDB: garminDatabase,
+        fetch,
+        URL,
+        URLSearchParams,
+        Math,
+        Date: WorkerDate,
+        console: workerConsole,
+        structuredClone,
+        btoa,
+        AbortController, AbortSignal,
+        TextEncoder,
+        TextDecoder,
+        crypto: globalThis.crypto,
+        setTimeout: workerTimer || (timerDelayCap === null
+            ? setTimeout
+            : (callback: (...args: unknown[]) => void, delay: number, ...args: unknown[]) =>
+                setTimeout(callback, Math.min(delay, timerDelayCap), ...args)),
+        clearTimeout,
+        BPB_CAPTURE_DIAGNOSTICS: captureDiagnostics,
+    });
+    context.globalThis = context;
+    context.self = context;
+    vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
+    const listener = required(runtimeMessage.listeners[0]);
+    const send = (message: Message, sender: Sender = { url: 'chrome-extension://test-extension/popup/popup.html' }) => new Promise<Reply>(resolve => {
+        // Supply browser-owned sender metadata for terse existing fixtures.
+        // Explicit undefined values remain available to test missing identity.
+        const actual = {
+            id: 'test-extension',
+            ...(sender.tab ? {
+                frameId: 0,
+                documentId: `test-document-${sender.tab.id}`,
+                url: tabs.get(sender.tab.id)?.url,
+            } : {}),
+            ...sender,
+        };
+        assert.equal(listener(message, actual, resolve), true);
+    });
+    return {
+        send, values, localValues, syncValues, tabs, grouped, groupUpdates, badgeCalls, fetchCalls, scriptCalls, tabMessages,
+        windowCreates, windowUpdates,
+        removedTabs, providerCaptureCalls, providerCancelCalls,
+        peakbaggerPageCalls, peakbaggerPageCancelCalls,
+        peakbaggerPageProbeCalls: () => peakbaggerPageProbeCalls,
+        peakbaggerAccountEvidenceCalls: () => peakbaggerAccountEvidenceCalls,
+        sessionGetCalls: () => sessionGetCalls,
+        payloadSetCalls: () => payloadSetCalls,
+        payloadRemoveCalls: () => payloadRemoveCalls,
+        sessionSetPatches,
+        loggedErrors, loggedDiagnostics, faults, tabRemoved, tabUpdated, tabActivated, alarmEvent,
+    };
+};
+
+const storedCaptureGpx = (harness: Harness, tabId = 1) => {
+    const job = harness.values.bpbCaptureJobs?.[String(tabId)];
+    return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
+};
+
+const completeSingleDraft = async (harness: Harness) => {
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const draftTabId = opened.tabIds[0];
+    const sender = { tab: { id: draftTabId } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, sender);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender).then(value => value.ok), true);
+    const banner = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, sender);
+    assert.equal(banner.action, 'banner');
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].complete, true);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].waitForSave, false);
+    return { draftTabId, jobId: apply.jobId };
+};
+
+let betaSettingsGeneration = 0;
+const openBetaSettings = async (harness: Harness, sender: Sender, disposition = 'foreground-tab') => {
+    const generation = `test-beta-${++betaSettingsGeneration}`;
+    const activation = await harness.send({
+        type: 'TRUSTED_ACTION_ISSUE',
+        action: 'beta-settings',
+        generation,
+    }, sender);
+    assert.equal(activation.ok, true);
+    return harness.send({
+        type: 'OPEN_BETA_SETTINGS',
+        generation,
+        activationToken: activation.token,
+        disposition,
+    }, sender);
+};
+
+let draftManagerGeneration = 0;
+const openDraftsManager = async (harness: Harness, sender: Sender) => {
+    const generation = `test-drafts-${++draftManagerGeneration}`;
+    const activation = await harness.send({
+        type: 'TRUSTED_ACTION_ISSUE',
+        action: 'draft-manager',
+        generation,
+    }, sender);
+    assert.equal(activation.ok, true);
+    return harness.send({
+        type: 'OPEN_DRAFTS_MANAGER',
+        generation,
+        activationToken: activation.token,
+    }, sender);
+};
+
+test('draft navigation waits for the newly created staging document to finish', async () => {
+    let reads = 0;
+    const harness = createHarness({
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            const tab = required(tabs.get(tabId));
+            assert.match(required(tab.url), /^chrome-extension:\/\/[^/]+\/capture\/draft-tab\.html$/);
+            tab.status = ++reads < 3 ? 'loading' : 'complete';
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...opened.tabIds], [100]);
+    assert.equal(reads, 3);
+    assert.match(required(required(harness.tabs.get(100)).url), /ascentedit/);
+});
+
+test('a stalled staging draft times out and rolls back without orphaning its tab', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            required(tabs.get(tabId)).status = 'loading';
+            clock.now += 6000;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(opened.error.code, 'draft-open-failed');
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+    assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after timeout');
+});
+
+test('draft completion wakes readiness even when the polling timer is delayed', async () => {
+    const delayedPoll: { release?: () => void } = {};
+    const { promise: polling, resolve: pollScheduled } = deferred<void>();
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId === 100) required(tabs.get(tabId)).status = 'loading';
+        },
+        workerTimer: (callback, delay, ...args) => {
+            if (delay !== 50) return setTimeout(callback, delay, ...args);
+            const timer = setTimeout(callback, 60_000, ...args).unref();
+            delayedPoll.release = () => { clearTimeout(timer); callback(...args); };
+            pollScheduled();
+            return timer;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    try {
+        await polling;
+        const tab = { ...required(harness.tabs.get(100)), status: 'complete' };
+        harness.tabUpdated.listeners.slice().forEach(listener => listener(100, { status: 'complete' }, tab));
+        const opened = await Promise.race([opening, new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('completion remained blocked on the polling timer')), 500).unref();
+        })]);
+        assert.deepEqual([...opened.tabIds], [100]);
+        assert.match(required(required(harness.tabs.get(100)).url), /ascentedit/);
+        assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after completion');
+    } finally {
+        clock.now += 20_000;
+        delayedPoll.release?.();
+        await opening;
+    }
+});
+
+test('a draft completion returned after its deadline still rolls back', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            required(tabs.get(tabId)).status = 'complete';
+            clock.now += 10_001;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(opened.error.code, 'draft-open-failed');
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.tabUpdated.listeners.length, 1);
+});
+
+test('clearing capture while a staging draft loads cancels its opening transaction', async () => {
+    const { promise: waiting, resolve: reached } = deferred<void>();
+    const { promise: gate, resolve: release } = deferred<void>();
+    const harness = createHarness({
+        beforeTabGet: async ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            required(tabs.get(tabId)).status = 'loading';
+            reached();
+            await gate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await waiting;
+    const clearing = harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    release();
+    const [opened, cleared] = await Promise.all([opening, clearing]);
+    assert.equal(opened.error.code, 'draft-open-cancelled');
+    assert.equal(cleared.ok, true);
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.deepEqual(harness.values.bpbDraftTabs, {});
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after cancellation');
+});
+
+test('background capture persists a private job, opens grouped drafts, and previews idempotently', async () => {
+    const harness = createHarness();
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.matches.length, 1);
+    assert.equal(ready.matches[0].classification, 'strong');
+    assert.equal(ready.matches[0].selected, true);
+    assert.equal(ready.uploadGpx, undefined, 'GPX must not be exposed to the popup response');
+    assert.equal(ready.dayStats, undefined, 'day-level draft metrics must not be exposed to the popup response');
+    assert.equal(ready.hasCachedGpx, true);
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+    assert.equal(harness.peakbaggerPageProbeCalls(), 2,
+        'one helper injection check is shared by login and summit requests');
+    assert.equal(harness.peakbaggerAccountEvidenceCalls(), 0,
+        'an already-loaded user tab still receives the authoritative live login request');
+    assert.equal(harness.fetchCalls.length, 0,
+        'activity capture must use the signed-in Peakbagger page, not the worker fetch context');
+    assert.equal(harness.removedTabs.includes(5), false,
+        'an existing user Peakbagger tab must never become helper-tab cleanup');
+
+    const storedJob = harness.values.bpbCaptureJobs['1'];
+    assert.equal(storedJob.uploadGpx, undefined, 'job metadata must not embed the immutable GPX');
+    assert.match(required(storedCaptureGpx(harness)),
+        /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /<extensions(?:\s|>)/i);
+    assert.equal(JSON.stringify(storedJob).includes('heart'), false);
+    assert.deepEqual(harness.providerCaptureCalls[0].options, {
+        retainWaypoints: true,
+        includeTripName: true
+    });
+
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...opened.tabIds], [100]);
+    assert.deepEqual(harness.grouped, [{ tabIds: [100], createProperties: { windowId: 9 } }]);
+    assert.deepEqual(harness.groupUpdates, [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
+    assert.equal(required(harness.tabs.get(100)).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.action, 'apply');
+    assert.equal(apply.peakName, 'Test Peak');
+    assert.equal(apply.fields.suffix, '');
+    assert.equal(apply.fields.fillAscentDetails, true);
+    // Default-on: the captured Strava link is rebuilt from provider+activityId.
+    assert.equal(apply.fields.externalUrl, 'https://www.strava.com/activities/123');
+    assert.match(apply.gpx, /<gpx/);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+
+    const banner = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'Your file is now successfully uploaded.' }
+    }, { tab: { id: 100 } });
+    assert.equal(banner.action, 'banner');
+    assert.equal(banner.peakName, 'Test Peak');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(storedCaptureGpx(harness), undefined);
+
+    const reopened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...reopened.tabIds], [100]);
+    assert.equal(reopened.reused, true,
+        'a previewed job must still refocus its draft for the user to review and save');
+    assert.equal(required(harness.tabs.get(100)).active, true);
+
+    const duplicate = await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } });
+    assert.equal(duplicate.ok, false);
+});
+
+test('capture diagnostics stay local and contain only duration and count labels', async () => {
+    const harness = createHarness({
+        captureDiagnostics: true,
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Diagnostic hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15) },
+                { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16) },
+            ]],
+            waypoints: [],
+            diagnostics: {
+                durationsMs: { headers: 4.2, body: 2.1, parse: 0.8, metadata: 0.2 },
+                counts: { 'track-points': 2, segments: 1, waypoints: 0 },
+            },
+        },
+    });
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.providerCaptureCalls[0].diagnostics, true);
+    assert.equal(harness.loggedDiagnostics.length, 1);
+    const [label, rawSnapshot] = harness.loggedDiagnostics[0];
+    const snapshot = JSON.parse(JSON.stringify(rawSnapshot));
+    assert.equal(label, 'Better Peakbagger capture diagnostics');
+    assert.equal(snapshot.outcome, 'ready');
+    assert.equal(snapshot.durationsMs['provider.headers'], 4.2);
+    assert.equal(snapshot.counts['provider.track-points'], 2);
+    assert.ok(snapshot.durationsMs['peakbagger.corridor'] >= 0);
+    assert.ok(snapshot.counts['peakbagger.areas'] >= 1);
+    assert.doesNotMatch(JSON.stringify(snapshot), /Diagnostic hike|strava|activities|latitude|longitude|gpx/i);
+    assert.doesNotMatch(JSON.stringify(harness.values), /diagnostics|durationsMs/,
+        'diagnostics are never persisted with session capture data');
+});
+
+test('capture payload creation and metadata publication roll back independently', async () => {
+    for (const [fault, sentinel] of [
+        ['payloadSet', 'PAYLOAD_CREATE_SENTINEL'],
+        ['payloadMetadataSet', 'PAYLOAD_METADATA_SENTINEL'],
+    ]) {
+        const harness = createHarness({ faults: { [fault]: sentinel } });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'capture-failed');
+        assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error');
+        assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+        assert.deepEqual(Object.keys(harness.values)
+            .filter(key => key.startsWith('bpbCapturePayload:')), [],
+        `${fault} must not leave a generation payload behind`);
+    }
+});
+
+test('selection writes bounded metadata while multiple near-limit capture payloads stay untouched', async () => {
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    const largeGpx = `<gpx>${'p'.repeat(800_000)}</gpx>`;
+    const jobs = Object.fromEntries([1, 2].map(tabId => {
+        const id = `job-${tabId}-generation`;
+        return [String(tabId), {
+            id,
+            sourceTabId: tabId,
+            provider: 'strava',
+            activityId: String(100 + tabId),
+            phase: 'ready',
+            matches: [{ id: 7, name: 'First Peak' }, { id: 8, name: 'Second Peak' }],
+            selectedIds: [7],
+            payloadKey: `bpbCapturePayload:${id}`,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            expiresAt,
+            error: null,
+        }];
+    }));
+    const sessionValues = {
+        bpbCaptureJobs: jobs,
+        'bpbCapturePayload:job-1-generation': { jobId: 'job-1-generation', gpx: largeGpx },
+        'bpbCapturePayload:job-2-generation': { jobId: 'job-2-generation', gpx: largeGpx },
+    };
+    const harness = createHarness({ sessionValues });
+
+    const startedAt = performance.now();
+    const result = await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    const elapsedMs = performance.now() - startedAt;
+    assert.deepEqual([...result.selectedIds], [8]);
+    const jobWrites = harness.sessionSetPatches.filter(patch => patch.bpbCaptureJobs);
+    assert.equal(jobWrites.length, 1);
+    const serializedBytes = JSON.stringify(jobWrites[0]).length;
+    assert.ok(serializedBytes < largeGpx.length / 10,
+        `metadata-only selection write unexpectedly serialized ${serializedBytes} bytes`);
+    assert.ok(elapsedMs < 500, `metadata-only selection took ${elapsedMs.toFixed(1)}ms`);
+    assert.doesNotMatch(JSON.stringify(jobWrites[0]), /<gpx>|pppppppp/);
+    assert.equal(harness.values['bpbCapturePayload:job-1-generation'].gpx, largeGpx);
+    assert.equal(harness.values['bpbCapturePayload:job-2-generation'].gpx, largeGpx);
+});
+
+test('capture lifecycle writes do not wait behind an unrelated session-map queue', async () => {
+    const { promise: optionsWriteGate, resolve: releaseOptionsWrite } = deferred<void>();
+    const { promise: optionsWriteStarted, resolve: announceOptionsWrite } = deferred<void>();
+    const harness = createHarness({
+        afterSessionSet: patch => {
+            if (!patch.bpbBetaSettingsTabs) return undefined;
+            announceOptionsWrite();
+            return optionsWriteGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const registration = harness.send({ type: 'OPTIONS_TAB_REGISTER' }, {
+        tab: { id: 20 },
+        url: 'chrome-extension://test-extension/options/options.html',
+    });
+    await optionsWriteStarted;
+    let selectionSettled = false;
+    const selection = harness.send({
+        type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [],
+    }).then(result => {
+        selectionSettled = true;
+        return result;
+    });
+    await waitForCondition(() => selectionSettled);
+    assert.deepEqual([...(await selection).selectedIds], []);
+
+    releaseOptionsWrite();
+    assert.equal((await registration).ok, true);
+});
+
+test('worker restart migrates legacy payloads, rejects missing generations, and removes orphans', async () => {
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    const sessionValues = {
+        bpbCaptureJobs: {
+            1: {
+                id: 'legacy-job-generation', sourceTabId: 1, provider: 'strava', activityId: '123',
+                phase: 'ready', matches: [], selectedIds: [], uploadGpx: '<gpx>legacy</gpx>',
+                createdAt: Date.now(), updatedAt: Date.now(), expiresAt,
+            },
+            2: {
+                id: 'missing-job-generation', sourceTabId: 2, provider: 'strava', activityId: '456',
+                phase: 'ready', matches: [], selectedIds: [],
+                payloadKey: 'bpbCapturePayload:missing-job-generation',
+                createdAt: Date.now(), updatedAt: Date.now(), expiresAt,
+            },
+        },
+        'bpbCapturePayload:orphan-job-generation': {
+            jobId: 'orphan-job-generation',
+            gpx: '<gpx>orphan</gpx>',
+        },
+    };
+    const harness = createHarness({ sessionValues });
+
+    await waitForCondition(() => harness.values.bpbCaptureJobs['1'].payloadKey
+        && harness.values.bpbCaptureJobs['2'].phase === 'error'
+        && !harness.values['bpbCapturePayload:orphan-job-generation']);
+    assert.equal(harness.values.bpbCaptureJobs['1'].uploadGpx, undefined);
+    assert.equal(storedCaptureGpx(harness), '<gpx>legacy</gpx>');
+    assert.equal(harness.values.bpbCaptureJobs['2'].payloadKey, undefined);
+    assert.equal(harness.values.bpbCaptureJobs['2'].error.code, 'capture-payload-missing');
+});
+
+test('a missing live payload fails closed before any draft tab is created', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const payloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    delete harness.values[payloadKey];
+
+    const result = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'job-expired');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(harness.tabs.has(100), false);
+});
+
+test('alarm cleanup retries an orphan left by a transient payload deletion failure', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const payloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    harness.faults.payloadRemove = 'TRANSIENT_PAYLOAD_REMOVE_SENTINEL';
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    assert.equal(cleared.ok, true);
+    assert.ok(harness.values[payloadKey], 'the injected deletion failure should leave a recoverable orphan');
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => !harness.values[payloadKey]);
+    assert.ok(harness.payloadRemoveCalls() >= 2);
+});
+
+test('draft apply leases are exclusive, persisted, expiring, and one-use', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({ clock });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+
+    const apply = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(apply.action, 'apply');
+    assert.equal(typeof apply.applyLeaseToken, 'string');
+    assert.deepEqual(harness.values.bpbDraftTabs['100'].applyLease, {
+        token: apply.applyLeaseToken,
+        expiresAt: clock.now + 30_000,
+        documentKey: 'document:test-document-100',
+    });
+
+    const duplicateReady = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(duplicateReady.action, 'wait');
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: 'forged-lease',
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
+    assert.equal(harness.values.bpbDraftTabs['100'].applyLease.token, apply.applyLeaseToken);
+
+    clock.now += 30_001;
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
+    assert.equal(harness.values.bpbDraftTabs['100'].applyLease, null);
+
+    const retry = await harness.send(
+        { type: 'DRAFT_READY', pid: '7', cid: '77' },
+        { tab: { id: 100 } },
+    );
+    assert.equal(retry.action, 'apply');
+    assert.notEqual(retry.applyLeaseToken, apply.applyLeaseToken);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), false);
+});
+
+test('toolbar capture and local GPX create identical new sibling draft records', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>',
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Test Traverse', utcOffsetMinutes: 0 },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+            ]]
+        }
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const captureSibling = Object.values(harness.values.bpbDraftTabs)
+        .find(draft => draft.sourceTabId === 1 && draft.pid === 8);
+
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77'
+    };
+    const selection = {
+        pageSessionId: 'capture-parity-session',
+        selectionGeneration: 1,
+        selectionNonce: 'capture-parity-selection-nonce',
+    };
+    assert.equal(await harness.send({
+        type: 'GPX_PROCESS_INVALIDATE', ...selection
+    }, sender).then(result => result.ok), true);
+    const processed = await harness.send({
+        type: 'GPX_PROCESS_START',
+        ...selection,
+        trackName: 'Test Traverse',
+        utcOffsetMinutes: 0,
+        waypoints: [],
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+            { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+        ]]
+    }, sender);
+    assert.equal(processed.phase, 'ready');
+    await harness.send({
+        type: 'GPX_PROCESS_APPLY', ...selection,
+        jobId: processed.jobId, selectedIds: [7, 8], primaryId: 7
+    }, sender);
+    const uploadSibling = Object.values(harness.values.bpbDraftTabs)
+        .find(draft => draft.sourceTabId === 5 && draft.pid === 8);
+
+    const comparable = (draft: DraftTab) => {
+        const copy = structuredClone(draft);
+        for (const key of ['tabId', 'jobId', 'sourceTabId', 'expiresAt']) delete copy[key];
+        return copy;
+    };
+    assert.ok(captureSibling && uploadSibling);
+    assert.equal(captureSibling.preserveExistingFields, false);
+    assert.equal(uploadSibling.preserveExistingFields, false);
+    assert.deepEqual(comparable(captureSibling), comparable(uploadSibling));
+});
+
+test('only a Peakbagger tab can open the report drafts manager', async () => {
+    const harness = createHarness();
+    const sender = {
+        tab: { id: 5 },
+        documentId: 'report-document',
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1',
+    };
+    const withoutActivation = await harness.send({ type: 'OPEN_DRAFTS_MANAGER' }, sender);
+    assert.equal(withoutActivation.error.code, 'activation-required');
+    const allowed = await openDraftsManager(harness, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
+    // The manager is its own page; the worker opens it directly rather than
+    // deep-linking into a Settings section that now only points at it.
+    assert.equal(required(harness.tabs.get(100)).url,
+        'chrome-extension://test-extension/options/drafts.html');
+
+    const before = harness.tabs.size;
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { tab: { id: 6 }, url: 'https://peakbagger.com.evil.example/climber/ascentedit.aspx' }
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Report drafts can only be opened from a Peakbagger page.',
+        },
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_DRAFTS_MANAGER' },
+        { url: 'https://www.peakbagger.com/climber/ascentedit.aspx' }
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Report drafts can only be opened from a Peakbagger page.',
+        },
+    });
+    assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
+test('only a Peakbagger tab can open the Has beta settings section', async () => {
+    const harness = createHarness();
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        documentId: 'peak-list-document',
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    };
+    const withoutActivation = await harness.send({
+        type: 'OPEN_BETA_SETTINGS',
+        disposition: 'foreground-tab',
+    }, sender);
+    assert.equal(withoutActivation.error.code, 'activation-required');
+    assert.equal(harness.tabs.size, 2);
+
+    const allowed = await openBetaSettings(harness, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100, reused: false });
+    assert.deepEqual(harness.values.bpbBetaSettingsTabs, { 100: { owned: true } });
+    assert.deepEqual(JSON.parse(JSON.stringify(harness.tabs.get(100))), {
+        id: 100,
+        windowId: 9,
+        url: 'chrome-extension://test-extension/options/options.html#beta',
+        active: true,
+        status: 'complete',
+    });
+
+    const reused = await openBetaSettings(harness, sender, 'background-tab');
+    assert.deepEqual(JSON.parse(JSON.stringify(reused)), { ok: true, tabId: 100, reused: true });
+    assert.equal(harness.tabs.size, 3, 'the exact options tab is reused');
+
+    const moved = await openBetaSettings(harness, sender, 'new-window');
+    assert.deepEqual(JSON.parse(JSON.stringify(moved)), { ok: true, tabId: 100, reused: true });
+    assert.deepEqual(harness.windowCreates.at(-1), { tabId: 100, focused: true });
+    assert.equal(harness.tabs.size, 3, 'moving the existing tab does not duplicate it');
+
+    required(harness.tabs.get(100)).url = 'https://example.com/user-owned';
+    harness.tabUpdated.listeners.forEach(listener => listener(100, {
+        url: 'https://example.com/user-owned',
+    }, structuredClone(harness.tabs.get(100))));
+    await waitForCondition(() => !harness.values.bpbBetaSettingsTabs?.['100']);
+    const afterNavigation = await openBetaSettings(harness, sender, 'background-tab');
+    assert.deepEqual(JSON.parse(JSON.stringify(afterNavigation)), { ok: true, tabId: 101, reused: false });
+    assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/user-owned',
+        'a tab navigated away from Settings is never reclaimed');
+
+    const before = harness.tabs.size;
+    assert.deepEqual(JSON.parse(JSON.stringify(await harness.send(
+        { type: 'OPEN_BETA_SETTINGS' },
+        {
+            tab: { id: 6, windowId: 9 },
+            url: 'https://peakbagger.com.evil.example/climber/PeakAscents.aspx?pid=1039',
+        }
+    ))), {
+        ok: false,
+        error: {
+            code: 'forbidden',
+            message: 'Beta settings can only be opened from a Peakbagger page.',
+        },
+    });
+    assert.equal(harness.tabs.size, before, 'forbidden senders must not create a tab');
+});
+
+test('map-layer Settings navigation requires its own trusted activation and a fixed destination', async () => {
+    const harness = createHarness(), sender = { tab: { id: 5, windowId: 9 }, documentId: 'map-document', frameId: 0, url: 'https://www.peakbagger.com/map/MasterMap.aspx' };
+    assert.equal((await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', disposition: 'foreground-tab' }, sender)).error.code, 'activation-required');
+    const generation = 'custom-layers-1';
+    const activation = await harness.send({ type: 'TRUSTED_ACTION_ISSUE', action: 'custom-layer-settings', generation }, sender);
+    const reply = await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab', section: 'evil' }, sender);
+    assert.equal(reply.ok, true); assert.equal(required(harness.tabs.get(reply.tabId)).url, 'chrome-extension://test-extension/options/options.html#custom-map-layers');
+    assert.equal((await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab' }, sender)).error.code, 'activation-required');
+});
+
+test('rapid trusted Settings activations serialize to one exact options tab', async () => {
+    const harness = createHarness();
+    const sender = {
+        tab: { id: 5, windowId: 9 },
+        documentId: 'peak-list-document',
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    };
+    const [first, second] = await Promise.all([
+        openBetaSettings(harness, sender, 'foreground-tab'),
+        openBetaSettings(harness, sender, 'background-tab'),
+    ]);
+
+    assert.equal(first.reused, false);
+    assert.equal(second.reused, true);
+    assert.equal([...harness.tabs.values()].filter(tab =>
+        tab.url === 'chrome-extension://test-extension/options/options.html#beta').length, 1);
+});
+
+test('browser, storage, and page-world exceptions stay behind the public worker boundary', async () => {
+    const sentinel = 'RAW_BROWSER_SENTINEL: chrome.runtime.lastError';
+    const expectedOuter = {
+        phase: 'error',
+        error: {
+            code: 'unexpected',
+            message: 'Better Peakbagger could not complete this action. Reload and try again.',
+        },
+    };
+    const logText = (harness: Harness) => harness.loggedErrors
+        .flatMap(args => args)
+        .map(value => value instanceof Error ? value.message : String(value))
+        .join('\n');
+    const assertPrivate = (harness: Harness, response: unknown) => {
+        assert.doesNotMatch(JSON.stringify(response), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
+        assert.doesNotMatch(JSON.stringify(harness.values), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
+        assert.match(logText(harness), /RAW_BROWSER_SENTINEL: chrome\.runtime\.lastError/);
+    };
+
+    const tabCreate = createHarness({ faults: { tabCreate: sentinel } });
+    const createResponse = await openDraftsManager(tabCreate, {
+        tab: { id: 5 },
+        documentId: 'report-document',
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=1',
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(createResponse)), {
+        ok: false,
+        error: {
+            code: 'draft-manager-open-failed',
+            message: 'Report drafts could not be opened. Try again.',
+        },
+    });
+    assertPrivate(tabCreate, createResponse);
+
+    const betaTabCreate = createHarness({ faults: { tabCreate: sentinel } });
+    const betaCreateResponse = await openBetaSettings(betaTabCreate, {
+        tab: { id: 5, windowId: 9 },
+        url: 'https://www.peakbagger.com/climber/PeakAscents.aspx?pid=1039',
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(betaCreateResponse)), {
+        ok: false,
+        error: {
+            code: 'beta-settings-open-failed',
+            message: 'Settings could not be opened. Try again.',
+        },
+    });
+    assertPrivate(betaTabCreate, betaCreateResponse);
+
+    const sessionStorage = createHarness({ faults: { sessionGet: sentinel } });
+    const sessionResponse = await sessionStorage.send({ type: 'CAPTURE_STATUS', tabId: 1 });
+    assert.deepEqual(JSON.parse(JSON.stringify(sessionResponse)), expectedOuter);
+    assertPrivate(sessionStorage, sessionResponse);
+
+    const syncStorage = createHarness({ faults: { syncGet: sentinel } });
+    const syncResponse = await syncStorage.send(
+        { type: 'SETTINGS_PATCH', patch: { units: 'metric' } },
+        { url: 'chrome-extension://test-extension/options/options.html' }
+    );
+    assert.deepEqual(JSON.parse(JSON.stringify(syncResponse)), expectedOuter);
+    assertPrivate(syncStorage, syncResponse);
+
+    const scripting = createHarness({ faults: { scripting: sentinel } });
+    const scriptingResponse = await scripting.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(scriptingResponse.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(scriptingResponse.error)), {
+        code: 'capture-failed',
+        message: 'The activity could not be captured. Reload it before trying again.',
+    });
+    assertPrivate(scripting, scriptingResponse);
+
+    const tabUpdate = createHarness();
+    await tabUpdate.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    tabUpdate.faults.tabUpdate = sentinel;
+    const updateResponse = await tabUpdate.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    assert.deepEqual(JSON.parse(JSON.stringify(updateResponse)), {
+        phase: 'error',
+        error: {
+            code: 'draft-open-failed',
+            message: 'Drafts could not be opened. Try again.',
+        },
+    });
+    assertPrivate(tabUpdate, updateResponse);
+});
+
+test('draft opening rolls back every partial toolbar attempt and remains retryable', async t => {
+    const cases: [string, Faults][] = [
+        ['first tab creation', { tabCreateAt: 1 }],
+        ['second tab creation', { tabCreateAt: 2 }],
+        ['first draft write', { draftSetAt: 1 }],
+        ['second draft write', { draftSetAt: 2 }],
+        ['first tab navigation', { tabNavigateAt: 1 }],
+        ['second tab navigation', { tabNavigateAt: 2 }],
+        ['opened-job write', { openedJobSet: 'opened job write failed' }],
+        ['job-and-draft finalization', { draftSetAt: 3 }],
+    ];
+    const peakXml = '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/>'
+        + '<t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>';
+
+    for (const [name, fault] of cases) {
+        await t.test(name, async () => {
+            const harness = createHarness({ peakXml, faults: structuredClone(fault) });
+            await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            const priorJob = structuredClone(harness.values.bpbCaptureJobs['1']);
+            const response = await harness.send({
+                type: 'CAPTURE_OPEN_DRAFTS',
+                tabId: 1,
+                selectedIds: [7, 8],
+            });
+
+            assert.deepEqual(JSON.parse(JSON.stringify(response)), {
+                phase: 'error',
+                error: {
+                    code: 'draft-open-failed',
+                    message: 'Drafts could not be opened. Try again.',
+                },
+            });
+            assert.deepEqual(harness.values.bpbCaptureJobs['1'], priorJob,
+                'the exact pre-attempt job must be restored');
+            assert.deepEqual(harness.values.bpbDraftTabs, {},
+                'no draft identity from the failed attempt may remain');
+            assert.deepEqual([...harness.tabs.keys()].sort((a, b) => a - b), [1, 5],
+                'no blank or navigated draft tab from the failed attempt may remain');
+
+            const retried = await harness.send({
+                type: 'CAPTURE_OPEN_DRAFTS',
+                tabId: 1,
+                selectedIds: [7, 8],
+            });
+            assert.equal(retried.reused, false);
+            assert.equal(retried.tabIds.length, 2);
+            assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+            assert.equal(Object.keys(harness.values.bpbDraftTabs).length, 2);
+        });
+    }
+});
+
+test('a stale recorded draft is pruned and replaced instead of falsely reused', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const first = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    assert.deepEqual([...first.tabIds], [100]);
+
+    harness.tabs.delete(100);
+    const reopened = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+
+    assert.equal(reopened.reused, false);
+    assert.deepEqual([...reopened.tabIds], [101]);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
+    assert.equal(harness.values.bpbDraftTabs['101'].pid, 7);
+    assert.equal(required(harness.tabs.get(101)).url,
+        'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+});
+
+test('replacing a draft whose tab navigated away never closes the user-controlled tab', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+    required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/peak.aspx?pid=7';
+
+    const reopened = await harness.send({
+        type: 'CAPTURE_OPEN_DRAFTS',
+        tabId: 1,
+        selectedIds: [7],
+    });
+
+    assert.equal(reopened.reused, false);
+    assert.deepEqual([...reopened.tabIds], [101]);
+    assert.equal(required(harness.tabs.get(100)).url, 'https://www.peakbagger.com/peak.aspx?pid=7',
+        'a tab no longer owned by the draft transaction belongs to the user');
+    assert.equal(harness.removedTabs.includes(100), false);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
+});
+
+const prepareMultiSummitRecovery = async (previewComplete = true) => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const job = harness.values.bpbCaptureJobs['1'];
+    const base = job.matches[0];
+    job.matches = [7, 8].map((id, index) => ({
+        ...structuredClone(base), id, name: `Summit ${index + 1}`, confidence: 95 - index,
+        draftFields: { ...base.draftFields, upDistanceM: 100 + index * 100 },
+    }));
+    job.tripName = '2026-07-01';
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const sender = { tab: { id: 100 } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: 7, cid: 77 }, sender);
+    assert.equal((await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender)).ok, true);
+    if (previewComplete) {
+        assert.equal((await harness.send({
+            type: 'DRAFT_READY', pid: 7, cid: 77,
+            previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+        }, sender)).action, 'banner');
+    }
+    return { harness, apply, sender };
+};
+
+test('reviewing drafts after saved-ascent navigation never recreates the saved summit, including after worker restart', async () => {
+    const { harness, apply, sender } = await prepareMultiSummitRecovery();
+    assert.equal((await harness.send({
+        type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: apply.jobId,
+        pid: 7, cid: 77, tripId: '44', gpxVerified: true,
+    }, sender)).ok, true);
+    required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+    const restarted = createHarness({ sessionValues: harness.values, browserTabs: harness.tabs });
+    const reviewed = await restarted.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    assert.deepEqual([...reviewed.tabIds], [101], 'a saved summit must not receive another new-ascent form');
+    assert.equal(restarted.tabs.size, 4, 'review must preserve the saved display page without creating tabs');
+    const next = await restarted.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: 101 } });
+    assert.equal(next.fields.suffix, 'b');
+    assert.equal(required(next.fields.tripInfo).sequence, 2);
+    assert.equal(required(next.fields.tripInfo).id, '44');
+});
+
+test('closing every draft after a partial save preserves selection, suffixes, and the shared trip on reopening', async () => {
+    const { harness, apply, sender } = await prepareMultiSummitRecovery();
+    assert.equal((await harness.send({
+        type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: apply.jobId,
+        pid: 7, cid: 77, tripId: '44', gpxVerified: true,
+    }, sender)).ok, true);
+    for (const id of [100, 101]) {
+        harness.tabs.delete(id);
+        harness.tabRemoved.listeners[0](id);
+        await waitForCondition(() => !harness.values.bpbDraftTabs[String(id)]);
+    }
+    await waitForCondition(() => !harness.values.bpbCaptureJobs['1'].openedDraftTabIds.length);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    const reopened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [8] });
+    assert.equal(reopened.tabIds.length, 1, 'only the unsaved summit may reopen');
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7, 8]);
+    const next = await harness.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: reopened.tabIds[0] } });
+    assert.equal(next.action, 'apply');
+    assert.equal(next.fields.suffix, 'b');
+    assert.equal(required(next.fields.tripInfo).sequence, 2);
+    assert.equal(required(next.fields.tripInfo).id, '44');
+});
+
+for (const complete of [false, true]) for (const departure of ['navigation', 'closure']) {
+    test(`review refuses to replay an unverified ${complete ? 'previewed' : 'previewing'} summit after ${departure}`, async () => {
+        const { harness } = await prepareMultiSummitRecovery(complete);
+        if (departure === 'navigation') {
+            required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+        } else {
+            harness.tabs.delete(100);
+            harness.tabRemoved.listeners[0](100);
+            await waitForCondition(() => harness.values.bpbCaptureJobs['1'].saveRecoveryRequired);
+        }
+        const tabsBefore = [...harness.tabs.keys()];
+        const reviewed = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+        assert.equal(reviewed.error?.code, 'draft-save-unverified', 'an uncertain save must not create another ascent or trip');
+        assert.deepEqual([...harness.tabs.keys()], tabsBefore);
+        assert.equal(harness.values.bpbCaptureJobs['1'].saveRecoveryRequired, true);
+        const queued = await harness.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: 101 } });
+        assert.equal(queued.action, 'error');
+        assert.match(queued.message, /saved GPX and trip were checked/);
+    });
+}
+
+test('favorites mutations serialize in the worker and reject unrelated senders', async () => {
+    const harness = createHarness();
+    const mutation = (cid: number) => ({
+        type: 'FAVORITES_MUTATE',
+        mutation: {
+            kind: 'add',
+            entry: { cid, name: `Climber ${cid}`, addedAt: cid, source: 'manual' },
+        },
+    });
+
+    const [fromOptions, fromPeakbagger] = await Promise.all([
+        harness.send(mutation(81), {
+            url: 'chrome-extension://test-extension/options/options.html',
+        }),
+        harness.send(mutation(82), {
+            tab: { id: 5 },
+            url: 'https://www.peakbagger.com/climber/climber.aspx?cid=82',
+        }),
+    ]);
+    const forbidden = await harness.send(mutation(83), {
+        tab: { id: 8 },
+        url: 'https://peakbagger.com.evil.example/climber/climber.aspx?cid=83',
+    });
+
+    assert.equal(fromOptions.ok, true);
+    assert.equal(fromPeakbagger.ok, true);
+    assert.equal(forbidden.ok, false);
+    assert.equal(forbidden.error.code, 'forbidden');
+    assert.deepEqual(required(harness.localValues.bpbFavoriteClimbers).entries.map(entry => entry.cid), [82, 81]);
+});
+
+test('ignored mutations and device report preferences reject unrelated senders', async () => {
+    const harness = createHarness();
+    const sender = { tab: { id: 5 }, url: 'https://www.peakbagger.com/climber/climber.aspx?cid=82' };
+    const message = { type: 'IGNORED_MUTATE', mutation: { kind: 'add', entry: {
+        cid: 82, name: 'Example', addedAt: 1,
+    } } };
+    assert.equal((await harness.send(message, sender)).ok, true);
+    assert.equal(required(harness.localValues.bpbIgnoredClimbers).revision, 1);
+    const foreign = { tab: { id: 8 }, url: 'https://evil.example/peak.aspx' };
+    assert.equal((await harness.send(message, foreign)).error.code, 'forbidden');
+    assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: true }, sender)).ok, true);
+    assert.equal(required(harness.localValues.bpbPeakReportFilter).favoritesOnly, true);
+    assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: false }, foreign)).ok, false);
+});
+
+test('Buddy cache publication is worker-owned and rejects stale snapshots and unrelated senders', async () => {
+    const h = createHarness();
+    const options = { url: 'chrome-extension://test-extension/options/favorites.html' };
+    const site = { tab: { id: 5 }, url: 'https://www.peakbagger.com/peak.aspx?pid=7' };
+    const begin = { type: 'BUDDY_CACHE_UPDATE', phase: 'begin', observedAt: null };
+    const original = await h.send(begin, options);
+    const candidate = { ownerCid: 77, entries: [{ cid: 82, name: 'Climber 82' }], fetchedAt: 1 };
+    const publish = { type: 'BUDDY_CACHE_UPDATE', phase: 'publish', snapshot: original.snapshot, cache: candidate };
+    assert.equal((await h.send(publish, site)).written, true);
+    assert.deepEqual(h.localValues.bpbBuddyCache, candidate);
+    const late = await h.send({ ...publish, cache: { ...candidate, entries: [] } }, options);
+    assert.equal(late.written, false);
+    assert.deepEqual(h.localValues.bpbBuddyCache, candidate);
+    for (const message of [begin, publish]) {
+        const response = await h.send(message, { tab: { id: 8 }, url: 'https://example.com/peak.aspx' });
+        assert.equal(response.ok, false); assert.equal(response.error.code, 'forbidden');
+    }
+});
+
+test('worker settings patches serialize and reject unrelated senders', async () => {
+    const harness = createHarness({ settings: { enable3dMap: false, units: 'imperial' } });
+    const patch = (value: Values) => ({ type: 'SETTINGS_PATCH', patch: value });
+
+    const [fromOptions, fromPeakbagger] = await Promise.all([
+        harness.send(patch({ units: 'metric' }), {
+            url: 'chrome-extension://test-extension/options/options.html',
+        }),
+        harness.send(patch({ theme: 'dark' }), {
+            tab: { id: 5 },
+            url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=99',
+        }),
+    ]);
+    const forbidden = await harness.send(patch({ enable3dMap: true }), {
+        tab: { id: 8 },
+        url: 'https://peakbagger.com.evil.example/climber/ascent.aspx?aid=99',
+    });
+
+    assert.equal(fromOptions.ok, true);
+    assert.equal(fromPeakbagger.ok, true);
+    assert.equal(forbidden.ok, false);
+    assert.equal(forbidden.error.code, 'forbidden');
+    // Both accepted patches survive: the queue composes them instead of letting
+    // the second write rebuild the record from a pre-first-write read.
+    assert.equal(harness.syncValues.bpbSettings.units, 'metric');
+    assert.equal(harness.syncValues.bpbSettings.theme, 'dark');
+    assert.equal(harness.syncValues.bpbSettings.enable3dMap, false,
+        'a rejected sender must not reach the feature gate');
+});
+
+test('toolbar capture fails closed when privacy settings cannot be read', async () => {
+    const sentinel = 'SYNC_CAPTURE_SETTINGS_SENTINEL';
+    const harness = createHarness({ faults: { syncGet: sentinel } });
+    const response = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(response.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(response.error)), {
+        code: 'settings-unavailable',
+        message: 'Reload the extension and try again. Nothing was captured.',
+    });
+    assert.equal(harness.scriptCalls.length, 0, 'the provider page must not be injected');
+    assert.equal(harness.fetchCalls.length, 0, 'no Peakbagger or coordinate request may start');
+    assert.equal(harness.values.bpbCaptureJobs, undefined, 'no capture job may retain a payload');
+    assert.match(
+        harness.loggedErrors.flat().map(value => value instanceof Error ? value.message : String(value)).join('\n'),
+        /SYNC_CAPTURE_SETTINGS_SENTINEL/
+    );
+});
+
+test('an unsupported tab is rejected before the authoritative settings read', async () => {
+    const sentinel = 'SETTINGS_MUST_NOT_BE_READ';
+    const tabs = new Map([[1, {
+        id: 1,
+        windowId: 9,
+        url: 'https://example.com/not-an-activity',
+        active: true,
+        status: 'complete',
+    }]]);
+    const harness = createHarness({ browserTabs: tabs, faults: { syncGet: sentinel } });
+    const response = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(response.error.code, 'unsupported');
+    assert.equal(harness.scriptCalls.length, 0);
+    assert.doesNotMatch(harness.loggedErrors.flat().join('\n'), new RegExp(sentinel));
+});
+
+test('Peakbagger login accepts signed-in account controls and reports ambiguous pages honestly', async () => {
+    const accountControl = createHarness({
+        loginHtml: '<div>Logged in: Test | <a class="account" href="/climber/ClimberEdit.aspx?mode=profile&amp;cid=77">Edit Account</a></div>'
+    });
+    assert.equal((await accountControl.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+
+    const ambiguous = createHarness({ loginHtml: '<a href="/climber/login.aspx">Log In</a>' });
+    const failed = await ambiguous.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.phase, 'error');
+    assert.equal(failed.error.code, 'peakbagger-signed-out');
+    assert.match(failed.error.message, /login could not be verified/i);
+    assert.doesNotMatch(failed.error.message, /^Sign in to Peakbagger/);
+});
+
+test('toolbar capture preserves actionable Peakbagger human-check recovery', async () => {
+    const url = 'https://www.peakbagger.com/Default.aspx';
+    const harness = createHarness({
+        peakbaggerPageLoginResult: {
+            kind: 'challenged',
+            requestedUrl: url,
+            url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'html', status: 403 },
+            reason: 'PRIVATE CHALLENGE BODY',
+        },
+    });
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'cloudflare',
+        message: 'Peakbagger is asking for a human check. Open Peakbagger, complete the check, then try again.',
+        recoveryTabId: 5,
+    });
+    assert.doesNotMatch(JSON.stringify(harness.values), /PRIVATE CHALLENGE BODY/,
+        'challenge HTML must not be retained with the capture job');
+});
+
+test('a challenged helper is adopted and focused only while it remains Peakbagger', async () => {
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.recoveryTabId, 100);
+    assert.equal(harness.tabs.has(100), true, 'the challenge page stays open for the user');
+    assert.deepEqual(harness.removedTabs, []);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined,
+        'the adopted tab is no longer cleanup-owned by the extension');
+
+    const sender = { url: 'chrome-extension://test-extension/popup/popup.html' };
+    const focused = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.deepEqual(JSON.parse(JSON.stringify(focused)), { ok: true, tabId: 100 });
+    assert.equal(required(harness.tabs.get(100)).active, true);
+    assert.deepEqual(harness.windowUpdates.at(-1), [9, { focused: true }]);
+
+    required(harness.tabs.get(100)).active = false;
+    required(harness.tabs.get(100)).url = 'https://example.com/reused-id';
+    const updatesBefore = harness.windowUpdates.length;
+    const rejected = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
+    assert.equal(rejected.ok, false);
+    assert.equal(rejected.error.code, 'not-found');
+    assert.equal(required(harness.tabs.get(100)).active, false, 'an ID-reused tab is never focused');
+    assert.equal(harness.windowUpdates.length, updatesBefore);
+
+    const forbidden = await harness.send(
+        { type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 },
+        { tab: { id: 1 }, url: 'https://www.strava.com/activities/123' },
+    );
+    assert.equal(forbidden.error.code, 'forbidden');
+});
+
+test('activity capture creates and removes an inactive Peakbagger request tab when needed', async () => {
+    const harness = createHarness();
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['peaks'],
+        'the freshly loaded account page must not be downloaded a second time');
+    assert.equal(harness.peakbaggerAccountEvidenceCalls(), 1);
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.equal(harness.tabs.has(100), false);
+    assert.equal(required(harness.tabs.get(1)).active, true,
+        'the provider tab remains active while the helper works in the background');
+});
+
+test('capture skips sleeping Peakbagger tabs without waking or changing them', async t => {
+    for (const state of [
+        { discarded: true, status: 'unloaded' },
+        { discarded: true, status: 'complete' },
+        { frozen: true, status: 'complete' },
+        { status: 'unloaded' },
+    ]) {
+        for (const liveTab of [true, false]) {
+            await t.test(`${JSON.stringify(state)}, live tab: ${liveTab}`, async () => {
+                const harness = createHarness({
+                    beforePeakbaggerScript: ({ details }) => {
+                        assert.equal(details.target.tabId, liveTab ? 6 : 100,
+                            'all page operations must use the live tab or the owned helper');
+                    },
+                });
+                Object.assign(required(harness.tabs.get(5)), state);
+                const sleepingTab = structuredClone(harness.tabs.get(5));
+                if (liveTab) harness.tabs.set(6, {
+                    id: 6, windowId: 9, active: false, status: 'complete',
+                    url: 'https://www.peakbagger.com/Default.aspx',
+                });
+
+                const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+                assert.equal(ready.phase, 'ready');
+                assert.equal(harness.providerCaptureCalls.length, 1);
+                assert.deepEqual(harness.tabs.get(5), sleepingTab);
+                assert.equal(required(harness.tabs.get(1)).active, true);
+                assert.deepEqual(harness.windowUpdates, []);
+                assert.deepEqual(harness.removedTabs, liveTab ? [] : [100]);
+            });
+        }
+    }
+});
+
+test('a new Peakbagger helper waits for its first committed URL before injection', async t => {
+    for (const url of [undefined, 'about:blank']) {
+        await t.test(String(url), async () => {
+            let reads = 0;
+            const harness = createHarness({
+                timerDelayCap: 100,
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 100) return;
+                    const tab = required(tabs.get(tabId));
+                    if (++reads <= 2) {
+                        tab.url = url;
+                        tab.status = reads === 1 ? 'complete' : 'loading';
+                    } else {
+                        tab.url = 'https://www.peakbagger.com/Default.aspx';
+                        tab.status = 'complete';
+                    }
+                },
+                beforePeakbaggerScript: () => assert.ok(reads >= 3,
+                    'never inject into the uncommitted document'),
+            });
+            harness.tabs.delete(5);
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.phase, 'ready');
+            assert.equal(harness.providerCaptureCalls.length, 1);
+            assert.deepEqual(harness.removedTabs, [100]);
+        });
+    }
+});
+
+test('an uncommitted helper remains bounded and never authorizes GPS export', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock, timerDelayCap: 100,
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId !== 100) return;
+            required(tabs.get(tabId)).url = undefined;
+            required(tabs.get(tabId)).status = 'loading';
+            clock.now += 10_000;
+        },
+        beforePeakbaggerScript: () => assert.fail('an uncommitted helper must not run page scripts'),
+    });
+    harness.tabs.delete(5);
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.error.code, 'peakbagger-page-timeout');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+});
+
+test('a helper navigating to a foreign origin is rejected before script injection', async t => {
+    for (const url of ['about:blank', 'https://www.peakbagger.com/Default.aspx']) {
+        await t.test(url, async () => {
+            const harness = createHarness({
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 100) return;
+                    Object.assign(required(tabs.get(tabId)), { url, pendingUrl: 'https://example.com/', status: 'loading' });
+                },
+                beforePeakbaggerScript: () => assert.fail('foreign pending navigation must not run scripts'),
+            });
+            harness.tabs.delete(5);
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.error.code, 'peakbagger-tab-changed');
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('a transient Peakbagger readiness injection failure retries the still-open tab', async () => {
+    let probes = 0;
+    const harness = createHarness({
+        timerDelayCap: 100,
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase === 'readiness' && ++probes === 1) throw new Error('Frame not ready');
+        },
+    });
+    required(harness.tabs.get(5)).status = 'loading';
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.phase, 'ready');
+    assert.equal(probes, 2);
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+});
+
+test('a persistent readiness injection failure reports connection failure, not tab closure', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock, timerDelayCap: 100,
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase !== 'readiness') return;
+            clock.now += 10_000;
+            throw new Error('Cannot access this page');
+        },
+    });
+    required(harness.tabs.get(5)).status = 'loading';
+    const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(job.error.code, 'peakbagger-page-connect-failed');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+});
+
+test('waiting for a helper document still rejects closure or navigation away', async t => {
+    for (const destination of [undefined, 'about:blank', 'https://example.com/']) {
+        await t.test(String(destination), async () => {
+            let changed = false;
+            const harness = createHarness({
+                timerDelayCap: 100,
+                beforePeakbaggerScript: ({ phase }) => {
+                    if (phase !== 'readiness') return;
+                    changed = true;
+                    throw new Error('Document unloaded');
+                },
+                beforeTabGet: ({ tabId, tabs }) => {
+                    if (tabId !== 5 || !changed) return;
+                    if (destination) required(tabs.get(5)).url = destination;
+                    else tabs.delete(5);
+                },
+            });
+            required(harness.tabs.get(5)).status = 'loading';
+            const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(job.error.code, 'peakbagger-tab-changed');
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('an interactive Peakbagger document can verify login while unrelated resources keep loading', async () => {
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ details }) => {
+            assert.equal(details.injectImmediately, true,
+                'page-helper calls must not wait for the pending window load event');
+        },
+    });
+    required(harness.tabs.get(5)).status = 'loading';
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(required(harness.tabs.get(5)).status, 'loading');
+    assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks'],
+        'an incompletely loaded tab must still make a live login request');
+    assert.equal(harness.providerCaptureCalls.length, 1);
+});
+
+test('an interactive Peakbagger document cannot bypass a signed-out live login response', async () => {
+    const harness = createHarness({ loginHtml: '<html><body>Sign in</body></html>' });
+    required(harness.tabs.get(5)).status = 'loading';
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.error.code, 'peakbagger-signed-out');
+    assert.equal(harness.providerCaptureCalls.length, 0,
+        'GPS export remains behind authoritative account verification');
+});
+
+test('Peakbagger document readiness requires a parsed document at the expected URL', async t => {
+    for (const documentState of [
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'loading' },
+        { url: 'https://www.peakbagger.com/other.aspx', readyState: 'interactive' },
+        { url: 'https://example.com/', readyState: 'complete' },
+        { url: 'https://www.peakbagger.com/Default.aspx', readyState: 'unexpected' },
+    ]) {
+        await t.test(`${documentState.url} ${documentState.readyState}`, async () => {
+            const clock = { now: Date.now() };
+            const harness = createHarness({
+                clock,
+                timerDelayCap: 5,
+                peakbaggerDocumentState: documentState,
+                beforeTabGet: ({ tabId }) => { if (tabId === 5) clock.now += 10_000; },
+            });
+            required(harness.tabs.get(5)).status = 'loading';
+
+            const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+            assert.equal(failed.error.code, 'peakbagger-page-timeout');
+            assert.equal(harness.peakbaggerPageCalls.length, 0);
+            assert.equal(harness.providerCaptureCalls.length, 0);
+        });
+    }
+});
+
+test('cancelling a stalled Peakbagger document-readiness probe settles capture immediately', { timeout: 1000 }, async () => {
+    const { promise: readinessReached, resolve: reached } = deferred<void>();
+    const harness = createHarness({
+        beforePeakbaggerScript: ({ phase }) => {
+            if (phase !== 'readiness') return;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    required(harness.tabs.get(5)).status = 'loading';
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await readinessReached;
+
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(await capture, null);
+    assert.equal(harness.providerCaptureCalls.length, 0);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+});
+
+test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {
+    const harness = createHarness({
+        beforePeakbaggerAccountEvidence: () => {
+            required(harness.tabs.get(1)).active = false;
+            required(harness.tabs.get(100)).active = true;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.has(100), true);
+    assert.deepEqual(harness.removedTabs, []);
+});
+
+test('a temporary Peakbagger tab stays user-owned after it is selected and then left', async () => {
+    const harness = createHarness({
+        beforePeakbaggerAccountEvidence: () => {
+            required(harness.tabs.get(1)).active = false;
+            required(harness.tabs.get(100)).active = true;
+            harness.tabActivated.listeners[0]({ tabId: 100, windowId: 9 });
+            required(harness.tabs.get(100)).active = false;
+            required(harness.tabs.get(1)).active = true;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.tabs.has(100), true);
+    assert.deepEqual(harness.removedTabs, []);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined,
+        'release forgets the transferred lease without deleting its tab');
+});
+
+test('navigation, closure, and tab-ID reuse all fail open during helper cleanup', async t => {
+    await t.test('navigation transfers ownership', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                const url = 'https://example.com/user-destination';
+                required(harness.tabs.get(100)).url = url;
+                harness.tabUpdated.listeners[0](100, { url }, harness.tabs.get(100));
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/user-destination');
+        assert.deepEqual(harness.removedTabs, []);
+    });
+
+    await t.test('an already-closed helper leaves no stale lease', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                harness.tabs.delete(100);
+                harness.tabRemoved.listeners[0](100, { windowId: 9, isWindowClosing: false });
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        await waitForCondition(() => !harness.values.bpbPeakbaggerHelperLeases?.['100']);
+        assert.deepEqual(harness.removedTabs, []);
+    });
+
+    await t.test('an ID-reused tab is never removed', async () => {
+        const harness = createHarness({
+            beforePeakFetch: () => {
+                harness.tabs.set(100, {
+                    id: 100,
+                    windowId: 9,
+                    url: 'https://example.com/reused-id',
+                    active: false,
+                    status: 'complete',
+                });
+            },
+        });
+        harness.tabs.delete(5);
+        assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
+        assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/reused-id');
+        assert.deepEqual(harness.removedTabs, []);
+    });
+});
+
+test('worker restart cleans only expired, unadopted, exact-match helper leases', async t => {
+    const helperUrl = 'https://www.peakbagger.com/Default.aspx';
+    const boot = async ({ adopted = false, url = helperUrl, expired = true } = {}) => {
+        const clock = { now: Date.now() };
+        const values = {
+            bpbPeakbaggerHelperLeases: {
+                100: {
+                    tabId: 100,
+                    generation: 'capture-generation',
+                    createdAt: clock.now - 60_000,
+                    expiresAt: expired ? clock.now - 1 : clock.now + 60_000,
+                    expectedUrl: helperUrl,
+                    adopted,
+                },
+            },
+        };
+        const tabs = new Map([[100, {
+            id: 100,
+            windowId: 9,
+            url,
+            active: false,
+            status: 'complete',
+        }]]);
+        const harness = createHarness({ clock, sessionValues: values, browserTabs: tabs });
+        await new Promise(resolve => setTimeout(resolve, 10));
+        return harness;
+    };
+
+    await t.test('expired exact helper is removed', async () => {
+        const harness = await boot();
+        assert.deepEqual(harness.removedTabs, [100]);
+        assert.equal(harness.tabs.has(100), false);
+    });
+    await t.test('adopted helper is retained', async () => {
+        const harness = await boot({ adopted: true });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+    });
+    await t.test('navigated or ID-reused helper is retained', async () => {
+        const harness = await boot({ url: 'https://example.com/reused-id' });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+    });
+    await t.test('unexpired helper is retained for its live capture', async () => {
+        const harness = await boot({ expired: false });
+        assert.deepEqual(harness.removedTabs, []);
+        assert.equal(harness.tabs.has(100), true);
+        assert.ok(required(harness.values.bpbPeakbaggerHelperLeases)['100']);
+    });
+});
+
+test('ambiguous fresh account evidence falls back to the live login request', async () => {
+    const cases = [
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [{
+                label: 'My Home Page',
+                href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+            }],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=88',
+                },
+            ],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                },
+            ],
+        },
+        {
+            pageUrl: 'https://www.peakbagger.com/Default.aspx',
+            links: [
+                {
+                    label: 'My Home Page',
+                    href: 'https://www.peakbagger.com/climber/climber.aspx?cid=77',
+                },
+                {
+                    label: 'Edit Account',
+                    href: 'https://www.peakbagger.com/climber/climberedit.aspx?cid=77',
+                },
+            ],
+            pageText: 'must not cross the narrow evidence boundary',
+        },
+    ];
+
+    for (const evidence of cases) {
+        const harness = createHarness({ peakbaggerAccountEvidence: evidence });
+        harness.tabs.delete(5);
+        const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+        assert.equal(ready.phase, 'ready');
+        assert.equal(harness.peakbaggerAccountEvidenceCalls(), 1);
+        assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks']);
+    }
+});
+
+test('a page helper lost during capture is reinjected once without repeating the summit request', async () => {
+    const harness = createHarness({ dropPeakbaggerHelperBeforeKind: 'peaks' });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(ready.phase, 'ready');
+    assert.equal(harness.peakbaggerPageProbeCalls(), 4,
+        'initial injection and one recovery injection each use a bounded before/after probe');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1);
+});
+
+test('the worker rejects page-world summit content that does not match the requested resource', async () => {
+    const sentinel = 'UNTRUSTED_PAGE_RESULT_SENTINEL';
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ({
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: `<html>${sentinel}</html>`,
+        }),
+    });
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-response-invalid',
+        message: 'Peakbagger returned summit data that could not be verified. Reload Peakbagger and try the capture again.',
+    });
+    assert.doesNotMatch(JSON.stringify(harness.values), new RegExp(sentinel));
+});
+
+test('Peakbagger tab setup failures identify the failed step and a recovery action', async () => {
+    const harness = createHarness({ faults: { tabCreate: 'popup blocked' } });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-tab-open-failed',
+        message: 'Better Peakbagger could not open Peakbagger for account verification. Open Peakbagger in this browser window, then try again.',
+    });
+});
+
+test('Peakbagger page connection failures distinguish an open tab from a changed tab', async () => {
+    const connected = createHarness({ peakbaggerPageRequestError: 'page realm unavailable' });
+    const connectionFailure = await connected.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.deepEqual(JSON.parse(JSON.stringify(connectionFailure.error)), {
+        code: 'peakbagger-page-connect-failed',
+        message: 'Better Peakbagger could not connect to the open Peakbagger page. Reload that page, wait for it to finish, then try again.',
+    });
+
+    const changed = createHarness({
+        peakbaggerPageRequestError: 'page realm unavailable',
+        beforeTabGet: ({ tabId, tabs }) => {
+            if (tabId === 5) required(tabs.get(5)).url = 'https://example.com/';
+        },
+    });
+    const changedFailure = await changed.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.deepEqual(JSON.parse(JSON.stringify(changedFailure.error)), {
+        code: 'peakbagger-tab-changed',
+        message: 'The Peakbagger tab closed or changed during capture. Keep a Peakbagger page open until summit detection finishes, then try again.',
+    });
+});
+
+test('coordinate-only provider GPX still produces a valid Peakbagger draft', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { displayedLocalStart: '2026-07-01T08:00:00', utcOffsetMinutes: null },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: null, time: null },
+                { lat: 0, lon: 0, ele: null, time: null },
+                { lat: 0, lon: 0.001, ele: null, time: null }
+            ]]
+        }
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.equal(ready.matches[0].classification, 'probable');
+    assert.equal(ready.matches[0].confidence, 69);
+    assert.deepEqual([...ready.selectedIds], []);
+    assert.equal(ready.hasCachedGpx, true);
+
+    const storedJob = harness.values.bpbCaptureJobs['1'];
+    assert.equal((required(storedCaptureGpx(harness)).match(/<trkpt /g) || []).length, 3);
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /<(?:ele|time)>/);
+    assert.equal(storedJob.trackSummary.breakCounts.missingElevation, 3);
+    assert.equal(storedJob.trackSummary.breakCounts.missingTime, 3);
+    assert.equal(storedJob.matches[0].draftFields.date, '2026-07-01');
+    assert.equal(storedJob.matches[0].draftFields.time, '');
+    assert.equal(storedJob.matches[0].draftFields.startElevationM, null);
+    assert.equal(storedJob.matches[0].draftFields.endElevationM, null);
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.action, 'apply');
+    assert.equal(apply.preserveExistingFields, false,
+        'capture-opened fresh drafts keep their existing full-fill behavior');
+    assert.doesNotMatch(apply.gpx, /<(?:ele|time)>/);
+    assert.equal(apply.fields.upDuration, null);
+    assert.equal(apply.fields.downDuration, null);
+});
+
+test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+
+    const failure = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'error', message: 'Invalid GPX file.' }
+    }, { tab: { id: 100 } });
+    assert.equal(failure.action, 'preview-error');
+    assert.match(failure.message, /Invalid GPX file/);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
+    assert.equal(harness.values.bpbDraftTabs['100'].previewStarted, false);
+    assert.equal(harness.values.bpbDraftTabs['100'].complete, false);
+
+    const retry = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(retry.action, 'apply');
+    assert.match(retry.gpx, /<ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time>/);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: retry.jobId, pid: 7, cid: 77,
+        applyLeaseToken: retry.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    const unconfirmed = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'unknown', message: 'Processing GPS data.' }
+    }, { tab: { id: 100 } });
+    assert.equal(unconfirmed.action, 'preview-error');
+    assert.match(unconfirmed.message, /did not confirm/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
+});
+
+test('discarding a cached capture removes its GPX and draft identities before recapture', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstJobId = harness.values.bpbCaptureJobs['1'].id;
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
+    assert.equal(harness.values.bpbDraftTabs['100'].jobId, firstJobId);
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    assert.deepEqual({ ...cleared }, { ok: true, removedGpx: true, removedDraftCount: 1 });
+    const clearedJob = harness.values.bpbCaptureJobs['1'];
+    assert.equal(clearedJob, undefined);
+    assert.equal(harness.values.bpbDraftTabs['100'], undefined);
+    assert.deepEqual(harness.tabMessages, [{ tabId: 100, message: { type: 'DRAFT_CLEARED' } }]);
+    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }), null);
+
+    const recaptured = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(recaptured.phase, 'ready');
+    assert.equal(recaptured.hasCachedGpx, true);
+    assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstJobId);
+});
+
+test('completed single drafts detach silently when their capture is discarded', async () => {
+    const harness = createHarness();
+    const { draftTabId } = await completeSingleDraft(harness);
+
+    const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+
+    assert.equal(cleared.removedDraftCount, 1);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
+    assert.equal(harness.tabMessages.length, 0,
+        'cache disposal must not replace a completed draft success banner with a disconnect error');
+});
+
+test('completed single drafts detach silently when a newer capture replaces them', async () => {
+    const harness = createHarness();
+    const { draftTabId, jobId } = await completeSingleDraft(harness);
+
+    const replacement = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+
+    assert.notEqual(replacement.id, jobId);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
+    assert.equal(harness.tabMessages.length, 0,
+        'replacement must not report a settled draft as disconnected');
+});
+
+test('completed single drafts detach silently when their cache expires', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({ clock });
+    const { draftTabId } = await completeSingleDraft(harness);
+
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => !harness.values.bpbDraftTabs?.[String(draftTabId)]);
+
+    assert.equal(harness.tabMessages.length, 0,
+        'routine expiry must not replace a completed draft success banner with a disconnect error');
+});
+
+test('completed multi-summit drafts still report disconnection until Save is verified', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const draftTabId = opened.tabIds[0];
+    const draft = harness.values.bpbDraftTabs[String(draftTabId)];
+    const sender = { tab: { id: draftTabId } };
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: String(draft.pid), cid: '77' }, sender);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: draft.pid, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, sender).then(value => value.ok), true);
+    assert.equal((await harness.send({
+        type: 'DRAFT_READY', pid: String(draft.pid), cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, sender)).action, 'banner');
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].complete, true);
+    assert.equal(harness.values.bpbDraftTabs[String(draftTabId)].saved, false);
+
+    await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+
+    assert.deepEqual(harness.tabMessages.map(({ tabId, message }) => [Number(tabId), String(message.type)]),
+        [...opened.tabIds].map(tabId => [Number(tabId), 'DRAFT_CLEARED']),
+        'the completed tab and its waiting sibling both still depend on the shared Save workflow');
+});
+
+test('status reads hide expired jobs without running global cleanup', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    harness.values.bpbCaptureJobs['1'].expiresAt = Date.now() - 1;
+    const readsBefore = harness.sessionGetCalls();
+
+    assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }), null);
+    assert.equal(harness.sessionGetCalls() - readsBefore, 1,
+        'a status poll should read only jobs, not mutate drafts, jobs, and snapshots');
+    assert.ok(harness.values.bpbCaptureJobs['1'],
+        'lazy filtering hides stale data; the periodic alarm owns physical cleanup');
+});
+
+test('detached tab and alarm cleanup failures are contained and reported independently', async () => {
+    const harness = createHarness({ faults: { sessionGet: 'session unavailable' } });
+    const waitForError = async (expected: string) => {
+        const deadline = Date.now() + 2000;
+        while (!harness.loggedErrors.some(args => String(args[0]).includes(expected))) {
+            if (Date.now() > deadline) throw new Error('cleanup errors were not reported');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    assert.doesNotThrow(() => harness.tabRemoved.listeners[0](1));
+    await Promise.all([
+        waitForError('photo tab cleanup failed'),
+        waitForError('report draft tab cleanup failed'),
+        waitForError('capture tab cleanup failed'),
+    ]);
+    const tabRemovalLogs = harness.loggedErrors.map(args => String(args[0]));
+    assert.ok(tabRemovalLogs.some(message => message.includes('photo tab cleanup failed')));
+    assert.ok(tabRemovalLogs.some(message => message.includes('report draft tab cleanup failed')));
+    assert.ok(tabRemovalLogs.some(message => message.includes('capture tab cleanup failed')));
+
+    assert.doesNotThrow(() => harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' }));
+    await waitForError('expired capture cleanup failed');
+    assert.ok(harness.loggedErrors.some(args => String(args[0]).includes('expired capture cleanup failed')));
+});
+
+test('a capture that finishes for a different activity is not reused after navigation', async () => {
+    const { promise: peakFetchGate, resolve: releasePeakFetch } = deferred<void>();
+    const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
+    const until = async (predicate: () => unknown) => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) throw new Error('condition not reached');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    // Hold the first capture at the summit lookup, navigate the tab to a
+    // different activity, then request a capture for the new activity. The
+    // second request must be parked on the still-pending first process before
+    // the lookup is released, or it would resolve through the (already
+    // guarded) same-activity fast path instead of the in-flight one.
+    const first = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
+    required(harness.tabs.get(1)).url = 'https://www.strava.com/activities/456';
+    const second = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    releasePeakFetch();
+
+    const firstJob = await first;
+    const secondJob = await second;
+    assert.equal(firstJob.phase, 'ready');
+    assert.notEqual(secondJob.id, firstJob.id,
+        'the completed job for the previous activity must not answer a capture of the new activity');
+});
+
+test('capture follows canonical provider identity across Garmin redirects and URL decoration', async () => {
+    const owned = { ok: true, provider: 'garmin', activityId: '123', viewerId: '42', authorId: '42' };
+    const exported = {
+        ok: true,
+        provider: 'garmin',
+        activityId: '123',
+        metadata: { title: 'Garmin hike', utcOffsetMinutes: 0 },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+            { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) },
+        ]],
+    };
+    for (const [clickedUrl, redirectedUrl] of [
+        [
+            'https://connect.garmin.com/modern/activity/123',
+            'https://connect.garmin.com/app/activity/123',
+        ],
+        [
+            'https://connect.garmin.com/app/activity/123?source=toolbar#summary',
+            'https://connect.garmin.com/app/activity/123?source=redirect#details',
+        ],
+    ]) {
+        const harness = createHarness({
+            ownershipResult: owned,
+            captureResult: exported,
+            beforeTabGet: ({ number, tabs }) => {
+                if (number === 2) required(tabs.get(1)).url = redirectedUrl;
+            },
+        });
+        required(harness.tabs.get(1)).url = clickedUrl;
+
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'ready', `${clickedUrl} -> ${redirectedUrl}`);
+        assert.equal(result.provider, 'garmin');
+        assert.equal(result.activityId, '123');
+        assert.equal(harness.providerCaptureCalls.length, 1);
+    }
+});
+
+test('capture rejects a different activity or unsupported origin at the first worker recheck', async () => {
+    for (const nextUrl of [
+        'https://www.strava.com/activities/456',
+        'http://www.strava.com/activities/123',
+        'https://www.strava.com.evil.example/activities/123',
+    ]) {
+        const harness = createHarness({
+            beforeTabGet: ({ number, tabs }) => {
+                if (number === 2) required(tabs.get(1)).url = nextUrl;
+            },
+        });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error', nextUrl);
+        assert.equal(result.error.code, 'activity-changed', nextUrl);
+        assert.equal(harness.scriptCalls.length, 0, 'no provider page code runs after identity changes');
+        assert.equal(harness.peakbaggerPageCalls.length, 0,
+            'no page-context login or summit request runs after identity changes');
+    }
+});
+
+test('capture rejects a provider-reported SPA navigation after the GPX read', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'activity-changed',
+            provider: 'strava',
+            activityId: '456',
+        },
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'activity-changed');
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0,
+        'coordinates from the replacement activity never reach summit lookup');
+});
+
+test('capture does not follow a same-tab activity navigation after ownership approval', async () => {
+    const { promise: loginGate, resolve: releaseLogin } = deferred<void>();
+    const { promise: reached, resolve: loginReached } = deferred<void>();
+    const harness = createHarness({
+        beforePeakbaggerLogin: async () => {
+            loginReached();
+            await loginGate;
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    required(harness.tabs.get(1)).url = 'https://www.strava.com/activities/456';
+    releaseLogin();
+    const result = await capture;
+
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'activity-changed');
+    assert.equal(harness.providerCaptureCalls.length, 0,
+        'the provider export is never requested for the replacement activity');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0,
+        'no coordinates from the replacement activity reach summit analysis');
+});
+
+test('overlapping starts serialize admission before either capture process is registered', async () => {
+    const { promise: admissionGate, resolve: releaseAdmissions } = deferred<void>();
+    const harness = createHarness({
+        beforeBadgeText: async call => {
+            if (call.number <= 2) await admissionGate;
+        },
+    });
+
+    const firstStart = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const secondStart = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await new Promise(resolve => setTimeout(resolve, 0));
+    releaseAdmissions();
+    const [first, second] = await Promise.all([firstStart, secondStart]);
+
+    assert.equal(first.phase, 'ready');
+    assert.equal(second.phase, 'ready');
+    assert.equal(first.id, second.id, 'both callers must observe the one admitted job');
+    assert.equal(harness.providerCaptureCalls.length, 1, 'only one provider pipeline may start');
+});
+
+test('cancel during capture admission prevents provider access and reports success', async () => {
+    const { promise: admissionGate, resolve: releaseAdmission } = deferred<void>();
+    const { promise: reached, resolve: admissionReached } = deferred<void>();
+    const harness = createHarness({
+        beforeBadgeText: async call => {
+            if (call.number !== 1) return;
+            admissionReached();
+            await admissionGate;
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    const cancellation = harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    releaseAdmission();
+
+    const [started, cancelled] = await Promise.all([capture, cancellation]);
+    assert.equal(started, null);
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    assert.equal(harness.scriptCalls.length, 0,
+        'ownership inspection and provider capture must not start after the cancellation intent');
+    assert.equal(harness.peakbaggerPageCalls.length, 0,
+        'Peakbagger login and corridor requests must not start after the cancellation intent');
+});
+
+test('cancellation promptly abandons every page-helper executeScript phase', async t => {
+    for (const phase of ['probe', 'injection', 'account-evidence', 'request']) {
+        for (const stage of ['before', 'after']) {
+            await t.test(`${stage} ${phase} dispatch`, async () => {
+                const { promise: phaseReached, resolve: reached } = deferred<void>();
+                const stall: ScriptHook = call => {
+                    if (call.phase !== phase || call.number !== 1) return undefined;
+                    reached();
+                    return new Promise(() => {});
+                };
+                const harness = createHarness({
+                    ...(stage === 'before'
+                        ? { beforePeakbaggerScript: stall }
+                        : { afterPeakbaggerScript: stall }),
+                });
+                harness.tabs.delete(5);
+
+                const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                await phaseReached;
+                const settled = Promise.all([
+                    capture,
+                    harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+                ]);
+                const [started, cancelled] = await Promise.race([
+                    settled,
+                    new Promise<never>((_, reject) => setTimeout(
+                        () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
+                        500,
+                    )),
+                ]);
+
+                assert.equal(started, null);
+                assert.equal(cancelled.cancelled, true);
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+                assert.deepEqual(harness.removedTabs, [100]);
+                assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+            });
+        }
+    }
+});
+
+test('cancellation promptly abandons every provider executeScript phase', async t => {
+    for (const phase of ['injection', 'ownership', 'capture']) {
+        for (const stage of ['before', 'after']) {
+            await t.test(`${stage} ${phase} dispatch`, async subtest => {
+                const { promise: phaseReached, resolve: reached } = deferred<void>();
+                const { promise: lateGate, reject: rejectLate } = deferred<never>();
+                const unhandled: unknown[] = [];
+                const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+                process.on('unhandledRejection', onUnhandled);
+                subtest.after(() => process.off('unhandledRejection', onUnhandled));
+                const stall: ScriptHook = call => {
+                    if (call.phase !== phase || call.number !== 1) return undefined;
+                    reached();
+                    return lateGate;
+                };
+                const harness = createHarness({
+                    ...(stage === 'before'
+                        ? { beforeProviderScript: stall }
+                        : { afterProviderScript: stall }),
+                });
+
+                const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                await phaseReached;
+                const settled = Promise.all([
+                    capture,
+                    harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+                ]);
+                const [started, cancelled] = await Promise.race([
+                    settled,
+                    new Promise<never>((_, reject) => setTimeout(
+                        () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
+                        500,
+                    )),
+                ]);
+
+                assert.equal(started, null);
+                assert.equal(cancelled.cancelled, true);
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+                await waitForCondition(() => harness.providerCancelCalls.length === 1);
+
+                rejectLate(new Error(`late ${stage} ${phase} rejection`));
+                await new Promise(resolve => setTimeout(resolve, 0));
+                assert.equal(unhandled.length, 0, 'the abandoned browser promise retains a rejection owner');
+                assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined,
+                    'a late provider dispatch cannot resurrect its generation');
+            });
+        }
+    }
+});
+
+test('provider cancellation dispatch is best-effort and never delays Cancel', async t => {
+    for (const stage of ['before', 'after']) {
+        await t.test(`${stage} cancel dispatch`, async () => {
+            const { promise: reached, resolve: cancelReached } = deferred<void>();
+            const stallCancel: ScriptHook = call => {
+                if (call.phase !== 'cancel' || call.number !== 1) return undefined;
+                cancelReached();
+                return new Promise(() => {});
+            };
+            const harness = createHarness({
+                beforeProviderCapture: () => new Promise(() => {}),
+                ...(stage === 'before'
+                    ? { beforeProviderScript: stallCancel }
+                    : { afterProviderScript: stallCancel }),
+            });
+
+            const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            await waitForCondition(() => harness.providerCaptureCalls.length === 1);
+            const cancellation = harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+            const [cancelled] = await Promise.race([
+                Promise.all([cancellation, reached]),
+                new Promise<never>((_, reject) => setTimeout(
+                    () => reject(new Error(`Cancel awaited the stalled ${stage} cleanup dispatch`)),
+                    500,
+                )),
+            ]);
+
+            assert.equal(cancelled.cancelled, true);
+            assert.equal(await capture, null);
+            assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+        });
+    }
+});
+
+test('every stalled provider operation returns one typed public deadline failure', async t => {
+    for (const phase of ['injection', 'ownership', 'capture']) {
+        await t.test(phase, async () => {
+            const harness = createHarness({
+                timerDelayCap: 5,
+                beforeProviderScript: call => call.phase === phase && call.number === 1
+                    ? new Promise(() => {})
+                    : undefined,
+            });
+
+            const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(result.phase, 'error');
+            assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
+                code: 'provider-page-timeout',
+                message: 'Reload the activity, wait for its details to appear, then select Better Peakbagger again.',
+            });
+            assert.equal(harness.values.bpbCaptureJobs['1'].error.code, 'provider-page-timeout');
+        });
+    }
+});
+
+test('source closure abandons a stalled provider ownership read', async () => {
+    const { promise: ownershipReached, resolve: reached } = deferred<void>();
+    const harness = createHarness({
+        beforeProviderScript: call => {
+            if (call.phase !== 'ownership') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await ownershipReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1, { windowId: 9, isWindowClosing: false });
+
+    assert.equal(await Promise.race([
+        capture,
+        new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error('source closure did not settle provider ownership')), 500,
+        )),
+    ]), null);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
+    assert.deepEqual(harness.providerCancelCalls, [generation]);
+});
+
+test('expiry abandons a stalled provider capture without retaining its generation', async () => {
+    const { promise: captureReached, resolve: reached } = deferred<void>();
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeProviderScript: call => {
+            if (call.phase !== 'capture') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await captureReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+
+    assert.equal(await Promise.race([
+        capture,
+        new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error('expiry did not settle provider capture')), 500,
+        )),
+    ]), null);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
+    assert.deepEqual(harness.providerCancelCalls, [generation]);
+});
+
+test('closing the source tab abandons stalled helper setup and releases its lease', async () => {
+    const { promise: evidenceReached, resolve: reached } = deferred<void>();
+    const harness = createHarness({
+        beforePeakbaggerScript: call => {
+            if (call.phase !== 'account-evidence') return undefined;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+    harness.tabs.delete(5);
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await evidenceReached;
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1, { windowId: 9, isWindowClosing: false });
+    const result = await Promise.race([
+        capture,
+        new Promise<never>((_, reject) => setTimeout(
+            () => reject(new Error('source-tab closure did not settle stalled helper setup')),
+            500,
+        )),
+    ]);
+
+    assert.equal(result, null);
+    assert.deepEqual(harness.removedTabs, [100]);
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+});
+
+test('a stalled page-helper operation returns one typed public deadline failure', async () => {
+    const harness = createHarness({
+        timerDelayCap: 5,
+        beforePeakbaggerScript: call => call.phase === 'probe'
+            ? new Promise(() => {})
+            : undefined,
+    });
+    harness.tabs.delete(5);
+
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    assert.equal(failed.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(failed.error)), {
+        code: 'peakbagger-page-timeout',
+        message: 'Peakbagger did not respond within 20 seconds. Reload Peakbagger, wait for the page to finish, then try again.',
+    });
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('a tab created after its caller deadline is leased and removed without resurrecting capture', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const harness = createHarness({
+        timerDelayCap: 5,
+        beforeTabCreate: async () => {
+            createReached();
+            await createGate;
+        },
+    });
+    harness.tabs.delete(5);
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await reached;
+    const failed = await capture;
+    assert.equal(failed.error.code, 'peakbagger-page-timeout');
+    assert.equal(harness.tabs.has(100), false);
+
+    releaseCreate();
+    await waitForCondition(() => harness.removedTabs.includes(100));
+    assert.equal(harness.tabs.has(100), false);
+    assert.equal(harness.values.bpbPeakbaggerHelperLeases?.['100'], undefined);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'error',
+        'the late tab result cannot resume or replace the failed generation');
+});
+
+test('cancelling an in-progress capture discards its job and ignores later results', async () => {
+    const { promise: peakFetchGate, resolve: releasePeakFetch } = deferred<void>();
+    const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
+    const until = async (predicate: () => unknown) => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) throw new Error('condition not reached');
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+
+    releasePeakFetch();
+    assert.equal(await capture, null);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined,
+        'the abandoned process must not recreate or retain its late result');
+});
+
+test('cancelling during corridor lookup aborts the background request owner immediately', async () => {
+    const peakRequest: { signal?: AbortSignal } = {};
+    const { promise: peakReached, resolve: reached } = deferred<void>();
+    const harness = createHarness({
+        beforePeakFetch: ({ options }) => {
+            peakRequest.signal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await peakReached;
+    const generation = harness.values.bpbCaptureJobs['1'].id;
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+
+    assert.equal(cancelled.cancelled, true);
+    assert.equal(await capture, null);
+    assert.equal(required(peakRequest.signal).aborted, true, 'the background Peakbagger socket owner is aborted');
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.deepEqual(harness.providerCancelCalls, [generation],
+        'the page-owned provider request is cancelled independently too');
+    assert.deepEqual(harness.peakbaggerPageCancelCalls,
+        [required(harness.peakbaggerPageCalls.find(call => call.kind === 'peaks')).requestId],
+        'the page-owned Peakbagger request is also aborted');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1,
+        'cancellation cannot start the retry attempt');
+});
+
+test('Peakbagger corridor concurrency is capped across activity tabs', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const releases: (() => void)[] = [];
+    let inFlight = 0;
+    let maximum = 0;
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: () => {
+            inFlight++;
+            maximum = Math.max(maximum, inFlight);
+            return new Promise<void>(resolve => releases.push(() => {
+                inFlight--;
+                resolve();
+            }));
+        },
+    });
+    const captures = Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false }));
+
+    await waitForCondition(() => releases.length === 4);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 4);
+    required(releases.shift())();
+    await waitForCondition(() => releases.length === 4);
+    while (releases.length) required(releases.shift())();
+    await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 6);
+    while (releases.length) required(releases.shift())();
+
+    const results = await Promise.all(captures);
+    assert.ok(results.every(result => result.phase === 'ready'));
+    assert.equal(maximum, 4, 'the worker owns one aggregate Peakbagger ceiling');
+});
+
+test('one Peakbagger challenge stops active and queued sibling captures without retrying', async () => {
+    const tabs = new Map(Array.from({ length: 6 }, (_, index) => [index + 1, {
+        id: index + 1,
+        windowId: 9,
+        url: 'https://www.strava.com/activities/123',
+        active: index === 0,
+        status: 'complete',
+    }]));
+    tabs.set(50, {
+        id: 50,
+        windowId: 9,
+        url: 'https://www.peakbagger.com/Default.aspx',
+        active: false,
+        status: 'complete',
+    });
+    const harness = createHarness({
+        browserTabs: tabs,
+        beforePeakFetch: ({ number }) => number === 1 ? undefined : new Promise(() => {}),
+        peakbaggerPagePeakResult: call => ({
+            kind: 'challenged',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 403,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'cloudflare', resource: 'peaks', status: 403 },
+        }),
+    });
+    const results = await Promise.all(Array.from({ length: 6 }, (_, index) =>
+        harness.send({ type: 'CAPTURE_START', tabId: index + 1, force: false })));
+
+    assert.ok(results.every(result => result.phase === 'error'
+        && result.error.code === 'cloudflare'));
+    const attempted = harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length;
+    assert.ok(attempted >= 1 && attempted <= 4,
+        'the first refusal stops every request that has not reached the global ceiling');
+});
+
+test('Peakbagger cooldown blocks ordinary and forced capture across tabs and restart', async t => {
+    const start = Date.now();
+    for (const [name, supplied, expected] of [
+        ['missing', undefined, start + 300_000],
+        ['malformed', 'not-a-time', start + 300_000],
+        ['past', start - 1, start + 300_000],
+        ['expired', start, start + 300_000],
+        ['out of range', start + 86_400_001, start + 300_000],
+        ['short provider deadline', start + 30_000, start + 30_000],
+        ['long provider deadline', start + 600_000, start + 600_000],
+    ] as const) await t.test(name, async () => {
+        const clock = { now: start };
+        let responses = 0;
+        const tabs = new Map([[1, {
+            id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', active: true, status: 'complete',
+        }], [2, {
+            id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', active: false, status: 'complete',
+        }], [50, {
+            id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
+        }]]);
+        const options: HarnessOptions = {
+            browserTabs: tabs, clock,
+            peakbaggerPagePeakResult: call => ++responses === 1 ? {
+                kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+                error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429, retryAt: supplied },
+            } : {
+                kind: 'ok', requestedUrl: call.url, url: call.url, status: 200, redirected: false,
+                text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+            },
+        };
+        const harness = createHarness(options);
+        const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(limited.error.code, 'rate-limit');
+        for (const worker of [harness, createHarness({ ...options, sessionValues: harness.values })]) {
+            for (const force of [false, true]) {
+                const blocked = await worker.send({ type: 'CAPTURE_START', tabId: 2, force });
+                assert.equal(blocked.phase, 'error');
+                assert.equal(responses, 1, 'no request may escape the cooldown');
+                assert.equal(blocked.error.code, 'rate-limit');
+                assert.equal(blocked.error.retryAt, expected);
+            }
+        }
+        assert.equal(limited.error.retryAt, expected);
+        clock.now = expected + 1;
+        const resumed = await harness.send({ type: 'CAPTURE_START', tabId: 2, force: true });
+        assert.equal(resumed.phase, 'ready');
+        assert.equal(responses, 2);
+    });
+});
+
+test('a failed cooldown write retains the active worker deadline', async () => {
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock, faults: { cooldownSet: 'session write failed' },
+        peakbaggerPagePeakResult: call => ({
+            kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+            error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429 },
+        }),
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(harness.values.bpbPeakbaggerCooldown, undefined);
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.error.code, 'rate-limit');
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1);
+    assert.equal(blocked.error.retryAt, clock.now + 300_000);
+});
+
+test('concurrent Peakbagger refusals retain the longest deadline', async () => {
+    const clock = { now: Date.now() };
+    let refusals = 0;
+    const { promise: gate, resolve: release } = deferred<void>();
+    const harness = createHarness({
+        clock,
+        browserTabs: new Map([[1, { id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', status: 'complete' }],
+            [2, { id: 2, windowId: 9, url: 'https://www.strava.com/activities/123', status: 'complete' }],
+            [50, { id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', status: 'complete' }]]),
+        beforePeakFetch: () => gate,
+        peakbaggerPagePeakResult: call => {
+            refusals++;
+            return {
+                kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
+                error: { source: 'peakbagger', code: 'rate-limit', resource: 'peaks', status: 429,
+                    retryAt: clock.now + (call.number === 1 ? 600_000 : 30_000) },
+            };
+        },
+    });
+    const jobs = [1, 2].map(tabId => harness.send({ type: 'CAPTURE_START', tabId, force: false }));
+    await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 2);
+    release();
+    await Promise.all(jobs);
+    assert.equal(refusals, 2, 'both already-in-flight responses reached the worker');
+    assert.equal(required(harness.values.bpbPeakbaggerCooldown).retryAt, clock.now + 600_000);
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.error.retryAt, clock.now + 600_000);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 2);
+});
+
+test('Peakbagger transport failures use capture recovery codes at login and summit lookup', async t => {
+    const cases = [
+        ['server', 'transient', 'peakbagger-unavailable', 503],
+        ['network', 'transient', 'peakbagger-unavailable', 0],
+        ['response-read', 'transient', 'peakbagger-unavailable', 200],
+        ['timeout', 'transient', 'peakbagger-page-timeout', 0],
+        ['signed-out', 'wrong-content', 'peakbagger-signed-out', 200],
+        ['unexpected-content', 'wrong-content', 'peakbagger-response-invalid', 200],
+        ['not-found', 'wrong-content', 'peakbagger-response-invalid', 404],
+        ['http', 'wrong-content', 'peakbagger-response-invalid', 403],
+        ['response-too-large', 'wrong-content', 'peak-response-too-large', 200],
+    ];
+    for (const resource of ['html', 'peaks']) {
+        for (const [code, kind, expected, status] of cases) {
+            await t.test(`${resource}: ${code}`, async () => {
+                const harness = createHarness({
+                    [resource === 'html' ? 'peakbaggerPageLoginResult' : 'peakbaggerPagePeakResult']: (call: PeakbaggerCall) => ({
+                        kind, requestedUrl: call.url, url: call.url, status, redirected: false,
+                        error: { source: 'peakbagger', code, resource, status },
+                    }),
+                });
+                const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+                const expectedCode = resource === 'html' && code === 'response-too-large'
+                    ? 'peakbagger-response-invalid' : expected;
+                assert.equal(job.error.code, expectedCode);
+                assert.equal(job.matches.length, 0);
+                assert.equal(harness.providerCaptureCalls.length, resource === 'html' ? 0 : 1);
+            });
+        }
+    }
+});
+
+test('summit lookup retries only network and server failures once', async () => {
+    let responses = 0;
+    const harness = createHarness({
+        peakbaggerPagePeakResult: call => ++responses === 1 ? {
+            kind: 'transient',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 503,
+            redirected: false,
+            error: { source: 'peakbagger', code: 'server', resource: 'peaks', status: 503 },
+        } : {
+            kind: 'ok',
+            requestedUrl: call.url,
+            url: call.url,
+            status: 200,
+            redirected: false,
+            text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+        },
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'ready', JSON.stringify(result));
+    assert.equal(responses, 2);
+});
+
+test('expiry during corridor lookup aborts work and removes the expired generation', async () => {
+    const peakRequest: { signal?: AbortSignal } = {};
+    const { promise: peakReached, resolve: reached } = deferred<void>();
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforePeakFetch: ({ options }) => {
+            peakRequest.signal = options.signal;
+            reached();
+            return new Promise(() => {});
+        },
+    });
+
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await peakReached;
+    clock.now += 30 * 60 * 1000 + 1;
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+
+    assert.equal(await capture, null);
+    assert.equal(required(peakRequest.signal).aborted, true);
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
+});
+
+test('cancel followed immediately by retry starts a new provider generation', async () => {
+    const { promise: firstCaptureGate, resolve: releaseFirstCapture } = deferred<void>();
+    const harness = createHarness({
+        beforeProviderCapture: call => call.number === 1 ? firstCaptureGate : undefined,
+    });
+    const until = async (predicate: () => unknown) => {
+        const deadline = Date.now() + 2000;
+        while (!predicate()) {
+            if (Date.now() > deadline) {
+                throw new Error(
+                    `condition not reached; captures=${harness.providerCaptureCalls.length}`
+                        + ` cancellations=${harness.providerCancelCalls.length}`,
+                );
+            }
+            await new Promise(resolve => setTimeout(resolve, 1));
+        }
+    };
+
+    const abandoned = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.providerCaptureCalls.length === 1);
+    const firstGeneration = harness.values.bpbCaptureJobs['1'].id;
+
+    const cancelled = await harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
+    assert.deepEqual({ ...cancelled }, { ok: true, cancelled: true, job: null });
+    assert.deepEqual(harness.providerCancelCalls, [firstGeneration]);
+
+    const retry = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await until(() => harness.providerCaptureCalls.length === 2);
+    const retried = await retry;
+    assert.equal(retried.phase, 'ready');
+    assert.notEqual(retried.id, firstGeneration);
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, retried.id);
+
+    releaseFirstCapture();
+    assert.equal(await abandoned, null,
+        'the cancelled generation returns no later job, even after the retry completes');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, retried.id);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+});
+
+test('a tab-grouping failure is a flag, never raw exception text handed to a surface', async () => {
+    const harness = createHarness({ groupError: 'tabs.group is not a function' });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+
+    assert.equal(opened.groupWarning, true, 'grouping is cosmetic: report it, do not fail the open');
+    assert.deepEqual([...opened.tabIds], [100], 'the drafts still opened');
+    assert.equal(harness.values.bpbCaptureJobs['1'].groupWarning, true);
+    assert.doesNotMatch(JSON.stringify(opened), /tabs\.group is not a function/,
+        'the exception message must not reach a user-facing surface');
+});
+
+test('an opened job refuses selection writes and hands the popup its locked state', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0.0005" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    assert.equal(opened.reused, false);
+    assert.equal(opened.job.phase, 'opened',
+        'the popup needs the post-open job to lock its selection without a reopen');
+    assert.deepEqual([...opened.job.selectedIds], [7, 8]);
+    assert.equal(opened.job.uploadGpx, undefined, 'the returned job stays a public job');
+
+    // The drafts already exist, so this write could never take effect.
+    const refused = await harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [7] });
+    assert.deepEqual([...refused.selectedIds], [7, 8], 'the response reports the selection that opened');
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7, 8],
+        'and nothing was stored');
+});
+
+test('selection cannot change after a draft opening generation starts', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const harness = createHarness({
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    const lateSelection = harness.send({ type: 'CAPTURE_SELECTION', tabId: 1, selectedIds: [8] });
+    releaseCreate();
+
+    const [opened, selected] = await Promise.all([opening, lateSelection]);
+    assert.deepEqual([...opened.tabIds], [100]);
+    assert.deepEqual([...selected.selectedIds], [7]);
+    assert.deepEqual([...harness.values.bpbCaptureJobs['1'].selectedIds], [7]);
+    assert.equal(harness.values.bpbDraftTabs['100'].pid, 7);
+    assert.equal(harness.tabs.has(101), false, 'the late selection never opens another peak');
+});
+
+test('clearing during draft opening cancels the generation and leaves no orphan state or tab', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    const clearing = harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
+    releaseCreate();
+
+    const [openResult, clearResult] = await Promise.all([opening, clearing]);
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    assert.equal(clearResult.ok, true);
+    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    assert.deepEqual(harness.values.bpbDraftTabs || {}, {});
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('source-tab closure during draft opening cancels and cleans the generation idempotently', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const sourcePayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+
+    const readsBeforeClose = harness.sessionGetCalls();
+    harness.tabs.delete(1);
+    harness.tabRemoved.listeners[0](1);
+    await waitForCondition(() => harness.sessionGetCalls() >= readsBeforeClose + 2);
+    await Promise.resolve();
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
+        && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.values[sourcePayloadKey], undefined);
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+    harness.tabRemoved.listeners[0](1);
+    await Promise.resolve();
+    assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined, 'repeated source cleanup stays harmless');
+});
+
+test('expiry during draft opening cancels the generation and removes all expired state', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const clock = { now: Date.now() };
+    const harness = createHarness({
+        clock,
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const expiredPayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+
+    clock.now += 30 * 60 * 1000 + 1;
+    const readsBeforeExpiry = harness.sessionGetCalls();
+    harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
+    await waitForCondition(() => harness.sessionGetCalls() >= readsBeforeExpiry + 2);
+    await Promise.resolve();
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']
+        && !harness.values.bpbDraftTabs?.['100']);
+    assert.equal(harness.values[expiredPayloadKey], undefined);
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.removedTabs, [100]);
+});
+
+test('draft opening cannot restore or mutate a replacement job generation', async () => {
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
+    const harness = createHarness({
+        beforeTabCreate: async ({ number }) => {
+            if (number !== 1) return;
+            createReached();
+            await createGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    await reached;
+    harness.values.bpbCaptureJobs['1'] = {
+        ...structuredClone(harness.values.bpbCaptureJobs['1']),
+        id: 'replacement-job',
+        phase: 'ready',
+        selectedIds: [7],
+        payloadKey: 'bpbCapturePayload:replacement-job',
+    };
+    harness.values['bpbCapturePayload:replacement-job'] = {
+        jobId: 'replacement-job',
+        gpx: '<gpx>replacement</gpx>',
+    };
+    releaseCreate();
+
+    const openResult = await opening;
+    assert.equal(openResult.phase, 'error');
+    assert.equal(openResult.error.code, 'draft-open-cancelled');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
+    assert.equal(storedCaptureGpx(harness), '<gpx>replacement</gpx>');
+    assert.equal(harness.tabs.has(100), false);
+    assert.deepEqual(harness.values.bpbDraftTabs || {}, {});
+});
+
+test('installing a replacement job removes records owned by the prior generation', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstJobId = harness.values.bpbCaptureJobs['1'].id;
+    const firstPayloadKey = harness.values.bpbCaptureJobs['1'].payloadKey;
+    const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    assert.equal(harness.values.bpbDraftTabs[String(opened.tabIds[0])].jobId, firstJobId);
+
+    const replacement = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+
+    assert.notEqual(replacement.id, firstJobId);
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, replacement.id);
+    assert.equal(harness.values[firstPayloadKey], undefined,
+        'installing the replacement metadata must remove the prior generation payload');
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
+    assert.deepEqual(harness.values.bpbDraftTabs, {},
+        'completed draft tabs may remain open for review, but no stale record may join the replacement lifecycle');
+    assert.equal(harness.tabs.has(opened.tabIds[0]), true,
+        'replacement does not close a completed user-visible draft tab');
+    assert.ok(harness.tabMessages.some(({ tabId, message }) =>
+        tabId === opened.tabIds[0] && message.type === 'DRAFT_CLEARED'),
+    'the open page is told to roll back any in-flight apply owned by the removed generation');
+});
+
+test('an old Preview completion cannot clear a replacement job GPX', async () => {
+    let held = false;
+    const { promise: completionGate, resolve: releaseCompletion } = deferred<void>();
+    const { promise: reached, resolve: completionReached } = deferred<void>();
+    const harness = createHarness({
+        afterSessionSet: async patch => {
+            if (held || !Object.values(patch.bpbDraftTabs || {}).some(draft => draft.complete)) return;
+            held = true;
+            completionReached();
+            await completionGate;
+        },
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
+        applyLeaseToken: apply.applyLeaseToken,
+    }, { tab: { id: 100 } });
+
+    const completion = harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
+    }, { tab: { id: 100 } });
+    await reached;
+    const replacement: CaptureJob = {
+        ...structuredClone(harness.values.bpbCaptureJobs['1']),
+        id: 'replacement-job',
+        phase: 'ready',
+        payloadKey: 'bpbCapturePayload:replacement-job',
+    };
+    harness.values['bpbCapturePayload:replacement-job'] = {
+        jobId: 'replacement-job',
+        gpx: '<gpx>replacement</gpx>',
+    };
+    harness.values.bpbCaptureJobs['1'] = replacement;
+    releaseCompletion();
+
+    assert.equal((await completion).action, 'banner');
+    assert.equal(harness.values.bpbCaptureJobs['1'].id, 'replacement-job');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'ready');
+    assert.equal(storedCaptureGpx(harness), '<gpx>replacement</gpx>');
+});
+
+test('same-day suffixes include only selected ascents and follow track order', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const job = harness.values.bpbCaptureJobs['1'];
+    const base = job.matches[0];
+    job.matches = [
+        { ...structuredClone(base), id: 7, confidence: 95, draftFields: { ...base.draftFields, upDistanceM: 300 } },
+        { ...structuredClone(base), id: 8, confidence: 90, draftFields: { ...base.draftFields, upDistanceM: 100 } },
+        { ...structuredClone(base), id: 9, confidence: 85, draftFields: { ...base.draftFields, upDistanceM: 200 } }
+    ];
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 9] });
+    const later = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    const earlier = await harness.send({ type: 'DRAFT_READY', pid: '9', cid: '77' }, { tab: { id: 101 } });
+
+    assert.equal(later.fields.suffix, 'b');
+    assert.equal(earlier.action, 'wait');
+    assert.equal(harness.values.bpbDraftTabs['101'].suffix, 'a');
+});
+
+test('retained waypoints share the 3,000-point budget and multi-peak drafts receive one sequenced trip', async () => {
+    const harness = createHarness({
+        settings: { retainWaypoints: true },
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Afternoon Hike', utcOffsetMinutes: 0 },
+            waypoints: [{ lat: 0.01, lon: 0.02, name: 'Camp & Water', ele: 999, desc: 'private' }],
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 23, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 2, 12, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 3, 1, 0) }
+            ]]
+        }
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.matches.length, 2);
+    const storedJob = harness.values.bpbCaptureJobs['1'];
+    assert.match(required(storedCaptureGpx(harness)), /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
+    assert.equal(storedJob.trackSummary.retainedPointCount + storedJob.trackSummary.retainedWaypointCount <= 3000, true);
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /999|private/);
+    required(storedJob.matches.find(match => match.id === 7)).confidence = 80;
+    required(storedJob.matches.find(match => match.id === 7)).draftFields.upDistanceM = 300;
+    required(storedJob.matches.find(match => match.id === 8)).confidence = 95;
+    required(storedJob.matches.find(match => match.id === 8)).draftFields.upDistanceM = 100;
+
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const first = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 } });
+    const waiting = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
+    assert.equal(first.allowWaypoints, true);
+    assert.deepEqual({ ...first.fields.tripInfo }, { sequence: 1, name: '2026-07-01', nightsOut: 2 });
+    assert.equal(waiting.action, 'wait');
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 7, cid: 77,
+        applyLeaseToken: first.applyLeaseToken,
+    }, { tab: { id: 101 } }).then(value => value.ok), false,
+    'a queued draft must not start a concurrent Preview');
+
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: first.jobId, pid: 8, cid: 77,
+        applyLeaseToken: first.applyLeaseToken,
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    const confirmed = await harness.send({
+        type: 'DRAFT_READY', pid: '8', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
+    }, { tab: { id: 100 } });
+    assert.equal(confirmed.action, 'banner');
+    assert.equal(confirmed.dayStatsPending, true);
+    assert.deepEqual(confirmed.dayStats.map(row => row.date), ['2026-07-01', '2026-07-02', '2026-07-03']);
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 7, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), false,
+    'a day-stat acknowledgment must remain bound to its draft identity');
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 8, cid: 77
+    }, { tab: { id: 100 } }).then(value => value.ok), true);
+    assert.equal(harness.values.bpbDraftTabs['100'].dayStatsPending, false);
+    assert.equal(harness.tabMessages.length, 0, 'Preview must not release the next summit before Save');
+    const firstSender = { tab: { id: 100 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' };
+    const saveContext = await harness.send({ type: 'DRAFT_SAVE_CONTEXT', aid: '800' }, firstSender);
+    assert.equal(saveContext.action, 'verify');
+    assert.equal(saveContext.gpx, first.gpx);
+    assert.equal((await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } })).action, 'wait');
+    const saveMessage = { type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: first.jobId, pid: 8, cid: 77, tripId: '44', gpxVerified: true };
+    assert.equal((await harness.send({ ...saveMessage, gpxVerified: false }, firstSender)).ok, false);
+    assert.equal((await harness.send({ ...saveMessage, jobId: 'replacement' }, firstSender)).ok, false);
+    assert.equal((await harness.send(saveMessage, firstSender)).ok, true);
+    assert.equal(required(harness.tabs.get(101)).active, true);
+    assert.equal(required(harness.tabs.get(101)).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
+
+    const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
+    assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: '2026-07-01', nightsOut: 2, id: '44' });
+    assert.equal(second.gpx, first.gpx, 'every summit receives the full identical GPX');
+    assert.equal(first.fields.wildernessNightsOut, 2);
+    assert.equal(second.fields.wildernessNightsOut, 2);
+    assert.equal(first.fields.fillAscentDetails, true);
+    assert.equal(first.fields.dayStats.length, 3);
+    assert.equal(await harness.send({
+        type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId, pid: 7, cid: 77,
+        applyLeaseToken: second.applyLeaseToken,
+    }, { tab: { id: 101 } }).then(value => value.ok), true);
+    const finished = await harness.send({
+        type: 'DRAFT_READY', pid: '7', cid: '77',
+        previewResult: { state: 'success', message: 'GPX file successfully uploaded.' }
+    }, { tab: { id: 101 } });
+    assert.equal(finished.action, 'banner');
+    assert.equal(finished.dayStatsPending, true);
+    assert.equal(await harness.send({
+        type: 'DRAFT_DAY_STATS_APPLIED', jobId: second.jobId, pid: 7, cid: 77
+    }, { tab: { id: 101 } }).then(value => value.ok), true);
+    assert.ok(storedCaptureGpx(harness), 'retain the track until the final Save is verified');
+    const secondSender = { tab: { id: 101 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77' };
+    assert.equal((await harness.send({ type: 'DRAFT_SAVE_CONFIRMED', aid: '801', jobId: second.jobId, pid: 7, cid: 77, tripId: '99', gpxVerified: true }, secondSender)).ok, false);
+    assert.equal((await harness.send({ type: 'DRAFT_SAVE_CONFIRMED', aid: '801', jobId: second.jobId, pid: 7, cid: 77, tripId: '44', gpxVerified: true }, secondSender)).ok, true);
+    assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'previewed');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(storedCaptureGpx(harness), undefined);
+    assert.equal((await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 })).removedDraftCount, 2);
+    assert.equal(harness.tabMessages.some(({ message }) => message.type === 'DRAFT_CLEARED'), false,
+        'Save-verified drafts no longer depend on the shared capture and detach silently');
+});
+
+test('waypoints cannot crowd a usable track out of Peakbagger’s total-point limit', async () => {
+    const harness = createHarness({
+        settings: { retainWaypoints: true },
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Too many waypoints', utcOffsetMinutes: 0 },
+            waypoints: Array.from({ length: 2999 }, (_, index) => ({ lat: 0.01, lon: index / 10000, name: `W${index}` })),
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 1, 16, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 1, 17, 0) }
+            ]]
+        }
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'too-many-waypoints');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+});
+
+test('single-peak overnight captures fill wilderness nights without creating Trip Info', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Overnight hike', utcOffsetMinutes: 0 },
+            segments: [[
+                { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 23, 0) },
+                { lat: 0, lon: 0, ele: 130, time: Date.UTC(2026, 6, 2, 12, 0) },
+                { lat: 0, lon: 0.001, ele: 100, time: Date.UTC(2026, 6, 3, 1, 0) }
+            ]]
+        }
+    });
+
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.fields.tripInfo, null);
+    assert.equal(apply.fields.wildernessNightsOut, 2);
+});
+
+test('disabled draft autofill settings leave ascent details, trip, and wilderness fields untouched', async () => {
+    const harness = createHarness({
+        settings: { fillAscentDetails: false, fillTripInfo: false, fillWildernessNights: false, fillExternalUrl: false },
+        peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
+    const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
+    assert.equal(apply.fields.fillAscentDetails, false);
+    assert.deepEqual([...apply.fields.dayStats], []);
+    assert.equal(apply.fields.tripInfo, null);
+    assert.equal(apply.fields.wildernessNightsOut, null);
+    assert.equal(apply.fields.externalUrl, null, 'the external-URL setting off writes nothing');
+});
+
+test('changing capture settings invalidates a reusable job for the same activity', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const firstId = harness.values.bpbCaptureJobs['1'].id;
+    harness.syncValues.bpbSettings.retainWaypoints = false;
+
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
+    assert.deepEqual(required(harness.providerCaptureCalls.at(-1)).options, {
+        retainWaypoints: false,
+        includeTripName: true
+    });
+});
+
+test('Possible and Weak matches are hidden and no coordinate upload is retained', async () => {
+    const harness = createHarness({
+        peakXml: '<p><t i="8" n="Side Peak" a="0.000765" o="0" e="426.51" r="100" l="Test Range"/></p>'
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'no-matches');
+    assert.deepEqual([...result.matches], []);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+});
+
+test('non-owned activities show the failure badge and never query coordinates', async () => {
+    const harness = createHarness({
+        captureResult: { ok: false, code: 'not-owner', provider: 'strava', activityId: '123' }
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'not-owner');
+    assert.ok(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'));
+    assert.equal(harness.peakbaggerPageCalls.length, 0,
+        'ownership must fail before any Peakbagger or GPS-coordinate request');
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+});
+
+test('provider export failures discard page-world exception text without misreporting ownership', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'provider-export-failed',
+            provider: 'strava',
+            activityId: '123',
+            message: 'RAW_PAGE_SENTINEL: chrome.runtime.lastError'
+        }
+    });
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error.code, 'provider-export-failed');
+    assert.equal(result.error.message,
+        'Reopen the activity in a new tab, then select Better Peakbagger again.');
+    assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|chrome\.runtime/);
+    assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|chrome\.runtime/);
+    assert.doesNotMatch(result.error.message, /ownership changed/i);
+});
+
+test('provider export timeouts preserve the public retryable timeout contract', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'provider-export-timeout',
+            provider: 'strava',
+            activityId: '123',
+            message: 'RAW_PAGE_SENTINEL: internal timeout details'
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'error');
+    assert.deepEqual(JSON.parse(JSON.stringify(result.error)), {
+        code: 'provider-export-timeout',
+        message: 'Reload the activity, wait for it to finish, then capture again.'
+    });
+    assert.doesNotMatch(JSON.stringify(result), /RAW_PAGE_SENTINEL|internal timeout/i);
+    assert.doesNotMatch(JSON.stringify(harness.values), /RAW_PAGE_SENTINEL|internal timeout/i);
+});
+
+test('the worker passes the page-owned provider deadline inside its dispatch margin', async () => {
+    const harness = createHarness();
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(harness.providerCaptureCalls.length, 1);
+    assert.equal(harness.providerCaptureCalls[0].timeoutMs, 30000);
+});
+
+test('provider response classifications cross the worker only as allowlisted recovery data', async t => {
+    const cases = [
+        ['provider-human-check', 'complete the check'],
+        ['provider-rate-limited', 'Wait a few minutes'],
+        ['provider-forbidden', 'available to your signed-in account'],
+        ['provider-unavailable', 'could not complete the export'],
+        ['provider-response-changed', 'changed its export'],
+        ['invalid-gpx', 'provider response'],
+    ];
+    for (const [code, message] of cases) {
+        await t.test(code, async () => {
+            const retryAt = Date.now() + 60000;
+            const harness = createHarness({
+                ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+                captureResult: {
+                    ok: false,
+                    code,
+                    provider: 'strava',
+                    activityId: '123',
+                    retryAt,
+                    message: 'RAW_PROVIDER_RESPONSE_SENTINEL',
+                },
+            });
+            const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(result.error.code, code);
+            assert.match(result.error.message, new RegExp(message, 'i'));
+            assert.doesNotMatch(JSON.stringify(result), /RAW_PROVIDER_RESPONSE_SENTINEL/);
+            assert.equal('retryAt' in result.error, code === 'provider-rate-limited');
+        });
+    }
+});
+
+test('peak response structure and route-match fanout fail closed at their exact limits', async t => {
+    await t.test('peak response limit plus one', async () => {
+        const peakXml = `<p>${Array.from({ length: 5_001 }, (_, index) =>
+            `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${index / 1_000_000}" e="426.51" r="100"/>`).join('')}</p>`;
+        const harness = createHarness({ peakXml });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'peak-response-too-large');
+        assert.match(result.error.message, /more than 5,000 nearby summits/);
+    });
+
+    await t.test('route match limit plus one', async () => {
+        const peakXml = `<p>${Array.from({ length: 257 }, (_, index) =>
+            `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="0" e="426.51" r="100"/>`).join('')}</p>`;
+        const harness = createHarness({ peakXml });
+        const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+        assert.equal(result.phase, 'error');
+        assert.equal(result.error.code, 'capture-analysis-too-large');
+        assert.match(result.error.message, /more than 256 summit candidates/);
+    });
+});
+
+test('production-point analysis yields to status and cancellation messages', { timeout: 15_000 }, async () => {
+    const baseTime = Date.UTC(2026, 6, 1, 15);
+    const segment = Array.from({ length: 20_000 }, (_, index) => ({
+        lat: Math.sin(index / 7) * 0.0001,
+        lon: -0.3 + index * 0.6 / 19_999,
+        ele: 1_300 + Math.sin(index / 13) * 50,
+        time: baseTime + index * 1_000,
+    }));
+    const peakXml = `<p>${Array.from({ length: 5_000 }, (_, index) =>
+        `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${-0.3 + index * 0.6 / 4_999}" e="4265.1" r="100"/>`).join('')}</p>`;
+    const analysisYield = deferred<void>();
+    let analysisYielded = false;
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Scale hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [segment],
+        },
+        peakXml,
+        workerTimer: (callback, delay, ...args) => {
+            // A request being dispatched is too early: cancellation could pass
+            // without ever competing with CPU analysis. Observe the real task
+            // yield after all summit responses, without delaying its callback.
+            if (delay === 0 && harness.values.bpbCaptureJobs?.['1']?.phase === 'preparing-results') {
+                analysisYielded = true;
+                analysisYield.resolve();
+            }
+            return setTimeout(callback, delay, ...args);
+        },
+    });
+    const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const state = () => JSON.stringify({
+        phase: harness.values.bpbCaptureJobs?.['1']?.phase,
+        providerCalls: harness.providerCaptureCalls.length,
+        summitRequests: harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length,
+        analysisYielded,
+    });
+    let timer;
+    try {
+        // Setup is not the responsiveness measurement. Give the production-size
+        // fixture its own bounded budget and preserve the actual phase on error.
+        await Promise.race([
+            analysisYield.promise,
+            capture.then(result => {
+                if (!analysisYielded) throw new Error(
+                    `capture finished before an analysis task yield: ${state()}; result=${JSON.stringify(result)}`,
+                );
+            }),
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(`analysis setup timed out: ${state()}`)), 10_000);
+            }),
+        ]);
+        clearTimeout(timer);
+        const responseStartedAt = Date.now();
+        const [status, cancelled] = await Promise.race([
+            Promise.all([
+                harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
+                harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
+            ]),
+            new Promise<never>((_, reject) => {
+                timer = setTimeout(() => reject(new Error(
+                    `analysis did not yield to status and cancellation: ${state()}`,
+                )), 500);
+            }),
+        ]);
+        assert.ok(status, 'the concurrent status request observes the live generation');
+        assert.equal(status.phase, 'preparing-results');
+        assert.equal(cancelled.cancelled, true);
+        assert.ok(Date.now() - responseStartedAt < 500);
+        assert.equal(await capture, null);
+        assert.equal(harness.values.bpbCaptureJobs?.['1'], undefined);
+    } finally {
+        clearTimeout(timer);
+        // A setup/assertion failure must not leave analysis running into later
+        // tests. Cleanup is bounded and must not replace the original failure.
+        await Promise.race([
+            harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }).then(() => capture),
+            new Promise(resolve => { timer = setTimeout(resolve, 1000); }),
+        ]);
+        clearTimeout(timer);
+    }
+});
+
+test('successful captures are reused but recoverable errors are re-evaluated on the next gesture', async t => {
+    const readyHarness = createHarness();
+    const firstReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const reusedReady = await readyHarness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(reusedReady.id, firstReady.id);
+    assert.equal(readyHarness.providerCaptureCalls.length, 1);
+
+    const successfulCapture = {
+        ok: true,
+        provider: 'strava',
+        activityId: '123',
+        metadata: { title: 'Recovered hike', localStart: '2026-07-01T08:00:00-07:00' },
+        segments: [[
+            { lat: 0, lon: -0.001, ele: 100, time: Date.UTC(2026, 6, 1, 15, 0) },
+            { lat: 0, lon: 0.001, ele: 120, time: Date.UTC(2026, 6, 1, 16, 0) },
+        ]],
+    };
+    for (const code of ['provider-unavailable', 'provider-session-not-ready', 'provider-download-failed', 'provider-export-failed']) {
+        await t.test(code, async () => {
+            const harness = createHarness({
+                ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+                captureResult: call => call.number === 1 ? {
+                    ok: false,
+                    code,
+                    provider: 'strava',
+                    activityId: '123',
+                } : successfulCapture,
+            });
+            const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(failed.error.code, code);
+            const recovered = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+            assert.equal(recovered.phase, 'ready');
+            assert.notEqual(recovered.id, failed.id);
+            assert.equal(harness.providerCaptureCalls.length, 2,
+                'reopening the popup rechecks a recoverable failure without a hidden second click');
+        });
+    }
+});
+
+test('an uninitialized Garmin session stops before Peakbagger requests and GPS export', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: false, provider: 'garmin', activityId: '123', code: 'provider-session-not-ready' },
+    });
+    required(harness.tabs.get(1)).url = 'https://connect.garmin.com/app/activity/123';
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.error.code, 'provider-session-not-ready');
+    assert.equal(harness.providerCaptureCalls.length, 0);
+    assert.equal(harness.peakbaggerPageCalls.length, 0);
+});
+
+test('activity capture publishes truthful monotonic phases and throttled summit progress', async () => {
+    const completionOrder: number[] = [];
+    const segment = Array.from({ length: 11 }, (_, index) => ({
+        lat: 0,
+        lon: index * 0.085,
+        ele: 100,
+        time: Date.UTC(2026, 6, 1, 15) + index * 100_000,
+    }));
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: { title: 'Progress hike', localStart: '2026-07-01T08:00:00-07:00' },
+            segments: [segment],
+        },
+        beforePeakFetch: ({ number }) => new Promise(resolve =>
+            setTimeout(resolve, (5 - (number % 5)) * 2)),
+        peakbaggerPagePeakResult: call => {
+            completionOrder.push(call.number);
+            return {
+                kind: 'ok',
+                requestedUrl: call.url,
+                url: call.url,
+                status: 200,
+                redirected: false,
+                text: '<p><t i="7" n="Test Peak" a="0" o="0" e="426.51" r="100"/></p>',
+            };
+        },
+    });
+
+    const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(ready.phase, 'ready');
+    assert.ok(completionOrder.length > 4);
+    assert.notDeepEqual(completionOrder, [...completionOrder].sort((left, right) => left - right),
+        'the fixture completes concurrent area reads out of dispatch order');
+
+    const snapshots = harness.sessionSetPatches
+        .map(patch => patch.bpbCaptureJobs?.['1'])
+        .filter((job): job is CaptureJob => job !== undefined && job.id === ready.id);
+    const phases = snapshots.map(job => job.phase)
+        .filter((phase, index, all) => index === 0 || phase !== all[index - 1]);
+    assert.deepEqual(phases, [
+        'validating-activity',
+        'waiting-provider',
+        'verifying-ownership',
+        'checking-peakbagger',
+        'exporting-gpx',
+        'processing-track',
+        'searching-summits',
+        'preparing-results',
+        'ready',
+    ]);
+
+    const progressWrites = snapshots
+        .filter(job => job.phase === 'searching-summits')
+        .map(job => job.progress)
+        .filter(progress => progress != null);
+    assert.deepEqual(progressWrites[0], { completed: 0, total: completionOrder.length });
+    assert.deepEqual(progressWrites.at(-1), {
+        completed: completionOrder.length,
+        total: completionOrder.length,
+    });
+    assert.ok(progressWrites.every((progress, index) => index === 0
+        || progress.completed > progressWrites[index - 1].completed));
+    assert.ok(progressWrites.length <= 11,
+        'coarse deciles cap session writes even when every area completes separately');
+});
+
+test('capture failures retain the exact stage without moving the error policy into UI copy', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-unavailable',
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(failed.phase, 'error');
+    assert.equal(failed.failedStage, 'exporting-gpx');
+    assert.equal('stage' in failed.error, false);
+});
+
+test('a shown rate-limit time cannot be bypassed by a forced retry', async () => {
+    const clock = { now: Date.now() };
+    const retryAt = clock.now + 60_000;
+    const harness = createHarness({
+        clock,
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123' },
+        captureResult: {
+            ok: false,
+            code: 'provider-rate-limited',
+            retryAt,
+            provider: 'strava',
+            activityId: '123',
+        },
+    });
+    const limited = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.equal(blocked.id, limited.id);
+    assert.equal(blocked.error.retryAt, retryAt);
+    assert.equal(harness.providerCaptureCalls.length, 1);
+});
+
+test('an activity without a provider GPX ends in a neutral, reusable no-GPS state', async () => {
+    const harness = createHarness({
+        ownershipResult: { ok: true, provider: 'strava', activityId: '123', viewerId: '42', authorId: '42' },
+        captureResult: {
+            ok: false,
+            code: 'no-gps-data',
+            provider: 'strava',
+            activityId: '123',
+            message: 'This activity has no recorded route to capture.'
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'no-gps');
+    assert.equal(result.error, null);
+    assert.equal(result.message,
+        'This activity has no recorded route yet. If provider processing is still underway, wait and check again.');
+    assert.equal(result.hasCachedGpx, false);
+    assert.equal(harness.values.bpbCaptureJobs['1'].payloadKey, undefined);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
+    assert.equal(harness.badgeCalls.some(([kind, details]) => kind === 'text' && details.text === '!'), false);
+
+    const firstJobId = result.id;
+    const captureCalls = () => harness.providerCaptureCalls.length;
+    assert.equal(captureCalls(), 1);
+    const reused = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(reused.id, firstJobId);
+    assert.equal(captureCalls(), 1);
+    const checkedAgain = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+    assert.notEqual(checkedAgain.id, firstJobId);
+    assert.equal(checkedAgain.phase, 'no-gps');
+    assert.equal(captureCalls(), 2);
+});
+
+test('a nominally successful export with no usable points also ends without an error', async () => {
+    const harness = createHarness({
+        captureResult: {
+            ok: true,
+            provider: 'strava',
+            activityId: '123',
+            metadata: {},
+            segments: [[]]
+        }
+    });
+
+    const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    assert.equal(result.phase, 'no-gps');
+    assert.equal(result.error, null);
+    assert.equal(result.hasCachedGpx, false);
+    assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 0);
+});
+
+test('capture timestamp exceptions freeze at opening and reset for a fresh capture', async () => {
+    for (const includeTimestampsOnce of [false, true]) {
+        const harness = createHarness({ settings: { removeGpxTimestamps: true } });
+        const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1 });
+        assert.equal(ready.timestampChoiceAvailable, true);
+        assert.equal(ready.timestampsRemoved, true);
+        const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7], includeTimestampsOnce });
+        const sender = { tab: { id: opened.tabIds[0] } };
+        const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, sender);
+        assert.equal(apply.action, 'apply');
+        assert.equal(/<time>/.test(apply.gpx), includeTimestampsOnce);
+        assert.equal(apply.fields.date, '2026-07-01');
+        assert.match(apply.gpx, /<ele>130<\/ele>/);
+        await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7], includeTimestampsOnce: !includeTimestampsOnce });
+        assert.equal(harness.values.bpbCaptureJobs['1'].includeTimestampsOnce, includeTimestampsOnce);
+        const fresh = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
+        assert.equal(fresh.timestampsRemoved, true);
+        assert.equal(fresh.includeTimestampsOnce, undefined);
+        assert.equal(harness.syncValues.bpbSettings.removeGpxTimestamps, true);
+    }
+});
+
+
+test('capture controls reject foreign pages and embedded extension frames', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    const before = structuredClone(h.values.bpbCaptureJobs);
+    for (const sender of [
+        { tab: { id: 5 }, url: 'https://www.peakbagger.com/peak.aspx?pid=7' },
+        { tab: { id: 5 }, frameId: 8, url: 'chrome-extension://test-extension/terrain/terrain.html' },
+        { tab: { id: 5 }, frameId: 8, url: 'chrome-extension://test-extension/popup/popup.html' },
+        { url: 'chrome-extension://test-extension/photos/guide.html' },
+        { url: 'chrome-extension://test-extension/options/options.html' },
+        { url: 'chrome-extension://other-extension/popup/popup.html' },
+        { id: undefined, url: 'chrome-extension://test-extension/popup/popup.html' },
+        { tab: { id: 5 }, frameId: undefined, url: 'chrome-extension://test-extension/popup/popup.html' },
+    ]) {
+        for (const type of ['CAPTURE_START', 'CAPTURE_STATUS', 'CAPTURE_CANCEL', 'CAPTURE_CLEAR',
+            'CAPTURE_SELECTION', 'CAPTURE_OPEN_DRAFTS', 'CAPTURE_FOCUS_RECOVERY']) {
+            const reply = await h.send({ type, tabId: 1, selectedIds: [7] }, sender);
+            assert.equal(reply?.error?.code, 'forbidden', `${type}: ${JSON.stringify(sender)}`);
+        }
+    }
+    assert.deepEqual(h.values.bpbCaptureJobs, before);
+    assert.equal(h.values.bpbDraftTabs && Object.keys(h.values.bpbDraftTabs).length || 0, 0);
+    assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId: 1 }, {
+        tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/popup/popup.html',
+    })).phase, 'ready', 'a top-level packaged popup also works as a diagnostic tab');
+});
+
+test('draft handshakes reject forged page and frame identity before payload or state changes', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const message = { type: 'DRAFT_READY', pid: '7', cid: '77' };
+    const base = { tab: { id: 100 }, frameId: 0,
+        url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77' };
+    const untrusted = [
+        { ...base, frameId: 7 },
+        { ...base, frameId: undefined },
+        { ...base, id: undefined },
+        { ...base, url: undefined },
+        { ...base, url: 'chrome-extension://test-extension/terrain/terrain.html', frameId: 7 },
+        { ...base, url: 'https://evil.example/climber/ascentedit.aspx?pid=7&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/peak.aspx?pid=7&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=88' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7junk&cid=77' },
+        { ...base, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&pid=8&cid=77' },
+    ];
+    for (const sender of untrusted) {
+        const reply = await h.send(message, sender);
+        assert.notEqual(reply.action, 'apply', JSON.stringify(sender));
+        assert.equal(reply.gpx, undefined);
+        assert.equal(h.values.bpbDraftTabs[100].applyLease, null);
+    }
+    const apply = await h.send(message, base);
+    assert.equal(apply.action, 'apply');
+    for (const sender of untrusted) {
+        const reply = await h.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
+            pid: '7', cid: '77', applyLeaseToken: apply.applyLeaseToken }, sender);
+        assert.equal(reply.ok, false);
+        assert.equal(h.values.bpbDraftTabs[100].previewStarted, false);
+    }
+    Object.assign(h.values.bpbDraftTabs[100], { complete: true, dayStatsPending: true });
+    for (const sender of untrusted) {
+        assert.equal((await h.send({ type: 'DRAFT_DAY_STATS_APPLIED', jobId: apply.jobId,
+            pid: '7', cid: '77' }, sender)).ok, false);
+        assert.equal(h.values.bpbDraftTabs[100].dayStatsPending, true);
+    }
+});
+
+test('privileged extension routes reject web-accessible and wrong packaged surfaces', async () => {
+    const h = createHarness();
+    const types = ['GITHUB_AUTH_STATUS', 'GITHUB_AUTH_DISCONNECT', 'GITHUB_SETTINGS_BACKUP',
+        'GITHUB_SETTINGS_RESTORE', 'GITHUB_FAVORITES_BACKUP', 'GITHUB_FAVORITES_RESTORE'];
+    for (const sender of [
+        { tab: { id: 5 }, frameId: 9, url: 'chrome-extension://test-extension/terrain/terrain.html' },
+        { url: 'chrome-extension://test-extension/photos/guide.html' },
+        { tab: { id: 5 }, frameId: 9, url: 'chrome-extension://test-extension/options/options.html' },
+    ]) {
+        for (const type of types) assert.equal((await h.send({ type }, sender)).error, 'forbidden', type);
+        assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, sender)).ok, false);
+    }
+    const photo = { tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/photos/photos.html' };
+    assert.equal((await h.send({ type: 'GITHUB_AUTH_STATUS' }, photo)).hasToken, false);
+    assert.equal((await h.send({ type: 'GITHUB_AUTH_DISCONNECT' }, photo)).error.code, 'forbidden');
+    assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, photo)).ok, false);
+    assert.equal((await h.send({ type: 'REPORT_DRAFT_DELETE_MANY', entries: [] }, {
+        tab: { id: 5 }, frameId: 0, url: 'chrome-extension://test-extension/options/drafts.html',
+    })).ok, true);
+});
+
+test('a new draft document replaces an abandoned lease and rejects the old acknowledgment', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const oldPage = { tab: { id: 100 }, documentId: 'old-document' };
+    const newPage = { ...oldPage, documentId: 'new-document' };
+    const ready = { type: 'DRAFT_READY', pid: '7', cid: '77' };
+    const oldApply = await h.send(ready, oldPage);
+    assert.equal(oldApply.action, 'apply');
+    assert.equal((await h.send(ready, oldPage)).action, 'wait');
+    h.tabUpdated.listeners.forEach(listener => listener(100, { status: 'loading' }));
+    const replacement = await h.send(ready, newPage);
+    assert.equal(replacement.action, 'apply', 'reload must not wait for the old document lease');
+    assert.notEqual(replacement.applyLeaseToken, oldApply.applyLeaseToken);
+    const ack = (apply: Reply) => ({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
+        pid: '7', cid: '77', applyLeaseToken: apply.applyLeaseToken });
+    assert.equal((await h.send(ack(oldApply), oldPage)).ok, false);
+    assert.equal((await h.send(ack(replacement), oldPage)).ok, false, 'a token cannot cross documents');
+    assert.equal((await h.send(ack(replacement), newPage)).ok, true);
+    assert.equal((await h.send(ack(replacement), newPage)).ok, false);
+});
+
+test('draft document nonces recover reloads when the browser omits documentId', async () => {
+    const h = createHarness();
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    await h.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
+    const sender = { tab: { id: 100 }, documentId: undefined };
+    const ready = { type: 'DRAFT_READY', pid: '7', cid: '77', documentToken: 'document-nonce-before-reload' };
+    const first = await h.send(ready, sender);
+    const waiting = await h.send(ready, sender);
+    assert.equal(waiting.action, 'wait');
+    assert.equal(waiting.retryAt, first.applyLeaseExpiresAt);
+    const afterReload = { ...ready, documentToken: 'document-nonce-after-reload' };
+    const second = await h.send(afterReload, sender);
+    assert.equal(second.action, 'apply');
+    assert.notEqual(second.applyLeaseToken, first.applyLeaseToken);
+    assert.equal((await h.send({ type: 'DRAFT_PREVIEW_STARTED', jobId: second.jobId,
+        pid: '7', cid: '77', applyLeaseToken: second.applyLeaseToken,
+        documentToken: afterReload.documentToken }, sender)).ok, true);
+});
+
+test('payload reconciliation validates the delivery variant and removes failed legacy migrations', async () => {
+    const clock = Date.now();
+    const jobs: Record<number, Partial<CaptureJob>> = {};
+    const sessionValues: Values = { bpbCaptureJobs: jobs,
+        'bpbCapturePayload:reconciliation-orphan': { jobId: 'reconciliation-orphan', gpx: '<gpx/>' } };
+    const add = (tabId: number, preferences: Values, record: { gpx: string; gpxWithoutTimestamps?: string } | null, extra: Values = {}) => {
+        const id = `variant-generation-${tabId}`;
+        jobs[tabId] = { id, sourceTabId: tabId, provider: 'strava', activityId: String(tabId),
+            phase: 'ready', matches: [], selectedIds: [], createdAt: clock, updatedAt: clock,
+            expiresAt: clock + 1800000, capturePreferences: preferences, ...extra };
+        if (record) {
+            const key = `bpbCapturePayload:${id}` as const;
+            jobs[tabId].payloadKey = key;
+            sessionValues[key] = { jobId: id, ...record };
+        }
+    };
+    add(1, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>' });
+    add(2, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>', gpxWithoutTimestamps: '' });
+    add(3, { removeGpxTimestamps: true }, null, { uploadGpx: '<gpx>legacy-with-time</gpx>' });
+    add(4, { removeGpxTimestamps: false }, { gpx: '<gpx>with-time</gpx>' });
+    add(5, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>' }, { includeTimestampsOnce: true });
+    add(6, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>', gpxWithoutTimestamps: '<gpx>without-time</gpx>' });
+    const h = createHarness({ sessionValues });
+    await waitForCondition(() => !h.values['bpbCapturePayload:reconciliation-orphan']);
+    for (const tabId of [1, 2, 3]) {
+        const job = h.values.bpbCaptureJobs[tabId];
+        assert.equal(job.phase, 'error', `job ${tabId} cannot deliver its required private GPX`);
+        assert.equal(job.error.code, 'capture-payload-missing');
+        assert.equal(job.payloadKey, undefined);
+        assert.equal(h.values[`bpbCapturePayload:${job.id}`], undefined, 'unusable GPX must not remain orphaned');
+        assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId })).hasCachedGpx, false);
+    }
+    for (const tabId of [4, 5, 6]) {
+        const job = h.values.bpbCaptureJobs[tabId];
+        assert.equal(job.phase, 'ready');
+        assert.equal((await h.send({ type: 'CAPTURE_STATUS', tabId })).hasCachedGpx, true);
+        assert.ok(h.values[job.payloadKey]);
+    }
+});
+
+test('My Ascents verifies the site session when the worker session is signed out', async () => {
+    const h = createHarness({ loginHtml: '<form><input id="PasswordText"></form>',
+        peakbaggerPageLoginResult: call => ({ kind: 'ok', requestedUrl: call.url, url: call.url,
+            status: 200, redirected: false,
+            text: '<div>Logged in: Test | <a href="/climber/climber.aspx?cid=77">My Home Page</a></div>' }) });
+    const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, { url: 'chrome-extension://test-extension/options/options.html' });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(new URL(result.url).searchParams.get('cid'), '77');
+    assert.equal(h.fetchCalls.length, 0, 'account verification stays in the Peakbagger page');
+    assert.deepEqual(h.peakbaggerPageCalls.map(call => call.kind), ['html']);
+    assert.equal(h.providerCaptureCalls.length, 0);
+    assert.equal(h.windowUpdates.length, 0, 'verification must not focus a window');
+});
+
+test('My Ascents keeps missing identity, confirmed sign-out and challenges distinct', async () => {
+    const sender = { url: 'chrome-extension://test-extension/options/options.html' };
+    for (const [html, code] of [
+        ['<form><input id="PasswordText"><button id="LoginButton">Log In</button></form>', 'peakbagger-signed-out'],
+        ['<a href="/Climber/Login.aspx">Log In</a>', 'peakbagger-unverified'],
+        ['<div>Logged in: Test | <a href="https://example.invalid/?cid=77">My Home Page</a></div>', 'peakbagger-unverified'],
+    ]) {
+        const h = createHarness({ loginHtml: html });
+        const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+        assert.equal(result.ok, false); assert.equal(result.error.code, code);
+        assert.equal(h.fetchCalls.length, 0); assert.equal(h.providerCaptureCalls.length, 0);
+        if (code === 'peakbagger-unverified') assert.match(result.error.message, /could not be verified/);
+    }
+    const h = createHarness({ peakbaggerPageLoginResult: call => ({
+        kind: 'challenged', requestedUrl: call.url, url: call.url, status: 403, redirected: false,
+        error: { source: 'peakbagger', code: 'cloudflare', resource: 'html' },
+    }) });
+    const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+    assert.equal(result.error.code, 'cloudflare');
+    assert.equal(h.fetchCalls.length, 0);
+});
+
+test('My Ascents owns and releases only its inactive helper, including account failure', async () => {
+    const sender = { url: 'chrome-extension://test-extension/options/options.html' };
+    for (const failure of [false, true]) {
+        const created: TabCreation[] = [];
+        const h = createHarness({ beforeTabCreate: ({ details }) => created.push(details), loginHtml: failure ? '<p>Unverified account</p>' : undefined,
+            ...(failure ? { peakbaggerAccountEvidence: { pageUrl: 'https://www.peakbagger.com/Default.aspx', links: [] } } : {}) });
+        h.tabs.delete(5);
+        const result = await h.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, sender);
+        assert.equal(result.ok, !failure, JSON.stringify(result));
+        assert.deepEqual(h.removedTabs, [100]);
+        assert.equal(created[0].active, false);
+        assert.equal(h.windowUpdates.length, 0);
+        assert.equal(h.tabs.has(1), true);
+        assert.equal(Object.keys(h.values.bpbPeakbaggerHelperLeases || {}).length, 0);
+    }
+});
+
+test('Garmin inbox recreates a private handoff and reuses it without duplicating forms', async () => {
+    const database = new IDBFactory();
+    const harness = createHarness({ garminDatabase: database });
+    await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
+    const derived = harness.values.bpbCaptureJobs[1];
+    assert.equal(derived.phase, 'ready');
+    harness.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
+    const store = createGarminStore<GarminImportState>(database);
+    await store.mutate(state => {
+        state.connection = { owner: '1234', cid: '77', key: null, enabled: false, connectedDate: '2026-10-23' };
+        state.items['123'] = { id: '123', owner: '1234', cid: '77', phase: 'ready', saved: [],
+            summary: { date: '2026-10-23', type: 'hiking' }, analysis: { matches: derived.matches,
+                route: [[{ lat: 0, lon: -0.001, ele: 100, time: 1 }, { lat: 0, lon: 0, ele: 130, time: 2 }, { lat: 0, lon: 0.001, ele: 100, time: 3 }]],
+                waypoints: [], tripName: '', nightsOut: 0, dayStats: [], trackSummary: derived.trackSummary } };
+    });
+    const sender = { tab: { id: 9 }, url: 'chrome-extension://test-extension/options/inbox.html' };
+    const message = { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] };
+    assert.equal((await harness.send({ ...message, selectedIds: [999999] }, sender)).ok, false);
+    assert.equal((await store.read()).items['123'].handoff, undefined, 'Invalid selection must not lock a durable activity');
+    const first = await harness.send(message, sender);
+    assert.equal(first.ok, true, JSON.stringify(first)); assert.equal(first.tabIds.length, 1);
+    const draft = harness.values.bpbDraftTabs[first.tabIds[0]];
+    assert.equal(draft.waitForSave, true, 'Even single-summit inbox drafts require verified Save');
+    assert.equal(required((await store.read()).items['123'].analysis?.route).length, 1);
+    const repeated = await harness.send(message, sender);
+    assert.equal(repeated.reused, true); assert.deepEqual(repeated.tabIds, first.tabIds);
+    harness.values.bpbCaptureJobs[9].expiresAt = 0;
+    const expired = await harness.send(message, sender);
+    assert.equal(expired.ok, false); assert.equal(expired.error.code, 'handoff');
+    assert.equal((await store.read()).items['123'].phase, 'ready', 'Durable inbox draft does not expire with delivery');
+    await store.close();
+});
+
+test('a completed active Peakbagger visit wakes the durable Garmin queue without opening a tab', async () => {
+    const database = new IDBFactory();
+    const h = createHarness({ garminDatabase: database });
+    const store = createGarminStore<GarminImportState>(database);
+    await store.mutate(state => {
+        state.connection = { owner: '1234', cid: '77', key: 'fictional-key-for-queue-test', enabled: true };
+        state.peakbaggerBlocked = { code: 'cloudflare', retryAt: 0 };
+        state.items['123'] = { id: '123', phase: 'waiting', summary: { type: 'hiking' } } as GarminItem;
+    });
+    const tab = { id: 42, active: false, status: 'complete', url: 'https://www.peakbagger.com/Default.aspx' };
+    h.tabs.set(tab.id, tab);
+    h.tabUpdated.listeners[0](42, { status: 'complete' });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(h.fetchCalls.filter(url => url.includes('personal.connectapi')).length, 0);
+    const beforeTabs = h.tabs.size;
+    tab.active = true;
+    h.tabActivated.listeners[0]({ tabId: 42 });
+    await waitForCondition(() => h.fetchCalls.some(url => url.includes('personal.connectapi')));
+    assert.equal(h.tabs.size, beforeTabs, 'resuming must reuse the visited page');
+    assert.equal(h.windowCreates.length, 0);
+    await store.close();
+});
+
+const garminInboxHarness = async () => {
+    const database = new IDBFactory(), h = createHarness({ garminDatabase: database });
+    await h.send({ type: 'CAPTURE_START', tabId: 1 });
+    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore<GarminImportState>(database);
+    h.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
+    await store.mutate(state => {
+        // This retained activity predates the current summary field.
+        state.items['123'] = { id: '123', cid: '77', owner: '1234', saved: [], phase: 'ready',
+            analysis: { matches: derived.matches, trackSummary: derived.trackSummary,
+                route: [[{ lat: 0, lon: 0, ele: 100, time: 1 }, { lat: 0, lon: 0.001, ele: 110, time: 2 }]], waypoints: [] } } as unknown as GarminItem;
+    });
+    return { ...h, database, store, sender: { tab: { id: 9 }, url: required(h.tabs.get(9)).url },
+        message: { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] } };
+};
+test('failed Garmin payload installation releases only its pre-opening durable intent', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.faults.payloadSet = 'private payload failure';
+        const failed = await h.send(h.message, h.sender);
+        assert.equal(failed.ok, false);
+        assert.equal((await h.store.read()).items['123'].handoff, undefined);
+        const retry = await h.send(h.message, h.sender);
+        assert.equal(retry.ok, true, JSON.stringify(retry)); assert.equal(retry.tabIds.length, 1);
+    } finally { await h.store.close(); }
+});
+test('an interrupted pre-opening Garmin intent is recoverable without erasing opened handoffs', async () => {
+    const h = await garminInboxHarness();
+    try {
+        await h.store.mutate(state => { state.items['123'].handoff = { jobId: 'uninstalled-job', tabId: 9, phase: 'preparing' }; });
+        const restarted = createHarness({ garminDatabase: h.database, sessionValues: h.values, browserTabs: h.tabs });
+        const result = await restarted.send(h.message, h.sender);
+        assert.equal(result.ok, true, JSON.stringify(result));
+        assert.equal(required((await h.store.read()).items['123'].handoff).phase, 'opening');
+        const again = await restarted.send(h.message, h.sender);
+        assert.equal(again.reused, true); assert.deepEqual(again.tabIds, result.tabIds);
+    } finally { await h.store.close(); }
+});
+test('Garmin actions expose intentional recovery errors but keep storage exceptions private', async () => {
+    const h = await garminInboxHarness();
+    try {
+        const invalid = await h.send({ ...h.message, selectedIds: [] }, h.sender);
+        assert.match(invalid.error.message, /Select current summit matches/);
+        h.faults.payloadSet = 'secret storage details';
+        const failed = await h.send(h.message, h.sender);
+        assert.doesNotMatch(failed.error.message, /secret storage details/);
+    } finally { await h.store.close(); }
+});
+
+test('a rolled-back Garmin opening retries the current selection without duplicating forms', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.faults.tabCreate = 'draft tab failed';
+        assert.equal((await h.send(h.message, h.sender)).ok, false);
+        assert.equal(h.values.bpbCaptureJobs[9].phase, 'ready');
+        assert.deepEqual(h.values.bpbCaptureJobs[9].selectedIds, []);
+        delete h.faults.tabCreate;
+        const retried = await h.send(h.message, h.sender);
+        assert.equal(retried.ok, true, JSON.stringify(retried)); assert.equal(retried.tabIds.length, 1);
+        const repeated = await h.send(h.message, h.sender);
+        assert.equal(repeated.reused, true); assert.deepEqual(repeated.tabIds, retried.tabIds);
+    } finally { await h.store.close(); }
+});
+test('new Garmin handoffs cannot replace an earlier uncertain-save job', async () => {
+    const h = await garminInboxHarness();
+    try {
+        h.values.bpbCaptureJobs[9] = { ...h.values.bpbCaptureJobs[1], id: 'previous-uncertain-save', sourceTabId: 9, saveRecoveryRequired: true };
+        const response = await h.send(h.message, h.sender);
+        assert.equal(response.ok, false); assert.equal(response.error.code, 'draft-save-unverified');
+        assert.equal((await h.store.read()).items['123'].handoff, undefined);
+    } finally { await h.store.close(); }
+});

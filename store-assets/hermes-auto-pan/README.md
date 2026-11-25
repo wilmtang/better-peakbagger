@@ -6,7 +6,7 @@ The assets are fully automated and recorded directly using Playwright on a real 
 
 ## 📁 Directory Structure
 *   **`promotion.mp4`**: The high-definition cropped final promotional video showcasing the key features in an isolated, clean card layout.
-*   **`record.js`**: The portable Playwright automation script used to boot the extension, clean up the page DOM, perform smooth map gestures, and record the viewport.
+*   **`record.mts`** is the Playwright script that loads the extension, prepares the page, performs the map gestures, and records the viewport.
 *   **`README.md`**: This instruction file.
 
 ---
@@ -27,11 +27,12 @@ brew install ffmpeg
 ```
 
 ### 2. Run the Playwright Recorder
-Run the automation script from the repository:
+Build the extension and run the recorder from the repository root.
 ```bash
-node store-assets/hermes-auto-pan/record.js
+npm run build
+node store-assets/hermes-auto-pan/record.mts
 ```
-*This will boot a headful Chrome window with the local unpacked extension loaded, scroll down to the map area, transition from 2D to 3D terrain, resize the map, perform camera controls (zoom, pan, tilt), sweep across the elevation chart to show synced movement, and select a nearby summit marker before cleanly shutting down.*
+Chrome for Testing opens a visible window, loads the unpacked extension from `dist/`, and records the camera, elevation chart, and summit interactions. The recorder requires hardware WebGL.
 
 ### 3. Crop and Post-Process with FFmpeg
 The browser video is captured at full viewport dimensions ($1200 \times 1350$) to ensure high-fidelity. To crop it into the perfectly centered, clean, standalone card layout (removing margins and top stats tables), run:
@@ -46,7 +47,7 @@ ffmpeg -y -i store-assets/hermes-auto-pan/page@*.webm -vf "crop=755:1100:440:10,
 
 ---
 
-## 🛠️ Automated Interaction Timeline (inside `record.js`):
+## 🛠️ Automated Interaction Timeline (inside `record.mts`)
 1.  **DOM Sanitization**: Injects custom CSS to set a seamless, solid `#ffffff` background and hides all distracting clutter (footers, view counters, ads, external download links) to isolate the card.
 2.  **Strategic Scrolling**: Scrolls the page so the map and interactive stats container perfectly fill the viewport with no top tables visible.
 3.  **3D Map Activation**: Programmatically triggers the `#bpb-terrain-toggle` button and handles the first-use permission modal.

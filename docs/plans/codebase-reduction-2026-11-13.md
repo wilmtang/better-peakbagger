@@ -76,8 +76,8 @@ and several steps were wrong. The phases below are the corrected version.
 - scripts/prototypes/ has no tracked files. The 11,100-line figure for
   experiments, evidence, mocks and prototypes counted PNG bytes as lines; the
   text is 5,560 lines.
-- `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mjs` and
-  `test/garmin/zip-csp.test.mjs`. `docs/plans/evidence/` is referenced by
+- `docs/plans/experiments/` is read by `test/garmin/fit-activity.test.mts` and
+  `test/garmin/zip-csp.test.mts`. `docs/plans/evidence/` is referenced by
   `src/weather/summit-cloud-models.ts`, `test/weather/summit-cloud.test.mts` and
   the TypeScript policy. Neither can simply be deleted.
 - 77 links in 20 maintained documents point into docs/archive/, not the four
@@ -191,11 +191,11 @@ roughly 16–20 other test files that read authored source, CSS or HTML (not the
      (about 75 lines, `release.test.mts:600-674`) pin the text of `verify-firefox-extension.mts`. The
      surviving check is that verifier itself; what it cannot show is a
      reintroduced fixed sleep that still passes on an idle machine.
-  2. `copied-runtime-impact.test.mjs` "Firefox GPU gestures…", "Chrome solar
+  2. `copied-runtime-impact.test.mts` "Firefox GPU gestures…", "Chrome solar
      bearing…", "Chrome terrain verification waits out…" and "Chrome
      tilted-peak verification…" pin GPU-verifier text, with the same trade-off
      against `verify -- terrain`.
-  3. `sun-calculator.test.mjs` (lines 696–704) pins exact `block-size`
+  3. `sun-calculator.browser.mts` (lines 696–704) pins exact `block-size`
      values, and `photo-page.test.mts` (lines 244–247) pins `height` and
      `min-height` on `.editor-body`. The surviving checks are browser geometry
      probes: `readSunCalculatorGeometry` in both extension verifiers for the
@@ -276,8 +276,8 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   its marker and field projection. Both bundle source lists, their pins and
   the settings-read policy (the one fail-soft read moved to the shared module)
   are updated. The per-bundle behavior tests in
-  `passive-settings-ownership.test.mjs`, `big-map.test.mjs` and
-  `peak-map.test.mts` exercise both bridges unchanged. Checks: build, those
+  `passive-settings-ownership.test.mjs`, `big-map.browser.mts` and
+  `peak-map.browser.mts` exercise both bridges unchanged. Checks: build, those
   tests plus the settings and project tests (662 pass), typecheck, lint.
 - Phase 4 step 2, one family. `OPTIONS_TAB_REGISTER`, `OPEN_BETA_SETTINGS`,
   `OPEN_CUSTOM_LAYER_SETTINGS` and `OPEN_DRAFTS_MANAGER`, with the registered
@@ -285,7 +285,7 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   `background.ts` into `src/background/options-tab-routes.ts` (4,358 → 4,205
   lines). The worker source list, its pin, and the Save-control source guard in
   `manifest-capture.test.mts` include the new file. The bundled-worker tests in
-  `background-capture.test.mjs` exercise these routes. Checks: build, the
+  `background-capture.test.mts` exercise these routes. Checks: build, the
   background, settings and project tests (1,102 pass), typecheck, lint, and
   `npm run verify -- chrome` after the bridge and worker changes (hidden,
   Chromium 156, 1000×760, teardown passed).

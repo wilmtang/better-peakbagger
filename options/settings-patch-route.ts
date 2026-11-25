@@ -4,24 +4,22 @@
 // Better Peakbagger — typed page side of the SETTINGS_PATCH route.
 //
 // Extension pages never write settings storage themselves: `set` in
-// src/settings/settings.js sends a SETTINGS_PATCH runtime message and the
-// background worker applies it in its single mutation queue. That store is
-// still JavaScript and is a source in many bundles, so this module types the
-// route around it instead of converting it (see the modern stack adoption
-// plan, M4). It adds no second implementation: the request envelope, the
-// reply handling and every error message remain settings.js's own, and
+// src/settings/settings.ts sends a SETTINGS_PATCH runtime message and the
+// background worker applies it in its single mutation queue. This module types
+// the request and reply shapes around that store without adding a second
+// implementation: the request envelope, the reply handling, and every error
+// message remain settings.ts's own, and
 // test/options/unit-settings-route.test.mts pins that these declarations
 // describe what it actually sends and accepts.
 //
-// No production caller goes through settingsPatchRoute yet: the options
-// controller (options/options.js) still calls the store's `set` directly and
-// converts in M7. `SettingsPatch` checks keys, not values: the schema's
-// DEFAULTS are widened (`units` is `string`) and its computed photo-tool keys
-// are absent, so value validation stays with owner contracts such as
-// options/unit-settings-contract.ts.
+// `options/options.ts` imports `Settings` and `SettingsPatch` from this module
+// to type `save` while continuing to call `S.set(patch)`. `SettingsPatch` checks
+// keys, not values: the schema's DEFAULTS are widened (`units` is `string`) and
+// its computed photo-tool keys are absent, so value validation stays with owner
+// contracts such as options/unit-settings-contract.ts.
 
 import type { settingsSchema } from '../src/settings/settings-schema.ts';
-import { createSettingsStore } from '../src/settings/settings.js';
+import { createSettingsStore } from '../src/settings/settings.ts';
 
 export type Settings = ReturnType<typeof settingsSchema.clean>;
 export type SettingsKey = keyof Settings;
@@ -66,7 +64,7 @@ export interface SettingsPatchRoute<Patch extends SettingsPatch = SettingsPatch>
 export const settingsPatchRoute = (transport: SettingsPatchTransport): SettingsPatchRoute => {
     const store = createSettingsStore({
         area: null, localArea: null, onChanged: null,
-        sendMessage: (message: SettingsPatchRequest) => transport(message),
+        sendMessage: message => transport(message as SettingsPatchRequest),
     });
     return { set: patch => store.set(patch) };
 };

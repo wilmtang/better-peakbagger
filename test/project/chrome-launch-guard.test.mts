@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
-import { assertChromeLaunchAllowed } from '../../scripts/chrome-launch-guard.mjs';
+import { assertChromeLaunchAllowed } from '../../scripts/chrome-launch-guard.mts';
 
 test('Chrome preflight refuses macOS Seatbelt before starting a browser', () => {
     assert.throws(() => assertChromeLaunchAllowed({ platform: 'darwin', environment: { CODEX_SANDBOX: 'seatbelt' } }),
@@ -17,7 +17,7 @@ test('direct fixture Chrome launches isolate profiles and avoid the login keycha
     const directory = new URL('../../scripts/', import.meta.url);
     let checked = 0;
     for (const name of await readdir(directory)) {
-        if (!name.endsWith('.mjs')) continue;
+        if (!/\.m[jt]s$/.test(name)) continue;
         const source = await readFile(new URL(name, directory), 'utf8');
         for (const match of source.matchAll(/(?:spawn\(chromePath,|run\(chrome,)\s*\[([\s\S]*?)\n\s*\]/g)) {
             assert.ok(match[1].includes('--use-mock-keychain'), `${name} must avoid macOS keychain prompts`);
@@ -41,7 +41,7 @@ test('every repository Chrome launcher runs the shared preflight before launchin
         if (/launchVerificationChrome\(/.test(source)) shared++;
         if (!sites.length) continue;
         const imports = source.slice(0, source.search(/^(?:const|let|function|async function|export)\b/m));
-        assert.match(imports, /import \{ assertChromeLaunchAllowed \} from '\.\/chrome-launch-guard\.mjs';/, name);
+        assert.match(imports, /import \{ assertChromeLaunchAllowed \} from '\.\/chrome-launch-guard\.mts';/, name);
         for (const site of sites) {
             assert.match(source.slice(Math.max(0, site.index - 180), site.index), /assertChromeLaunchAllowed\(\);/,
                 `${name} must check each launch, including additional browser passes`);

@@ -26,12 +26,12 @@ Files read, in full or in the part relevant to a finding:
 - Report protection inspector and format painter:
   `src/reports/report-script-source.ts`, `report-script-notice.ts`,
   `report-format-painter.ts`
-- Ignored-report surfaces: `src/ascent/ascent-report-visibility.js`,
-  `src/favorites/peak-report-filter.js`
-- Network helpers: `src/weather/open-meteo-client.js`, `src/net/*`,
-  `src/background/peakbagger-request-scheduler.js`
-- Weather day/week windows: `src/weather/weather-day.js`, `weather-week.js`
-- Export helpers: `options/settings-backup.js`, `options/climber-files.js`
+- Ignored-report surfaces: `src/ascent/ascent-report-visibility.ts`,
+  `src/favorites/peak-report-filter.ts`
+- Network helpers: `src/weather/open-meteo-client.ts`, `src/net/*`,
+  `src/background/peakbagger-request-scheduler.ts`
+- Weather day/week windows: `src/weather/weather-day.ts`, `weather-week.js`
+- Export helpers: `options/settings-backup.ts`, `options/climber-files.ts`
 
 Not audited: capture core and provider adapters, the rest of the background
 worker, GitHub backup, GPX analyzer, ascent filter internals, terrain/maps,
@@ -139,9 +139,9 @@ discovery, picks the same item (line 265) and repeats.
 the cap, each pass performs one Garmin identity call, one recording download
 and one `prepare` (Peakbagger corridor lookups) with no progress, and the alarm
 is always re-set at +60 s. It needs a signed-in Peakbagger tab; without one the
-pass pauses at binding instead. The existing test
-(`test/garmin/garmin-imports.test.mjs` line 260) covers only the 200-item count
-cap. I confirmed the control flow by reading.
+pass pauses at binding instead. The capacity test in
+`test/garmin/garmin-imports.test.mts` covers only the 200-item count cap.
+I confirmed the control flow by reading.
 
 **Impact.** For a user at the storage cap, the worker wakes every minute and
 sends Garmin and Peakbagger requests that cannot succeed, until they remove an
@@ -177,7 +177,7 @@ dismissal (`garmin-imports.ts` line 391) with no countdown.
 A related defect in the same rows: once the window lapses the button is only
 marked `aria-disabled` (line 124) and is never removed, so every dismissed
 receipt keeps a dead "Undo" button permanently. A test pins that state
-(`test/garmin/garmin-ui.test.mts` lines 224–229). AGENTS.md requires that
+(`test/garmin/garmin-ui.browser.mts` lines 224–229). AGENTS.md requires that
 completion status "must not look clickable unless it has a real action".
 
 No earlier audit declined a visible Undo; the archived design only describes
@@ -213,7 +213,7 @@ from code only.
 
 **Root cause.** `createGarminStore` keeps the whole inbox — connection, scan
 cursor, receipts and every item's reduced route — under the single key
-`current` (`src/garmin/garmin-store.js` lines 23–37). `mutate` reads that
+`current` (`src/garmin/garmin-store.ts` lines 23–37). `mutate` reads that
 record, runs the callback, and writes the whole record back, plus the summary.
 Stored items normally are full-size: `prepare` persists the reduced route
 (`background.js` lines 3651–3657), and the reducer fills its 3,000-point budget
@@ -239,7 +239,7 @@ Consequences in the callers (line numbers in `garmin-imports.ts` unless noted):
 
 ```js
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from './src/garmin/garmin-store.js';
+import { createGarminStore } from './src/garmin/garmin-store.ts';
 const point = i => ({ lat: 46.8 + i * 1e-5, lon: -121.7 + i * 1e-5, ele: 1500 + i * 0.1, time: 1760000000000 + i * 1000 });
 const item = id => ({ id: String(id), phase: 'ready', saved: [], summary: { id: String(id), date: '2026-10-01', type: 'hiking' },
     analysis: { matches: [{ id: 1, name: 'x', classification: 'strong', confidence: 90 }],
@@ -323,8 +323,8 @@ reproduction. Three other exports are more aggressive:
 
 | Site | Link attached | Revocation | Existing download proof |
 | --- | --- | --- | --- |
-| `options/climber-files.js` lines 81–86 (list export) | No | Synchronously, in `finally` | Completed download with parsed bytes in hidden Chrome and Playwright Firefox (`scripts/verify-climber-files.mjs` lines 54–58) |
-| `options/settings-backup.js` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mts`) |
+| `options/climber-files.ts` lines 81–86 (list export) | No | Synchronously, in `finally` | Completed download with parsed bytes in hidden Chrome and Playwright Firefox (`scripts/verify-climber-files.mts` lines 54–58) |
+| `options/settings-backup.ts` lines 137–143 (settings export, optionally with credentials) | No | Synchronously after `click()` | Chrome only (`scripts/verify-extension.mts`, `verify-map-handoffs.mts`) |
 | `photos/photos.ts` lines 3338–3343 (project bundle including the original image) | No | After 1 second | None; `scripts/verify-firefox-extension.mts` skips it |
 
 **What is and is not established.** Small synchronous-revoke exports demonstrably
@@ -397,9 +397,9 @@ is actually collected.
 
 ### F5 — Native dialogs remain where the product decided against them
 
-**Evidence.** `options/drafts.js` (lines 383–385) records that native
+**Evidence.** `options/drafts.ts` (lines 383–385) records that native
 `confirm()` cannot follow the dark theme, cannot be styled, and blocks the
-page; `options/photos.js` (lines 5–10) adds that the browser can suppress it.
+page; `options/photos.ts` (lines 5–10) adds that the browser can suppress it.
 The in-page pattern originates in the July 24 polish audit (F6). These sites
 still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 
@@ -411,7 +411,7 @@ still use native dialogs (complete inventory: seven `confirm`, two `alert`):
 | `photos/photos.ts` 3322 | `confirm` — bundle includes original metadata | |
 | `photos/photos.ts` 3347 | `confirm` — move to Recently Deleted | Followed by a toast with Undo (lines 3363–3366) |
 | `photos/photos.ts` 4011 | `confirm` — remove all annotations | Followed by a toast with Undo (lines 4017–4020) |
-| `src/ascent/ascent-delete.js` 64, 84, 96 | `confirm` + two `alert`s | Runs on Peakbagger's own page, after an awaited settings read |
+| `src/ascent/ascent-delete.ts` 64, 84, 96 | `confirm` + two `alert`s | Runs on Peakbagger's own page, after an awaited settings read |
 
 No earlier audit explicitly declined replacing them. A suppressed `confirm()`
 returns `false`, so on a page where the user ticked "prevent additional
@@ -461,7 +461,7 @@ inbox prints "Strong · 92% confidence".
 
 No user-visible error today, since visible matches score at least 60. Type it
 as `number`, delete the scale guess, and format through one helper beside
-`matchLabel` in `src/capture/match-confidence.js` so both surfaces and their
+`matchLabel` in `src/capture/match-confidence.ts` so both surfaces and their
 accessible names agree. Unit-test the helper.
 
 ### F8 — Popup selection write on every render
@@ -582,7 +582,7 @@ and `npm run verify -- chrome` passed.
   other tab stays refused until the earlier job expires, up to 30 minutes,
   although the copy says to finish or close those drafts.
 
-- F5 step 3, `src/ascent/ascent-delete.js` dialogs: an in-page replacement on
+- F5 step 3, `src/ascent/ascent-delete.ts` dialogs: an in-page replacement on
   Peakbagger's own page carries more layout and focus risk than it removes.
 - F4 receipt pruning: receipts are the de-duplication record and are tiny.
 - From review, accepted as narrow: hitting the 200-item and 20 MiB limits at
@@ -602,7 +602,7 @@ and `npm run verify -- chrome` passed.
   ascent-editor flow. F10 and F11 are unit-tested only.
 - F9, F15 and F17 have no worker-level regression through the real capture
   flow, and the two-tab refusal and F17's tab filter no automated test: the
-  worker harness lives in the legacy 4,500-line `background-capture.test.mjs`.
+  worker harness lives in the legacy 4,500-line `background-capture.test.mts`.
 - F6a, F7 and F8 have jsdom evidence only; F7 changed visible inbox text
   ("92% confidence" now reads "92%") without a rendered inspection.
 - F5 step 1 (photo editor) was not checked in a real browser.
@@ -621,12 +621,12 @@ documented alarm semantics.
 ## Addendum — full read of the capture path
 
 A second pass read the highest-risk code in full: `src/capture/*`,
-`src/net/bounded-text.js`, all 4,169 lines of `src/background/background.ts`,
-`src/background/sender-policy.js`, `public-errors.js`, `trusted-actions.js`,
+`src/net/bounded-text.ts`, all 4,169 lines of `src/background/background.ts`,
+`src/background/sender-policy.ts`, `public-errors.js`, `trusted-actions.js`,
 `src/peakbagger/*` (request, page, response, account, cloudflare, origin),
-`src/gpx/gpx-parse.js`, and the ascent-editor scripts `ascent-draft.js`,
+`src/gpx/gpx-parse.ts`, and the ascent-editor scripts `ascent-draft.js`,
 `ascent-upload.ts`, `ascent-saved.js`, `capture-save-verification.js` and
-`ascent-page.js`. Not read: `src/gpx/gpx-metrics.js` and the route modules the
+`ascent-page.js`. Not read: `src/gpx/gpx-metrics.ts` and the route modules the
 worker delegates to (GitHub, photos, report drafts, imports, custom layers).
 No browser was launched for this pass either.
 
@@ -646,7 +646,7 @@ No browser was launched for this pass either.
 `readBoundedResponseText` capped at 8,192 bytes / 4,096 characters
 (`src/capture/provider-page.ts`, then JavaScript, lines 348–354; limits in
 `provider-response.js`). That reader throws `ResourceLimitError` when either
-cap is exceeded (`src/net/bounded-text.js`), and the catch maps any limit error
+cap is exceeded (`src/net/bounded-text.ts`), and the catch maps any limit error
 to `gpx-too-large` (`provider-page.js` line 401). The popup renders that code as
 a locked card with no action. So an HTML body larger than the probe yields
 "This GPX is too large to process safely…" instead of forbidden, human-check or
@@ -664,7 +664,7 @@ as `provider-download-failed` rather than `provider-forbidden` or
 
 Reproduced the reader's throw in Node with a 9 KB 403 HTML body; the mapping to
 `gpx-too-large` is from reading. Existing tests use only tiny probe bodies
-(`test/capture/provider-page.test.mjs` lines 485–525). Not affected: the common
+(`test/capture/provider-page.browser.mts` lines 385–430). Not affected: the common
 signed-out case, a sign-in *redirect* (classified earlier from the final URL),
 and challenges flagged by the `cf-mitigated` header.
 
@@ -752,7 +752,7 @@ The manifest injects content scripts on both `peakbagger.com` and
 `www.peakbagger.com`, and `peakbagger-origin.js` accepts both as senders. The
 capture transport does not: the page helper refuses any request unless
 `location.origin` is exactly `https://www.peakbagger.com`
-(`src/peakbagger/peakbagger-page.js`, `validRequest`), the summit-box URL is
+(`src/peakbagger/peakbagger-page.ts`, `validRequest`), the summit-box URL is
 hard-coded to `www` (`background.js` line 1232), the helper-tab lookup queries
 only `www` (line 1107), and "canonical tab" means the `www` origin (lines
 567–570).
@@ -766,7 +766,7 @@ helper tab.
 
 The repository treats the bare host as live: `peakbagger-origin.js` says
 "Peakbagger serves both", and bare-host draft senders are tested
-(`test/background/background-gpx-process.test.mjs` lines 838 and 1063), so
+(`test/background/background-gpx-process.test.mts`), so
 draft delivery is deliberately supported there while Process is not. Whether
 the live site serves or redirects the bare host was not checked; if it
 redirects, this is dormant. **Direction:** make one read-only check of the bare
@@ -815,7 +815,7 @@ one verified binding for the items of a single pass.
 ### F18 — Field-by-field yielding may outlast the apply lease
 
 `setField` awaits `setTimeout(0)` after every numeric field
-(`src/ascent/ascent-draft.js` lines 248–259). `fillForm` awaits it for each
+(`src/ascent/ascent-draft.ts` lines 248–259). `fillForm` awaits it for each
 elevation, distance, duration and gain field (lines 413–439) and `fillDayStats`
 for ten fields per day (lines 345–358), so a full fill is a few dozen
 sequential timer yields. Browsers clamp chained timers in hidden tabs

@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createWildfireSession } from '../maps/wildfire-session.ts';
-import { wildfireDetails } from '../maps/wildfire-details.js';
-import { wildfireRecords, WILDFIRE_SOURCE } from '../maps/wildfire-core.js';
+import { wildfireDetails } from '../maps/wildfire-details.ts';
+import { wildfireRecords, WILDFIRE_SOURCE } from '../maps/wildfire-core.ts';
 import type { Map as MapLibreMap, MapMouseEvent, Popup, GeoJSONSource, AddLayerObject } from 'maplibre-gl';
 import type { WildfireData } from '../maps/wildfire-session.ts';
 

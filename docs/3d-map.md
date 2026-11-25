@@ -11,7 +11,7 @@ Sentinel, slope, public-land and SNOTEL overlays across native and 3D maps.
 `src/maps/map-layers.ts` owns the outer session; `sentinel-session.js` owns each
 active renderer's capture catalog and status. The frame's basemap picker stays
 at the upper-right, matching the native map's separate basemap selector.
-Both engines use `src/maps/sentinel-core.js` for bounded capture validation.
+Both engines use `src/maps/sentinel-core.ts` for bounded capture validation.
 Microsoft Planetary Computer serves natural-color imagery directly over CORS;
 no account, proxy, new host permission, or persistent imagery cache is needed.
 Only a selected layer starts requests. Searches cover the last 30 days, split
@@ -22,7 +22,7 @@ Opening 3D from a dated Leaflet capture preserves that choice using a validated
 pass identity; it never forwards page-owned tile URLs or catalog responses.
 The latest choice prioritizes a pass covering the viewport center, then time.
 Capture dates and clocks use the map center's mountain-local timezone, resolved
-offline through `src/time/mountain-time.js`, with DST at the capture instant and
+offline through `src/time/mountain-time.ts`, with DST at the capture instant and
 a labelled longitude estimate if timezone lookup fails. Pass identities retain
 their original UTC timestamps.
 Capture choices include a compact cloud percentage from the same catalog data;
@@ -70,7 +70,7 @@ details:
    `src/terrain/terrain-coordinator.ts` owns state transitions, timeouts,
    camera handoff, terrain-compass updates, optional accepted-view notification,
    and failure recovery. The analyzer and Full
-   Screen Map also share `src/gpx/map-frame-lifecycle.js` for native MasterMap
+   Screen Map also share `src/gpx/map-frame-lifecycle.ts` for native MasterMap
    identity: late insertion, reload, replacement, and removal must rebind every
    Leaflet consumer rather than expire on a polling budget. Surface modules
    still own subject identity, geometry collection, consent-pending state, and
@@ -90,7 +90,7 @@ details:
 9. **Returning to 2D is bounded.** An active stop asks the frame for its latest
    center and zoom, but a missing reply cannot trap the user; the coordinator
    falls back after one second.
-10. **No change is verified by one green command.** jsdom, a real unpacked
+10. **No change is verified by one green command.** Browser fixture pages, a real unpacked
     extension, and a hardware-GPU terrain run cover different failure classes.
 
 ## Runtime topology
@@ -138,24 +138,24 @@ consistently in Chrome and Firefox without giving the host page extension APIs.
 
 | Module | World | Owns | Must not own |
 | --- | --- | --- | --- |
-| `src/gpx/gpx-analyzer.js` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
-| `src/gpx/map-frame-lifecycle.js` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
+| `src/gpx/gpx-analyzer.ts` | MAIN | Ascent GPX coordinate extraction, chart highlight, selected-point Sun/Moon state, native MasterMap integration, Analyzer-specific messages | Storage, frame creation, generic terrain lifecycle |
+| `src/gpx/map-frame-lifecycle.ts` | MAIN helper | Condition-based MasterMap insertion/reload/replacement/removal identity events shared by Analyzer and BigMap | Leaflet overlays, terrain state, or subject validation |
 | `src/maps/big-map.ts` | MAIN | Full Screen route/peak identity, native layer detection, group colors and ascent links, native map DOM | Storage, renderer internals, duplicate lifecycle logic |
-| `src/maps/peak-map.js` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
+| `src/maps/peak-map.ts` | MAIN | Peak-page identity agreement, summit focus, embedded map context, page-local map size, summit Sun/Moon state | Extension storage, renderer internals, duplicate lifecycle logic |
 | `src/terrain/terrain-coordinator.ts` | MAIN | `idle`/`loading`/`active` lifecycle, toggle UI, timeouts, camera round trip, terrain compass, accepted bearing callback, recovery | Subject discovery, solar calculation, privileged APIs, provider requests |
-| `src/terrain/terrain-lifecycle.js` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
+| `src/terrain/terrain-lifecycle.ts` | pure | Parked-frame keep-alive shared by runtime teardown and generated reviewer metadata | DOM, settings, provider requests |
 | `src/terrain/terrain-map.ts` | isolated | Feature gate, trusted consent UI, trusted toggle-event activation, frame creation/parking, page↔frame relay, prefetch relay | Page-owned Leaflet globals, rendering |
-| `src/terrain/terrain-frame.js` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
+| `src/terrain/terrain-frame.ts` | extension iframe entry | Independent settings recheck and MapLibre/runtime composition | Payload handling, authenticated Peakbagger fetches, settings writes |
 | `src/terrain/terrain-frame-runtime.ts` | extension iframe runtime | Capability consumption, payload validation, MapLibre, DEM protocol, tile level-of-detail tuning, in-view tilt tile warming, route/highlight layers, terrain-positioned peak markers, drape choices, WebGL failure detection | Authenticated Peakbagger fetches, settings reads or writes |
 | `src/terrain/terrain-basemap.ts` | MAIN/pure helper | Convert compatible Leaflet raster layers and known menu choices to bounded drape specs | Fetching or assuming a layer is CORS-compatible |
-| `src/terrain/terrain-camera.js` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
-| `src/terrain/terrain-compass.js` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
+| `src/terrain/terrain-camera.ts` | pure helper | Validate and convert Leaflet↔MapLibre center/zoom | Bearing or pitch persistence |
+| `src/terrain/terrain-compass.ts` | page UI helper | Continuous shortest-arc bearing display and reset affordance | Camera state |
 | `src/terrain/terrain-cache.ts` | extension contexts | Custom DEM protocol, best-effort CacheStorage LRU | Raster/vector basemap caching policy |
-| `src/terrain/terrain-tiles.js` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
-| `src/maps/peak-markers.js` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
+| `src/terrain/terrain-tiles.ts` | pure helper | Bounded DEM tile enumeration: the first-paint set for prefetch, and the coarse-rung set the frame warms while a live camera rests | Network or browser APIs |
+| `src/maps/peak-markers.ts` | MAIN | Same-origin Peakbagger feed context, request validation, single-flight fetch | Frame rendering or persistence |
 | `src/background/background.ts` | extension worker coordinator | Shared sender predicate, concurrency helper, and `TERRAIN_PREFETCH` dispatch | Map UI, tile selection, or long-lived terrain state |
 | `src/background/terrain-activation.ts` | extension worker domain | Short-lived, one-use capabilities bound to action and tab, plus issuing frame/document identity for prefetch | UI events, map payloads, or provider requests |
-| `src/background/terrain-prefetch.js` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
+| `src/background/terrain-prefetch.ts` | extension worker domain | Settings revalidation, tile selection, cache warming, per-tab throttling, and recent-tile deduplication | Map UI or provider consent ownership |
 
 The separation is deliberate. For example, putting subject discovery into the
 shared coordinator would make it easier for a generic lifecycle change to
@@ -216,7 +216,7 @@ coordinate agree. An ambiguous or changed page fails closed to native 2D.
 
 ### Peak page Dynamic Map
 
-`src/maps/peak-map.js` requires agreement among the Peak page id, the linked Full
+`src/maps/peak-map.ts` requires agreement among the Peak page id, the linked Full
 Screen `t=P` map id, valid focus coordinates, and a subject name. It passes a
 summit focus rather than an invented route. The subject peak is supplied
 separately because Peakbagger's nearby-peak feed may intentionally exclude the
@@ -619,7 +619,7 @@ The background worker then revalidates everything:
 - failed tiles are removed from the dedupe set so a later intent can retry;
 - per-tab throttle state is deleted when that tab closes.
 
-`src/terrain/terrain-tiles.js` mirrors the frame's 512-pixel tile, 46-pixel fit
+`src/terrain/terrain-tiles.ts` mirrors the frame's 512-pixel tile, 46-pixel fit
 padding, and maximum fit zoom 15.5. If a view would exceed the cap, it lowers
 the target level until target plus parent fit. Prefetch is an optimization:
 failure is ignored by the surface and a normal renderer cache miss goes to the
@@ -871,7 +871,7 @@ MapLibre error emitted by removal cannot recurse through failure handling.
 Full Screen and Peak surfaces use an accessible, themed, auto-hiding
 `role=status` note near the toggle. The Analyzer uses its existing inline
 status panel. The human-readable reason mapping is shared by
-`src/terrain/terrain-failure.js`; `unavailable` deliberately describes the map rather
+`src/terrain/terrain-failure.ts`; `unavailable` deliberately describes the map rather
 than incorrectly blaming the browser.
 
 ## Page↔bridge↔frame protocol
@@ -904,7 +904,7 @@ than incorrectly blaming the browser.
 
 The bridge also uses frame-only `ready`, `resume`, `suspend`, and `destroyed`
 messages. Unknown failure strings are collapsed to `renderer` before they reach
-the page — checked against the reason set `src/terrain/terrain-failure.js`
+the page — checked against the reason set `src/terrain/terrain-failure.ts`
 exports, never a second copy of that list in the bridge. A hand-maintained copy
 is how `coverage` once reached the user as “Your browser could not render 3D
 terrain”: the frame reported the right thing and the relay quietly overwrote it,
@@ -922,7 +922,7 @@ receiver check.
 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
-| `npm test` | Builds shipped IIFEs; pure algorithms, jsdom fixtures, protocol/state tests, worker logic | Real manifest interpretation, actual WebGL, browser worker lifecycle |
+| `npm test` | Builds shipped IIFEs; pure algorithms, protocol/state tests, worker logic | DOM behavior (the DOM tier's browser fixtures cover it), real manifest interpretation, actual WebGL, browser worker lifecycle |
 | `npm run lint` | Source JavaScript and built extension/package lint | User interaction or renderer output |
 | `npm run verify -- chrome` | Real unpacked `dist/` in hidden Chrome for Testing: manifest order/worlds, content injection, worker and bridge boot | Firefox behavior, visual WebGL correctness, native focus/window placement |
 | `npm run verify -- browsers` | Real unpacked Chrome and Firefox profiles | Live provider behavior and GPU terrain visuals |
@@ -932,7 +932,7 @@ receiver check.
 
 The terrain showcase intentionally stubs storage and bridge protocol, but it is
 served over HTTPS on `www.peakbagger.com` rather than `http://localhost`,
-because `src/peakbagger/peakbagger-request.js` refuses any other origin and the
+because `src/peakbagger/peakbagger-request.ts` refuses any other origin and the
 analyzer fetches its GPX through that guard. Over plain HTTP the route never
 loads and every terrain check times out; see *A plain-HTTP fixture breaks these
 checks* in [`development.md`](development.md).

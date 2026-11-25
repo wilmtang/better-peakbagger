@@ -13,7 +13,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 // Report service-worker traffic too, so "no network" covers the worker.

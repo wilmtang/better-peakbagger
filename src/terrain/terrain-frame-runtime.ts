@@ -3,8 +3,8 @@
 //
 // Better Peakbagger — injectable MapLibre renderer runtime.
 
-import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.js';
-import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.js';
+import { MAX_MAP_ROUTE_POINTS, MAX_MAP_ROUTE_SEGMENTS } from '../gpx/map-route-limits.ts';
+import { isPeakbaggerPageOrigin } from '../peakbagger/peakbagger-origin.ts';
 import { settingsSchema } from '../settings/settings-schema.ts';
 import type * as MapLibre from 'maplibre-gl';
 import type { LngLat, Map as MapLibreMap, MapMouseEvent, Popup, PointLike } from 'maplibre-gl';
@@ -16,14 +16,14 @@ import { createVisibleDeadline } from '../ui/visible-deadline.ts';
 import type { VisibleDeadline } from '../ui/visible-deadline.ts';
 import { VECTOR_PROTOCOL, createVectorMapRequest, vectorRequestUrl } from '../maps/vector-map-request.ts';
 import { terrainCache as TerrainCache } from './terrain-cache.ts';
-import { terrainCamera } from './terrain-camera.js';
-import { terrainTiles as TerrainTiles } from './terrain-tiles.js';
+import { terrainCamera } from './terrain-camera.ts';
+import { terrainTiles as TerrainTiles } from './terrain-tiles.ts';
 import { createTerrainOverlays } from './terrain-overlays.ts';
 import { readLayerSnapshot } from '../maps/map-layer-protocol.ts';
-import { rateLimitMessage, readRetryAt } from '../net/rate-limit.js';
-import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
-import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.js';
-import { createSnotelMapReveal } from '../snow/snotel-map-view.js';
+import { rateLimitMessage, readRetryAt } from '../net/rate-limit.ts';
+import { readSnotelMapStations, readSnotelMapOcclusions, type SnotelMapStation } from '../snow/snotel-map-data.ts';
+import { createTerrainSnotelMarkers } from '../snow/snotel-map-marker.ts';
+import { createSnotelMapReveal } from '../snow/snotel-map-view.ts';
 
 export const TERRAIN_FRAME_LOAD_TIMEOUT_MS = 15000;
 
@@ -66,13 +66,13 @@ const authorizeThroughWorker = async ({ token, action }: { token?: unknown; acti
 
 // The production entry passes the statically imported MapLibre namespace and
 // consumes activation through the worker. Tests inject a narrow MapLibre stub
-// and an explicit authorization decision so jsdom never allocates WebGL.
+// and an explicit authorization decision so tests never allocate WebGL.
 export const startTerrainFrame = (maplibre: typeof MapLibre, { authorize = authorizeThroughWorker }: { authorize?: (request: { token?: unknown; action: string }) => Promise<boolean> } = {}) => {
     let snowConditions = new Set<string>();
     const snowMarkers = createTerrainSnotelMarkers({ maplibre, document,
         canSelect: ((id: string) => snowConditions.has(id)) as () => boolean,
         onSelect: (stationId: string) => post('snowSelect', { stationId }) });
-    let snowStations: { id: string }[] = [];
+    let snowStations: SnotelMapStation[] = [];
     const snowReveal = createSnotelMapReveal({ window, terrain: true, getMap: () => map });
     const FRAME_MESSAGE_TAG = '__bpbTerrainFrame';
     const TERRAIN_TILE_TEMPLATE = 'bpb-dem://{z}/{x}/{y}.webp';

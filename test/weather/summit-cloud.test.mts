@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { cloudAtElevation, predictModelCloud, predictSummitCloud, type CloudDataset } from '../../src/weather/summit-cloud-core.ts';
 import { SUMMIT_CLOUD_MODELS, summitCloudModel, resolveSummitCloudModels } from '../../src/weather/summit-cloud-models.ts';
-import { summitCloudRequest, readSummitCloudResponse, createSummitCloudClient } from '../../src/weather/summit-cloud-client.js';
-import { cloudSubject as subject, cloudTime as time, cloudDataset, cloudResponse } from '../helpers/summit-cloud-fixture.mjs';
+import { summitCloudRequest, readSummitCloudResponse, createSummitCloudClient } from '../../src/weather/summit-cloud-client.ts';
+import { cloudSubject as subject, cloudTime as time, cloudDataset, cloudResponse } from '../helpers/summit-cloud-fixture.mts';
 
 const model = summitCloudModel('gfs_global'), day = { start: time, end: time + 24 * 3600000 };
 type Dataset = ReturnType<typeof cloudDataset>;
@@ -146,7 +146,7 @@ test('the mixed-phase blend and humidity classification are pinned', () => {
 });
 test('a cloudy nearby layer with no temperature still blocks a clear result', () => {
     const data = cloudDataset();
-    data.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 100, humidity: 100, temperature: null as unknown as number, wind: 6, direction: 270 });
+    data.points[0]!.samples[0]!.levels.push({ pressure: 660, height: 3350, cloud: 100, humidity: 100, temperature: null, wind: 6, direction: 270 });
     assert.equal(predict(data).key, 'uncertain');
 });
 test('lift boundaries: band floor, band top and the 200 m terrain rise', () => {
@@ -225,7 +225,7 @@ test('bounded multi-point requests preserve 23/25 hour UTC identities and missin
         const body = cloudResponse(request); const result = readSummitCloudResponse(body, request);
         assert.equal(result.points[0].samples.length, hours);
         body[0].hourly_units.cloud_cover_850hPa = 'wrong';
-        assert.equal(readSummitCloudResponse(body, request).points[0].samples[0].levels.find((l: { pressure: number }) => l.pressure === 850).cloud, null);
+        assert.equal(readSummitCloudResponse(body, request).points[0].samples[0].levels.find((l: { pressure: number }) => l.pressure === 850)?.cloud, null);
         body[0].hourly.time[1] = body[0].hourly.time[0]; assert.throws(() => readSummitCloudResponse(body, request));
     }
     assert.throws(() => summitCloudRequest(null, day, model));

@@ -10,8 +10,8 @@ import { mkdir } from 'node:fs/promises';
 
 import { firefox } from 'playwright';
 import type { Locator, Page } from 'playwright';
-import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
-import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mjs';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mts';
+import { waitForPeakPopupSnapshot } from './verify-terrain-popup.mts';
 import { verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mts';
 
 import {
@@ -24,12 +24,12 @@ import {
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
     waitForCondition,
-} from './browser-verification-fixtures.mjs';
+} from './browser-verification-fixtures.mts';
 import {
     closeServer,
     createResourceStack,
     listenServer,
-} from './resource-stack.mjs';
+} from './resource-stack.mts';
 
 // Page functions serialize into fixture documents whose test seams (the frame's
 // map, instrumented globals) have no declarations; the module-scoped page globals

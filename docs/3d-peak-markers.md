@@ -61,9 +61,9 @@ the extension-origin frame never contacts peakbagger.com itself:
    the straight-down viewport around the camera center.
 2. **Bridge** (`src/terrain/terrain-map.ts`): forwards `peaksRequest` to the page and
    the `peaks` reply back — nothing else.
-3. **Coordinators** (`src/gpx/gpx-analyzer.js`, `src/maps/big-map.ts`,
-   `src/maps/peak-map.js`): answer via the
-   shared `src/maps/peak-markers.js` client, which reads `t`/`d`/`c`/`hj` from the
+3. **Coordinators** (`src/gpx/gpx-analyzer.ts`, `src/maps/big-map.ts`,
+   `src/maps/peak-map.ts`): answer via the
+   shared `src/maps/peak-markers.ts` client, which reads `t`/`d`/`c`/`hj` from the
    same-origin MasterMap iframe URL and issues the *identical* request the
    native 2D map would make (single-flight: a newer camera position aborts
    the in-flight fetch). Surfaces without a native peak feed — group maps, a

@@ -5,8 +5,8 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 // The page-world fixture the bundled script below installs.

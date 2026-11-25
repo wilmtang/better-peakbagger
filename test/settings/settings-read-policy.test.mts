@@ -13,21 +13,21 @@ import { settingsReadCounts } from '../helpers/source-policies.mts';
 
 const FAIL_SOFT = Object.freeze({
     'photos/photos.ts': [{ count: 1, kind: 'display', reason: 'render the passive export-size warning and inherited report image width; no transport is gated by this value' }],
-    'options/options.js': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
-    'options/favorites-page.js': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
+    'options/options.ts': [{ count: 1, kind: 'display', reason: 'populate passive options controls' }],
+    'options/favorites-page.ts': [{ count: 1, kind: 'display', reason: 'populate the passive favorite-climbers list page' }],
     'popup/popup.ts': [{ count: 1, kind: 'display', reason: 'resolve passive popup units' }],
-    'src/ascent/ascent-gaia.js': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
-    'src/background/github-routes.js': [
+    'src/ascent/ascent-gaia.ts': [{ count: 1, kind: 'display', reason: 'render provider buttons without reading any track data' }],
+    'src/background/github-routes.ts': [
         { count: 3, kind: 'display', reason: 'render connection, ascent-backup and photo-recovery status' },
         { count: 2, kind: 'safe-gate', reason: 'return connection status and gate default-off ascent snapshots' },
     ],
-    'src/background/terrain-prefetch.js': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
+    'src/background/terrain-prefetch.ts': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
     'src/favorites/climber-favorite.ts': [{ count: 2, kind: 'display', reason: 'render favorite-source state' }],
     'src/maps/map-settings-bridge.ts': [{ count: 1, kind: 'display', reason: 'publish validated map settings for the BigMap and Peak-page bridges' }],
-    'src/maps/peak-link-order.js': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
-    'src/profile/profile-units.js': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],
+    'src/maps/peak-link-order.ts': [{ count: 1, kind: 'display', reason: 'restore passive planning-link order without fetching provider data' }],
+    'src/profile/profile-units.ts': [{ count: 1, kind: 'display', reason: 'convert native profile readings without fetching data; defaults preserve native units' }],
     'src/reports/report-editor.ts': [{ count: 2, kind: 'display', reason: 'render editor and backup availability' }],
-    'src/settings/bridge.js': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
+    'src/settings/bridge.ts': [{ count: 1, kind: 'display', reason: 'publish validated analyzer settings' }],
     'src/terrain/terrain-map.ts': [{ count: 1, kind: 'safe-gate', reason: 'default-off terrain gate' }],
 });
 
@@ -38,35 +38,35 @@ const AUTHORITATIVE = Object.freeze({
     'src/garmin/garmin-badge.ts': [{ count: 1, kind: 'privacy', reason: 'keep the last accurate badge instead of drawing the queue from default settings' }],
     'options/inbox-toolbar-setting.ts': [{ count: 1, kind: 'preservation', reason: 'populate the toolbar count control without replacing unreadable settings with defaults' }],
     'src/garmin/garmin-imports.ts': [{ count: 9, kind: 'privacy', reason: 'read schedule, discovery scope, retention preferences and whether import history applies to toolbar captures authoritatively' }],
-    'src/ascent/ascent-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
-    'src/weather/peak-weather.js': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
+    'src/ascent/ascent-weather.ts': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before summit and archive requests' }],
+    'src/weather/peak-weather.ts': [{ count: 1, kind: 'privacy', reason: 'respect the weather opt-out before forecast requests' }],
     'src/weather/summit-cloud.ts': [{ count: 1, kind: 'privacy', reason: 'respect summit-cloud visibility and the saved model before profile requests' }],
-    'src/maps/map-layer-bridge.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before viewport catalog requests' }],
-    'src/snow/peak-snow.js': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before public snow catalog and observation requests' }],
-    'src/favorites/favorite-source.js': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],
+    'src/maps/map-layer-bridge.ts': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before viewport catalog requests' }],
+    'src/snow/peak-snow.ts': [{ count: 1, kind: 'privacy', reason: 'respect the SNOTEL opt-out before public snow catalog and observation requests' }],
+    'src/favorites/favorite-source.ts': [{ count: 1, kind: 'preservation', reason: 'resolve the selected source without substituting defaults after a failed settings read' }],
     'src/favorites/climber-hover-card.ts': [{ count: 1, kind: 'preservation', reason: 'enable favorite actions only after resolving the selected source authoritatively' }],
     'src/ascent/ascent-filter.ts': [{ count: 1, kind: 'preservation', reason: 'migrate legacy order only after an authoritative settings read' }],
-    'src/ascent/ascent-delete.js': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
+    'src/ascent/ascent-delete.ts': [{ count: 1, kind: 'preservation', reason: 'do not delete an ascent while cleanup settings are unreadable' }],
     'src/ascent/ascent-upload.ts': [{ count: 3, kind: 'privacy', reason: 'gate local-file parsing and allowlisted fields, and know whether timestamp removal turned on' }],
     'src/background/background.ts': [
         { count: 1, kind: 'privacy', reason: 'gate provider and local-upload capture in the worker' },
         { count: 1, kind: 'privacy', reason: 'refuse a timed capture once GPX timestamp removal is on' },
         { count: 1, kind: 'preservation', reason: 'reconcile favorites after a confirmed Buddy change using the current source and removal preference' },
     ],
-    'src/background/github-routes.js': [
+    'src/background/github-routes.ts': [
         { count: 3, kind: 'preservation', reason: 'keep GitHub writes and coordinated deletion fail closed on unreadable settings' },
         { count: 4, kind: 'privacy', reason: 'default-on settings, favorites and photo transfer and connection scheduling require authoritative preferences' },
     ],
-    'src/background/settings-file-routes.js': [
+    'src/background/settings-file-routes.ts': [
         { count: 2, kind: 'preservation', reason: 'export and import complete authoritative settings with API keys' },
     ],
-    'src/background/instagram-frames.js': [{ count: 2, kind: 'privacy', reason: 'automatic post grants require current device consent at both issue and claim' }],
-    'src/reports/instagram-ui.js': [{ count: 1, kind: 'privacy', reason: 'automatic post presentation starts only after current device consent is available' }],
-    'src/reports/instagram-frame.js': [{ count: 1, kind: 'preservation', reason: 'resolve the stored display theme without overwriting a newer subscription update' }],
-    'src/terrain/terrain-frame.js': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
-    'src/theme/theme.js': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
-    'src/theme/panel-theme.js': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],
-    'src/ui/peak-card-layout.js': [{ count: 1, kind: 'preservation', reason: 'restore the saved card layout without treating a failed read as a new preference' }],
+    'src/background/instagram-frames.ts': [{ count: 2, kind: 'privacy', reason: 'automatic post grants require current device consent at both issue and claim' }],
+    'src/reports/instagram-ui.ts': [{ count: 1, kind: 'privacy', reason: 'automatic post presentation starts only after current device consent is available' }],
+    'src/reports/instagram-frame.ts': [{ count: 1, kind: 'preservation', reason: 'resolve the stored display theme without overwriting a newer subscription update' }],
+    'src/terrain/terrain-frame.ts': [{ count: 1, kind: 'privacy', reason: 'gate provider-backed renderer startup inside the frame' }],
+    'src/theme/theme.ts': [{ count: 1, kind: 'preservation', reason: 'reconcile the synchronous theme mirror' }],
+    'src/theme/panel-theme.ts': [{ count: 1, kind: 'preservation', reason: 'preserve the panel mirror on failed reconciliation' }],
+    'src/ui/peak-card-layout.ts': [{ count: 1, kind: 'preservation', reason: 'restore the saved card layout without treating a failed read as a new preference' }],
 });
 
 const occurrences = async (method: 'get' | 'requireCurrent') => settingsReadCounts(await runtimeSources(), method);

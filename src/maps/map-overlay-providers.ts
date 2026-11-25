@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_REGIONS, US_TERRITORY_BOUNDS } from './canadian-land.js';
-import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.js';
-import { SENTINEL_LATITUDES } from './sentinel-core.js';
+import { CANADIAN_LAND_CLASSES, landCoverage, bcLandTileUrl, albertaLandTileUrl, intersectsLandBounds, regionCoverage, US_REGIONS, US_TERRITORY_BOUNDS } from './canadian-land.ts';
+import { SNOW_DEPTH_SERVICE, SNOW_DEPTH_BOUNDS } from './snow-depth.ts';
+import { SENTINEL_LATITUDES } from './sentinel-core.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 
 export const OVERLAY_MIN_ZOOM = 8;

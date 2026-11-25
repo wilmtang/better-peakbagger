@@ -5,15 +5,14 @@
 // M5: a compiled Svelte island mounts, updates, suspends, resumes, disposes and
 // re-mounts through src/ui/svelte-island.ts beside legacy DOM, in real Chromium
 // and Firefox. The bundle is test-only, built with the production (minified)
-// options from scripts/build.mts; nothing here ships. Run with
+// Vite backend; nothing here ships. Run with
 // `npm run verify -- dom`.
 
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { build } from 'esbuild';
-import { esbuildOptions } from '../../scripts/build.mts';
+import { buildBundles } from '../../scripts/vite-build.mts';
 import { defineDomSuite, type DomContext } from '../../scripts/dom-tier.mts';
 import type { IslandFixture } from '../fixtures/svelte/valid/island-entry.ts';
 
@@ -22,8 +21,7 @@ const islandBundle = () => bundle ??= (async () => {
     const outputDir = await mkdtemp(path.join(tmpdir(), 'bpb-svelte-island-'));
     try {
         const entry = { out: 'island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] };
-        const result = await build(esbuildOptions(entry, { minify: true, outputDir }));
-        assert.deepEqual(result.errors, []);
+        await buildBundles({ entries: [entry], minify: true, outputDir, manifestPath: null });
         return await readFile(path.join(outputDir, 'island.js'), 'utf8');
     } finally {
         await rm(outputDir, { recursive: true, force: true });

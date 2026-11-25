@@ -1,0 +1,79 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { optionsUtils as Utils } from '../../options/options-utils.ts';
+
+test('options busy runner rejects overlap and always clears its state', async () => {
+    let busy = false;
+    let release!: () => void;
+    let calls = 0;
+    const state = {
+        isBusy: () => busy,
+        setBusy: (value: boolean) => { busy = value; },
+    };
+    const first = Utils.withBusy(state, async () => {
+        calls++;
+        await new Promise<void>(resolve => { release = resolve; });
+    });
+    await Utils.withBusy(state, async () => { calls++; });
+    assert.equal(calls, 1);
+    assert.equal(busy, true);
+    release();
+    await first;
+    assert.equal(busy, false);
+
+    await assert.rejects(Utils.withBusy(state, async () => { throw new Error('failed'); }), /failed/);
+    assert.equal(busy, false);
+});
+
+test('options repository names prefer the canonical full name', () => {
+    assert.equal(Utils.githubRepoName({ repo: { fullName: 'ada/peaks', owner: 'x', name: 'y' } }), 'ada/peaks');
+    assert.equal(Utils.githubRepoName({ repo: { owner: 'ada', name: 'peaks' } }), 'ada/peaks');
+    assert.equal(Utils.githubRepoName(null), 'the connected repository');
+});
+
+test('options missing-element diagnostics name every absent control', () => {
+    const messages: unknown[] = [];
+    const original = console.error;
+    console.error = (message: unknown) => { messages.push(message); };
+    try {
+        assert.equal(Utils.logMissingElements('test panel', {
+            present: {}, missing: null, 'empty selector': [], 'partial selector': [{}, null]
+        }), true);
+        assert.deepEqual(messages, [
+            'Better Peakbagger test panel unavailable; missing: missing, empty selector, partial selector'
+        ]);
+        assert.equal(Utils.logMissingElements('test panel', { present: {} }), false);
+    } finally {
+        console.error = original;
+    }
+});
+
+test('options action buttons share one accessible non-submit shape', () => {
+    // The settings page builds its buttons in its own document.
+    const button = Utils.actionButton('secondary', 'Delete', 'Delete Mount Rainier');
+    assert.equal(button.outerHTML,
+        '<button type="button" class="panel-button secondary" aria-label="Delete Mount Rainier">Delete</button>');
+});
+
+test('scoped status dismissal preserves a newer report and manual dismissal still works', () => {
+    const dom = new FixtureDom('<div id="status"></div><div id="error" hidden><span id="text"></span><button id="dismiss"></button></div>');
+    const el = (id: string) => dom.window.document.getElementById(id);
+    const { flash, dismissStatus } = Utils.createStatusFlash({
+        statusEl: el('status'), statusErrorEl: el('error'), statusErrorTextEl: el('text'), statusErrorDismissEl: el('dismiss'),
+    });
+    const oldToken = flash('Buddy request failed', { error: true });
+    const currentToken = flash('Setting could not be saved', { error: true });
+    assert.equal(dismissStatus(oldToken), false);
+    assert.equal(el('error').hidden, false);
+    assert.equal(el('text').textContent, 'Setting could not be saved');
+    assert.equal(dismissStatus(currentToken), true);
+    assert.equal(el('error').hidden, true);
+    flash('Another error', { error: true });
+    el('dismiss').click();
+    assert.equal(el('error').hidden, true);
+    dom.window.close();
+});

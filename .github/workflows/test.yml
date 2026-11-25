@@ -35,11 +35,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
       - name: Detect terrain runtime and verification changes
         id: impact
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/copied-runtime-impact.mjs "$BASE_REVISION"
+        run: node scripts/copied-runtime-impact.mts "$BASE_REVISION"
 
   node:
     name: Node tests and lint
@@ -61,10 +67,8 @@ jobs:
       - name: Check immutable release history
         run: npm run release:check-history
 
-      - name: Require TypeScript for new and modified authored code
-        env:
-          TYPESCRIPT_POLICY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: npm run check:typescript-policy -- --base "$TYPESCRIPT_POLICY_BASE"
+      - name: Require TypeScript across the committed repository
+        run: npm run check:typescript-policy -- --committed
 
       - name: Run tests
         run: npm test
@@ -77,14 +81,21 @@ jobs:
 
   scale:
     name: Scale tests
+    # The Node scale tests, then the production-scale browser tests in hidden
+    # Chromium and Firefox.
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up shared verification
         uses: ./.github/actions/setup-verification
+        with:
+          fixture-browser: chrome
+
+      - name: Install the Firefox fixture browser
+        run: .github/actions/setup-verification/install-playwright-browser.sh firefox
 
       - name: Run scale tests
         run: npm run test:scale

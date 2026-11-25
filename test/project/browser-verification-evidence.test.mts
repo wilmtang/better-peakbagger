@@ -7,7 +7,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { fixtureEvidenceUrl, retainBrowserFailure, verificationScreenshots, watchFixtureRequests } from '../../scripts/browser-verification-evidence.mjs';
+import { fixtureEvidenceUrl, retainBrowserFailure, verificationScreenshots, watchFixtureRequests } from '../../scripts/browser-verification-evidence.mts';
 
 // The evidence helpers are JavaScript whose parameter types are inferred from
 // their defaults; these are the option bags and arguments the tests exercise.

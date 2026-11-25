@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 declare global { interface Window { photoOpenReply?: (value: unknown) => void } }

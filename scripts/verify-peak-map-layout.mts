@@ -7,10 +7,10 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBrowserFixtureServer, readSunCalculatorGeometry } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer, readSunCalculatorGeometry } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { moonPhaseLabel } from '../src/sun/sun-position.js';
+import { moonPhaseLabel } from '../src/sun/sun-position.ts';
 
 // Page functions run in the fixture document; these type-only globals are erased.
 type PageValue = ReturnType<typeof JSON.parse>;

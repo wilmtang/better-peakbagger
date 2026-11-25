@@ -25,7 +25,7 @@ Feature backlog is not tracked here. It stays in its own
   [October 10 follow-up](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ci-ux-maintainability-audit-2026-10-10.md).
 - **CI flakiness Phase 4 and standalone non-CI verifiers.** Phase 4 kept Option A
   (paired store package verification inside `.github/actions/verify-package` via
-  `scripts/verify-store-packages.mjs`; see
+  `scripts/verify-store-packages.mts`; see
   [CI verifier flakiness remediation](https://github.com/wilmtang/better-peakbagger/blob/893853927c3a02c58600de32add1aa7e50196e6f/docs/plans/ci-verifier-flakiness.md)).
   Ten standalone verifiers recorded in
   [codebase-reduction-2026-11-13.md](codebase-reduction-2026-11-13.md) remain

@@ -1,0 +1,111 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Better Peakbagger — page-world 3D-map compass overlay.
+//
+// A Google-Maps-style compass that floats just above the host page's floating
+// 2D/3D toggle (NOT inside the extension frame — the in-frame control stack is
+// deliberately compass-free, leaving the shared control slot for the mode
+// toggle in both renderers). Clicking it snaps the 3D view back to north-up,
+// looking straight down. The bearing/pitch it displays are streamed from the
+// frame through the bridge; the reset command travels back the same way.
+//
+// This module owns only the button and its rotation; the coordinators
+// (big-map.js, peak-map.js) own visibility, positioning cadence, and theme.
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+export interface TerrainCompassOptions {
+    container?: HTMLElement | null;
+    toggle?: HTMLElement | null;
+    onReset?: (() => void) | null;
+}
+
+export interface TerrainCompassControl {
+    setVisible: (visible: boolean) => void;
+    update: (bearing: number, pitch: number) => void;
+    position: () => void;
+    element: HTMLButtonElement;
+}
+
+// North half red, south half neutral — rotated as a whole by update(). Build
+// the fixed icon as SVG nodes so static extension markup never crosses an
+// HTML-parsing boundary just to create two polygons.
+const createNeedle = (): SVGSVGElement => {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '18');
+    svg.setAttribute('height', '18');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    for (const [points, fill] of [
+        ['12,3 8.5,12 15.5,12', '#ea4335'],
+        ['12,21 8.5,12 15.5,12', '#8a8a82']
+    ] as const) {
+        const polygon = document.createElementNS(SVG_NS, 'polygon');
+        polygon.setAttribute('points', points);
+        polygon.setAttribute('fill', fill);
+        svg.append(polygon);
+    }
+    return svg;
+};
+
+const create = ({ container, toggle, onReset }: TerrainCompassOptions): TerrainCompassControl => {
+    const button = document.createElement('button');
+    button.id = 'bpb-terrain-compass';
+    button.className = 'bpb-map-compass';
+    button.type = 'button';
+    button.hidden = true;
+    button.setAttribute('aria-label', 'Reset the view to north, looking straight down');
+    button.title = 'Reset to north';
+
+    const disc = document.createElement('span');
+    disc.className = 'bpb-map-compass-disc';
+    disc.setAttribute('aria-hidden', 'true');
+    disc.append(createNeedle());
+    button.append(disc);
+
+    // A reset only eases the extension's own 3D camera back to north-up — no
+    // feature gate, no data — so unlike the consent dialog it needs no
+    // trusted-event guard.
+    if (typeof onReset === 'function') button.addEventListener('click', () => onReset());
+    (container || document.body).append(button);
+
+    const setVisible = (visible: boolean): void => { button.hidden = !visible; };
+
+    // MapLibre reports bearing in the wrapped -180..180 range, while the page
+    // coordinators currently normalize it to 0..360. Neither representation is
+    // safe to feed directly to a transitioned CSS transform: crossing north
+    // jumps between values near 0 and 360, so CSS animates the long way around.
+    // Keep an unbounded bearing and advance it by only the shortest arc.
+    let unwrappedBearing: number | null = null;
+    const normalizeBearing = (value: number): number => ((value % 360) + 360) % 360;
+
+    // The transform encodes live camera state, so it is always applied; only the
+    // CSS transition between states honors prefers-reduced-motion (in the sheet).
+    const update = (bearing: number, pitch: number): void => {
+        if (!Number.isFinite(bearing) || !Number.isFinite(pitch)) return;
+        const target = normalizeBearing(bearing);
+        if (unwrappedBearing === null) {
+            unwrappedBearing = target;
+        } else {
+            const current = normalizeBearing(unwrappedBearing);
+            const shortestDelta = ((target - current + 540) % 360) - 180;
+            unwrappedBearing += shortestDelta;
+        }
+        disc.style.transform = `rotateX(${pitch}deg) rotateZ(${-unwrappedBearing}deg)`;
+    };
+
+    // Sit one gap above the toggle, sharing its right inset (from CSS). Reads the
+    // toggle's resolved bottom so it tracks both native zoom clearance and the
+    // shared CSS anchor.
+    const position = (): void => {
+        if (!toggle) return;
+        const toggleBottom = parseFloat(getComputedStyle(toggle).bottom) || 0;
+        button.style.bottom = `${Math.round(toggleBottom + toggle.offsetHeight + 8)}px`;
+    };
+
+    return { setVisible, update, position, element: button };
+};
+
+export const terrainCompass = { create };

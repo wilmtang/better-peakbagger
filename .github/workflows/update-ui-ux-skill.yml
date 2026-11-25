@@ -41,7 +41,7 @@ jobs:
         run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Integrate upstream skill changes
-        run: node scripts/update-ui-ux-skill.mjs
+        run: node scripts/update-ui-ux-skill.mts
 
       - name: Validate the skill data and example search
         env:
@@ -101,7 +101,7 @@ jobs:
         id: commit
         env:
           CHECKED_BASE: ${{ needs.prepare.outputs.base }}
-        run: node scripts/stage-ui-ux-skill-update.mjs "$RUNNER_TEMP/skill-update/skill-update.patch" "$CHECKED_BASE"
+        run: node scripts/stage-ui-ux-skill-update.mts "$RUNNER_TEMP/skill-update/skill-update.patch" "$CHECKED_BASE"
 
       # Only this step receives write access. It executes Git and SSH, never
       # downloaded Python or instruction content. GitHub's host keys come from

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { waitForCondition } from './browser-verification-fixtures.mjs';
+import { waitForCondition } from './browser-verification-fixtures.mts';
 
 export interface ImageDownloadIo {
     list(directory: string): Promise<string[]>;

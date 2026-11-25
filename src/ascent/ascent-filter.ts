@@ -8,17 +8,17 @@
 // needed. Buddy
 // and peak-list pages reuse only the sorter; they have no beta filter surface.
 
-import { settings as S } from '../settings/settings.js';
+import { settings as S } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { favoriteClimbers as F } from '../favorites/favorite-climbers.js';
-import * as I from '../favorites/ignored-climbers.js';
-import { observeIgnored } from '../favorites/ignored-client.js';
-import { createFavoriteSource } from '../favorites/favorite-source.js';
-import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.js';
-import { authorInCell } from '../favorites/report-adapters.js';
-import { numericParam, ownerClimberId } from '../profile/profile-backup-core.js';
-import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
-import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.js';
+import { favoriteClimbers as F } from '../favorites/favorite-climbers.ts';
+import * as I from '../favorites/ignored-climbers.ts';
+import { observeIgnored } from '../favorites/ignored-client.ts';
+import { createFavoriteSource } from '../favorites/favorite-source.ts';
+import { reportStyle, utilityButton, paintReveal, accountRecovery } from '../favorites/report-controls.ts';
+import { authorInCell } from '../favorites/report-adapters.ts';
+import { numericParam, ownerClimberId } from '../profile/profile-backup-core.ts';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
+import { beginBuddyCacheRead, publishBuddyCache } from '../favorites/buddy-cache.ts';
 
 type BetaFilterKey = 'beta' | 'tr' | 'gps' | 'link' | 'fav';
 type SortDirection = 'asc' | 'desc';
@@ -589,11 +589,11 @@ const setupInstantTableSort = ({
 
 // The bar's complete theme — light values and their dark counterparts —
 // lives here and nowhere else. It used to be split between this string and
-// a block of per-property !important overrides in src/theme/site-dark-css.js,
+// a block of per-property !important overrides in src/theme/site-dark-css.ts,
 // so every new control needed a developer to remember a second file and
 // nothing failed when they didn't. Now dark mode is variable reassignment:
 // a control with no dark value is impossible, because there is only one
-// value to declare. test/theme/dark-contrast.test.mjs fails if any
+// value to declare. test/theme/dark-contrast.browser.mts fails if any
 // --pbaf-* token lacks a dark counterpart.
 const STYLE = `
 :root {
@@ -814,8 +814,7 @@ if (isBuddyListPage) chrome.runtime.onMessage.addListener((message: { type?: str
 const cacheRenderedBuddyList = async () => {
     const cache = readRenderedBuddyList();
     if (!cache) return;
-    const beginRead = beginBuddyCacheRead as (api: typeof chrome, observedAt?: number | null) => Promise<unknown>;
-    const snapshot = await beginRead(chrome, performance.timeOrigin);
+    const snapshot = await beginBuddyCacheRead(chrome, performance.timeOrigin);
     await publishBuddyCache(chrome, snapshot, cache);
 };
 

@@ -6,60 +6,60 @@
 
 // The worker ships as one bundle; capture-core and settings (and their own
 // transitive deps: gpx-metrics, settings-schema) resolve through these imports.
-import '../reports/report-protection-firefox.js';
-import { createInstagramFrames } from './instagram-frames.js';
-import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.js';
-import { captureCore as Core } from '../capture/capture-core.js';
-import { createCaptureDiagnostics } from '../capture/capture-diagnostics.js';
-import { capturePhases as CapturePhases } from '../capture/capture-phases.js';
-import { captureErrorMessage } from '../capture/capture-error-policy.js';
+import '../reports/report-protection-firefox.ts';
+import { createInstagramFrames } from './instagram-frames.ts';
+import { createInstagramDisplayRegistration } from '../reports/instagram-display-registration.ts';
+import { captureCore as Core, type PeakCandidate, type RawWaypoint } from '../capture/capture-core.ts';
+import { createCaptureDiagnostics } from '../capture/capture-diagnostics.ts';
+import { capturePhases as CapturePhases } from '../capture/capture-phases.ts';
+import { captureErrorMessage } from '../capture/capture-error-policy.ts';
 import { sameCapturePreferences, timestampsTurnedOnSince, TIMESTAMPS_TURNED_ON_MESSAGE } from '../capture/capture-reuse.ts';
-import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.js';
-import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.js';
+import { captureResourceLimits as CaptureLimits } from '../capture/capture-resource-limits.ts';
+import { providerFromUrl, providerActivityUrl } from '../capture/provider-url.ts';
 import {
     PROVIDER_CAPTURE_OPERATION_TIMEOUT_MS,
     PROVIDER_EXPORT_TIMEOUT_MS,
     PROVIDER_PAGE_OPERATION_TIMEOUT_MS,
-} from '../capture/provider-timing.js';
-import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.js';
-import { createBuddyStore } from './buddy-store.js';
-import { BUDDY_MESSAGE } from '../favorites/buddy-state.js';
-import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.js';
-import { createBuddyCacheStore } from './buddy-cache-store.js';
-import { createIgnoredStore } from './ignored-store.js';
-import * as Ignored from '../favorites/ignored-climbers.js';
-import { createGithubRoutes } from './github-routes.js';
-import { createCaltopoRoutes } from './caltopo-routes.js';
-import { createAlltrailsRoutes } from './alltrails-routes.js';
-import { createGaiaRoutes } from './gaia-routes.js';
-import { createOnxRoutes } from './onx-routes.js';
+} from '../capture/provider-timing.ts';
+import { createFavoritesStore, favoritesStore as FavoritesStore } from './favorites-store.ts';
+import { createBuddyStore } from './buddy-store.ts';
+import { BUDDY_MESSAGE } from '../favorites/buddy-state.ts';
+import { BUDDY_CACHE_MESSAGE } from '../favorites/buddy-cache.ts';
+import { createBuddyCacheStore } from './buddy-cache-store.ts';
+import { createIgnoredStore } from './ignored-store.ts';
+import * as Ignored from '../favorites/ignored-climbers.ts';
+import { createGithubRoutes } from './github-routes.ts';
+import { createCaltopoRoutes } from './caltopo-routes.ts';
+import { createAlltrailsRoutes } from './alltrails-routes.ts';
+import { createGaiaRoutes } from './gaia-routes.ts';
+import { createOnxRoutes } from './onx-routes.ts';
 import { createPhotoRoutes } from './photo-routes.ts';
-import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.js';
-import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.js';
-import { createSettingsFileRoutes } from './settings-file-routes.js';
+import { createPeakbaggerRequestScheduler } from './peakbagger-request-scheduler.ts';
+import { reportDraftRoutes as ReportDraftRoutes } from './report-draft-routes.ts';
+import { createSettingsFileRoutes } from './settings-file-routes.ts';
 import { createOptionsTabRoutes } from './options-tab-routes.ts';
-import { createPackagedPageMatcher } from './sender-policy.js';
+import { createPackagedPageMatcher } from './sender-policy.ts';
 import { terrainActivation as TerrainActivation } from './terrain-activation.ts';
-import { createMapLayerHandoff } from './map-layer-handoff.js';
-import { createBCLandRoutes } from './bc-land-routes.js';
-import { createCustomOverlayStore } from './custom-overlay-store.js';
-import { createCustomPrivateStore } from './custom-private-store.js';
-import { createCustomLayerRelay } from './custom-layer-relay.js';
-import { trustedActions as TrustedActions } from './trusted-actions.js';
-import { createTerrainPrefetch } from './terrain-prefetch.js';
-import { publicErrors as PublicErrors } from './public-errors.js';
-import { settings as Settings } from '../settings/settings.js';
+import { createMapLayerHandoff } from './map-layer-handoff.ts';
+import { createBCLandRoutes } from './bc-land-routes.ts';
+import { createCustomOverlayStore } from './custom-overlay-store.ts';
+import { createCustomPrivateStore } from './custom-private-store.ts';
+import { createCustomLayerRelay } from './custom-layer-relay.ts';
+import { trustedActions as TrustedActions } from './trusted-actions.ts';
+import { createTerrainPrefetch } from './terrain-prefetch.ts';
+import { publicErrors as PublicErrors } from './public-errors.ts';
+import { settings as Settings } from '../settings/settings.ts';
 import { peakbaggerAccount as PeakbaggerAccount } from '../peakbagger/peakbagger-account.ts';
-import { peakbaggerError as PeakbaggerError } from '../peakbagger/peakbagger-error.js';
+import { peakbaggerError as PeakbaggerError, type PeakbaggerErrorCode, type PeakbaggerFailure } from '../peakbagger/peakbagger-error.ts';
 import {
     PEAKBAGGER_ORIGIN,
     PEAKBAGGER_HOSTS,
     isPeakbaggerSenderUrl,
     isPeakbaggerUrl,
-} from '../peakbagger/peakbagger-origin.js';
-import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.js';
-import { classifyResponse as classifyPeakbaggerResponse } from '../peakbagger/peakbagger-response.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
+} from '../peakbagger/peakbagger-origin.ts';
+import { fetchPeakbaggerResource } from '../peakbagger/peakbagger-request.ts';
+import { classifyResponse as classifyPeakbaggerResponse, type PeakbaggerResourceKind } from '../peakbagger/peakbagger-response.ts';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
 import { createGarminImports, GARMIN_ALARM } from '../garmin/garmin-imports.ts';
 import { GarminError } from '../garmin/garmin-api.ts';
 
@@ -73,9 +73,8 @@ type Sender = chrome.runtime.MessageSender;
 type Tab = chrome.tabs.Tab;
 interface JobError { code: string; message: string; retryAt?: number; recoveryTabId?: number; [field: string]: unknown }
 interface DraftFields {
-    date?: string; time?: string; suffix?: string; upDistanceM?: number;
+    date: string; time?: string; suffix?: string; upDistanceM?: number | null;
     tripInfo?: { id?: string; sequence?: number; name?: string; [field: string]: unknown };
-    [field: string]: unknown;
 }
 interface CaptureMatch {
     id: number; name: string; classification: string; confidence: number; selected?: boolean;
@@ -126,7 +125,7 @@ type JobMap = Record<string, CaptureJob>;
 // Errors raised and passed between the worker's stages carry these fields.
 type WorkerError = Error & { code?: string; retryAt?: number; recoveryTabId?: number; resource?: string; source?: string; cause?: unknown };
 // The shared Peakbagger fetch helper's reply, as this worker reads it.
-interface PeakbaggerReply { kind: string; text?: string; error?: WorkerError; url?: string; requestedUrl?: string; status?: number; [field: string]: unknown }
+interface PeakbaggerReply { kind: string; text?: string; error?: WorkerError | PeakbaggerFailure; url?: string; requestedUrl?: string; status?: number; [field: string]: unknown }
 interface RequestScheduler {
     run<Result>(task: (signal: AbortSignal) => Promise<Result>, options?: { signal?: AbortSignal | null }): Promise<Result>;
     stop(reason: unknown, options?: { exceptSignal?: AbortSignal | null }): void;
@@ -140,7 +139,13 @@ interface BrowserOperation<Result> {
 // Page-realm globals the worker's injected functions call. Those functions are
 // serialized and run in the page, so these casts never reach the worker.
 type PageGlobals = typeof globalThis & {
-    BPBPeakbaggerPage?: { version?: number; accountEvidence(): unknown; request(request: unknown): unknown; [member: string]: unknown };
+    BPBPeakbaggerPage?: {
+        version?: number;
+        accountEvidence(): unknown;
+        request(request: unknown): unknown;
+        cancel?(id: string): boolean;
+        [member: string]: unknown;
+    };
     BPBProviderPage?: {
         cancelCapture?(generation: string): unknown;
         waitForOwnership(expected: unknown, generation: string): Promise<unknown>;
@@ -522,7 +527,7 @@ type DraftMap = Record<string, DraftRecord>;
             : null;
     };
 
-    const peakbaggerPublicError = (error: WorkerError | null | undefined) => {
+    const peakbaggerPublicError = (error: WorkerError | PeakbaggerFailure | null | undefined) => {
         const failure = PeakbaggerError.exception(error) as WorkerError;
         // Transport codes are shared across Peakbagger features. Capture has
         // its own recovery policy; leaking a transport code makes the popup
@@ -1079,7 +1084,7 @@ type DraftMap = Record<string, DraftRecord>;
             const limit = CaptureLimits.peakbaggerResponseLimit(resource);
             if (typeof result.text !== 'string' || result.text.length > limit
                 || new TextEncoder().encode(result.text).byteLength > limit
-                || classifyPeakbaggerResponse(result.status, null, result.text, { kind: resource }) !== 'ok') {
+                || classifyPeakbaggerResponse(result.status as number, null, result.text, { kind: resource as PeakbaggerResourceKind }) !== 'ok') {
                 throw invalidPeakbaggerPageResponse(
                     resource,
                     new Error('The Peakbagger page returned invalid response content.'),
@@ -1102,7 +1107,7 @@ type DraftMap = Record<string, DraftRecord>;
             );
         }
         const retryAt = code === 'rate-limit' ? cleanPeakbaggerRetryAt(result.error?.retryAt) : null;
-        const error = PeakbaggerError.failure(code, {
+        const error = PeakbaggerError.failure(code as PeakbaggerErrorCode, {
             resource,
             status: result.status,
             ...(retryAt ? { retryAt } : {}),
@@ -1113,7 +1118,7 @@ type DraftMap = Record<string, DraftRecord>;
             url: result.url,
             status: result.status,
             redirected: result.redirected,
-            error: error as WorkerError,
+            error,
             reason: PeakbaggerError.message(error),
         };
     };
@@ -1145,7 +1150,7 @@ type DraftMap = Record<string, DraftRecord>;
             if (requestId === null) return;
             void ext.scripting.executeScript({
                 target: { tabId },
-                func: (id: string) => ((globalThis as PageGlobals).BPBPeakbaggerPage?.cancel as ((id: string) => unknown) | undefined)?.(id) === true,
+                func: (id: string) => (globalThis as PageGlobals).BPBPeakbaggerPage?.cancel?.(id) === true,
                 args: [requestId],
                 world: 'MAIN',
                 injectImmediately: true,
@@ -1338,7 +1343,7 @@ type DraftMap = Record<string, DraftRecord>;
                 `https://www.peakbagger.com/Async/pllbb2.aspx?${params}`,
                 { kind: 'peaks', signal }
             );
-            if (response.kind === 'ok') return response.text;
+            if (response.kind === 'ok') return response.text ?? '';
             if (response.error?.code === 'cancelled') throw cancelledCaptureError();
             lastError = peakbaggerPublicError(response.error);
             if (response.error?.code !== 'network' && response.error?.code !== 'server') break;
@@ -1401,9 +1406,9 @@ type DraftMap = Record<string, DraftRecord>;
                 return response;
             },
         );
-        const byId = new Map<unknown, { id: unknown; [field: string]: unknown }>();
+        const byId = new Map<unknown, PeakCandidate>();
         for (const response of responses) {
-            let parsed: { id: unknown; [field: string]: unknown }[];
+            let parsed: PeakCandidate[];
             try {
                 parsed = Core.parsePeakbaggerPeaks(response, {
                     maxPeaks: CaptureLimits.MAX_PEAKBAGGER_PEAKS,
@@ -1603,7 +1608,7 @@ type DraftMap = Record<string, DraftRecord>;
             assertActive();
             const sanitized = Core.sanitizeTrack(segments);
             const cleanWaypoints = capturePreferences.retainWaypoints
-                ? Core.sanitizeWaypoints(waypoints)
+                ? Core.sanitizeWaypoints(waypoints as readonly RawWaypoint[] | null | undefined)
                 : [];
             await cpu.checkpoint(true);
             const pointCount = sanitized.segments.reduce((sum: number, segment: unknown[]) => sum + segment.length, 0);
@@ -1645,7 +1650,7 @@ type DraftMap = Record<string, DraftRecord>;
             }
             await onPhase('searching-summits', { completed: 0, total: boxes.length });
             assertActive();
-            const peaks: unknown[] = await deadline.run(fetchPeaks(boxes, {
+            const peaks: PeakCandidate[] = await deadline.run(fetchPeaks(boxes, {
                 signal: deadline.signal,
                 request: peakbaggerRequest,
                 checkpoint: cpu.checkpoint,
@@ -1669,11 +1674,9 @@ type DraftMap = Record<string, DraftRecord>;
                     `This route passes more than ${CaptureLimits.MAX_CAPTURE_MATCHES} summit candidates. Split the activity into a shorter track and try again.`,
                 );
             }
-            type Detected = { id: number; classification: string; encounter: { distanceM: number }; [field: string]: unknown };
-            const detected = allMatches as Detected[];
-            const visibleMatches = detected.filter(match => match.classification === 'strong' || match.classification === 'probable');
+            const visibleMatches = allMatches.filter(match => match.classification === 'strong' || match.classification === 'probable');
             const boundBelowBar = boundPid === null ? null
-                : detected.find(match => match.id === Number(boundPid)
+                : allMatches.find(match => match.id === Number(boundPid)
                 && !visibleMatches.some(visible => visible.id === match.id)) || null;
             if (!visibleMatches.length && !boundBelowBar) {
                 return {
@@ -1705,7 +1708,7 @@ type DraftMap = Record<string, DraftRecord>;
                 matches.push({
                     ...Core.publicMatch(match),
                     draftFields: Core.calculateDraftFields(sanitized.segments, match, metadata),
-                } as CaptureMatch);
+                });
                 await cpu.checkpoint();
             }
             // A below-bar bound peak is still selectable on the ascent form. Keep
@@ -1722,12 +1725,12 @@ type DraftMap = Record<string, DraftRecord>;
                 : [];
             await cpu.checkpoint();
 
-            const boundFallback = boundBelowBar ? {
+            const boundFallback: CaptureMatch | null = boundBelowBar ? {
                 ...Core.publicMatch(boundBelowBar),
                 selected: false,
                 closestApproachM: Math.round(boundBelowBar.encounter.distanceM),
                 draftFields: Core.calculateDraftFields(sanitized.segments, boundBelowBar, metadata)
-            } as CaptureMatch : null;
+            } : null;
 
             await cpu.checkpoint();
             diagnostics.mark('local.derivation');
@@ -3870,7 +3873,7 @@ type DraftMap = Record<string, DraftRecord>;
                 const matches = (analysis.matches as CaptureMatch[]).filter(match => !item.saved.includes(String(match.id)));
                 if (!Array.isArray(message.selectedIds) || !message.selectedIds.length
                     || message.selectedIds.some((pid: unknown) => !matches.some(match => match.id === pid))) throw PublicErrors.exception('garmin-selection', 'Select current summit matches before opening drafts.');
-                const waypoints = preferences.retainWaypoints ? Core.sanitizeWaypoints(analysis.waypoints) : [];
+                const waypoints = preferences.retainWaypoints ? Core.sanitizeWaypoints(analysis.waypoints as readonly RawWaypoint[] | undefined) : [];
                 const route = Core.sanitizeTrack(analysis.route).segments;
                 if (route.reduce((n: number, segment: unknown[]) => n + segment.length, 0) + waypoints.length > Core.MAX_UPLOAD_POINTS) throw new Error('Invalid retained route.');
                 const upload = Core.serializeUploadGpx(route, waypoints);

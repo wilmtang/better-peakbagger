@@ -47,7 +47,7 @@ record merge before writing or restoring.
 | --- | --- | --- | --- |
 | User trigger | **Back up all ascents and TRs** or confirmed **Refresh all** on the owner's `ClimbListC.aspx` | Ascent backup enabled; a confirmed Add/Edit success routes to `ascent.aspx` | **Back up ascent and TR** beside Peakbagger's owner actions |
 | Raw fields | Fetch each owner-only `AscentEdit.aspx?aid=…`; shared persisted-form reader | Fetch that ascent's owner-only edit URL; shared persisted-form reader | Same as automatic; the same `runBackup()` function |
-| Raw-field mapper | `src/ascent/ascent-snapshot.ts` via `src/ascent/ascent-backup-source.js` | Same | Same |
+| Raw-field mapper | `src/ascent/ascent-snapshot.ts` via `src/ascent/ascent-backup-source.ts` | Same | Same |
 | Report body | Persisted `JournalText`, bracket markup converted to Markdown | Fresh save-time exact Markdown sidecar when present; otherwise persisted `JournalText` conversion | Fresh sidecar if a matching save transaction still exists; otherwise persisted conversion |
 | GPX existence | Owner-list GPS marker | Actual GPX link on `ascent.aspx` | Actual GPX link on `ascent.aspx` |
 | GPX URL | Shared canonical `GPXFile.aspx?aid=<aid>&sep=1` builder | The exact display-page link | The exact display-page link |
@@ -112,28 +112,28 @@ link, which automatically tracks endpoint query changes.
 | --- | --- | --- |
 | `src/reports/report-editor.ts` | Pre-Save flush, exact Markdown sidecar, save-time snapshot emission | GitHub token, repository writes, post-save identity guessing |
 | `src/ascent/ascent-snapshot.ts` | The only mapping from Peakbagger form control names to raw snapshot fields | Network, extension storage, GitHub serialization |
-| `src/ascent/ascent-saved.js` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
-| `src/ascent/ascent-delete.js` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
-| `src/ascent/ascent-page.js` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
-| `src/ascent/ascent-backup-source.js` | Authenticated Peakbagger reads, response classification, edit-form completeness, identity checks, persisted snapshot construction, profile GPX URL | UI, queue policy, GitHub access |
-| `src/ascent/ascent-backup.js` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
-| `src/profile/profile-backup-core.js` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
-| `src/profile/profile-backup.js` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
-| `src/favorites/favorite-climbers.js` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
-| `src/settings/settings-transfer.js` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
-| `src/photos/photo-backup.js` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
-| `src/photos/photo-store.js` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
+| `src/ascent/ascent-saved.ts` | Add/Edit success recognition and routing to the saved ascent | Clicking Save, constructing backup payloads |
+| `src/ascent/ascent-delete.ts` | The two observed native Delete submitters, combined confirmation, and pre-submit intent handoff | Treating a click as server success or accessing GitHub |
+| `src/ascent/ascent-page.ts` | Saved `aid`, owner edit link, peak fallback, date fallback, actual GPX link | Raw form-field or rendered-report backup scraping |
+| `src/ascent/ascent-backup-source.ts` | Authenticated Peakbagger reads, response classification, edit-form completeness, identity checks, persisted snapshot construction, profile GPX URL | UI, queue policy, GitHub access |
+| `src/ascent/ascent-backup.ts` | Compact saved-ascent control and the shared manual/automatic individual orchestration | Form mapping, GitHub credentials |
+| `src/profile/profile-backup-core.ts` | Pure owner-list parsing, response classifier, work diff, producer/consumer state machine and limits | Browser APIs, tokens, DOM globals |
+| `src/profile/profile-backup.ts` | Owner-list UI, full-list fetch, deletion confirmation, per-ascent production, progress/pause/resume | Raw field mapping, GitHub credentials |
+| `src/favorites/favorite-climbers.ts` | Pure favorites cleaning, backup serialization, parsing, and stable signatures | DOM, storage, GitHub access |
+| `src/settings/settings-transfer.ts` | Pure known-key settings payload, parsing, serialization, and stable signatures through the shared schema | DOM, storage, GitHub access |
+| `src/photos/photo-backup.ts` | Pure bounded `photo-library.json` serialization, signatures, semantic merge, tombstones, and metadata-only reconstruction | IndexedDB, pixels, credentials, network |
+| `src/photos/photo-store.ts` | Authoritative photo IndexedDB transactions and backup-snapshot reads | GitHub token, network, backup merge policy |
 | `photos/photos.ts` | Photo recovery status, manual actions, automatic toggle, preview copy, and explicit conflict choice | GitHub credentials, repository writes, or claiming pixels were restored |
-| `options/favorites-backup.js` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
-| `options/settings-backup.js` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
+| `options/favorites-backup.ts` | Favorites transfer controls, auto toggle, and schema-checked reversible restore | Backup serialization, GitHub credentials, or repository mutation |
+| `options/settings-backup.ts` | File transfer, the explicit sensitive-connection opt-in, GitHub transfer controls, auto toggle, and confirmed settings replacement | Repository mutation or exposing a credential outside the selected manual file operation |
 | `src/background/background.ts` | Sender gates, session-state keys, session-state serialization, cleanup coordination, message routing | Peakbagger DOM parsing or GitHub route implementation |
-| `src/background/github-routes.js` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
-| `src/github/github-write-queue.js` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
+| `src/background/github-routes.ts` | Session snapshots, auth lookup, the shared write queue and its commit, root-file serialization, GitHub message handlers, automatic-backup alarms/state | Peakbagger DOM parsing or exposing credentials outside the worker |
+| `src/github/github-write-queue.ts` | Pure write ordering: exclusive operations, root-file batching, last-write-wins squashing, superseded reporting | Network, storage, tokens, or what a commit contains |
 | `src/github/github-backup.ts` | Pure folder naming and JSON/Markdown/file payload serialization | DOM, tokens, network |
-| `src/github/github-errors.js` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
-| `src/github/github-api.js` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
-| `src/github/github-client.js` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |
-| `src/github/github-auth.js` | Device-flow protocol, paginated installation/repository discovery through the shared REST transport, and local token/repository storage | Synced settings or content-script exposure |
+| `src/github/github-errors.ts` | One stable GitHub integration error code set, error type, and worker-safe serialization | HTTP requests or user-interface copy |
+| `src/github/github-api.ts` | Every authenticated `api.github.com` request: origin validation, headers, no-cache policy, JSON parsing, and HTTP classification | OAuth device-flow form posts or repository algorithms |
+| `src/github/github-client.ts` | Repository inspection, atomic Git Data writes, owned-file pruning, conflict retry | Peakbagger data acquisition or UI |
+| `src/github/github-auth.ts` | Device-flow protocol, paginated installation/repository discovery through the shared REST transport, and local token/repository storage | Synced settings or content-script exposure |
 
 The bundle composition in `scripts/build-config.mts` pins
 `ascent-backup-source.js` into both individual and profile bundles. Tests pin
@@ -182,7 +182,7 @@ The classification does not trust `response.ok`:
 
 - A Cloudflare managed challenge requires status 403 plus either
   `cf-mitigated: challenge` or `Just a moment` in the first 2,000 body
-  characters; this strict detector lives in `src/peakbagger/peakbagger-cloudflare.js`.
+  characters; this strict detector lives in `src/peakbagger/peakbagger-cloudflare.ts`.
 - status 0, 429, and 5xx responses classify as `transient`.
 - other non-2xx responses classify as `wrong-content`.
 - a GPX response is valid only if its body contains a `<gpx` root marker.
@@ -289,7 +289,7 @@ confirmed Markdown sidecar, before conditionally consuming it.
 
 Peakbagger does not reliably navigate to `ascent.aspx`. Add and Edit can both
 finish on the same `ascentedit.aspx` URL in an ASP.NET UpdatePanel success view.
-`src/ascent/ascent-saved.js` therefore:
+`src/ascent/ascent-saved.ts` therefore:
 
 1. recognizes the observed success variants `Ascent Added/Saved Successfully`,
    `Ascent Added Successfully`, and `Ascent Saved Successfully`;
@@ -306,7 +306,7 @@ The link is useful even when backup is disabled. No extension code clicks
 
 ## Individual backup: manual and automatic are one path
 
-On `ascent.aspx`, `src/ascent/ascent-page.js` reads only stable routing facts:
+On `ascent.aspx`, `src/ascent/ascent-page.ts` reads only stable routing facts:
 
 - `aid` from the page URL;
 - ownership from an `AscentEdit.aspx?aid=<same aid>` link;
@@ -395,7 +395,7 @@ forced off when the parent ascent and TR backup gate is disabled.
 
 The transaction deliberately has two phases:
 
-1. `src/ascent/ascent-delete.js` recognizes only `DeleteButton` and
+1. `src/ascent/ascent-delete.ts` recognizes only `DeleteButton` and
    `DeleteButton2` on an existing positive-`aid` owner form. It pauses the
    native POST, asks for one combined confirmation, and records a 30-minute,
    source-tab-scoped session intent before resubmitting the original native
@@ -775,7 +775,7 @@ are status/check, conditional backup, restore preview, setup preview, confirm,
 sync, disable and dismiss. Responses contain validated snapshots, counts and
 commit metadata; credentials remain in the worker.
 
-`src/background/climber-list-sync.js` owns device-local `bpbIgnoredSyncState`:
+`src/background/climber-list-sync.ts` owns device-local `bpbIgnoredSyncState`:
 opt-in, auth epoch + owner/repo/branch scope, common baseline, last success,
 reviewed snapshots, retry time and durable proposal. Missing baseline requires
 setup; failed storage never supplies an empty upload. Manual backup first reviews
@@ -1016,7 +1016,7 @@ update, in which case they read `Refresh N ascents and TRs`.
 
 ### Internal and external concurrency
 
-`src/github/github-write-queue.js` serializes all extension-owned writers—
+`src/github/github-write-queue.ts` serializes all extension-owned writers—
 including manual and automatic settings and favorite backups—before they read
 the branch. A separate browser, GitHub web edit, or another integration can
 still race externally.
@@ -1073,8 +1073,8 @@ See GitHub's [Git Trees API][github-trees] and
 
 ### GitHub-side typed errors
 
-`src/github/github-errors.js` is the single code/type authority, and
-`src/github/github-api.js` is the only authenticated REST response classifier. The UI
+`src/github/github-errors.ts` is the single code/type authority, and
+`src/github/github-api.ts` is the only authenticated REST response classifier. The UI
 distinguishes invalid/revoked auth, withdrawn repo access, missing
 selection, archived repository, branch protection, missing branch in a nonempty
 repo, ambiguous backup paths, rate limits, network errors, GitHub-side outages,
@@ -1092,15 +1092,15 @@ Two of those exist because a status code cannot report them:
   either way.
 - `timeout` covers the failure no status reports at all. Every outbound request
   and its body read race one shared deadline from
-  `src/net/request-deadline.js`; without it a black-holing proxy or stalled TLS
+  `src/net/request-deadline.ts`; without it a black-holing proxy or stalled TLS
   handshake leaves a spinner running with no error and no way out. The deadline
   both aborts the request and rejects the race, because an injected or
   non-conforming fetch may ignore `signal`.
 
 The per-request bound is not the individual-ascent liveness bound. One backup
 uses several requests and may wait behind another branch mutation, so
-`src/background/github-routes.js` gives the whole operation a parent deadline
-and passes its abort signal through `src/github/github-client.js` into the REST
+`src/background/github-routes.ts` gives the whole operation a parent deadline
+and passes its abort signal through `src/github/github-client.ts` into the REST
 transport. Reconciliation after an operation timeout is read-only and consumes
 the exact save-time snapshot only after GitHub proves the complete payload is
 current.
@@ -1215,15 +1215,15 @@ consumes its own snapshot.
 
 | Check | Proves | Does not prove |
 | --- | --- | --- |
-| `test/ascent/ascent-snapshot.test.mjs` | ASP.NET field-name mapping and normalization | Live Peakbagger DOM stability |
-| `test/ascent/ascent-backup-source.test.mjs` | Shared fetch options, body classification, form completeness/identity, GPX URL | Signed-in network behavior |
-| `test/ascent/ascent-backup.test.mjs` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
-| `test/ascent/ascent-saved.test.mjs` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
-| `test/profile/profile-backup*.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
-| `test/github/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls, whole-operation timeout and reconciliation cleanup | Real extension worker eviction timing |
-| `test/github/github-api.test.mjs` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
-| `test/github/github-client.test.mjs` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
-| `npm test` | Current built IIFE bundles in jsdom plus pure modules | Real manifest interpretation and browser worker lifecycle |
+| `test/ascent/ascent-snapshot.browser.mts` | ASP.NET field-name mapping and normalization | Live Peakbagger DOM stability |
+| `test/ascent/ascent-backup-source.browser.mts` | Shared fetch options, body classification, form completeness/identity, GPX URL | Signed-in network behavior |
+| `test/ascent/ascent-backup.browser.mts` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
+| `test/ascent/ascent-saved.browser.mts` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
+| `test/profile/profile-backup.browser.mts`, `test/profile/profile-backup-core.browser.mts`, `test/profile/profile-backup-runner.test.mts` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
+| `test/github/github-backup-integration.test.mts` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls, whole-operation timeout and reconciliation cleanup | Real extension worker eviction timing |
+| `test/github/github-api.test.mts` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
+| `test/github/github-client.test.mts` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
+| `npm test` and `npm run verify -- dom` | Pure modules in Node; current built IIFE bundles in browser fixture pages | Real manifest interpretation and browser worker lifecycle |
 | `npm run verify -- browsers` | Real unpacked Chrome/Firefox startup, worker messaging, content-script load | Signed-in Peakbagger/GitHub flows and visible native chrome |
 | Manual release check | Real Add/Edit, device flow, stored GPX, scratch commit | Repeatable regression coverage |
 

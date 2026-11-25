@@ -54,16 +54,16 @@ test('the actual policy functions reject forbidden typed source in every authore
 });
 test('reviewed owners and deadline exceptions retain their narrow boundaries', () => {
     const source = (file: string, text: string): RuntimeSource => ({file,text,variants:sourceVariants(file,text)});
-    assert.deepEqual(unitConstantFindings(source('src/ui/units.js','const feet = 3.28084;')),[]);
+    assert.deepEqual(unitConstantFindings(source('src/ui/units.ts','const feet = 3.28084;')),[]);
     assert.equal(unitConstantFindings(source('photos/units.js','const feet = 3.28084;')).length,1);
     assert.deepEqual(settingsDefaultFindings(source('src/settings/settings-schema.ts','let pref = "system";')),[]);
-    assert.deepEqual(uploadLimitFindings(source('src/capture/upload-limits.js','points.length > 3000')),[]);
-    assert.deepEqual(cloudflareFindings(source('src/capture/provider-response.js','"cf-mitigated"')),[]);
-    assert.equal(cloudflareFindings(source('src/capture/provider-response.js','"Complete check on Peakbagger"')).length,1);
+    assert.deepEqual(uploadLimitFindings(source('src/capture/upload-limits.ts','points.length > 3000')),[]);
+    assert.deepEqual(cloudflareFindings(source('src/capture/provider-response.ts','"cf-mitigated"')),[]);
+    assert.equal(cloudflareFindings(source('src/capture/provider-response.ts','"Complete check on Peakbagger"')).length,1);
     const exception = 'fetch(url); setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS); readBoundedResponseText(response); clearTimeout(timeout);';
-    assert.deepEqual(deadlineFindings(source('src/maps/peak-markers.js',exception)),[]);
-    assert.equal(deadlineFindings(source('src/maps/peak-markers.js','fetch(url)')).length,1);
+    assert.deepEqual(deadlineFindings(source('src/maps/peak-markers.ts',exception)),[]);
+    assert.equal(deadlineFindings(source('src/maps/peak-markers.ts','fetch(url)')).length,1);
     assert.equal(deadlineFindings(source('src/maps/other.ts',exception)).length,1);
-    assert.deepEqual(deadlineFindings(source('src/maps/new.ts',"import {requestDeadline} from '../net/request-deadline.js'; fetch(url);")),[]);
+    assert.deepEqual(deadlineFindings(source('src/maps/new.ts',"import {requestDeadline} from '../net/request-deadline.ts'; fetch(url);")),[]);
     assert.equal(deadlineFindings(source('src/maps/new.ts','Promise.race([request, timeout])')).length,1);
 });

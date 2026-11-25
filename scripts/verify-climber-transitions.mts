@@ -12,11 +12,11 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { chromium, firefox, type BrowserContext, type Page } from 'playwright';
-import { createBrowserFixtureServer as untypedCreateBrowserFixtureServer, projectRoot } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { darkCss } from '../src/theme/site-dark-css.js';
-import { auditedClimberAssets } from './climber-regression-baseline.mjs';
+import { createBrowserFixtureServer as untypedCreateBrowserFixtureServer, projectRoot } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { darkCss } from '../src/theme/site-dark-css.ts';
+import { auditedClimberAssets } from './climber-regression-baseline.mts';
 
 export interface ClimberVariant {
     theme: string;

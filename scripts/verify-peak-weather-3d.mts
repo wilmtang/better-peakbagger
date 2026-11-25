@@ -5,11 +5,11 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture } from '../test/helpers/weather-fixture.mts';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => Promise<T>, options: { description: string; isReady: (value: T) => boolean }) => Promise<T>;
 // Page-world probes; callbacks cast in place so the shared program keeps Window unchanged.

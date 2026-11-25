@@ -1,20 +1,20 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { photoToolPreferences as ToolPreferences } from '../src/photos/photo-tool-preferences.js';
-import { photoProject as Project } from '../src/photos/photo-project.js';
-import { photoRenderer as Renderer } from '../src/photos/photo-renderer.js';
-import { photoLibrary as Library } from '../src/photos/photo-library.js';
-import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.js';
-import { photoStore as Store } from '../src/photos/photo-store.js';
-import { photoArchive as Archive } from '../src/photos/photo-archive.js';
-import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.js';
-import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.js';
-import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.js';
-import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.js';
-import { settings as Settings } from '../src/settings/settings.js';
-import { listFocusRestorer } from '../src/ui/list-focus.js';
-import { readPhotoSourceUrl } from '../src/photos/photo-source-url.js';
+import { photoToolPreferences as ToolPreferences } from '../src/photos/photo-tool-preferences.ts';
+import { photoProject as Project } from '../src/photos/photo-project.ts';
+import { photoRenderer as Renderer } from '../src/photos/photo-renderer.ts';
+import { photoLibrary as Library } from '../src/photos/photo-library.ts';
+import { createPhotoBackupStatus, formatPhotoBackupStatus } from '../src/photos/photo-backup-status.ts';
+import { photoStore as Store, type PhotoUploadOperationRecord } from '../src/photos/photo-store.ts';
+import { photoArchive as Archive } from '../src/photos/photo-archive.ts';
+import { imgbbClient as ImgbbClient } from '../src/photos/imgbb-client.ts';
+import { photoReportSize as ReportSize } from '../src/photos/photo-report-size.ts';
+import { reportPhoto as PendingPhoto } from '../src/photos/report-photo.ts';
+import { photoUploadTransaction as UploadTransaction } from '../src/photos/photo-upload-transaction.ts';
+import { settings as Settings } from '../src/settings/settings.ts';
+import { listFocusRestorer } from '../src/ui/list-focus.ts';
+import { readPhotoSourceUrl } from '../src/photos/photo-source-url.ts';
 import { photoOutput as Output } from '../src/photos/photo-output.ts';
 import type { Emphasis, FinishContext } from '../src/photos/photo-output.ts';
 
@@ -41,7 +41,7 @@ type PhotoStore = Awaited<ReturnType<typeof Store.createPhotoStore>>;
 type EncodedExport = Awaited<ReturnType<typeof Renderer.estimateProject>>;
 type Timer = ReturnType<typeof setTimeout>;
 type PhotoBundle = NonNullable<Awaited<ReturnType<PhotoStore['getBundle']>>>;
-type PhotoOperation = { operationId: string; localId: string; state: string; export: object; returnToken: string | null; displayWidth: number | null; updatedAt: string; remote?: TopoRemote; deleteUrl?: unknown };
+type PhotoOperation = PhotoUploadOperationRecord;
 
 const ext = globalThis.browser || globalThis.chrome;
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -424,7 +424,7 @@ const rememberTool = (type: string, patch: { style?: Partial<TopoObject['style']
     });
     const shared = {};
     for (const key of ['color', 'opacity']) {
-        if (Object.hasOwn(patch.style || {}, key)) (shared as Record<string, unknown>)[key] = (toolPreferences[type]!.style as Record<string, unknown>)[key];
+        if (Object.hasOwn(patch.style || {}, key)) (shared as Record<string, unknown>)[key] = (toolPreferences[type]!.style as unknown as Record<string, unknown>)[key];
     }
     for (const preferences of Object.values(toolPreferences)) Object.assign(preferences!.style, shared);
     const { color, opacity } = toolPreferences[type]!.style;
@@ -1214,7 +1214,7 @@ const preflightSourceStorage = async (sourceBytes: number) => {
     );
 };
 
-const canvasBlob = (canvas: HTMLCanvasElement, mime: string, quality: number) => new Promise((resolve, reject) => {
+const canvasBlob = (canvas: HTMLCanvasElement, mime: string, quality: number) => new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image encoding failed.')), mime, quality);
 });
 
@@ -2854,7 +2854,7 @@ const runUpload = async (outcome: { reached: boolean; keyRejected: boolean; need
             key,
             blob: exported.blob,
             name: uploadSnapshot.photo.title,
-        } as never) as unknown as { remote: TopoRemote; deleteUrl: unknown };
+        } as never) as unknown as { remote: TopoRemote; deleteUrl: string | null };
         operation = {
             ...operation,
             state: 'response-received',
@@ -3453,7 +3453,7 @@ const deletedRecoveryDetails = (item: TopoPhoto) => {
     return { container, recovery };
 };
 
-const cardFor = (item: TopoPhoto, thumbnail: Blob, objectUrls: string[]) => {
+const cardFor = (item: TopoPhoto, thumbnail: Blob | null | undefined, objectUrls: string[]) => {
     const card = element('article', 'photo-card');
     card.dataset.localId = item.localId;
     if (thumbnail) {
@@ -3899,6 +3899,10 @@ const bindEvents = () => {
     ui.imgbbClose.addEventListener('click', closeKeyDialog);
     ui.imgbbCancel.addEventListener('click', closeKeyDialog);
     ui.imgbbDialog.addEventListener('close', () => {
+        // The close event arrives a task after close(). If the dialog has
+        // already reopened (a key ImgBB refused at once), this close belongs
+        // to the earlier session and must not clear the new one.
+        if (ui.imgbbDialog.open) return;
         // Esc closes natively, past closeKeyDialog: a permission answer still
         // pending must not start an upload or leave Connect busy.
         keySubmission += 1;
@@ -4188,7 +4192,7 @@ const paintToolRail = () => {
         // Painted from the same geometry the export uses: the symbol a climber
         // is shown on the button cannot drift from the one on the photo.
         const parsed = new DOMParser().parseFromString(
-            Renderer.markerSymbolSvg((slot as HTMLElement).dataset.symbol),
+            Renderer.markerSymbolSvg((slot as HTMLElement).dataset.symbol || ''),
             'image/svg+xml',
         );
         slot.replaceChildren(document.importNode(parsed.documentElement, true));

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminImports } from '../../src/garmin/garmin-imports.ts';
-import { createGarminStore } from '../../src/garmin/garmin-store.js';
+import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 
 type ImportOptions = Parameters<typeof createGarminImports>[0];

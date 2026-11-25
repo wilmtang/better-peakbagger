@@ -8,12 +8,12 @@ import { cp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { createServer } from 'node:https';
-import { createFixtureCertificate, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { closeServer, createResourceStack, listenServer } from './resource-stack.mjs';
-import { prepareGaiaImport } from '../src/gaia/gaia-import.js';
-import { prepareOnxImport, probeOnxImporter } from '../src/onx/onx-import.js';
-import { prepareCaltopoImport } from '../src/caltopo/caltopo-import.js';
-import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.js';
+import { createFixtureCertificate, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { closeServer, createResourceStack, listenServer } from './resource-stack.mts';
+import { prepareGaiaImport } from '../src/gaia/gaia-import.ts';
+import { prepareOnxImport, probeOnxImporter } from '../src/onx/onx-import.ts';
+import { prepareCaltopoImport } from '../src/caltopo/caltopo-import.ts';
+import { prepareAlltrailsImport } from '../src/alltrails/alltrails-import.ts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => T | Promise<T>, options: { description: string; timeoutMs?: number; isReady?: (value: T) => unknown }) => Promise<NonNullable<T>>;
@@ -498,7 +498,7 @@ try {
         await page.goto('https://backcountry.onxmaps.com/backcountry/map/content/import');
         const args = { attemptId: 'adapter-check', expiresAt: Date.now() + timeoutMs };
         const ready = await page.evaluate(probeOnxImporter, args);
-        const outcome = ready.ok ? await page.evaluate(prepareOnxImport, { ...payload, ...args, documentNonce: (ready as { documentNonce?: string }).documentNonce }) : ready;
+        const outcome = ready.ok ? await page.evaluate(prepareOnxImport, { ...payload, ...args, documentNonce: ready.documentNonce }) : ready;
         return {
             page,
             outcome,

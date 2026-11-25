@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 type PageElement = HTMLElement & HTMLInputElement & HTMLImageElement & HTMLCanvasElement;
@@ -351,7 +351,7 @@ try {
     }
     await page.setViewportSize({ width: 1440, height: 1100 });
     // A real IndexedDB round trip also verifies original Blob retention, which
-    // the jsdom/fake-indexeddb file-picking harness cannot faithfully clone.
+    // the fake-indexeddb file-picking harness cannot faithfully clone.
     await page.waitForFunction(() => (document.getElementById('save-status') as PageElement).textContent === 'Saved on this device');
     const savedEditor = await context.newPage();
     await savedEditor.goto(`${url}?mode=library`);

@@ -31,11 +31,11 @@ feed tabs may run independently under the existing global request scheduler.
 | ID | Current evidence | Consequence |
 | --- | --- | --- |
 | F1 | [The manifest](../../manifest.json) grants provider access through `activeTab`; providers are absent from required and optional hosts. [Privacy](../../PRIVACY.md#browser-permissions) and the [capture architecture](../architecture.md#deep-dive-garminstrava-capture-and-local-gpx-processing) explicitly promise no persistent provider access. | Automatic feed buttons require an intentional, optional permission and documentation change. Preserve the permission-free toolbar path. |
-| F2 | [Provider URL recognition](../../src/capture/provider-url.js) recognizes activity detail URLs. [Ownership inspection](../../src/capture/provider-page.ts) requires an activity page, a unique viewer/author match, and an edit control. | A feed-card match authorizes displaying a candidate action only. Keep a second authoritative check on the actual activity before GPS access. Do not weaken the detail-page adapter to accept arbitrary feeds. |
+| F2 | [Provider URL recognition](../../src/capture/provider-url.ts) recognizes activity detail URLs. [Ownership inspection](../../src/capture/provider-page.ts) requires an activity page, a unique viewer/author match, and an edit control. | A feed-card match authorizes displaying a candidate action only. Keep a second authoritative check on the actual activity before GPS access. Do not weaken the detail-page adapter to accept arbitrary feeds. |
 | F3 | [The worker](../../src/background/background.ts) restricts all existing capture controls to the exact popup page, and its `publicJob` projection starts by spreading the internal job. | Add explicit feed routes and response allowlists. Do not admit provider content scripts to the existing popup-only controls or send their full responses into provider DOM. |
 | F4 | In [the worker](../../src/background/background.ts), `admitCapture` stores jobs by `sourceTabId`; `openNewDraftTabs` reads that tab; `cleanupRemovedTab` deletes a source job without drafts when its tab closes. | Opening a helper activity tab, capturing into a job owned by that helper, and immediately closing it would lose ready results. Separate the logical feed owner from the temporary provider extraction tab. |
 | F5 | The supplied Garmin archive contains nine activity cards with author links matching the account-header profile. Cards sit inside virtualized rows. The Strava archive contains 15 activity cards, each with a dedicated `owners-name` link; none is an owned feed card. | Support recycling, incremental rendering, and SPA navigation. Obtain a real owned Strava card before declaring its insertion layout verified. Ignore profile links in comments, kudos, mentions, and sidebars. |
-| F6 | [Trusted actions](../../src/background/trusted-actions.js) currently accept Peakbagger senders, and [their isolated-world caller](../../src/ui/trusted-action.js) rejects synthetic activation events. [Capture tests](../../test/background/background-capture.test.mjs) pin popup-only controls and draft sender checks. | Give feed activation its own narrowly scoped sender policy. Do not broaden the existing Peakbagger predicate to grant providers backup, account, or map-handoff authority. |
+| F6 | [Trusted actions](../../src/background/trusted-actions.ts) currently accept Peakbagger senders, and [their isolated-world caller](../../src/ui/trusted-action.ts) rejects synthetic activation events. [Capture tests](../../test/background/background-capture.test.mts) pin popup-only controls and draft sender checks. | Give feed activation its own narrowly scoped sender policy. Do not broaden the existing Peakbagger predicate to grant providers backup, account, or map-handoff authority. |
 
 Source review: October 20 tree, with `d9222608` as the observed HEAD. Function
 anchors above are the implementation entry points; recheck them before editing
@@ -67,7 +67,7 @@ its successful visual checks do not establish live provider compatibility.
   Progress follows real worker phases: checking ownership/session, reading the
   route, and finding summits. Do not fake percentages or insert status rows
   above the feed. Dismissing the panel does not cancel work; **Cancel** does.
-- On results, reuse [shared match confidence](../../src/capture/match-confidence.js),
+- On results, reuse [shared match confidence](../../src/capture/match-confidence.ts),
   selection defaults, encounter ordering, timestamp choice, and draft-opening
   rules. Display **Open 1 draft** or **Open 2 drafts**. Preserve the current
   per-capture timestamp exception and its lock once opening starts.
@@ -333,8 +333,10 @@ Existing checks to run during implementation, scaled to each affected unit:
 
 ```sh
 npm run build
-node --test test/capture/provider-url.test.mjs test/capture/provider-page.test.mjs test/background/background-capture.test.mjs test/popup/popup.test.mjs test/project/manifest-capture.test.mts
-node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mjs
+node --test test/capture/provider-url.test.mts test/background/background-capture.test.mts test/project/manifest-capture.test.mts
+npm run verify -- dom --suite test/capture/provider-page
+npm run verify -- dom --suite test/popup/popup
+node --test test/project/documentation.test.mts test/project/fixtures-privacy.test.mts
 npm test
 npm run lint
 npm run verify -- capture-flow

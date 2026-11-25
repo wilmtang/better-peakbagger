@@ -59,10 +59,12 @@ test('the join rejects failed, cancelled or unexpectedly skipped browser coverag
 
 test('promotion keeps metadata, ancestry, audit, history and complete policy gates', () => {
     const steps = workflow.jobs.prepare!.steps;
-    for (const command of ['release:readiness', '--metadata-only', 'release:metadata:firefox', 'release:check-history', 'audit:ci', '--base d7bc366311ccb384d9460eb17d68872e986d6a35']) assert.ok(steps.some(step => step.run?.includes(command)), command);
+    for (const command of ['release:readiness', '--metadata-only', 'release:metadata:firefox', 'release:check-history', 'audit:ci']) assert.ok(steps.some(step => step.run?.includes(command)), command);
     assert.equal(steps.find(step => step.run?.includes('--require-protected-main'))!.if, "github.event_name == 'push'");
     const acquire = steps.findIndex(step => step.id === 'candidate');
     assert.ok(acquire > steps.findIndex(step => step.run?.includes('audit:ci')));
+    const typescriptPolicy = steps.findIndex(step => step.run === 'npm run check:typescript-policy -- --committed');
+    assert.ok(typescriptPolicy >= 0 && typescriptPolicy < acquire);
     for (const name of ['compatibility', 'verify']) {
         const download = workflow.jobs[name]!.steps.find(step => step.uses?.startsWith('actions/download-artifact@'))!;
         assert.equal(download.with!['artifact-ids'], '${{ needs.prepare.outputs.artifact-id }}');
@@ -97,7 +99,7 @@ test('Firefox recovery still resolves preserved source identity without invoking
     const steps = (await load('retry-firefox-release.yml')).jobs.firefox!.steps;
     const source = steps.find(step => step.id === 'recovery')!;
     assert.match(source.run!, /gh api --paginate --slurp/);
-    assert.match(source.run!, /node scripts\/select-release-artifact\.mjs "\$TARGET_TAG" "\$attempt"/);
+    assert.match(source.run!, /node scripts\/select-release-artifact\.mts "\$TARGET_TAG" "\$attempt"/);
     assert.match(source.run!, /\.event.*push/); assert.match(source.run!, /\.head_sha.*tag_commit/);
     assert.doesNotMatch(JSON.stringify(steps), /publish-chrome/);
 });

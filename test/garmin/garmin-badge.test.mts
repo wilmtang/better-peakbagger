@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import 'fake-indexeddb/auto';
 import { createGarminBadge, waitingCountLabel } from '../../src/garmin/garmin-badge.ts';
 import { createGarminImports } from '../../src/garmin/garmin-imports.ts';
-import { createGarminStore } from '../../src/garmin/garmin-store.js';
+import { createGarminStore } from '../../src/garmin/garmin-store.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 
 type ImportOptions = Parameters<typeof createGarminImports>[0];

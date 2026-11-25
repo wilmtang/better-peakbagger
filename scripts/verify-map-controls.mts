@@ -10,9 +10,9 @@ import path from 'node:path';
 import {
     createFixtureCertificate, resolveFixtureFile, sendFixtureFile, sendFixtureText,
     sendFixtureError, instrumentTerrainFrameHtml, instrumentTerrainFrameModule, waitForCondition as untypedWaitForCondition,
-} from './browser-verification-fixtures.mjs';
-import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
-import { snowMapDem } from './verify-snow-map-fixture.mjs';
+} from './browser-verification-fixtures.mts';
+import { createResourceStack, closeServer, listenServer } from './resource-stack.mts';
+import { snowMapDem } from './verify-snow-map-fixture.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox } from './verification-launch.mts';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => T | Promise<T>, options: { description: string; isReady?: (value: T) => unknown }) => Promise<T>;

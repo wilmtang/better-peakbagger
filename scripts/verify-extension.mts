@@ -9,7 +9,7 @@
 //
 // This covers what nothing else does. npm test evaluates the built bundles in
 // jsdom, so it cannot see how a browser interprets manifest order and worlds.
-// scripts/verify-terrain-visual.mjs provides storage and bridge-protocol stubs,
+// scripts/verify-terrain-visual.mts provides storage and bridge-protocol stubs,
 // so it does not exercise the real cross-world bridge. The worker also has to
 // boot through the manifest's single bundled background entry. Two shipped
 // regressions lived in exactly those blind spots.
@@ -51,22 +51,22 @@ import {
     waitForBuddyHelperCleanup,
     waitForBuddyReportCache,
     waitForPageCondition
-} from './browser-verification-fixtures.mjs';
-import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mjs';
-import { verifyGpxSegments } from './verify-gpx-segments.mjs';
+} from './browser-verification-fixtures.mts';
+import { suspectSegments, segmentsGpx } from '../test/helpers/suspect-gpx.mts';
+import { verifyGpxSegments } from './verify-gpx-segments.mts';
 import { verifySettingsNavigation, readDisconnectedGithubControls } from './verify-settings-navigation.mts';
-import { verifyClimberMembership } from './verify-climber-membership.mjs';
-import { verifyClimberHoverCard } from './verify-climber-hover-card.mjs';
-import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mjs';
-import { verifyProfilePreparation } from './verify-profile-preparation.mjs';
-import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
-import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mjs';
-import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mjs';
+import { verifyClimberMembership } from './verify-climber-membership.mts';
+import { verifyClimberHoverCard } from './verify-climber-hover-card.mts';
+import { prepareSignedOut, verifySignedOutExtension } from './signed-out-extension-verification.mts';
+import { verifyProfilePreparation } from './verify-profile-preparation.mts';
+import { readCompressedGpxFixture } from '../test/helpers/gpx-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { retainBrowserFailure, watchFixtureRequests } from './browser-verification-evidence.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
+import { installBuddyTabDiagnostics } from './buddy-tab-diagnostics.mts';
+import { waitForRichTableCellSelection, waitForRichTableInput } from './report-table-selection.mts';
 import { observeTerrainFrameCreation } from './terrain-frame-creation.mts';
 
 import type { BrowserContext, ConsoleMessage, Download, JSHandle, Locator, Page } from 'playwright';
@@ -464,6 +464,18 @@ try {
             ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'metric',
         null, { timeout: 5000 }).then(() => true).catch(() => false);
         check(optionPersisted, 'the Chrome options page did not persist a real setting change');
+        await optionsPage.locator('#unit-customize summary').click();
+        await optionsPage.locator('#distance-units').selectOption('imperial');
+        await waitForPageCondition(optionsPage, async () =>
+            ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.distanceUnits === 'imperial'
+            && document.getElementById('unit-example-gpx')?.textContent === '12.4 mi · 800 m ascent',
+        null, { timeout: 5000 });
+        await optionsPage.locator('#unit-reset').click();
+        await waitForPageCondition(optionsPage, async () => {
+            const stored = (await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined;
+            return stored?.distanceUnits === 'default' && (document.getElementById('unit-reset') as HTMLButtonElement | null)?.disabled === true;
+        }, null, { timeout: 5000 });
+        await optionsPage.locator('#unit-customize summary').click();
         await optionsPage.locator('#units').selectOption('auto');
         await waitForPageCondition(optionsPage, async () =>
             ((await chrome.storage.sync.get<StoredRecords>('bpbSettings')).bpbSettings as Record<string, unknown> | undefined)?.units === 'auto',
@@ -1435,7 +1447,8 @@ try {
         const fallbackTabClosed = fallbackCleanup.closed;
         check(buddyRequests === 4
             && fixture!.requests.buddyReports >= 2
-            && fallbackImport?.count === 6
+            && Boolean(fallbackImport)
+            && (fallbackImport as { count: number }).count === 6
             && fallbackTabClosed,
         `the first-party Buddy import fallback failed or leaked its tab: ${JSON.stringify({
             buddyRequests, fallbackReportRequests, fallbackImport, fallbackTabClosed, fallbackPageUrls, workingBuddyCache,
@@ -2192,7 +2205,7 @@ try {
         // Cloudflare can accept a request from a signed-in Peakbagger page
         // while rejecting the extension worker. Exercise the shipped MAIN-
         // world bridge in real Chrome: exact allowlist, browser credential
-        // policy, and bundle path all remain invisible to jsdom worker tests.
+        // policy, and bundle path all remain invisible to Node worker tests.
         const captureLoginUrl = 'https://www.peakbagger.com/Default.aspx';
         const capturePeaksUrl = 'https://www.peakbagger.com/Async/pllbb2.aspx?miny=1&maxy=2&minx=3&maxx=4';
         let captureLoginRequests = 0;

@@ -5,8 +5,8 @@
 // tiles. CacheStorage remains browser-managed: the browser may evict it when
 // space is tight, and a cache miss always falls back to the network.
 
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 
 const CACHE_NAME = 'bpb-mapterhorn-dem-v1';
 // The status a tile host returns for ground it does not cover. Mapterhorn's

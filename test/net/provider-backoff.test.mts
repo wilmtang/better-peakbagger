@@ -3,10 +3,10 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createWeatherClient } from '../../src/weather/open-meteo-client.js';
-import { WEATHER_MODELS } from '../../src/weather/weather-models.js';
-import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.js';
-import { createSnotelClient } from '../../src/snow/snotel-client.js';
+import { createWeatherClient } from '../../src/weather/open-meteo-client.ts';
+import { WEATHER_MODELS } from '../../src/weather/weather-models.ts';
+import { createPeakModelUpdateClient } from '../../src/weather/peak-weather-updates.ts';
+import { createSnotelClient } from '../../src/snow/snotel-client.ts';
 import { terrainStyle } from '../../src/terrain/terrain-style.ts';
 import { terrainCache } from '../../src/terrain/terrain-cache.ts';
 
@@ -25,7 +25,7 @@ const create = (name: string, fetchFn: unknown, now: () => number): Provider => 
     }
     if (name === 'snow') {
         const client = createSnotelClient(options);
-        return { request: (index: number) => client.observations({ id: `${679 + index}:WA:SNTL` }) };
+        return { request: (index: number) => client.observations({ id: `${679 + index}:WA:SNTL`, offset: -8 }) };
     }
     if (name === 'style') {
         const client = terrainStyle.createVectorStyleLoader({ fetch: fetchFn as typeof fetch, styleUrl: 'https://styles.maptoolkit.org/hiking.json' });

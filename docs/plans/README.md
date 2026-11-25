@@ -21,10 +21,8 @@
 
 
 - [Modern stack adoption with legacy compatibility](modern-stack-adoption.md)
-  — goal, milestones and current progress. M0–M3 are done; next are the Units
-  panel's typed boundary and the DOM test environment, then Svelte compilation,
-  a Units panel pilot, converting all remaining JavaScript and optional WXT/Vite
-  cutover; retiring jsdom is its own milestone after that conversion.
+  — TypeScript conversion and jsdom retirement are complete locally. Vite
+  builds production directly. Hosted Linux and store verification remain open.
 
 - [Weather guide and open API optimizations](../weather.md)
   — cloud-request cost and cross-card/page caching remain open in its ledger.

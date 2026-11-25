@@ -1,8 +1,8 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import rules from './report-protection.json' with { type: 'json' };
-import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.js';
-import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.js';
+import { peakbaggerCloudflare as Cloudflare } from '../peakbagger/peakbagger-cloudflare.ts';
+import { isPeakbaggerUrl } from '../peakbagger/peakbagger-origin.ts';
 
 export const REPORT_CSP = rules[0].action.responseHeaders![0].value;
 const policy = rules.map(rule => ({ priority: rule.priority, action: rule.action.type,

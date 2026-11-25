@@ -7,10 +7,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { firefox, type BrowserContext, type Page } from 'playwright';
-import { JSDOM } from 'jsdom';
-import { units } from '../src/ui/units.js';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { units } from '../src/ui/units.ts';
+import { createBrowserFixtureServer, withOfflineFixturePage } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const [browserName, mode, ...extra] = process.argv.slice(2);
@@ -57,18 +56,21 @@ try {
         });
     }
     const html = await readFile('test/fixtures/pages/climber-home.html', 'utf8');
-    const metric = new JSDOM(html);
-    for (const heading of metric.window.document.querySelectorAll('#StatsLabel th')) {
-        if (!/^(Elev|Prom)-ft$/.test(heading.textContent || '')) continue;
-        const cellIndex = (heading as HTMLTableCellElement).cellIndex;
-        for (const row of [...heading.closest('table')!.rows].slice((heading.parentElement as HTMLTableRowElement).rowIndex + 1)) {
-            const cell = row.cells[cellIndex];
-            cell.textContent = (Number(cell.textContent!.replaceAll(',', '')) / units.FEET_PER_METER).toFixed(1);
+    const metricHtml = await withOfflineFixturePage(context, page => page.evaluate(({ source, feetPerMeter }) => {
+        const metric = new DOMParser().parseFromString(source, 'text/html');
+        for (const heading of metric.querySelectorAll<HTMLTableCellElement>('#StatsLabel th')) {
+            if (!/^(Elev|Prom)-ft$/.test(heading.textContent || '')) continue;
+            const headingRow = heading.parentElement as HTMLTableRowElement;
+            for (const row of [...heading.closest('table')!.rows].slice(headingRow.rowIndex + 1)) {
+                const cell = row.cells[heading.cellIndex];
+                cell.textContent = (Number(cell.textContent!.replaceAll(',', '')) / feetPerMeter).toFixed(1);
+            }
+            heading.textContent = heading.textContent!.replace('-ft', '-m');
         }
-        heading.textContent = heading.textContent!.replace('-ft', '-m');
-    }
-    const metricHtml = metric.serialize();
-    metric.window.close();
+        const serializer = new XMLSerializer();
+        return [...metric.childNodes].map(node => node === metric.documentElement
+            ? metric.documentElement.outerHTML : serializer.serializeToString(node)).join('');
+    }, { source: html, feetPerMeter: units.FEET_PER_METER }));
     await context.route('**/climber/climber.aspx**', route => {
         assert.equal(route.request().method(), 'GET');
         return route.fulfill({ contentType: 'text/html',

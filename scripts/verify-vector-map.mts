@@ -6,10 +6,10 @@ import { mkdir, cp, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Frame } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { createBrowserFixtureServer, waitForCondition as waitForValue, resolveFixtureFile } from './browser-verification-fixtures.mjs';
-import { snowMapDocument } from './verify-snow-map-fixture.mjs';
+import { createBrowserFixtureServer, waitForCondition as waitForValue, resolveFixtureFile } from './browser-verification-fixtures.mts';
+import { snowMapDocument } from './verify-snow-map-fixture.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { createResourceStack } from './resource-stack.mjs';
+import { createResourceStack } from './resource-stack.mts';
 import { decodePng } from './browser-verification-png.mts';
 import { MAPTOOLKIT_BASEMAP } from '../src/maps/vector-basemap.ts';
 

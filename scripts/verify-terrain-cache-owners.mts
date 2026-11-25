@@ -19,13 +19,13 @@ import {
     sendFixtureFile,
     sendFixtureNotFound,
     sendFixtureText,
-} from './browser-verification-fixtures.mjs';
+} from './browser-verification-fixtures.mts';
 import {
     closeServer,
     createResourceStack,
     listenServer,
-} from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+} from './resource-stack.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 
 const FIXTURE_HOST = 'www.peakbagger.com';
 const VIEWPORT = { width: 1000, height: 760 };

@@ -69,8 +69,8 @@ both Gaia and onX buttons so their placement observers cannot compete. Keeping
 it separate from backup and GPX Analyzer bundles prevents a map-service failure
 from disabling those features.
 
-`src/ascent/ascent-page.js` finds Peakbagger's stored-track link. Before
-showing the control, `src/gpx/saved-gpx-source.js` requires:
+`src/ascent/ascent-page.ts` finds Peakbagger's stored-track link. Before
+showing the control, `src/gpx/saved-gpx-source.ts` requires:
 
 - an HTTPS Peakbagger `climber/ascent.aspx` page with exactly one positive
   `aid`;
@@ -116,7 +116,7 @@ session continue to own authentication.
 
 ## Trusted action and GPX acquisition
 
-After permission succeeds, `src/ui/trusted-action.js` proves that the action
+After permission succeeds, `src/ui/trusted-action.ts` proves that the action
 came from a trusted DOM event. The worker binds the resulting `gaia-import`
 grant to the source tab, frame, document when available, action name, and UI
 generation. The initial capability expires after five seconds. Its workflow
@@ -145,8 +145,8 @@ Gaia handoff. Analyzer arrays and draft payloads are not inputs either.
 
 ## Worker and tab coordination
 
-`src/background/gaia-routes.js` configures the shared
-`src/background/gpx-handoff-routes.js` transaction, which revalidates the
+`src/background/gaia-routes.ts` configures the shared
+`src/background/gpx-handoff-routes.ts` transaction, which revalidates the
 request before opening Gaia:
 
 - the sender must be the exact Peakbagger saved-ascent document;
@@ -237,10 +237,10 @@ permission setup, worker sender and grant checks, tab reuse, uncertain
 handoffs, control placement, BFCache restoration, and access-page behavior:
 
 ```text
-test/ascent/ascent-gaia.test.mjs
-test/background/gaia-routes.test.mjs
-test/gaia/gaia-access.test.mjs
-test/gpx/saved-gpx-source.test.mjs
+test/ascent/ascent-gaia.browser.mts
+test/background/gaia-routes.test.mts
+test/gaia/gaia-access.test.mts
+test/gpx/saved-gpx-source.browser.mts
 test/project/manifest-capture.test.mts
 ```
 

@@ -14,7 +14,7 @@ browser's first paint:
 1. **The stylesheet** — the dark rules, every one scoped under
    `html[data-bpb-theme="dark"]` (inert until that attribute exists).
 2. **The attribute** — `data-bpb-theme="dark"` on `<html>`, set by
-   `src/theme/theme.js`.
+   `src/theme/theme.ts`.
 
 If either lands after the first paint, the user sees a frame (or several) of
 the native light site. Peakbagger pages are light HTML that paint almost
@@ -65,10 +65,10 @@ one ordered path:
    a development build): no settings schema, storage adapter, or dynamic color
    engine. It synchronously reads the `bpbThemePref` mirror, injects a broad
    neutral-dark fallback when needed, then sets `data-bpb-theme`.
-2. `src/theme/site-dark-css.js` exports the complete reviewed site rules as a
-   string, and `src/theme/theme.js` imports them into the second
+2. `src/theme/site-dark-css.ts` exports the complete reviewed site rules as a
+   string, and `src/theme/theme.ts` imports them into the second
    `content/theme.js` bundle.
-3. `src/theme/theme.js` creates a `<style>` with that text and
+3. `src/theme/theme.ts` creates a `<style>` with that text and
    appends it to `document.documentElement`. `<html>` exists this early even
    though `<head>` does not yet; a `<style>` in `<html>` applies fine, and its
    `!important` author rules outrank the site's own sheets regardless of order.
@@ -86,7 +86,7 @@ Peakbagger also emits literal inline colors, including the black
 name-specific selectors fixed known `navy` and `maroon` spellings but left every
 new or differently encoded color as another latent contrast bug.
 
-`src/theme/dynamic-inline-colors.js` now handles inline `color`,
+`src/theme/dynamic-inline-colors.ts` now handles inline `color`,
 `background-color`, legacy `color`, and legacy `bgcolor` declarations:
 
 1. Parse the declared color through the browser (with direct legacy/hex/RGB
@@ -121,7 +121,7 @@ guarded by the `bpb-site-dark` id) and tied to **every** `apply()` — not just 
 one `document_start` pass. So the authoritative `chrome.storage` read and every
 live toggle re-assert the sheet before setting the attribute; if the initial
 injection was ever skipped or the node was removed, the next `apply()` restores
-it. `test/theme/theme-inject.test.mjs` locks in the invariant.
+it. `test/theme/theme-inject.browser.mts` locks in the invariant.
 
 The mirror stores the *preference* (`system` / `light` / `dark`), not the
 resolved color, so a `system` user whose OS theme changed between visits still
@@ -137,7 +137,7 @@ asynchronously and reintroduce the flash.
 
 ## Extension panels
 
-`src/theme/panel-theme.js` uses the same preference-mirror principle before
+`src/theme/panel-theme.ts` uses the same preference-mirror principle before
 panel styles paint. It reconciles through an authoritative read, preserves the
 mirror on read failure, and ignores a startup result after a newer preference
 has arrived. Its shared subscription updates already-open panels; system

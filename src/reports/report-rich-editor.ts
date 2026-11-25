@@ -15,13 +15,13 @@
 // editor exclusively through richCommands/richState so the TipTap API surface
 // stays contained in one file.
 
-import { canonicalInstagramUrl, instagramParagraphUrl, instagramPasteUrl } from './instagram-url.js';
+import { canonicalInstagramUrl, instagramParagraphUrl, instagramPasteUrl } from './instagram-url.ts';
 import { Editor, Extension, Mark, Node, getStyleProperty, mergeAttributes } from '@tiptap/core';
 import type { ChainedCommands } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
-import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.ts';
 import Image from '@tiptap/extension-image';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';

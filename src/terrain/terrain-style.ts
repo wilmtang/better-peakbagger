@@ -3,9 +3,9 @@
 //
 // Better Peakbagger — bounded built-in vector style acquisition and normalization.
 
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
-import { rateLimitError, cancelResponseBody } from '../net/rate-limit.js';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
+import { rateLimitError, cancelResponseBody } from '../net/rate-limit.ts';
 import { MAPTOOLKIT_BASEMAP, vectorProviderUrl } from '../maps/vector-basemap.ts';
 import type { VectorBasemap } from '../maps/vector-basemap.ts';
 

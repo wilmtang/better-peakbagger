@@ -3,7 +3,7 @@
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { runChildProcess } from './resource-stack.mjs';
+import { runChildProcess } from './resource-stack.mts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 type VerifierCommand = string[];
@@ -11,7 +11,7 @@ type VerifierExecute = (command: string, args: string[], options: { cwd: string 
 
 const targets: Record<string, VerifierCommand[]> = {
     garmin: [['verify-garmin-ui.mts']],
-    connections: [['verify-connections.mjs']],
+    connections: [['verify-connections.mts']],
     chrome: [['verify-extension.mts']],
     firefox: [['verify-firefox-extension.mts']],
     browsers: [['verify-extension.mts'], ['verify-firefox-extension.mts']],
@@ -19,21 +19,21 @@ const targets: Record<string, VerifierCommand[]> = {
     'popup-photo-entry': [['verify-popup-photo-entry.mts']],
     'photo-output': [['verify-photo-output.mts']],
     'layout-stability': [['verify-layout-stability.mts']],
-    'fixture-preflight': [['verify-fixture-preflight.mjs']],
+    'fixture-preflight': [['verify-fixture-preflight.mts']],
     dom: [['verify-dom.mts']],
     'gpx-header': [['verify-gpx-header.mts']],
     'multi-summit': [['verify-multi-summit.mts']],
-    'draft-recovery': [['verify-draft-recovery.mjs', 'chrome'], ['verify-draft-recovery.mjs', 'firefox']],
+    'draft-recovery': [['verify-draft-recovery.mts', 'chrome'], ['verify-draft-recovery.mts', 'firefox']],
     'profile-editor': [['verify-profile-editor.mts', 'chrome'], ['verify-profile-editor.mts', 'firefox']],
     'profile-units': [['verify-profile-units.mts', 'chrome'], ['verify-profile-units.mts', 'firefox']],
     instagram: [['verify-instagram.mts', 'chrome'], ['verify-instagram.mts', 'firefox']],
     'report-security': [['verify-report-security.mts', 'chrome'], ['verify-report-security.mts', 'firefox'], ['verify-report-routes.mts', 'chrome'], ['verify-report-routes.mts', 'firefox']],
     'inline-buddies': [['verify-inline-buddies.mts'], ['verify-inline-buddies.mts', '--firefox']],
-    'signed-out': [['verify-signed-out.mjs']],
+    'signed-out': [['verify-signed-out.mts']],
     'capture-flow': [['verify-capture-flow.mts']],
     'capture-readiness': [['verify-capture-readiness.mts']],
-    'provider-contracts': [['verify-provider-contracts.mjs']],
-    'provider-performance': [['verify-provider-performance.mjs']],
+    'provider-contracts': [['verify-provider-contracts.mts']],
+    'provider-performance': [['verify-provider-performance.mts']],
     'map-handoffs': [['verify-map-handoffs.mts']],
     onx: [['verify-onx.mts', 'chrome'], ['verify-onx.mts', 'firefox']],
     'map-controls': [['verify-map-controls.mts'], ['verify-map-controls.mts', '--firefox']],

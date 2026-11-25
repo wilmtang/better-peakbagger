@@ -45,17 +45,6 @@ const svelteScope = (config: Linter.Config): Linter.Config => {
 
 export default defineConfig([
     {
-        // The config file lints itself: it matched no `files` glob before, so
-        // it was the one source file in the repository with no rules applied.
-        files: ['*.mjs'],
-        languageOptions: {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            globals: globals.node,
-        },
-        rules,
-    },
-    {
         ignores: [
             'dist/**',
             'node_modules/**',
@@ -66,38 +55,10 @@ export default defineConfig([
         ],
     },
     {
-        files: ['src/**/*.js', 'options/**/*.js', 'popup/**/*.js', 'photos/**/*.js'],
-        languageOptions: {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            globals: { ...globals.browser, ...globals.webextensions },
-        },
-        rules: {
-            ...rules,
-            // Runtime source only. A shadow here is not a style question: in
-            // photos.js a route-drag callback named its parameter `point` over
-            // the pointer position, so its untouched branch returned the same
-            // identifier meaning the opposite value, and in terrain-map.js the
-            // settings *store* import was shadowed by a settings *snapshot* in
-            // three places. Test and script files shadow harmless locals like
-            // `dom` and `path` freely, and are left alone.
-            'no-shadow': 'error',
-        },
-    },
-    {
-        files: ['src/gpx/gpx-analyzer.js'],
+        files: ['src/gpx/gpx-analyzer.ts'],
         languageOptions: {
             globals: { Chart: 'readonly' },
         },
-    },
-    {
-        files: ['scripts/**/*.mjs', 'test/**/*.mjs'],
-        languageOptions: {
-            ecmaVersion: 'latest',
-            sourceType: 'module',
-            globals: globals.node,
-        },
-        rules,
     },
     {
         files: ['scripts/verify-extension.mts'],
@@ -151,14 +112,23 @@ export default defineConfig([
     },
     {
         // Ordinary runtime TypeScript stays independent of compiled Svelte:
-        // it reaches a component only through the island adapter.
-        // Legacy runtime JavaScript is covered too until M7 converts it.
+        // it reaches a component only through the island adapter, while
+        // explicit island owners may pass .svelte components into mountIsland.
         files: runtimeRoots.map(directory => `${directory}/**/*.{js,mjs,ts}`),
-        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts'],
+        ignores: [...svelteModuleFiles, 'src/ui/svelte-island.ts', 'options/unit-settings.ts', 'src/weather/summit-cloud.ts'],
         rules: {
             'no-restricted-imports': ['error', { patterns: [{
                 group: ['*.svelte', '*.svelte.ts', '*.svelte.js'],
                 message: 'Mount Svelte through src/ui/svelte-island.ts; controllers do not import components or rune modules.',
+            }] }],
+        },
+    },
+    {
+        files: ['options/unit-settings.ts', 'src/weather/summit-cloud.ts'],
+        rules: {
+            'no-restricted-imports': ['error', { patterns: [{
+                group: ['*.svelte.ts', '*.svelte.js'],
+                message: 'Island owners mount .svelte components and must not import .svelte.ts rune modules directly.',
             }] }],
         },
     },

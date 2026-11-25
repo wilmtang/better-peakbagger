@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { units as Units } from '../../src/ui/units.js';
+import { units as Units } from '../../src/ui/units.ts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { unitConstantFindings } from '../helpers/source-policies.mts';
@@ -98,7 +98,7 @@ test('no surface reimplements the auto-units preference logic', async () => {
     // Two unrelated heuristics used to resolve `auto`. Page *detection* still
     // belongs to the surface that owns the page; the preference logic around it
     // does not.
-    for (const relative of ['src/ascent/ascent-upload.ts', 'src/gpx/gpx-analyzer.js']) {
+    for (const relative of ['src/ascent/ascent-upload.ts', 'src/gpx/gpx-analyzer.ts']) {
         const text = await readFile(path.join(root, relative), 'utf8');
         assert.match(text, /Units\.resolveUnits\(/,
             `${relative} must resolve units through the shared module`);

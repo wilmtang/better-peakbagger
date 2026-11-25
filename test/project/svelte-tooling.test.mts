@@ -1,19 +1,20 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// M5: Svelte compiles, checks and lints through the existing tooling. These
-// tests use test-only fixtures; no shipped bundle imports Svelte yet.
+// Svelte compiles, checks and lints through the existing tooling. These tests
+// use test-only fixtures; production M6 component checks live in
+// test/dom/options-units.dom.mts and test/options/options-units.test.mjs.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { build, context, type Metafile } from 'esbuild';
 import { ESLint } from 'eslint';
-import { RELOAD_SIGNAL, esbuildOptions, watchAll } from '../../scripts/build.mts';
+import { RELOAD_SIGNAL, watchAll } from '../../scripts/build.mts';
+import { buildBundles, type BundleBuildOptions } from '../../scripts/vite-build.mts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -31,6 +32,8 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
     ['@typescript-eslint/no-unused-vars:3']);
     assert.deepEqual(await lint('options/probe-controller.ts', "import Panel from './Panel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
         ['no-restricted-imports:1', 'no-restricted-imports:2'], 'controllers reach components only through the island adapter');
+    assert.deepEqual(await lint('options/unit-settings.ts', "import Panel from './UnitSettingsPanel.svelte';\nimport { tally } from '../src/ui/tally.svelte.ts';\nexport default [Panel, tally];\n"),
+        ['no-restricted-imports:2'], 'island owners may import compiled .svelte components, not .svelte.ts rune modules');
     assert.deepEqual(await lint('options/probe-legacy.js', "import Panel from './Panel.svelte';\nexport default Panel;\n"),
         ['no-restricted-imports:1'], 'legacy runtime JavaScript is held to the same boundary');
     assert.deepEqual(await lint('src/ui/svelte-island.ts', "import { createIslandProps } from './svelte-island-props.svelte.ts';\nexport default createIslandProps;\n"), []);
@@ -41,20 +44,20 @@ test('Svelte components and rune modules in runtime roots lint as TypeScript', a
 });
 
 const fixtureEntry = { out: 'svelte-fixture/island.js', sources: ['../test/fixtures/svelte/valid/island-entry.ts'] };
-const relativeInputs = (metafile: Metafile) => Object.keys(metafile.inputs).map(file => path.relative(root, path.resolve(root, file)).split(path.sep).join('/'));
+const buildFixture = ({ outputDir, minify }: Pick<BundleBuildOptions, 'outputDir' | 'minify'>) =>
+    buildBundles({ entries: [fixtureEntry], manifestPath: null, outputDir, minify });
 
-test('a component and its rune module compile through the normal, minified and incremental build options', async () => {
+test('a component and its rune module compile through normal and minified Vite generations', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-svelte-build-'));
     try {
         const outputs = new Map<string, string>();
         for (const minify of [false, true]) {
             const outputDir = path.join(directory, minify ? 'minified' : 'normal');
-            const result = await build(esbuildOptions(fixtureEntry, { minify, outputDir }));
-            assert.deepEqual(result.errors, []);
-            assert.deepEqual(result.warnings.map(warning => warning.text), [], 'Svelte compiles without warnings');
-            assert.deepEqual(Object.keys(result.metafile.outputs).map(file => path.basename(file)).sort(),
+            const { inputPaths, diagnostics } = await buildFixture({ minify, outputDir });
+            assert.equal(diagnostics, '', 'Svelte compiles without warnings');
+            const inputs = inputPaths.map(file => path.relative(root, file).split(path.sep).join('/'));
+            assert.deepEqual((await readdir(path.join(outputDir, 'svelte-fixture'))).sort(),
                 minify ? ['island.js'] : ['island.js', 'island.js.map'], 'one bundle, no CSS or split chunks');
-            const inputs = relativeInputs(result.metafile);
             for (const expected of ['test/fixtures/svelte/valid/UnitsIsland.svelte', 'test/fixtures/svelte/valid/units-draft.svelte.ts',
                 'src/ui/svelte-island.ts', 'src/ui/svelte-island-props.svelte.ts', 'options/unit-settings-contract.ts']) {
                 assert.ok(inputs.includes(expected), `${expected} is compiled into the bundle`);
@@ -62,18 +65,21 @@ test('a component and its rune module compile through the normal, minified and i
             assert.ok(inputs.some(file => file.startsWith('node_modules/svelte/src/internal/client/')), 'the client runtime is bundled');
             // An allowlist: anything else from node_modules, such as the compiler
             // or its parser dependencies, fails here by name.
-            const runtime = /^node_modules\/(?:svelte\/src\/(?:internal\/(?:client|shared|flags)\/.+|internal\/disclose-version\.js|(?:attachments|reactivity|store|legacy)\/.+|[^/]+\.js)|esm-env\/(?:index|true|false)\.js|clsx\/dist\/.+)$/;
+            const runtime = /^node_modules\/(?:svelte\/src\/(?:internal\/(?:client|shared|flags)\/.+|(?:attachments|reactivity|store|legacy)\/.+|[^/]+\.js)|esm-env\/(?:index|true|false)\.js|clsx\/dist\/.+)$/;
             assert.deepEqual(inputs.filter(file => file.startsWith('node_modules/') && !runtime.test(file)), [],
                 'only the Svelte client runtime and its two small dependencies ship');
+            assert.equal(inputs.some(file => file.endsWith('/disclose-version.js')), false,
+                'discloseVersion stays disabled in shipped builds');
             assert.ok(inputs.includes('node_modules/esm-env/false.js') && !inputs.includes('node_modules/esm-env/dev-fallback.js'),
                 'the runtime\'s DEV flag is pinned to production');
             const code = await readFile(path.join(outputDir, 'svelte-fixture', 'island.js'), 'utf8');
             assert.doesNotMatch(code, /\bnew Function\s*\(|\beval\s*\(|\bimportScripts\s*\(|\bimport\s*\(/, 'no runtime code generation or loading');
-            // Exactly these, none loadable: XML namespace identifiers and
-            // Svelte's error-reference and issue-report text, plus the custom
-            // overlay relay identifier the shared settings schema validates.
+            assert.doesNotMatch(code, /\.innerHTML\s*=/, 'tree fragments avoid innerHTML assignments flagged by addons-linter');
+            // Only non-fetching identifiers may survive tree shaking: XML
+            // namespaces, Svelte diagnostics, and the settings relay identifier.
             const origins = [...new Set([...code.matchAll(/https?:\/\/[\w.-]+/g)].map(match => match[0]))].sort();
-            assert.deepEqual(origins, ['http://www.w3.org', 'https://github.com', 'https://relay.bpb.example', 'https://svelte.dev']);
+            const known = new Set(['http://www.w3.org', 'https://github.com', 'https://relay.bpb.example', 'https://svelte.dev']);
+            assert.deepEqual(origins.filter(origin => !known.has(origin)), []);
             assert.doesNotMatch(code, /\bfetch\s*\(|XMLHttpRequest|WebSocket/, 'the fixture bundle makes no network request');
             assert.doesNotMatch(code, /globalThis\.process/, 'no environment probe decides development behavior at runtime');
             assert.match(code, /bpb-units-island/, 'component styles are injected from the bundle');
@@ -87,19 +93,14 @@ test('a component and its rune module compile through the normal, minified and i
         const previous = process.cwd();
         try {
             process.chdir(directory);
-            await build(esbuildOptions(fixtureEntry, { minify: true, outputDir: elsewhere }));
+            await buildFixture({ minify: true, outputDir: elsewhere });
         } finally { process.chdir(previous); }
         assert.equal(await readFile(path.join(elsewhere, 'svelte-fixture', 'island.js'), 'utf8'), outputs.get('minified'));
-        const incremental = await context(esbuildOptions(fixtureEntry, { minify: false, outputDir: path.join(directory, 'incremental') }));
-        try {
-            for (let round = 0; round < 2; round++) {
-                const result = await incremental.rebuild();
-                assert.deepEqual(result.errors, []);
-            }
-        } finally { await incremental.dispose(); }
-        const rebuilt = await readFile(path.join(directory, 'incremental', 'svelte-fixture', 'island.js'), 'utf8');
+        const repeat = path.join(directory, 'repeat');
+        for (let round = 0; round < 2; round++) await buildFixture({ outputDir: repeat });
+        const rebuilt = await readFile(path.join(repeat, 'svelte-fixture', 'island.js'), 'utf8');
         assert.equal(rebuilt.replace(/\/\/# sourceMappingURL=.*$/m, ''), outputs.get('normal')!.replace(/\/\/# sourceMappingURL=.*$/m, ''),
-            'incremental rebuilds produce the normal build');
+            'repeated generations produce the normal build');
     } finally {
         await rm(directory, { recursive: true, force: true });
     }

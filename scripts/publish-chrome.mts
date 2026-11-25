@@ -6,7 +6,7 @@ import { open, readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { readBoundedResponseText } from '../src/net/bounded-text.js';
+import { readBoundedResponseText } from '../src/net/bounded-text.ts';
 
 const API_ROOT = 'https://chromewebstore.googleapis.com';
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;

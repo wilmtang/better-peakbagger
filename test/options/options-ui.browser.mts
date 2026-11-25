@@ -1,0 +1,1507 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { settingsTransfer as transfer } from '../../src/settings/settings-transfer.ts';
+import * as helpers from '../helpers/options-page.mts';
+import { fireTrustedEvent } from '../helpers/fixture-page.mts';
+import { computedStyle, rect, type ChromeStub, type LoadPage, type PageDom, type PageElement, type StubMessage, type WaitFor } from '../helpers/page-types.mts';
+
+const { optionsCss, registerCleanup, root, evalBundle } = helpers;
+// The JavaScript helpers infer their signatures from defaults; these are the
+// contracts the tests rely on (see page-types.mts).
+const waitFor = helpers.waitFor as unknown as WaitFor;
+// The settings-file shapes this stub worker reads and writes.
+interface TransferConnection { token: string; repository: { owner: string; name: string; id?: number } }
+interface ParsedSettingsFile {
+    ok: boolean; reason?: string; settings?: Record<string, unknown>;
+    apiKeys?: { imgbb?: string | null }; githubConnection?: TransferConnection;
+}
+const settingsTransfer = transfer as unknown as {
+    serialize(payload: unknown): string;
+    buildPayload(settings: unknown, options: Record<string, unknown>): unknown;
+    parse(content: unknown): ParsedSettingsFile;
+    KIND: string; SCHEMA_VERSION: number; IMPORT_MAX_BYTES: number;
+};
+interface Download { blob?: Blob; href?: string; name?: string; revoked?: string; created?: number; clicked?: number }
+interface StoredGithubAuth { token?: string; account?: unknown; repo?: { owner?: string; name?: string; id?: number } }
+interface StoredImgbbAuth { key?: string }
+type PageWindow = PageDom['window'];
+const loadOptions = helpers.loadOptions as unknown as (...args: Parameters<LoadPage>) => Promise<PageDom & { initialTheme?: string }>;
+const loadDraftsPage = helpers.loadDraftsPage as unknown as LoadPage;
+const loadFavoritesPage = helpers.loadFavoritesPage as unknown as LoadPage;
+const el = helpers.el as unknown as (dom: PageDom, id: string) => PageElement;
+const readBlob = helpers.readBlob as unknown as (dom: PageDom, blob: Blob) => Promise<string>;
+
+registerCleanup();
+
+const installSettingsFileWorker = (chrome: ChromeStub, {
+    exportFailure = () => false,
+    messages = null,
+}: { exportFailure?: () => boolean; messages?: StubMessage[] | null } = {}) => {
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
+        messages?.push(structuredClone(message));
+        if (message.type === 'SETTINGS_FILE_EXPORT') {
+            if (exportFailure()) {
+                return {
+                    ok: false,
+                    error: {
+                        code: 'settings-unavailable',
+                        message: 'Settings and API keys could not be read, so no export was created.',
+                    },
+                };
+            }
+            const settings = (await chrome.storage.sync.get('bpbSettings')).bpbSettings;
+            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth as StoredImgbbAuth | undefined;
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth as StoredGithubAuth | undefined;
+            const exportedAt = '2026-07-30T12:00:00.000Z';
+            return {
+                ok: true,
+                content: settingsTransfer.serialize(settingsTransfer.buildPayload(settings, {
+                    extensionVersion: '3.3.0',
+                    exportedAt,
+                    ...(message.includeCredentials ? { apiKeys: { imgbb: imgbb?.key || null } } : {}),
+                    ...(message.includeCredentials && github?.token ? {
+                        githubConnection: {
+                            token: github?.token,
+                            repository: {
+                                owner: github?.repo?.owner,
+                                name: github?.repo?.name,
+                                ...(github?.repo?.id ? { id: github.repo.id } : {}),
+                            },
+                        },
+                    } : {}),
+                })),
+                exportedAt,
+            };
+        }
+        if (message.type === 'SETTINGS_FILE_IMPORT') {
+            const parsed = settingsTransfer.parse(message.content);
+            if (!parsed.ok) return { ok: false, error: { code: 'invalid-file' } };
+            try {
+                await chrome.storage.sync.set({ bpbSettings: parsed.settings });
+                if (parsed.apiKeys) {
+                    if (parsed.apiKeys.imgbb) {
+                        await chrome.storage.local.set({
+                            bpbImgbbAuth: {
+                                key: parsed.apiKeys.imgbb,
+                                savedAt: '2026-07-30T12:00:00.000Z',
+                            },
+                        });
+                    } else {
+                        await chrome.storage.local.remove('bpbImgbbAuth');
+                    }
+                }
+                if (parsed.githubConnection) {
+                    const connection = parsed.githubConnection;
+                    await chrome.storage.local.set({
+                        bpbGithubAuth: {
+                            token: connection.token,
+                            account: { login: connection.repository.owner },
+                            repo: {
+                                ...connection.repository,
+                                branch: 'main',
+                                fullName: `${connection.repository.owner}/${connection.repository.name}`,
+                            },
+                            installationId: 7,
+                        },
+                    });
+                }
+                return {
+                    ok: true,
+                    settings: parsed.settings,
+                    githubConnectionImported: Object.hasOwn(parsed, 'githubConnection'),
+                };
+            } catch {
+                return {
+                    ok: false,
+                    error: {
+                        code: 'import-failed',
+                        message: 'Settings could not be imported. The attempted changes were rolled back.',
+                    },
+                };
+            }
+        }
+        if (message.type === 'PHOTO_IMGBB_STATUS') {
+            const imgbb = (await chrome.storage.local.get('bpbImgbbAuth')).bpbImgbbAuth;
+            return { ok: true, configured: !!imgbb, permissionGranted: true };
+        }
+        if (message.type === 'GITHUB_AUTH_STATUS') {
+            const github = (await chrome.storage.local.get('bpbGithubAuth')).bpbGithubAuth as StoredGithubAuth | undefined;
+            return {
+                connected: !!(github?.token && github?.repo?.owner && github?.repo?.name),
+                hasToken: !!github?.token,
+                account: github?.account || null,
+                repo: github?.repo || null,
+            };
+        }
+        return {};
+    };
+};
+
+test('theme bootstrap loads before the options stylesheet', async () => {
+    const dom = await loadOptions({});
+    const resources = Array.from<PageElement>(dom.window.document.head.querySelectorAll('script[src], link[rel="stylesheet"]'))
+        .map(node => node.getAttribute('src') || node.getAttribute('href'));
+    // The shared panel stylesheet comes first so page rules of equal
+    // specificity win, and both come after the theme bootstrap.
+    assert.deepEqual(resources, ['options-head.js', '../css/panel.css', 'options.css', '../css/garmin.css']);
+});
+
+test('Settings photo backup copy distinguishes saved records, newer edits, and unconfirmed status', async () => {
+    const syncedAt = '2026-07-27T18:10:00.000Z';
+    const cases = [
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date in me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: { syncedAt, generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
+            reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
+            reconciliationPending: true },
+        text: 'Backed up to me/backup · local backup status needs updating.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4,
+            confirmedGeneration: 3, reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, reconciliationPending: true },
+            text: 'Latest photo-library backup is not yet confirmed for me/backup.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date · restored from me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: null, text: null },
+    ];
+    for (const auto of [false, true]) {
+        let state = cases[2].state;
+        const dom = await loadOptions({ autoPhotoLibraryBackup: auto }, {
+            prepareChrome: (chrome: ChromeStub) => {
+                chrome.permissions = { contains: async () => true };
+                chrome.runtime.sendMessage = async (message: StubMessage) => {
+                    const repo = { owner: 'me', name: 'backup', fullName: 'me/backup' };
+                    if (message.type === 'GITHUB_AUTH_STATUS') return { connected: true, repo };
+                    if (message.type === 'GITHUB_PHOTOS_STATUS') return { ok: true, state };
+                    return {};
+                };
+            },
+        });
+        try {
+            await waitFor(dom, () => el(dom, 'photos-github-status').textContent.includes('me/backup'));
+            assert.equal(el(dom, 'photos-github-status').textContent,
+                `${auto ? 'Automatic backup on · ' : ''}${cases[2].text}`);
+            for (const scenario of cases) {
+                state = scenario.state;
+                dom.window.dispatchEvent(new dom.window.Event('focus'));
+                const expected = scenario.state
+                    ? `${auto ? 'Automatic backup on · ' : ''}${scenario.text}`
+                    : auto ? 'Automatic backup on · No photo-library backup confirmed yet for me/backup.'
+                        : 'Ready to back up photo records to me/backup.';
+                await waitFor(dom, () => el(dom, 'photos-github-status').textContent === expected);
+                assert.equal(el(dom, 'photos-github-status').textContent, expected);
+            }
+        } finally { dom.window.close(); }
+    }
+});
+
+test('Settings distinguishes a confirmed photo backup from pending local reconciliation', async () => {
+    let pending = false;
+    const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = async (message: StubMessage) => {
+                if (message.type === 'GITHUB_AUTH_STATUS') {
+                    return {
+                        connected: true,
+                        account: { login: 'me' },
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    };
+                }
+                if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                    return {
+                        ok: true,
+                        connected: true,
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                        state: pending ? {
+                            syncedAt: '2026-07-27T18:10:00.000Z',
+                            generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
+                            reconciliationPending: true,
+                        } : null,
+                    };
+                }
+                if (message.type === 'GITHUB_PHOTOS_BACKUP') {
+                    pending = true;
+                    return {
+                        ok: true,
+                        reconciliationPending: true,
+                        warning: {
+                            code: 'photo-backup-reconciliation',
+                            message: 'The GitHub backup is safe, but local backup status could not be fully updated. Try again.',
+                        },
+                    };
+                }
+                return {};
+            };
+        },
+    });
+    await waitFor(dom, () => el(dom, 'photos-github-actions').hidden === false);
+    assert.equal(el(dom, 'photos-github-status').textContent,
+        'Ready to back up photo records to me/backup.');
+
+    el(dom, 'photos-backup').click();
+    await waitFor(dom, () => /local backup status needs updating/.test(
+        el(dom, 'photos-github-status').textContent));
+
+    assert.match(el(dom, 'photos-github-status').textContent, /Backed up to me\/backup/);
+    assert.doesNotMatch(el(dom, 'photos-github-status').textContent, /changes.*backup|pending/);
+    assert.match(el(dom, 'status').textContent, /GitHub backup is safe/);
+    assert.doesNotMatch(el(dom, 'status').textContent, /failed/i);
+});
+
+test('Settings preserves actionable photo backup capacity details from the worker', async () => {
+    const message = 'Photo-library metadata uses 8.4 MiB, above the 8 MiB GitHub recovery limit. '
+        + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
+    const dom = await loadOptions({ autoPhotoLibraryBackup: false }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            chrome.runtime.sendMessage = async (request: StubMessage) => {
+                if (request.type === 'GITHUB_AUTH_STATUS') {
+                    return {
+                        connected: true,
+                        account: { login: 'me' },
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    };
+                }
+                if (request.type === 'GITHUB_PHOTOS_STATUS') {
+                    return {
+                        ok: true,
+                        connected: true,
+                        repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                        state: null,
+                    };
+                }
+                if (request.type === 'GITHUB_PHOTOS_BACKUP') {
+                    return {
+                        ok: false,
+                        error: {
+                            code: 'photo-backup-too-large',
+                            message,
+                            actualBytes: 8_800_000,
+                            maxBytes: 8_388_608,
+                        },
+                    };
+                }
+                return {};
+            };
+        },
+    });
+    await waitFor(dom, () => el(dom, 'photos-github-actions').hidden === false);
+
+    el(dom, 'photos-backup').click();
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent === message);
+    assert.equal(el(dom, 'status-error').hidden, false);
+});
+
+// Settings and Photo Topos each used to declare their own :root palette, and
+// they drifted into two different-looking products. The palette now has one
+// home; a page stylesheet that re-declares a token has started a third.
+test('the settings pages take their palette from the shared panel stylesheet', async () => {
+    assert.doesNotMatch(optionsCss, /^\s*--(bg|card|border|text|sub|accent|link|danger|shadow):/m);
+    assert.doesNotMatch(optionsCss, /:root/);
+});
+
+test('cached dark theme is applied before the asynchronous settings read', async () => {
+    const dom = await loadOptions({ theme: 'dark' }, { cachedTheme: 'dark' });
+    assert.equal(dom.initialTheme, 'dark');
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+});
+
+test('the authoritative theme refreshes the pre-paint cache', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+    assert.equal(dom.window.localStorage.getItem('bpbThemePref'), 'dark');
+});
+
+test('a failed setting write restores the authoritative control value', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    dom.chrome.storage.sync.get = async () => { throw new Error('sync read failed'); };
+    dom.chrome.storage.sync.set = async () => { throw new Error('sync write failed'); };
+    const theme = el(dom, 'theme');
+    theme.value = 'light';
+    theme.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /couldn’t be saved/i.test(el(dom, 'status-error-text').textContent));
+
+    assert.equal(theme.value, 'dark');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(dom.window.document.documentElement.getAttribute('data-bpb-theme'), 'dark');
+});
+test('settings are grouped by the surface they affect', async () => {
+    const dom = await loadOptions({});
+    const sections = Array.from<PageElement>(dom.window.document.querySelectorAll('.settings-section'));
+    assert.deepEqual(sections.map(section => section.querySelector('h2').textContent), [
+        'General',
+        'Capture & reports',
+        'Map & GPX chart',
+        'Ascent beta filter',
+        'Backup & sync',
+        'About'
+    ]);
+
+    const [general, capture, mapChart, beta, github, about] = sections;
+    const mapLayers = mapChart.querySelector('#custom-map-layers');
+    assert.ok(mapLayers.querySelector('#custom-layer-add')); assert.ok(mapLayers.querySelector('#custom-layer-list'));
+    const favorites = beta.querySelector('#favorites');
+    assert.equal(beta.children[2], favorites, 'ascent filters come before climber lists');
+    assert.deepEqual([...beta.children[1].querySelectorAll('.row .title')].map(node => node.textContent),
+        ['“Has beta” means', 'Newest ascents first', 'Peak ascent filter order', 'Personal ascent filter order']);
+    assert.equal(favorites.querySelector('.desc').textContent,
+        'Highlight buddies and favorite climbers in ascent lists, or hide reports from climbers you ignore.');
+    assert.ok(mapChart.querySelector('#map-handoffs #map-provider-order'));
+    assert.deepEqual([...mapChart.querySelectorAll(':scope > .subsection')].map(section => section.id),
+        ['map-chart-chart', 'map-chart-map', 'custom-map-layers', 'map-handoffs']);
+    assert.ok(github.querySelector('#enable-github-backup'));
+    assert.ok(github.querySelector('#github-panel'));
+    assert.match(github.querySelector('#github-backup .desc').textContent, /automatically back up new and edited ascents/i);
+    // Every settings section is labelled by its heading and carries at least
+    // one card; About is informational, not a card.
+    for (const section of [general, capture, mapChart, beta, github]) {
+        const heading = section.querySelector('h2');
+        assert.equal(section.getAttribute('aria-labelledby'), heading.id);
+        assert.ok(section.querySelector('.card'), 'the section carries a settings card');
+    }
+    assert.equal(about.getAttribute('aria-labelledby'), about.querySelector('h2').id);
+    assert.ok(about.querySelector('.about-version'));
+    // Everything a trip report needs while creating an ascent lives in one
+    // section: the editor, the photo credential, and the local drafts.
+    // The drafts themselves moved to their own page — they are records to
+    // manage, not settings — but the anchor stays so existing #drafts links
+    // still land on the topic, one click from the manager.
+    const drafts = capture.querySelector('#drafts');
+    assert.equal(drafts.id, 'drafts', 'the established deep-link anchor stays stable');
+    assert.equal(drafts.querySelector('#drafts-list'), null, 'the list is not a setting');
+    assert.equal(drafts.querySelector('#open-draft-manager').getAttribute('href'), 'drafts.html');
+    assert.match(general.querySelector('label[for="units"] .desc').textContent, /across Better Peakbagger/);
+    // The custom-list workspace moved to its own page; Settings keeps the
+    // anchor and links out, the way trip report drafts do.
+    assert.equal(favorites.querySelector('input[value="custom"]'), null, 'the list is not a setting');
+    assert.equal(favorites.querySelector('#open-favorites').getAttribute('href'), 'favorites.html');
+    assert.equal(github.querySelector('#github-connection-heading').textContent, 'GitHub connection');
+    assert.equal(dom.window.document.querySelector('.side-nav a[href="#github"]').textContent,
+        'Backup & sync');
+    assert.equal(github.id, 'github', 'the established deep-link anchor stays stable');
+
+    assert.ok(general.querySelector('#theme'));
+    assert.ok(general.querySelector('#enable-3d-map'));
+    assert.ok(general.querySelector('#general-units #units'));
+    assert.equal(mapChart.querySelector('#units'), null);
+    // The trip-report controls moved out of General into Capture & reports.
+    assert.equal(general.querySelector('#enable-report-editor'), null);
+    assert.equal(general.querySelector('#add-report-credit'), null);
+
+    // Capture & reports keeps viewing settings separate from the editor.
+    assert.deepEqual(
+        [...capture.querySelectorAll('.subsection-title')].map(heading => heading.textContent),
+        ['Garmin connection', 'GPX capture', 'Trip report viewing', 'Report editor', 'Report photos', 'Report drafts'],
+    );
+    assert.deepEqual(
+        [...dom.window.document.querySelectorAll('.side-nav a.nav-subitem[href^="#capture-"],'
+            + ' .side-nav a.nav-subitem[href="#drafts"]')].map(link => link.textContent),
+        ['Garmin connection', 'GPX capture', 'Trip report viewing', 'Report editor', 'Report photos', 'Report drafts'],
+    );
+    assert.equal(capture.querySelector('#capture-report .title').textContent, 'Report editor');
+    for (const id of ['retain-waypoints', 'fill-ascent-details', 'fill-trip-info', 'fill-wilderness-nights', 'fill-external-url']) {
+        assert.ok(capture.querySelector(`#capture-gpx #${id}`), `${id} should belong to GPX capture`);
+    }
+    for (const id of ['enable-report-editor', 'add-report-credit']) {
+        assert.ok(capture.querySelector(`#capture-report #${id}`), `${id} should belong to Report editor`);
+    }
+    assert.ok(capture.querySelector('#capture-photos #imgbb-key'),
+        'the ImgBB key should belong to Report photos');
+    // Map & GPX chart → GPX chart / Map / Custom map layers / Send GPX
+    for (const id of ['chart-series']) {
+        assert.ok(mapChart.querySelector(`#map-chart-chart #${id}`), `${id} should belong to GPX chart`);
+    }
+    for (const id of ['map-route-color', 'remember-map-layer', 'terrain-cache-limit', 'map-viewport-width']) {
+        assert.ok(mapChart.querySelector(`#map-chart-map #${id}`), `${id} should belong to Map`);
+    }
+    const outlineColor = mapChart.querySelector('#map-route-casing-color');
+    const outlineWidth = mapChart.querySelector('#map-route-casing-width');
+    assert.equal(outlineColor.previousElementSibling!.textContent, 'Outline');
+    assert.equal(outlineColor.getAttribute('aria-label'), 'Route outline color');
+    assert.equal(outlineWidth.getAttribute('aria-label'), 'Route outline width in pixels');
+    for (const id of ['beta-tr', 'beta-tr-words', 'beta-gps', 'beta-link', 'beta-sort-date-desc']) {
+        assert.ok(beta.querySelector(`#${id}`), `${id} should belong to Ascent beta filter`);
+    }
+    for (const label of dom.window.document.querySelectorAll('label')) {
+        const controls = label.querySelectorAll(
+            'button, input:not([type="hidden"]), meter, output, progress, select, textarea',
+        );
+        assert.ok(controls.length <= 1,
+            `a label must not contain multiple controls: ${label.outerHTML.slice(0, 120)}`);
+    }
+    assert.equal(mapChart.querySelector('.route-style-row').localName, 'div');
+    assert.equal(beta.querySelector('label[for="beta-tr"]').textContent, 'Trip report');
+    assert.ok(beta.querySelector('label[for="beta-tr-words"] #beta-tr-words'));
+    // The custom-list workspace moved to its own page; Settings keeps only a
+    // link to it, and its GitHub backup below.
+    assert.equal(favorites.querySelector('#favorites-buddy-panel'), null);
+    assert.equal(favorites.querySelector('#favorites-list'), null);
+    assert.equal(favorites.querySelector('#open-favorites').getAttribute('href'), 'favorites.html');
+    assert.ok(github.querySelector('#github-favorites-backup #favorites-restore'),
+        'the favorites GitHub backup stays in Backup & sync');
+    assert.ok(github.querySelector('#github-backup #enable-github-backup'), 'GitHub backup lives in its subsection');
+    assert.ok(github.querySelector('#github-settings-backup #settings-backup-export'));
+    assert.ok(github.querySelector('#github-settings-backup #settings-backup-import'));
+    const githubSettingsDesc = Array.from<PageElement>(github.querySelectorAll('#github-settings-backup .desc'))
+        .find(node => node.textContent?.includes('custom layers'));
+    assert.match(
+        githubSettingsDesc?.textContent || '',
+        /saved account credentials are never backed up to github/i,
+        'GitHub settings backup must explicitly state that credentials are never backed up'
+    );
+    // Favorites backup is a Backup & sync concern, not part of the list editor.
+    assert.equal(favorites.querySelector('#favorites-backup'), null);
+    for (const id of ['favorites-github-status', 'favorites-backup', 'favorites-restore', 'favorites-auto-backup']) {
+        assert.ok(github.querySelector(`#github-favorites-backup #${id}`),
+            `${id} should belong to Favorite climbers backup`);
+    }
+    for (const [cardId, toggleId] of [['favorites-github', 'favorites-auto-backup'], ['ignored-github', 'ignored-sync-enable']]) {
+        const card = el(dom, cardId);
+        assert.equal(card.querySelectorAll('.backup-automatic').length, 1);
+        assert.equal(card.querySelector('.backup-automatic .check input').id, toggleId);
+        assert.match(card.querySelector('.check').textContent, /Back up automatically on this device|Sync ignored climbers from this device/);
+        assert.equal(card.querySelector('button[id$="-restore"]').textContent, 'Restore…');
+    }
+});
+
+test('trip report photo and draft settings follow the editor option', async () => {
+    const dom = await loadOptions({ enableReportEditor: false });
+    const doc = dom.window.document;
+    const dependentSections = [el(dom, 'open-photo-library').closest('.row'), el(dom, 'drafts')];
+    const dependentNavItems = ['#drafts'].map(href =>
+        doc.querySelector(`.side-nav a[href="${href}"]`).closest('li'));
+
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element!.hidden),
+        'editor-only settings and their navigation should start hidden');
+    assert.equal(el(dom, 'capture-photos').hidden, false, 'Saved-key management is independent of the editor');
+    assert.equal(doc.querySelector('.side-nav a[href="#capture-photos"]').closest('li')!.hidden, false);
+
+    const editorToggle = el(dom, 'enable-report-editor');
+    editorToggle.checked = true;
+    editorToggle.dispatchEvent(new dom.window.Event('change'));
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => !element!.hidden),
+        'dependent settings should appear immediately when the editor is enabled');
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === true);
+
+    editorToggle.checked = false;
+    editorToggle.dispatchEvent(new dom.window.Event('change'));
+    assert.ok([...dependentSections, ...dependentNavItems].every(element => element!.hidden),
+        'dependent settings should disappear immediately when the editor is disabled');
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.enableReportEditor === false);
+});
+
+test('only interactive setting labels advertise a pointer cursor', async () => {
+    const dom = await loadOptions({});
+    const style = dom.window.document.createElement('style');
+    style.textContent = optionsCss;
+    dom.window.document.head.append(style);
+
+    assert.equal(dom.window.getComputedStyle(
+        dom.window.document.querySelector('label.label[for="theme"]')
+    ).cursor, 'pointer');
+    assert.notEqual(dom.window.getComputedStyle(
+        dom.window.document.querySelector('div.label')
+    ).cursor, 'pointer');
+});
+
+test('options sections log the missing ids before degrading to no-op controllers', async () => {
+    const errors: string[] = [];
+    await loadOptions({}, {
+        prepareWindow(window: PageWindow) {
+            for (const id of [
+                'github-panel', 'settings-backup-export', 'favorites-github-status'
+            ]) window.document.getElementById(id).remove();
+            window.console.error = (message: unknown) => errors.push(String(message));
+        }
+    });
+
+    assert.equal(errors.length, 3);
+    assert.ok(errors.some(message => /GitHub settings.*github-panel/.test(message)));
+    assert.ok(errors.some(message => /settings backup.*settings-backup-export/.test(message)));
+    assert.ok(errors.some(message => /favorite climbers backup.*favorites-github-status/.test(message)));
+});
+
+// The favorite-climbers workspace degrades the same way on its own page.
+test('the favorite climbers page logs its missing ids instead of throwing', async () => {
+    const errors: string[] = [];
+    const dom = await loadFavoritesPage({}, {});
+    dom.window.console.error = (message: unknown) => errors.push(String(message));
+    dom.window.document.getElementById('favorites-list').remove();
+    await evalBundle(dom.window, 'options/favorites-page.js');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /favorite climbers.*favorites-list/);
+});
+
+// The draft manager degrades the same way on its own page.
+test('the draft manager page logs its missing ids instead of throwing', async () => {
+    const errors: string[] = [];
+    const dom = await loadDraftsPage({}, {});
+    dom.window.console.error = (message: unknown) => errors.push(String(message));
+    dom.window.document.getElementById('drafts-list').remove();
+    await evalBundle(dom.window, 'options/drafts-page.js');
+    assert.equal(errors.length, 1);
+    assert.match(errors[0], /draft manager.*drafts-list/);
+});
+
+test('settings feedback separates severity: successes fade, failures persist and alert', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const ok = el(dom, 'status');
+    const bad = el(dom, 'status-error');
+    const badText = el(dom, 'status-error-text');
+
+    // Success: the polite region, and it is scheduled to fade.
+    el(dom, 'map-viewport-reset').click();
+    await waitFor(dom, () => ok.textContent === 'Map size reset');
+    assert.equal(ok.classList.contains('show'), true);
+    assert.equal(ok.getAttribute('role'), 'status');
+    assert.equal(bad.hidden, true, 'a success never lights the alert region');
+
+    // Failure: the alert region, and it does not auto-dismiss.
+    dom.chrome.storage.sync.get = async () => { throw new Error('sync read failed'); };
+    dom.chrome.storage.sync.set = async () => { throw new Error('sync write failed'); };
+    const theme = el(dom, 'theme');
+    theme.value = 'light';
+    theme.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /couldn’t be saved/i.test(badText.textContent));
+
+    assert.equal(bad.hidden, false);
+    assert.equal(bad.classList.contains('show'), true);
+    assert.equal(bad.getAttribute('role'), 'alert', 'failures are announced assertively');
+    assert.equal(ok.classList.contains('show'), false, 'the success line is cleared');
+    await new Promise(resolve => setTimeout(resolve, 1400));
+    assert.equal(bad.classList.contains('show'), true,
+        'recovery copy must not fade out from under the user');
+
+    // ...but it is dismissible, per the reversible-and-safe bar.
+    el(dom, 'status-error-dismiss').click();
+    assert.equal(bad.hidden, true);
+    assert.equal(bad.classList.contains('show'), false);
+});
+
+test('the settings feedback dock stays on screen from any scroll position', async () => {
+    const css = await readFile(path.join(root, 'options', 'options.css'), 'utf8');
+    // The controls live thousands of pixels above the end of .content, which is
+    // the scroll container; an in-flow line at the end of .wrap is never seen.
+    assert.match(css, /\.status-dock\s*{[^}]*position:\s*sticky/s);
+    assert.match(css, /\.status-dock\s*{[^}]*bottom:\s*0/s);
+    assert.match(css, /\.status-error\s*{[^}]*color:\s*var\(--danger\)/s,
+        'failures need a colour that is not the success accent');
+});
+
+test('the options controller exclusively owns shared status timing', async () => {
+    const draftsSource = await readFile(path.join(root, 'options', 'drafts.ts'), 'utf8');
+    assert.match(draftsSource, /export const initDrafts/);
+    assert.doesNotMatch(draftsSource, /getElementById\(['"]status['"]\)|2200/);
+});
+
+test('settings export downloads all known settings and no credentials by default', async () => {
+    const download: Download = {};
+    const dom = await loadOptions({ theme: 'dark', unknownSetting: 'private' }, {
+        local: { bpbImgbbAuth: { key: 'private-imgbb-key', savedAt: '2026-07-29T12:00:00.000Z' } },
+        prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome),
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = (url: string) => { download.revoked = url; };
+            window.HTMLAnchorElement.prototype.click = function click() {
+                download.href = this.href;
+                download.name = this.download;
+            };
+        }
+    });
+
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.settings!.theme, 'dark');
+    assert.equal('unknownSetting' in parsed.settings!, false);
+    // A settings file the user did not ask to put credentials in carries none,
+    // so one shared for troubleshooting cannot leak either secret.
+    assert.equal('apiKeys' in parsed, false);
+    assert.equal('githubConnection' in parsed, false);
+    assert.equal(download.href, 'blob:settings-export');
+    assert.match(download.name!, /^better-peakbagger-settings-\d{4}-\d{2}-\d{2}\.json$/);
+    assert.equal(download.revoked, 'blob:settings-export');
+});
+
+test('settings export includes saved credentials only after explicit opt-in', async () => {
+    const download: Download = {};
+    const messages: StubMessage[] = [];
+    const github = {
+        token: 'ghu_private_token',
+        account: { login: 'ada' },
+        repo: { owner: 'ada', name: 'peaks', id: 123, branch: 'main', fullName: 'ada/peaks' },
+    };
+    const dom = await loadOptions({ theme: 'dark' }, {
+        local: { bpbGithubAuth: github },
+        prepareChrome: (chrome: ChromeStub) => {
+            chrome.permissions = {
+                contains: async () => true,
+                request: async () => true,
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = () => {};
+            window.HTMLAnchorElement.prototype.click = function click() {};
+        },
+    });
+
+    const include = el(dom, 'settings-backup-export-credentials');
+    assert.equal(include.checked, false, 'credentials are never included by default');
+    include.checked = true;
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
+    assert.deepEqual(parsed.githubConnection, {
+        token: 'ghu_private_token',
+        repository: { owner: 'ada', name: 'peaks', id: 123 },
+    });
+    assert.deepEqual(messages.find((message: StubMessage) => message.type === 'SETTINGS_FILE_EXPORT'), {
+        type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
+    });
+    assert.equal(include.checked, false, 'each sensitive export requires a fresh opt-in');
+});
+
+test('settings export creates no file when the worker cannot read every setting and retries cleanly', async () => {
+    const download: Download & { created: number; clicked: number } = { created: 0, clicked: 0 };
+    let failExport = true;
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome(chrome: ChromeStub) {
+            installSettingsFileWorker(chrome, { exportFailure: () => failExport });
+        },
+        prepareWindow(window: PageWindow) {
+            window.URL.createObjectURL = (blob: Blob) => {
+                download.created++;
+                download.blob = blob;
+                return 'blob:settings-export';
+            };
+            window.URL.revokeObjectURL = (url: string) => { download.revoked = url; };
+            window.HTMLAnchorElement.prototype.click = function click() {
+                download.clicked++;
+            };
+        }
+    });
+
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => el(dom, 'status-error-text').textContent
+        === 'Settings and API keys could not be read, so no export was created.');
+
+    assert.equal(download.created, 0, 'a failed read must not serialize a partial backup');
+    assert.equal(download.clicked, 0, 'a failed read must not start a download');
+    assert.equal(download.revoked, undefined);
+
+    failExport = false;
+    el(dom, 'settings-backup-export').click();
+    await waitFor(dom, () => download.blob);
+
+    const parsed = settingsTransfer.parse(await readBlob(dom, download.blob!));
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.settings!.theme, 'dark',
+        'the retry must serialize the authoritative settings rather than defaults from the failed read');
+    assert.equal(download.created, 1);
+    assert.equal(download.clicked, 1);
+    assert.equal(download.revoked, 'blob:settings-export');
+});
+
+test('settings import replaces known settings and API keys only after inline confirmation', async () => {
+    const dom = await loadOptions(
+        { theme: 'dark', units: 'imperial' },
+        {
+            local: { bpbImgbbAuth: { key: 'old-imgbb-key' } },
+            prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome),
+        }
+    );
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z',
+        apiKeys: { imgbb: 'new-imgbb-key' },
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent,
+        /trail-settings\.json.*Replaces your current settings and saved API keys/s);
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark', 'reading a file must not apply it');
+    assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'old-imgbb-key');
+
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.equal(dom.chrome._store.bpbSettings.units, 'metric');
+    assert.equal(dom.chrome._localStore.bpbImgbbAuth.key, 'new-imgbb-key');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import rejects honest and streamed oversized files before confirmation or messaging', async () => {
+    const messages: StubMessage[] = [];
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: (chrome: ChromeStub) => installSettingsFileWorker(chrome, { messages }),
+    });
+    const input = el(dom, 'settings-backup-file');
+    let fallbackRead = false;
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{
+            name: 'oversized-settings.json',
+            size: settingsTransfer.IMPORT_MAX_BYTES + 1,
+            text: async () => { fallbackRead = true; return '{}'; },
+        }],
+    });
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
+    assert.equal(fallbackRead, false, 'an honest size rejects before the file is read');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+
+    const bytes = new TextEncoder().encode('x'.repeat(settingsTransfer.IMPORT_MAX_BYTES + 1));
+    let cancelled = false;
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{
+            name: 'dishonest-settings.json',
+            size: 1,
+            stream: () => new ReadableStream({
+                start(controller) { controller.enqueue(bytes); },
+                cancel() { cancelled = true; },
+            }),
+        }],
+    });
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => /file is too large/i.test(el(dom, 'status-error-text').textContent));
+    await waitFor(dom, () => cancelled === true);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+});
+
+test('settings import requests GitHub permission and restores a validated connection after confirmation', async () => {
+    const messages: StubMessage[] = [];
+    const permissionRequests: unknown[] = [];
+    let granted = false;
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            chrome.permissions = {
+                contains: async () => granted,
+                request: async (details: object) => {
+                    permissionRequests.push(structuredClone(details));
+                    granted = true;
+                    return true;
+                },
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        apiKeys: { imgbb: null },
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks', id: 123 },
+        },
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
+    });
+
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent,
+        /Replaces your current settings, saved API keys, and GitHub connection/);
+    assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
+
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._localStore.bpbGithubAuth?.token === 'ghu_imported_token');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.deepEqual(permissionRequests, [{
+        origins: ['https://github.com/*', 'https://api.github.com/*'],
+    }]);
+    // The earlier `undefined` assertion narrows this path; read the imported record afresh.
+    assert.equal((dom.chrome._localStore.bpbGithubAuth as { repo?: { fullName?: string } }).repo?.fullName, 'ada/peaks');
+    assert.ok(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'));
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import keeps everything unchanged when GitHub permission is declined', async () => {
+    const messages: StubMessage[] = [];
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            chrome.permissions = {
+                contains: async () => false,
+                request: async () => false,
+                remove: async () => true,
+            };
+            installSettingsFileWorker(chrome, { messages });
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.3.0',
+        exportedAt: '2026-07-31T12:00:00.000Z',
+        githubConnection: {
+            token: 'ghu_imported_token',
+            repository: { owner: 'ada', name: 'peaks' },
+        },
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }],
+    });
+
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /GitHub access was not granted/.test(el(dom, 'status-error-text').textContent));
+
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(dom.chrome._localStore.bpbGithubAuth, undefined);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
+});
+
+test('settings import keeps its confirmation retryable when persistence fails', async () => {
+    let failWrite = true;
+    const dom = await loadOptions({ theme: 'dark', units: 'imperial' }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            installSettingsFileWorker(chrome);
+            const nativeSet = chrome.storage.sync.set;
+            chrome.storage.sync.set = async (values: Record<string, unknown>) => {
+                if (failWrite && (values.bpbSettings as { theme?: string } | undefined)?.theme === 'light') {
+                    throw new Error('sync write failed');
+                }
+                return nativeSet(values);
+            };
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light', units: 'metric' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /could not be imported/i.test(el(dom, 'status-error-text').textContent));
+
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-confirm'));
+
+    failWrite = false;
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-import'));
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('Escape cancels a settings import and restores focus to Import', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+    }));
+
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+    assert.equal(dom.window.document.activeElement, el(dom, 'settings-backup-import'));
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+});
+
+test('Escape cannot visually cancel an import after its write has started', async () => {
+    let releaseWrite!: () => void;
+    let writeStarted = false;
+    const writeGate = new Promise<void>(resolve => { releaseWrite = resolve; });
+    const dom = await loadOptions({ theme: 'dark' }, {
+        prepareChrome: (chrome: ChromeStub) => {
+            installSettingsFileWorker(chrome);
+            const nativeSet = chrome.storage.sync.set;
+            chrome.storage.sync.set = async (values: Record<string, unknown>) => {
+                if ((values.bpbSettings as { theme?: string } | undefined)?.theme === 'light') {
+                    writeStarted = true;
+                    await writeGate;
+                }
+                return nativeSet(values);
+            };
+        },
+    });
+    const input = el(dom, 'settings-backup-file');
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, {
+        extensionVersion: '3.0.0',
+        exportedAt: '2026-07-22T12:00:00.000Z'
+    });
+    Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [{ name: 'trail-settings.json', text: async () => settingsTransfer.serialize(payload) }]
+    });
+    el(dom, 'settings-backup-import').focus();
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden === false);
+
+    el(dom, 'settings-backup-confirm').focus();
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => writeStarted);
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+    }));
+
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, false);
+    assert.equal(el(dom, 'settings-backup-confirmation').getAttribute('aria-busy'), 'true');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+
+    releaseWrite();
+    await waitFor(dom, () => dom.chrome._store.bpbSettings.theme === 'light');
+    await waitFor(dom, () => el(dom, 'settings-backup-confirmation').hidden);
+    assert.equal(el(dom, 'status').textContent, 'Settings imported');
+});
+
+test('settings import rejects invalid and newer files without changing settings', async () => {
+    const dom = await loadOptions({ theme: 'dark' });
+    const input = el(dom, 'settings-backup-file');
+    const choose = async (name: string, text: string) => {
+        Object.defineProperty(input, 'files', {
+            configurable: true,
+            value: [{ name, text: async () => text }]
+        });
+        el(dom, 'settings-backup-import').focus();
+        input.dispatchEvent(new dom.window.Event('change'));
+        await waitFor(dom, () => el(dom, 'status-error-text').textContent.length > 0);
+    };
+
+    await choose('notes.json', '{');
+    assert.equal(el(dom, 'status-error-text').textContent, 'That is not a Better Peakbagger settings file.');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+
+    el(dom, 'status-error-text').textContent = '';
+    await choose('future.json', JSON.stringify({
+        kind: settingsTransfer.KIND,
+        schemaVersion: settingsTransfer.SCHEMA_VERSION + 1,
+        settings: {}
+    }));
+    assert.equal(el(dom, 'status-error-text').textContent,
+        'This settings file was made by a newer version of the extension.');
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark');
+    assert.equal(el(dom, 'settings-backup-confirmation').hidden, true);
+});
+
+// ---- Sidebar section navigation -----------------------------------------
+//
+// src/ui/section-nav.ts is the controller; options/options.js and
+// photos/guide.js only call initSectionNav(). These tests exercise it
+// through the real options page because that is where the tall, dynamically
+// sized sections live.
+
+test('the sidebar links every settings section, in order', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    const nav = doc.querySelector('.side-nav');
+    assert.ok(nav, 'the sidebar nav exists');
+    assert.equal(nav.getAttribute('aria-label'), 'Settings sections');
+
+    const links = Array.from<PageElement>(nav.querySelectorAll('a.nav-item'));
+    // Every link points at an existing settings section...
+    for (const link of links) {
+        const id = link.getAttribute('href')!.slice(1);
+        const target = doc.getElementById(id);
+        assert.ok(target, `sidebar link #${id} resolves to an element`);
+        assert.ok(target.classList.contains('settings-section'), `#${id} is a settings section`);
+    }
+    // ...and the links cover every section, in document order — this guards
+    // against a section being added, removed, or renamed without its link.
+    const linkTargets = links.map(link => link.getAttribute('href')!.slice(1));
+    const sectionIds = Array.from(doc.querySelectorAll('.content .settings-section') as NodeListOf<PageElement>, section => section.id);
+    assert.deepEqual(linkTargets, sectionIds);
+    assert.deepEqual(linkTargets, ['general', 'capture', 'map-chart', 'beta', 'github', 'about']);
+});
+
+test('the sidebar exposes always-visible sub-links for the grouped sections', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    const subLinks = Array.from<PageElement>(doc.querySelectorAll('.side-nav a.nav-subitem'));
+    assert.deepEqual(subLinks.map(link => link.getAttribute('href')),
+        ['#general-features', '#general-units', '#capture-garmin', '#capture-gpx', '#capture-view', '#capture-report', '#capture-photos', '#drafts',
+            '#map-chart-chart', '#map-chart-map', '#custom-map-layers', '#map-handoffs', '#favorites', '#github-connection',
+            '#github-backup', '#github-settings-backup', '#github-favorites-backup',
+            '#github-photos-backup']);
+    for (const link of subLinks) {
+        const target = doc.getElementById(link.getAttribute('href')!.slice(1));
+        assert.ok(target && target.classList.contains('subsection'),
+            `${link.getAttribute('href')} resolves to a subsection group`);
+        assert.equal(target.getAttribute('role'), 'group');
+        assert.equal(target.getAttribute('aria-labelledby'), target.querySelector('h3').id);
+    }
+    assert.deepEqual(
+        Array.from(doc.querySelectorAll('#github > .subsection') as NodeListOf<PageElement>, section => `#${section.id}`),
+        subLinks.filter(link => link.hash.startsWith('#github-')).map(link => link.getAttribute('href')),
+        'Backup & sync subsections should follow their sidebar order',
+    );
+    const ascentBackupLink = doc.querySelector('.nav-subitem[href="#github-backup"]');
+    const ascentBackup = doc.getElementById('github-backup');
+    assert.equal(ascentBackupLink.textContent, 'Ascent and report backup');
+    assert.equal(ascentBackup.querySelector('h3').textContent, 'Ascent and report backup');
+    assert.match(ascentBackup.textContent, /Back up ascents and TRs to GitHub/);
+    assert.match(ascentBackup.textContent, /Enable ascent and TR backup/);
+    assert.equal(doc.getElementById('github-ascent-panel').getAttribute('aria-label'),
+        'Ascent and report backup options');
+});
+
+test('General groups feature switches under Feature switch and keeps Theme outside that group', async () => {
+    const dom = await loadOptions({}, { hash: '#general-features' });
+    const doc = dom.window.document, general = doc.getElementById('general');
+    const features = doc.getElementById('general-features');
+    assert.ok(features, 'Feature switches need a named subsection');
+    assert.equal(features.querySelector('h3').textContent, 'Feature switch');
+    assert.equal(features.getAttribute('aria-labelledby'), features.querySelector('h3').id);
+    assert.equal(features.getAttribute('role'), 'group');
+    assert.deepEqual([...features.querySelectorAll('input[type="checkbox"]')].map(input => input.id),
+        ['enable-garmin-inbox', 'show-inbox-toolbar-count', 'show-sun-moon', 'show-weather', 'show-summit-cloud', 'show-snotel', 'enable-3d-map']);
+    const garminDescLink = features.querySelector('#enable-garmin-inbox-desc a');
+    assert.equal(garminDescLink?.getAttribute('href'), '#capture-garmin');
+    assert.equal(garminDescLink?.textContent, 'Garmin connection');
+    assert.equal(general.querySelector('#theme').closest('.subsection'), null);
+    assert.equal(general.querySelector(':scope > .card .row').querySelector('select').id, 'theme');
+    assert.equal(general.querySelectorAll(':scope > .card .row').length, 1);
+    assert.deepEqual([...general.querySelectorAll(':scope > .subsection')].map(group => group.id),
+        ['general-features', 'general-units']);
+    assert.equal(activeLinks(dom)[0].hash, '#general-features');
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#general');
+});
+
+const activeLinks = (dom: PageDom) =>
+    Array.from<PageElement>(dom.window.document.querySelectorAll('.nav-item[aria-current], .nav-subitem[aria-current]'));
+
+test('custom map layers belongs to Map & GPX chart between Map and Send GPX', async () => {
+    const dom = await loadOptions({}, { hash: '#custom-map-layers' });
+    const doc = dom.window.document, group = doc.getElementById('custom-map-layers');
+    assert.equal(group.closest('.settings-section')?.id, 'map-chart');
+    assert.equal(group.querySelector('h3')?.textContent, 'Custom map layers');
+    assert.equal(group.getAttribute('aria-labelledby'), group.querySelector('h3')?.id);
+    assert.equal(group.previousElementSibling!.id, 'map-chart-map');
+    assert.equal(group.nextElementSibling!.id, 'map-handoffs');
+    assert.equal(group.querySelector('.card .title'), null, 'the card does not repeat its subsection title');
+    const link = doc.querySelector('.nav-subitem[href="#custom-map-layers"]');
+    assert.equal(link?.textContent, 'Custom map layers');
+    assert.equal(link?.closest('.nav-sublist')!.parentElement!.querySelector('.nav-item').hash, '#map-chart');
+    assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers', 'existing deep links select the moved subsection');
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#map-chart');
+    link.click();
+    assert.equal(doc.querySelector('.nav-parent-active')?.hash, '#map-chart');
+});
+
+test('the sidebar marks the first section active on load', async () => {
+    const dom = await loadOptions({});
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1, 'exactly one link is active');
+    assert.equal(active[0].getAttribute('href'), '#general');
+});
+
+test('a deep-link hash is the active section on load', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart' });
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#map-chart');
+});
+
+test('refresh lands the anchored subsection even when the browser restores the pane to the top without scrolling', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
+        const content = window.document.querySelector('.content');
+        content.getBoundingClientRect = () => rect({ top: 100 });
+        window.document.getElementById('map-chart-chart').style.scrollMarginTop = '24px';
+        window.document.getElementById('map-chart-chart').getBoundingClientRect = () => rect({ top: 3269 - content.scrollTop });
+    } });
+    const content = dom.window.document.querySelector('.content');
+    // Chrome can finish restoration without emitting scroll or scrollend.
+    content.scrollTop = 0;
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow'));
+    // Load and pageshow each schedule a landing frame; the restored one
+    // finishes by clearing its scroll-behavior override.
+    await waitFor(dom, () => content.scrollTop === 3145 && content.style.scrollBehavior === '').catch(() => {
+        assert.equal(content.scrollTop, 3145, 'refresh must move the pane from the restored top to the requested subsection');
+    });
+    assert.equal(content.style.scrollBehavior, '');
+    assert.equal(activeLinks(dom)[0].hash, '#map-chart-chart');
+    assert.equal(dom.window.document.documentElement.scrollTop, 0);
+});
+
+test('an early native scrollend cannot finish alignment before document restoration', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
+        Object.defineProperty(window.document, 'readyState', { configurable: true, value: 'loading' });
+        const pane = window.document.querySelector('.content'), target = window.document.getElementById('map-chart-chart');
+        pane.getBoundingClientRect = () => rect({ top: 100 }); target.style.scrollMarginTop = '24px';
+        target.getBoundingClientRect = () => rect({ top: 3269 - pane.scrollTop });
+    } });
+    const pane = dom.window.document.querySelector('.content');
+    pane.scrollTop = 3145; pane.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(pane.style.scrollBehavior, 'auto', 'native scrolling must not mark document restoration complete');
+    pane.scrollTop = 0; dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow'));
+    pane.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(pane.style.scrollBehavior, 'auto', 'a queued scrollend must not complete a pending restoration frame');
+    await waitFor(dom, () => pane.scrollTop === 3145 && pane.style.scrollBehavior === '');
+});
+
+// Scrolls the settings pane as a reader does, with the mouse wheel, and
+// resolves with where it settled. A script's scrollTop write is not a reader's
+// scroll: the browser keeps re-landing on the URL's fragment until a user
+// scrolls, which this test's later layout changes would trigger.
+const scrollPane = async (dom: { window: { setTimeout(callback: () => void, delay: number): number } },
+    content: Element & { scrollTop: number }, deltaY: number) => {
+    const start = content.scrollTop;
+    await fireTrustedEvent(content, { type: 'wheel', deltaY });
+    let last = -1;
+    for (let turn = 0; turn < 100 && !(content.scrollTop !== start && content.scrollTop === last); turn++) {
+        last = content.scrollTop;
+        await new Promise(resolve => dom.window.setTimeout(() => resolve(null), 30));
+    }
+    assert.notEqual(content.scrollTop, start, 'the wheel moved the pane');
+    return content.scrollTop;
+};
+
+test('restoring the document from history re-reads the current fragment and preserves later manual reading positions', async () => {
+    const dom = await loadOptions({}, { hash: '#map-chart-chart', prepareWindow: (window: PageWindow) => {
+        const content = window.document.querySelector('.content');
+        content.getBoundingClientRect = () => rect({ top: 100 });
+        for (const [id, top] of [['map-chart-chart', 3269], ['custom-map-layers', 3900]] as const) {
+            window.document.getElementById(id).style.scrollMarginTop = '24px';
+            window.document.getElementById(id).getBoundingClientRect = () => rect({ top: (top as number) - content.scrollTop });
+        }
+    } });
+    const content = dom.window.document.querySelector('.content');
+    dom.window.history.replaceState(null, '', '#custom-map-layers');
+    content.scrollTop = 0;
+    dom.window.dispatchEvent(new dom.window.PageTransitionEvent('pageshow', { persisted: true }));
+    await waitFor(dom, () => content.scrollTop === 3776).catch(() => {
+        assert.equal(content.scrollTop, 3776, 'history restoration must align the current fragment rather than leave the pane at the top');
+    });
+    assert.equal(activeLinks(dom)[0].hash, '#custom-map-layers');
+    // A reader's scroll is delivered (a frame later) before any later update.
+    const reading = await scrollPane(dom, content, 300);
+    await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
+    assert.equal(content.scrollTop, reading, 'later settings updates must not keep snapping the reader to the hash');
+});
+
+test('a drafts deep link activates the TR-drafts manager', async () => {
+    const dom = await loadOptions({}, {
+        hash: '#drafts',
+        prepareWindow: (window: PageWindow) => {
+            const nativeRect = window.HTMLElement.prototype.getBoundingClientRect;
+            window.HTMLElement.prototype.getBoundingClientRect = function () {
+                if (this.classList?.contains('content')) return rect({ top: 100 });
+                if (this.id === 'drafts') return rect({ top: 450 });
+                return nativeRect.call(this);
+            };
+            const nativeStyle = window.getComputedStyle.bind(window);
+            window.getComputedStyle = (element: Element) => element.id === 'drafts'
+                ? computedStyle({ scrollMarginTop: '24px' })
+                : nativeStyle(element);
+        }
+    });
+    const content = dom.window.document.querySelector('.content');
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#drafts');
+    assert.equal(active[0].textContent, 'Report drafts');
+    // The manager moved under Capture & reports; the worker's #drafts URL and
+    // this landing must survive that, and the parent gets the accent.
+    assert.ok(active[0].classList.contains('nav-subitem'));
+    assert.equal(dom.window.document.querySelector('.nav-item.nav-parent-active')?.getAttribute('href'),
+        '#capture');
+    assert.equal(content.scrollTop, 326, 'the completed document aligns without waiting for scrollend');
+    assert.equal(content.style.scrollBehavior, '', 'the initial override is cleared after document restoration');
+    content.dispatchEvent(new dom.window.Event('scrollend'));
+    assert.equal(content.scrollTop, 326,
+        'the nested content scroller should align the target to its scroll margin');
+    assert.equal(content.style.scrollBehavior, '',
+        'normal sidebar navigation should regain stylesheet-controlled smooth scrolling');
+});
+
+test('hash navigation moves the active sidebar link', async () => {
+    const dom = await loadOptions({});
+    dom.window.location.hash = '#beta';
+    dom.window.dispatchEvent(new dom.window.Event('hashchange'));
+    const active = activeLinks(dom);
+    assert.equal(active.length, 1);
+    assert.equal(active[0].getAttribute('href'), '#beta');
+});
+
+test('hash navigation aligns the content pane when history leaves it at the previous fragment', async () => {
+    const dom = await loadOptions({}, {
+        prepareWindow: (window: PageWindow) => {
+            const content = window.document.querySelector('.content');
+            const about = window.document.getElementById('about');
+            content.getBoundingClientRect = () => rect({ top: 100 });
+            about.getBoundingClientRect = () => rect({ top: 450 - content.scrollTop });
+            const nativeStyle = window.getComputedStyle.bind(window);
+            window.getComputedStyle = (element: Element) => element === about
+                ? computedStyle({ scrollMarginTop: '24px' })
+                : nativeStyle(element);
+        },
+    });
+    dom.window.location.hash = '#about';
+    dom.window.dispatchEvent(new dom.window.Event('hashchange'));
+    assert.equal(dom.window.document.querySelector('.content').scrollTop, 326);
+    assert.equal(dom.window.document.documentElement.scrollTop, 0);
+    assert.equal(activeLinks(dom)[0].getAttribute('href'), '#about');
+});
+
+for (const visualFrames of [false, true]) {
+    test(`sidebar navigation animates nearby jumps and settles long jumps (${visualFrames ? 'frames' : 'timer fallback'})`, async () => {
+        let draftsTop = 0;
+        const frames: FrameRequestCallback[] = [];
+        let frameTime = 0;
+        const renderFrame = () => {
+            frameTime += 16;
+            for (const callback of frames.splice(0)) callback(frameTime);
+        };
+        const dom = await loadOptions({}, {
+            prepareWindow: (window: PageWindow) => {
+                if (visualFrames) window.requestAnimationFrame = (callback: FrameRequestCallback) => frames.push(callback);
+                const content = window.document.querySelector('.content');
+                const drafts = window.document.getElementById('drafts');
+                Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
+                content.getBoundingClientRect = () => rect({ top: 100 });
+                drafts.getBoundingClientRect = () => rect({ top: draftsTop });
+                const nativeStyle = window.getComputedStyle.bind(window);
+                window.getComputedStyle = (element: Element) => element === drafts
+                    ? computedStyle({ scrollMarginTop: '24px' })
+                    : nativeStyle(element);
+            }
+        });
+        const doc = dom.window.document;
+        const content = doc.querySelector('.content');
+        const draftsLink = doc.querySelector('.side-nav a[href="#drafts"]');
+        let hashChanged = false;
+        dom.window.addEventListener('hashchange', () => { hashChanged = true; }, { once: true });
+
+        // 1,000 px is below both two viewports (1,600 px here) and the 1,200 px
+        // absolute cap, so the stylesheet keeps control.
+        draftsTop = 1124;
+        draftsLink.click();
+        assert.equal(content.style.scrollBehavior, '');
+
+        // The same target 1,400 px away is under two viewports but over the pixel
+        // cap, so it must bypass smooth scrolling. The inline override survives the
+        // native click action and its hash change, then clears after two frames
+        // (or the timer fallback in non-visual environments).
+        draftsTop = 1524;
+        draftsLink.click();
+        assert.equal(content.style.scrollBehavior, 'auto');
+        await waitFor(dom, () => hashChanged && dom.window.location.hash === '#drafts');
+        if (visualFrames) {
+            renderFrame();
+            assert.equal(content.style.scrollBehavior, 'auto', 'the override must span both rendering frames');
+            renderFrame();
+        }
+        await waitFor(dom, () => content.style.scrollBehavior === '').catch((error: unknown) => {
+            assert.fail(`${(error as Error).message}; scrollBehavior=${JSON.stringify(content.style.scrollBehavior)}, hash=${dom.window.location.hash}`);
+        });
+        assert.equal(content.style.scrollBehavior, '');
+
+        draftsLink.addEventListener('click', (event: Event) => event.preventDefault(), { once: true });
+        draftsLink.dispatchEvent(new dom.window.MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            ctrlKey: true,
+        }));
+        assert.equal(content.style.scrollBehavior, '', 'a modified click must not move the current page');
+    });
+}
+
+for (const [hash, parentHash] of [['#capture-gpx', '#capture'], ['#map-handoffs', '#map-chart'], ['#favorites', '#beta']]) {
+    test(`a deep link to ${hash} activates its sub-item and marks the parent`, async () => {
+        const dom = await loadOptions({}, { hash });
+        const doc = dom.window.document;
+        const current = activeLinks(dom);
+        assert.equal(current.length, 1, 'exactly one link is current');
+        assert.equal(current[0].getAttribute('href'), hash);
+        assert.ok(current[0].classList.contains('nav-subitem'));
+        // The parent nav-item is highlighted (accent) but not itself "current".
+        const parent = doc.querySelector(`.side-nav a.nav-item[href="${parentHash}"]`);
+        assert.ok(parent.classList.contains('nav-parent-active'));
+        assert.equal(parent.hasAttribute('aria-current'), false);
+    });
+}
+
+test('Garmin credential import names the key and requires API permission before writing', async () => {
+    const messages: StubMessage[] = []; const requested: unknown[] = [];
+    const dom = await loadOptions({ theme: 'dark' }, { prepareChrome: (chrome: ChromeStub) => {
+        chrome.permissions = { contains: async () => false, remove: async () => true,
+            request: async (details: object) => { requested.push(structuredClone(details)); return false; } };
+        installSettingsFileWorker(chrome, { messages });
+    } });
+    const payload = settingsTransfer.buildPayload({ theme: 'light' }, { apiKeys: { garmin: 'fictional-garmin-personal-key' } });
+    const input = el(dom, 'settings-backup-file');
+    Object.defineProperty(input, 'files', { configurable: true, value: [{ name: 'private-settings.json', text: async () => settingsTransfer.serialize(payload) }] });
+    input.dispatchEvent(new dom.window.Event('change'));
+    await waitFor(dom, () => !el(dom, 'settings-backup-confirmation').hidden);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent, /Includes a Garmin key/);
+    assert.match(el(dom, 'settings-backup-confirmation').textContent, /enabling Garmin drafts on this device/);
+    el(dom, 'settings-backup-confirm').click();
+    await waitFor(dom, () => /Garmin access was not granted/.test(el(dom, 'status-error-text').textContent));
+    assert.deepEqual(requested, [{ origins: ['https://personal.connectapi.garmin.com/*'] }]);
+    assert.equal(messages.some((message: StubMessage) => message.type === 'SETTINGS_FILE_IMPORT'), false);
+    assert.equal(dom.chrome._store.bpbSettings.theme, 'dark'); dom.window.close();
+});
+
+test('Garmin connection has a labelled sidebar entry and honors its deep link', async () => {
+    const dom = await loadOptions({}, { hash: '#capture-garmin' });
+    const doc = dom.window.document;
+    const link = doc.querySelector('.side-nav a[href="#capture-garmin"]');
+    assert.ok(link, 'Garmin connection must be discoverable in the settings sidebar');
+    assert.equal(link.textContent, 'Garmin connection');
+    assert.equal(link.getAttribute('aria-current'), 'true');
+    assert.equal(doc.querySelector('.nav-parent-active')?.getAttribute('href'), '#capture');
+    const section = doc.getElementById('capture-garmin');
+    assert.equal(section.getAttribute('role'), 'group');
+    assert.equal(section.getAttribute('aria-labelledby'), section.querySelector('h3').id);
+    assert.ok(section.querySelector('#garmin-key'), 'The fixture must load the Garmin controller too');
+});
+
+for (const hash of ['#capture-garmin', '#general']) {
+    test(`a delayed Garmin reveal honors ${hash} without moving later preference updates`, async () => {
+        let release!: () => void;
+        const readGate = new Promise<void>(resolve => { release = resolve; });
+        const dom = await loadOptions({}, { hash,
+            prepareChrome: (chrome: ChromeStub) => {
+                const get = chrome.storage.sync.get;
+                chrome.storage.sync.get = async (...args: Parameters<typeof get>) => { await readGate; return get(...args); };
+            },
+            prepareWindow: (window: PageWindow) => {
+                const content = window.document.querySelector('.content');
+                const target = window.document.getElementById('capture-garmin');
+                Object.defineProperty(content, 'clientHeight', { configurable: true, value: 800 });
+                content.getBoundingClientRect = () => rect({ top: 100 });
+                target.getBoundingClientRect = () => rect({ top: target.hidden ? 0 : 450 - content.scrollTop });
+                const nativeStyle = window.getComputedStyle.bind(window);
+                window.getComputedStyle = (element: Element) => element === target
+                    ? computedStyle({ scrollMarginTop: '24px' }) : nativeStyle(element);
+            },
+        });
+        const content = dom.window.document.querySelector('.content');
+        assert.equal(el(dom, 'capture-garmin').hidden, true);
+        assert.equal(content.scrollTop, 0);
+        // Synthetic reveal must not depend on animation frames to clear inline scroll-behavior.
+        dom.window.requestAnimationFrame = () => 1;
+        release();
+        await waitFor(dom, () => !el(dom, 'capture-garmin').hidden);
+        assert.equal(content.scrollTop, hash === '#capture-garmin' ? 326 : 0,
+            'the requested fragment must land even when native navigation found a hidden target');
+        if (hash === '#capture-garmin') assert.equal(content.style.scrollBehavior, '',
+            'initial scrolling must finish without requiring a native scrollend');
+        assert.equal(activeLinks(dom)[0].hash, hash);
+        const reading = await scrollPane(dom, content, 300);
+        await dom.chrome.storage.sync.set({ bpbSettings: { ...dom.chrome._store.bpbSettings, theme: 'dark' } });
+        assert.equal(content.scrollTop, reading, 'an unrelated settings update must preserve the reading position');
+    });
+}
+
+test('every settings subsection has exactly one sidebar entry in document order', async () => {
+    const dom = await loadOptions({});
+    const doc = dom.window.document;
+    assert.deepEqual([...doc.querySelectorAll('.side-nav .nav-subitem')].map(link => link.hash),
+        [...doc.querySelectorAll('.content .subsection')].map(section => `#${section.id}`));
+});
+
+test('nested ignored-climber backup fragments activate their owning sidebar section', async () => {
+    const dom = await loadOptions({}, { hash: '#ignored-github' });
+    assert.equal(activeLinks(dom)[0].getAttribute('href'), '#github-favorites-backup');
+    dom.window.location.hash = '#general';
+    await waitFor(dom, () => activeLinks(dom)[0].getAttribute('href') === '#general');
+    dom.window.location.hash = '#ignored-github';
+    await waitFor(dom, () => activeLinks(dom)[0].getAttribute('href') === '#github-favorites-backup');
+});
+
+test('a trailing scroll event at a clamped fragment landing preserves its active owner', async () => {
+    // Real layout: this last subsection before About cannot reach the top, so
+    // its deep link lands where the pane bottoms out.
+    const dom = await loadOptions({}, { hash: '#github-photos-backup' });
+    const content = dom.window.document.querySelector('.content');
+    await waitFor(dom, () => activeLinks(dom)[0]?.hash === '#github-photos-backup' && content.style.scrollBehavior === '');
+    const landed = content.scrollTop;
+    assert.ok(Math.abs(landed - (content.scrollHeight - content.clientHeight)) <= 1, 'the deep link lands clamped at the bottom of the pane');
+    content.dispatchEvent(new dom.window.Event('scroll'));
+    content.dispatchEvent(new dom.window.Event('scrollend'));
+    content.dispatchEvent(new dom.window.Event('scroll'));
+    assert.equal(activeLinks(dom)[0].hash, '#github-photos-backup',
+        'a duplicate final scroll notification must not replace an explicit deep link with About');
+    assert.equal(content.scrollTop, landed);
+    // A reader scrolls up: the spy resumes and follows the section under its marker.
+    await scrollPane(dom, content, -600);
+    await waitFor(dom, () => activeLinks(dom)[0]?.hash !== '#github-photos-backup');
+    const marker = content.getBoundingClientRect().top + 40;
+    const sections = activeLinks(dom).map(link => dom.window.document.getElementById(link.hash.slice(1))!);
+    assert.notEqual(activeLinks(dom)[0].hash, '#github-photos-backup', 'actual pane movement resumes the scroll spy');
+    assert.ok(sections[0]!.getBoundingClientRect().top <= marker, 'the spy highlights a section that has reached its marker');
+});
+
+test('Instagram loading stays opt-in independently of the report editor',async()=>{
+    const dom=await loadOptions({enableReportEditor:false});
+    const toggle=dom.window.document.getElementById('load-instagram-automatically');
+    assert.equal(toggle.checked,false);assert.equal(toggle.closest('.row')!.hidden,false);
+    toggle.click();await waitFor(dom,()=>dom.chrome._localStore.bpbDeviceSettings?.settings.loadInstagramAutomatically===true);
+    assert.equal(dom.chrome._store.bpbSettings?.loadInstagramAutomatically,undefined,'device consent never enters sync');
+});

@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import test from 'node:test';
 import vm from 'node:vm';
-import { installTerrainLifecycleProbe, readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mjs';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from '../../scripts/terrain-readiness-diagnostics.mts';
 
 const pendingDrapeProbe = async ({ intercept = true } = {}) => {
     const source = await readFile(new URL('../../scripts/verify-terrain-visual.mts', import.meta.url), 'utf8');

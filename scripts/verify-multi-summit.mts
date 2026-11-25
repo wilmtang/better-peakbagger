@@ -11,8 +11,8 @@ import type { ConsoleMessage, Page } from 'playwright';
 import { createServer } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { createFixtureCertificate, createSyntheticCaptureJob, createSyntheticCapturePayload, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createFixtureCertificate, createSyntheticCaptureJob, createSyntheticCapturePayload, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => T) => Promise<NonNullable<T>>;

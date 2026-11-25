@@ -26,65 +26,71 @@ independent of the existing targets.
 ## Build and local development
 
 - [build-config.mts](build-config.mts)
+- [build-publication.mts](build-publication.mts) — Publishes complete build trees and restores the previous generation when a swap or reload signal fails.
 - [build.mts](build.mts)
-- [generate-map-overlay-regions.mjs](generate-map-overlay-regions.mjs)
-- [install-git-hooks.mjs](install-git-hooks.mjs)
+- [generate-map-overlay-regions.mts](generate-map-overlay-regions.mts)
+- [install-git-hooks.mts](install-git-hooks.mts)
 - [maplibre-terrain-lod-patch.mts](maplibre-terrain-lod-patch.mts)
-- [run-development.mjs](run-development.mjs)
-- [run-firefox.mjs](run-firefox.mjs)
+- [run-development.mts](run-development.mts)
+- [run-firefox.mts](run-firefox.mts)
 
 ## Release, dependencies and repository checks
 
-- [build-firefox-package.mjs](build-firefox-package.mjs)
-- [check-amo-version.mjs](check-amo-version.mjs)
-- [check-changelog-history.mjs](check-changelog-history.mjs)
+- [build-firefox-package.mts](build-firefox-package.mts)
+- [check-amo-version.mts](check-amo-version.mts)
+- [check-changelog-history.mts](check-changelog-history.mts)
 - [check-npm-audit.mts](check-npm-audit.mts)
 - [dependabot-queue-sweep.mts](dependabot-queue-sweep.mts)
 - [dependabot-branch-cleanup.mts](dependabot-branch-cleanup.mts)
 - [check-web-ext-lint.mts](check-web-ext-lint.mts)
-- [copied-runtime-impact.mjs](copied-runtime-impact.mjs)
+- [copied-runtime-impact.mts](copied-runtime-impact.mts)
 - [create-amo-metadata.mts](create-amo-metadata.mts)
-- [create-chrome-description.mjs](create-chrome-description.mjs)
-- [dependency-metadata.mjs](dependency-metadata.mjs)
-- [privacy-guard.mjs](privacy-guard.mjs)
-- [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness and types for `test/dom/*.dom.mts` (routing, extension stub, per-case contexts, selection).
-- [svelte-build.mts](svelte-build.mts) — The shared Svelte compiler settings and esbuild plugin every bundle receives.
-- [typecheck-node.mts](typecheck-node.mts) — Checks the Node TypeScript project as two programs: jsdom/DOM-driving files with the DOM library (`tsconfig.dom.check.json`), everything else without DOM globals.
-- [typescript-policy.mts](typescript-policy.mts) — Rejects new or modified authored JavaScript in the staged index or a committed comparison; preserves generated/vendor formats.
+- [create-chrome-description.mts](create-chrome-description.mts)
+- [dependency-metadata.mts](dependency-metadata.mts)
+- [privacy-guard.mts](privacy-guard.mts)
+- [browser-tests.mts](browser-tests.mts) — In-page browser test runner for `test/**/*.browser.mts`: bundles each file with in-page `node:` runtimes and runs it in hidden Chromium and Firefox; part of `npm run verify -- dom`.
+- [dom-tier.mts](dom-tier.mts) — Browser DOM tier harness for `.dom.mts` suites under `test/dom/`, with routed fixtures, extension stubs, and selection by suite or case.
+- [vite-build.mts](vite-build.mts) — The production Vite compiler used by builds and watch generations.
+- [svelte-build.mts](svelte-build.mts) — Shared Svelte compiler settings for development and release bundles.
+- [typecheck-node.mts](typecheck-node.mts) — Checks the Node TypeScript project as two programs: files reaching extension source or a DOM lib reference with the DOM library (`tsconfig.dom.check.json`), everything else without DOM globals.
+- [typescript-policy.mts](typescript-policy.mts) — Rejects authored JavaScript across the staged index or committed tree. Keeps explicit exclusions for generated output and upstream code.
 - [publish-chrome.mts](publish-chrome.mts)
-- [release-bump.mjs](release-bump.mjs)
-- [release-changelog.mjs](release-changelog.mjs)
-- [release-check.mjs](release-check.mjs)
+- [release-bump.mts](release-bump.mts)
+- [release-changelog.mts](release-changelog.mts)
+- [release-check.mts](release-check.mts)
 - [release-package-identity.mts](release-package-identity.mts)
 - [release-evidence.mts](release-evidence.mts)
 - [release-preflight.mts](release-preflight.mts)
 - [release-readiness.mts](release-readiness.mts) — Prepares permission disclosures and reports bounded optional public service probes; authentication and Google's uploaded-draft validation remain manual.
-- [select-release-artifact.mjs](select-release-artifact.mjs)
-- [stage-ui-ux-skill-update.mjs](stage-ui-ux-skill-update.mjs) — Enforces the checked skill-only patch and prepares the direct-main automation commit without executing downloaded helpers.
-- [third-party-notices.mjs](third-party-notices.mjs)
-- [update-ui-ux-skill.mjs](update-ui-ux-skill.mjs) — Pinned upstream skill updates with local-guidance preservation; `--check` previews without writing.
-- [verify-release-archive.mjs](verify-release-archive.mjs)
-- [verify-store-packages.mjs](verify-store-packages.mjs)
+- [select-release-artifact.mts](select-release-artifact.mts)
+- [stage-ui-ux-skill-update.mts](stage-ui-ux-skill-update.mts) — Enforces the checked skill-only patch and prepares the direct-main automation commit without executing downloaded helpers.
+- [third-party-notices.mts](third-party-notices.mts)
+- [update-ui-ux-skill.mts](update-ui-ux-skill.mts) — Pinned upstream skill updates with local-guidance preservation; `--check` previews without writing.
+- [verify-release-archive.mts](verify-release-archive.mts)
+- [verify-store-packages.mts](verify-store-packages.mts)
 
 ## Browser infrastructure and shared diagnostics
 
-- [browser-verification-evidence.mjs](browser-verification-evidence.mjs)
-- [browser-verification-fixtures.mjs](browser-verification-fixtures.mjs)
+- [browser-verification-evidence.mts](browser-verification-evidence.mts)
+- [browser-verification-fixtures.mts](browser-verification-fixtures.mts)
 - [browser-verification-png.mts](browser-verification-png.mts)
-- [chrome-launch-guard.mjs](chrome-launch-guard.mjs)
-- [firefox-content-viewport.mjs](firefox-content-viewport.mjs)
-- [firefox-verifier-processes.mjs](firefox-verifier-processes.mjs)
+- [chrome-launch-guard.mts](chrome-launch-guard.mts)
+- [firefox-content-viewport.mts](firefox-content-viewport.mts)
+- [firefox-verifier-processes.mts](firefox-verifier-processes.mts)
 - [image-download-completion.mts](image-download-completion.mts)
-- [layout-verification-plan.mjs](layout-verification-plan.mjs) — Exact-once browser/theme/viewport partitions and focused preflight selection.
-- [peak-map-links-verification.mjs](peak-map-links-verification.mjs)
+- [layout-verification-plan.mts](layout-verification-plan.mts) — Exact-once browser/theme/viewport partitions and focused preflight selection.
+- [page-probes.mts](page-probes.mts) — The verifiers' page-side probes, free of Node dependencies so browser tests load the same functions.
+- [peak-map-links-verification.mts](peak-map-links-verification.mts)
 - [probe-chrome-extension-load.mts](probe-chrome-extension-load.mts) — Manual diagnostic probe comparing command-line and pipe-CDP (`Extensions.loadUnpacked`) unpacked-extension loading in Chrome for Testing against a disposable HTTPS Peakbagger fixture.
-- [resource-stack.mjs](resource-stack.mjs)
+- [resource-stack.mts](resource-stack.mts)
+- [terrain-frame-instrumentation.mts](terrain-frame-instrumentation.mts) — The terrain verifiers' frame and module instrumentation, shared with the browser tests.
 - [verification-launch.mts](verification-launch.mts) — The one launch definition for hidden Playwright verifiers: disposable root, Seatbelt preflight, Chrome for Testing or an exact binary, exclusive extension and host-resolver flags, Firefox local DNS and deferred teardown.
-- [verification-browser-identity.mjs](verification-browser-identity.mjs)
-- [verification-repetitions.mjs](verification-repetitions.mjs)
+- [verification-browser-identity.mts](verification-browser-identity.mts)
+- [verification-repetitions.mts](verification-repetitions.mts)
 - [verify.mts](verify.mts)
-- [verify-dom.mts](verify-dom.mts) — `npm run verify -- dom`: runs the browser DOM tier in Chromium and Firefox.
-- [verify-fixture-preflight.mjs](verify-fixture-preflight.mjs) — Early locale, evidence, worker authorization and shipped-fixture checks.
+- [verify-dom.mts](verify-dom.mts) — `npm run verify -- dom`: runs the browser DOM tier (orchestrated suites, then in-page browser tests) in Chromium and Firefox.
+- [verify-fixture-preflight.mts](verify-fixture-preflight.mts) — Early locale, evidence, worker authorization and shipped-fixture checks.
+- [wait-for-condition.mts](wait-for-condition.mts) — The verifiers' dependency-free polling helper.
 
 ## Complete extension and package verification
 
@@ -98,35 +104,35 @@ independent of the existing targets.
 - [verify-capture-flow.mts](verify-capture-flow.mts)
 - [verify-capture-popup.mts](verify-capture-popup.mts)
 - [verify-garmin-ui.mts](verify-garmin-ui.mts) — Garmin connection, inbox and popup geometry, recovery and keyboard checks in hidden Chrome and Firefox.
-- [verify-connections.mjs](verify-connections.mjs) — Packaged Garmin, ImgBB and GitHub disconnect states, focus, duplicate activation and geometry in hidden Chrome and Firefox.
-- [jszip-csp-patch.mjs](jszip-csp-patch.mjs) — Version-checked removal of JSZip's legacy string-evaluation scheduler fallback.
+- [verify-connections.mts](verify-connections.mts) — Packaged Garmin, ImgBB and GitHub disconnect states, focus, duplicate activation and geometry in hidden Chrome and Firefox.
+- [jszip-csp-patch.mts](jszip-csp-patch.mts) — Version-checked removal of JSZip's legacy string-evaluation scheduler fallback.
 - [verify-capture-readiness.mts](verify-capture-readiness.mts)
-- [verify-draft-recovery.mjs](verify-draft-recovery.mjs)
+- [verify-draft-recovery.mts](verify-draft-recovery.mts)
 - [verify-multi-summit.mts](verify-multi-summit.mts)
-- [verify-provider-contracts.mjs](verify-provider-contracts.mjs)
-- [verify-provider-performance.mjs](verify-provider-performance.mjs)
+- [verify-provider-contracts.mts](verify-provider-contracts.mts)
+- [verify-provider-performance.mts](verify-provider-performance.mts)
 
 ## Maps, terrain and GPX
 
 - [terrain-cdp.mts](terrain-cdp.mts) — Chrome DevTools Protocol plumbing shared by the terrain verifiers: debugging-port wait, WebSocket connection and page evaluation.
-- [terrain-dem-fixture.mjs](terrain-dem-fixture.mjs)
+- [terrain-dem-fixture.mts](terrain-dem-fixture.mts)
 - [terrain-lod-criteria.mts](terrain-lod-criteria.mts)
-- [terrain-lod-probe.mjs](terrain-lod-probe.mjs)
-- [terrain-readiness-diagnostics.mjs](terrain-readiness-diagnostics.mjs)
+- [terrain-lod-probe.mts](terrain-lod-probe.mts)
+- [terrain-readiness-diagnostics.mts](terrain-readiness-diagnostics.mts)
 - [verify-gpx-header.mts](verify-gpx-header.mts)
-- [verify-gpx-segments.mjs](verify-gpx-segments.mjs)
+- [verify-gpx-segments.mts](verify-gpx-segments.mts)
 - [verify-map-controls.mts](verify-map-controls.mts)
 - [verify-map-handoffs.mts](verify-map-handoffs.mts)
 - [verify-onx.mts](verify-onx.mts)
 - [verify-map-layer-control.mts](verify-map-layer-control.mts)
 - [verify-map-layers.mts](verify-map-layers.mts)
 - [verify-vector-map.mts](verify-vector-map.mts)
-- [verify-map-location-cases.mjs](verify-map-location-cases.mjs)
+- [verify-map-location-cases.mts](verify-map-location-cases.mts)
 - [verify-peak-link-order.mts](verify-peak-link-order.mts)
 - [verify-peak-map-layout.mts](verify-peak-map-layout.mts)
 - [verify-terrain-cache-owners.mts](verify-terrain-cache-owners.mts)
 - [verify-terrain-lod.mts](verify-terrain-lod.mts)
-- [verify-terrain-popup.mjs](verify-terrain-popup.mjs)
+- [verify-terrain-popup.mts](verify-terrain-popup.mts)
 - [verify-terrain-provider-ui.mts](verify-terrain-provider-ui.mts)
 - [terrain-toggle-readiness.mts](terrain-toggle-readiness.mts)
 - [terrain-frame-creation.mts](terrain-frame-creation.mts)
@@ -134,22 +140,22 @@ independent of the existing targets.
 
 ## Climbers and profiles
 
-- [buddy-tab-diagnostics.mjs](buddy-tab-diagnostics.mjs)
-- [climber-card-close-diagnostics.mjs](climber-card-close-diagnostics.mjs)
-- [climber-regression-baseline.mjs](climber-regression-baseline.mjs)
-- [signed-out-extension-verification.mjs](signed-out-extension-verification.mjs) — real-manifest Buddy recovery and signed-out local Favorite persistence in both browser gates.
-- [verify-climber-hover-card.mjs](verify-climber-hover-card.mjs)
+- [buddy-tab-diagnostics.mts](buddy-tab-diagnostics.mts)
+- [climber-card-close-diagnostics.mts](climber-card-close-diagnostics.mts)
+- [climber-regression-baseline.mts](climber-regression-baseline.mts)
+- [signed-out-extension-verification.mts](signed-out-extension-verification.mts) — real-manifest Buddy recovery and signed-out local Favorite persistence in both browser gates.
+- [verify-climber-hover-card.mts](verify-climber-hover-card.mts)
 - [verify-climber-list-ui.mts](verify-climber-list-ui.mts)
-- [verify-climber-membership.mjs](verify-climber-membership.mjs)
+- [verify-climber-membership.mts](verify-climber-membership.mts)
 - [verify-climber-transitions.mts](verify-climber-transitions.mts)
 - [verify-inline-buddies.mts](verify-inline-buddies.mts)
 - [verify-profile-editor.mts](verify-profile-editor.mts)
-- [verify-profile-preparation.mjs](verify-profile-preparation.mjs)
+- [verify-profile-preparation.mts](verify-profile-preparation.mts)
 - [verify-profile-units.mts](verify-profile-units.mts)
 
 ## Weather and snow
 
-- [verify-wildfires.mjs](verify-wildfires.mjs) — real Leaflet and hardware MapLibre wildfire rendering and recovery through the weather fixture harness.
+- [verify-wildfires.mts](verify-wildfires.mts) — real Leaflet and hardware MapLibre wildfire rendering and recovery through the weather fixture harness.
 
 - [verify-air-quality.mts](verify-air-quality.mts) — lazy AQI requests and refresh stability through the weather browser harness.
 - [verify-air-quality-refresh.mts](verify-air-quality-refresh.mts) — deterministic DST refresh, UTC viewport anchoring and equal-reading live announcements in hidden Chrome and Firefox; time/provider responses are stubbed beside native markup and shipped CSS.
@@ -161,58 +167,58 @@ independent of the existing targets.
 - [verify-custom-layer-settings.mts](verify-custom-layer-settings.mts) — `chrome|firefox` checks saved-source actions, alignment, long names, light/dark narrow layouts, enlarged text, guarded reorder/error/retry and delete cancellation. Twelve disclosure cases at 900/540 px heights check matching compact headers, Space/Enter expansion, retained focus, a pinned footer, reachable final content and scroll-aware keyboard tooltips. Opacity remains a map-only control.
 - [verify-custom-layer-menu.mts](verify-custom-layer-menu.mts) — `chrome|firefox` compares built-in/custom row alignment, fonts, colors, checkbox/chevron dimensions, keyboard opacity/disclosure and anchored loading/error/retry/overzoom states at 736/320 × 800, both themes and normal/1.5x text. Presentation fixtures stub I/O; the unpacked integration verifiers cover real loading.
 - [verify-private-layers.mts](verify-private-layers.mts) — protected query parameters and automatic TileJSON detection in real Settings, private map settings-file round-trip, private worker GETs without provider CORS, per-map approval, forged destination rejection and hardware 2D/3D in hidden Chrome/Firefox; test-only host pregrant does not prove native permission prompts.
-- [custom-overlay-editor-verification.mjs](custom-overlay-editor-verification.mjs) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
+- [custom-overlay-editor-verification.mts](custom-overlay-editor-verification.mts) — 18 shared Chrome/Firefox editor cases for compact spacing, field help, name/URL-only source setup, metadata/manual overrides and stable Save/detection pending/error/retry status; invoked by the custom-overlay verifier. The broader Firefox terrain GeoJSON proof gap is tracked in the private-relay closure ledger.
 - [verify-peak-cards.mts](verify-peak-cards.mts)
 - [verify-summit-cloud.mts](verify-summit-cloud.mts) — hidden Chrome/Firefox
   forecast-card interactions, full-hour navigation and layout stability; run with `npm run verify -- summit-cloud`.
-- [verify-peak-snow-cases.mjs](verify-peak-snow-cases.mjs)
+- [verify-peak-snow-cases.mts](verify-peak-snow-cases.mts)
 - [verify-peak-weather-3d.mts](verify-peak-weather-3d.mts)
-- [verify-peak-weather-cases.mjs](verify-peak-weather-cases.mjs)
+- [verify-peak-weather-cases.mts](verify-peak-weather-cases.mts)
 - [verify-peak-weather-interactions.mts](verify-peak-weather-interactions.mts)
-- [verify-peak-weather-refresh.mjs](verify-peak-weather-refresh.mjs)
-- [verify-snotel-options.mjs](verify-snotel-options.mjs)
-- [verify-snow-map-cases.mjs](verify-snow-map-cases.mjs)
+- [verify-peak-weather-refresh.mts](verify-peak-weather-refresh.mts)
+- [verify-snotel-options.mts](verify-snotel-options.mts)
+- [verify-snow-map-cases.mts](verify-snow-map-cases.mts)
 - [verify-snow-depth.mts](verify-snow-depth.mts) — Real-extension snow depth, opacity, keyboard recovery and enlarged layout.
-- [verify-snow-map-fixture.mjs](verify-snow-map-fixture.mjs)
-- [verify-weather-card-drag.mjs](verify-weather-card-drag.mjs)
-- [verify-weather-clouds.mjs](verify-weather-clouds.mjs)
+- [verify-snow-map-fixture.mts](verify-snow-map-fixture.mts)
+- [verify-weather-card-drag.mts](verify-weather-card-drag.mts)
+- [verify-weather-clouds.mts](verify-weather-clouds.mts)
 - [verify-weather-day-switches.mts](verify-weather-day-switches.mts)
 - [verify-weather-intervals.mts](verify-weather-intervals.mts)
-- [verify-weather-location.mjs](verify-weather-location.mjs)
-- [verify-weather-model-refresh.mjs](verify-weather-model-refresh.mjs)
+- [verify-weather-location.mts](verify-weather-location.mts)
+- [verify-weather-model-refresh.mts](verify-weather-model-refresh.mts)
 - [weather-verification-types.mts](weather-verification-types.mts) — typed controls shared by weather browser assertions.
-- [verify-weather-tab-styles.mjs](verify-weather-tab-styles.mjs)
+- [verify-weather-tab-styles.mts](verify-weather-tab-styles.mts)
 
 ## Editors, backups, settings and layout
 
-- [render-showcase.mjs](render-showcase.mjs)
-- [report-table-selection.mjs](report-table-selection.mjs)
+- [render-showcase.mts](render-showcase.mts)
+- [report-table-selection.mts](report-table-selection.mts)
 - [verify-api-rate-limits.mts](verify-api-rate-limits.mts)
 - [verify-ascent-backup-lifecycle.mts](verify-ascent-backup-lifecycle.mts)
 - [verify-firefox-terrain.mts](verify-firefox-terrain.mts)
 - [verify-layout-stability.mts](verify-layout-stability.mts)
-- [verify-ascent-column-widths.mjs](verify-ascent-column-widths.mjs) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
-- [verify-ascent-filters.mjs](verify-ascent-filters.mjs) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
-- [verify-photo-backup-status.mjs](verify-photo-backup-status.mjs)
+- [verify-ascent-column-widths.mts](verify-ascent-column-widths.mts) — native peak/ascent metadata widths, nested map containment and card edge alignment, run by `layout-stability`.
+- [verify-ascent-filters.mts](verify-ascent-filters.mts) — native ascent filtering, visible counts and table-width stability, run by `layout-stability`.
+- [verify-photo-backup-status.mts](verify-photo-backup-status.mts)
 - [verify-photo-editor.mts](verify-photo-editor.mts)
 - [verify-photo-output.mts](verify-photo-output.mts)
 - [verify-popup-photo-entry.mts](verify-popup-photo-entry.mts)
 - [verify-photo-library-status.mts](verify-photo-library-status.mts)
-- [verify-photo-report-edit.mjs](verify-photo-report-edit.mjs)
+- [verify-photo-report-edit.mts](verify-photo-report-edit.mts)
 - [verify-report-caption-stability.mts](verify-report-caption-stability.mts)
 - [verify-report-security.mts](verify-report-security.mts) — real response protection, hostile reports, native map scripts, Quick Search and Cloudflare exceptions in hidden Chrome/Firefox.
 - [verify-report-routes.mts](verify-report-routes.mts) — compiled-rule validation, encoded report/profile/editor routes, priority exclusions and native/encoded map children under the real report policy.
 - [generate-report-protection.mts](generate-report-protection.mts) — readable source for the generated report-response rules; use `--write` to regenerate or `--check` to reject drift.
 - [verify-instagram.mts](verify-instagram.mts) — packaged per-post grants, native captions, bounded player sizing, compact placeholders, consent, error/retry/cancel geometry and Rich paste in hidden Chrome/Firefox. Includes same-origin lazy-video playback and sandbox isolation. `npm run verify -- instagram`; `--live` checks public post/Reel samples and all slides plus decoded video playback in the reported mixed carousel. `--display` pregrants the optional host only in a disposable test copy, then checks native terminal navigation, identical pending/loaded viewport widths and live light/dark transitions with unchanged media colors/geometry. It does not prove the native permission prompt. `BPB_INSTAGRAM_LIVE_POST` adds one validated public sample.
-- [verify-report-image-help.mjs](verify-report-image-help.mjs) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.
+- [verify-report-image-help.mts](verify-report-image-help.mts) — image-popover Instagram help: hover, keyboard dismissal, tooltip bounds and stable geometry at desktop/narrow widths in both themes and enlarged text; invoked by the Instagram verifier.
 - [verify-report-draft-ownership.mts](verify-report-draft-ownership.mts)
 - [verify-report-photos.mts](verify-report-photos.mts)
-- [verify-climber-files.mjs](verify-climber-files.mjs) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
+- [verify-climber-files.mts](verify-climber-files.mts) — standalone list JSON downloads and guarded import transitions, run by `layout-stability`.
 - [verify-settings-actions.mts](verify-settings-actions.mts) — held Settings actions and restore focus, run by `layout-stability`.
-- [settings-fragment-verification.mjs](settings-fragment-verification.mjs) — shared assertions for the packaged Settings anchor verifier.
+- [settings-fragment-verification.mts](settings-fragment-verification.mts) — shared assertions for the packaged Settings anchor verifier.
 - [verify-settings-navigation.mts](verify-settings-navigation.mts)
 - [verify-settings-fragments.mts](verify-settings-fragments.mts) — real packaged Chrome/Firefox Settings anchors, refresh, keyboard navigation, Back/Forward and manual reading positions; run `npm run verify -- settings-navigation`.
-- [verify-signed-out.mjs](verify-signed-out.mjs) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
+- [verify-signed-out.mts](verify-signed-out.mts) — signed-out recovery and held filter retries in Chrome/Firefox; run with `npm run verify -- signed-out`.
 
 
 - [verify-layer-inspection.mts](verify-layer-inspection.mts) — hidden Chrome/Firefox

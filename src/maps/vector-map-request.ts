@@ -3,8 +3,8 @@
 
 import { MAPTOOLKIT_BASEMAP, vectorProviderUrl } from './vector-basemap.ts';
 import type { VectorBasemap } from './vector-basemap.ts';
-import { requestDeadline } from '../net/request-deadline.js';
-import { cancelResponseBody, rateLimitError } from '../net/rate-limit.js';
+import { requestDeadline } from '../net/request-deadline.ts';
+import { cancelResponseBody, rateLimitError } from '../net/rate-limit.ts';
 
 export const VECTOR_PROTOCOL = 'bpb-vector';
 const prefix = `${VECTOR_PROTOCOL}://`;

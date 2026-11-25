@@ -9,7 +9,7 @@ import {
     isPeakbaggerUrl,
     isPeakbaggerSenderUrl,
     isPeakbaggerPageOrigin,
-} from '../../src/peakbagger/peakbagger-origin.js';
+} from '../../src/peakbagger/peakbagger-origin.ts';
 
 import { runtimeSources } from '../helpers/runtime-sources.mts';
 import { originFindings } from '../helpers/source-policies.mts';

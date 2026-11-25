@@ -11,21 +11,29 @@ import type { AddressInfo } from 'node:net';
 import type { Locator, Page } from 'playwright';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
 import type { Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
-import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition, patchVerificationSettings } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer, createFixtureCertificate, waitForCondition, patchVerificationSettings } from './browser-verification-fixtures.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { createResourceStack, listenServer, closeServer } from './resource-stack.mjs';
-import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
-import { verifyCustomEditor, verifyCustomHelp, readEditorFit } from './custom-overlay-editor-verification.mjs';
-import { setFirefoxContentViewport } from './firefox-content-viewport.mjs';
+import { createResourceStack, listenServer, closeServer } from './resource-stack.mts';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
+import { verifyCustomEditor, verifyCustomHelp, readEditorFit } from './custom-overlay-editor-verification.mts';
+import { setFirefoxContentViewport } from './firefox-content-viewport.mts';
 import { readCustomLayerNavigation, assertCustomLayerNavigation } from './verify-settings-navigation.mts';
 
 interface PageMap { _layers: Record<string, { options?: { pane?: string }; _tiles?: Record<string, { el: HTMLCanvasElement }> }>;
     getPane(name: string): { children: Iterable<HTMLElement>; lastElementChild: HTMLElement }; getContainer(): HTMLElement; invalidateSize(): void; remove(): void; }
 declare global {
-    interface Window { mapsPlaceholder: PageMap; extraCustomMap: PageMap; L: { map(element: HTMLElement): { setView(center: [number, number], zoom: number): PageMap } };
-        releaseLayerOrder(): void; releaseLayerRemove(): void; }
+    interface Window {
+        mapsPlaceholder: PageMap;
+        extraCustomMap: PageMap;
+        L?: {
+            map(element: HTMLElement): { setView(center: [number, number], zoom: number): PageMap };
+            Map?: { addInitHook?(hook: (this: { on(type: 'unload', listener: () => void): unknown }) => void): unknown };
+        };
+        releaseLayerOrder(): void;
+        releaseLayerRemove(): void;
+    }
 }
 type MutableRuntime = { sendMessage: (...args: unknown[]) => Promise<unknown> };
 interface BidiConnection { send(request: BidiRequest): Promise<{ type: string; message?: string }>; subscribe(event: string): Promise<unknown>;
@@ -353,7 +361,7 @@ try {
         await page.evaluate(() => {
             const first = window.mapsPlaceholder.getContainer(); first.style.width = '50%'; window.mapsPlaceholder.invalidateSize();
             const container = document.createElement('div'); container.style.cssText = 'position:absolute;left:50%;top:0;width:50%;height:100%'; document.body.append(container);
-            window.extraCustomMap = window.L.map(container).setView([46.85, -121.76], 10);
+            window.extraCustomMap = window.L!.map(container).setView([46.85, -121.76], 10);
         });
         await page.waitForFunction(() => document.querySelectorAll('.bpb-map-layers').length === 2);
         const secondary = page.locator('.bpb-map-layers').nth(1); await secondary.getByRole('button', { name: /^Overlays/ }).click();

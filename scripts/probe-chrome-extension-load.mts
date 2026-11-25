@@ -16,10 +16,10 @@
 import { access, appendFile, mkdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBrowserFixtureServer, waitForCondition } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { assertVerificationBrowser } from './verification-browser-identity.mjs';
+import { createBrowserFixtureServer, waitForCondition } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { assertVerificationBrowser } from './verification-browser-identity.mts';
 import {
     createVerificationRoot,
     launchVerificationChrome,
@@ -290,7 +290,7 @@ async function pollExtensionsInternals(
             description: 'Better Peakbagger entry in chrome://extensions-internals/',
             timeoutMs: 10_000,
             intervalMs: 150,
-        }) as Promise<{ total: number | null; found: RawRegistryRecord | null }>;
+        });
     } catch {
         return { total: lastTotal, found: null };
     }

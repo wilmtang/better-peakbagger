@@ -82,7 +82,7 @@ test('peak-card layout uses bounded identities and independent boolean disclosur
         assert.equal(Schema.clean({ [key]: true })[key], true);
         for (const value of [null, 0, 'false', [], {}]) assert.equal(Schema.clean({ [key]: value })[key], Schema.DEFAULTS[key]);
     }
-    const consumer = await readFile(path.join(root, 'src/ui/peak-card-layout.js'), 'utf8');
+    const consumer = await readFile(path.join(root, 'src/ui/peak-card-layout.ts'), 'utf8');
     assert.match(consumer, /settings\.DEFAULTS\.peakCardOrder/);
     assert.doesNotMatch(consumer, /\[['"]sun['"],\s*['"]weather['"],\s*['"]snow['"]\]/, 'layout defaults belong only to the schema');
 });

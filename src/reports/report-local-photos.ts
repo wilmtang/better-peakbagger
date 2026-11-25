@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { reportPhoto as Pending } from '../photos/report-photo.js';
-import { photoProject as Project } from '../photos/photo-project.js';
-import { trustedAction as Trusted } from '../ui/trusted-action.js';
+import { reportPhoto as Pending } from '../photos/report-photo.ts';
+import { photoProject as Project } from '../photos/photo-project.ts';
+import { trustedAction as Trusted } from '../ui/trusted-action.ts';
 import { richCommands } from './report-rich-editor.ts';
 import type { Editor } from '@tiptap/core';
 
@@ -112,13 +112,13 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
         if (!event.isTrusted || saving || !editor || !editor.view.dom.contains(event.target as Node)) return;
         const files = [...(event.clipboardData?.items || [])]
             .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
-            .map(item => item.getAsFile()).filter(Boolean);
+            .map(item => item.getAsFile()).filter((file): file is File => Boolean(file));
         if (!files.length) return;
         event.preventDefault();
         event.stopImmediatePropagation();
         for (const file of files) {
             const provisional = Pending.url(crypto.randomUUID());
-            if (!file!.size || file!.size > Pending.MAX_BYTES) { say('Paste an image smaller than 16 MiB.'); continue; }
+            if (!file.size || file.size > Pending.MAX_BYTES) { say('Paste an image smaller than 16 MiB.'); continue; }
             previews.set(provisional, Pending.toDataUrl(file));
             editor.chain().insertContent({ type: 'image', attrs: { src: provisional, alt: 'Pasted photo', width: 640 } }).run();
             preparing++;
@@ -128,7 +128,7 @@ export function installReportLocalPhotos({ ext, form, textarea, ui, getEditor, f
                     await send({ type: 'PHOTO_REPORT_STATUS' }).then(result => {
                         if (!result.configured || !result.permissionGranted) throw new Error('Pasted photos need an ImgBB key to publish with your report. Set one up in Settings, or paste a link to an image hosted elsewhere.');
                     });
-                    const prepared = await prepare(file!);
+                    const prepared = await prepare(file);
                     const actionGeneration = generation();
                     const activation = await Trusted.issue(ext, event, 'report-photos', actionGeneration);
                     if (!activation) throw new Error('Paste the photo again to add it.');

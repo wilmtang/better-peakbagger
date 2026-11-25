@@ -1,0 +1,56 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readPhotoSourceUrl } from '../../src/photos/photo-source-url.ts';
+
+test('clicked remote images are bounded and fetched without credentials or referrer', async () => {
+    const requests: (RequestInit | undefined)[] = [];
+    const file = await readPhotoSourceUrl('https://images.example/ridge.png', {
+        maxBytes: 16,
+        fetchFn: async (_url, init) => { requests.push(init); return new Response('pixels', { headers: { 'content-type': 'image/png' } }); },
+    });
+    assert.equal(await file.text(), 'pixels');
+    assert.equal(file.name, 'ridge.png');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0]?.credentials, 'omit');
+    assert.equal(requests[0]?.referrerPolicy, 'no-referrer');
+});
+
+test('a readable image remains editable when its URL filename is not valid URI-encoded text', async t => {
+    for (const [path, name] of [
+        ['ridge%view.png', 'ridge%view.png'],
+        ['ridge%FF.png', 'ridge%FF.png'],
+        ['ridge%E2%82.png', 'ridge%E2%82.png'],
+        ['ridge%20view.png', 'ridge view.png'],
+        ['%E5%B1%B1.png', '山.png'],
+        ['', 'report-image'],
+    ]) await t.test(path || 'unnamed source', async () => {
+        const file = await readPhotoSourceUrl(`https://images.example/${path}`, {
+            maxBytes: 16,
+            fetchFn: async () => new Response('pixels', { headers: { 'content-type': 'image/png' } }),
+        });
+        assert.equal(file.name, name);
+        assert.equal(file.type, 'image/png');
+        assert.equal(await file.text(), 'pixels');
+    });
+});
+
+test('insecure sources, HTML responses, empty files and dishonest size headers are refused', async () => {
+    for (const url of ['http://images.example/a.png', 'https://user:secret@images.example/a.png']) {
+        await assert.rejects(readPhotoSourceUrl(url, { maxBytes: 4, fetchFn: () => { throw new Error('must not fetch'); } }), /HTTPS/);
+    }
+    for (const response of [new Response('oops'), new Response('', { headers: { 'content-type': 'image/png' } }), new Response('oversized', { headers: { 'content-type': 'image/png', 'content-length': '1' } })]) {
+        await assert.rejects(readPhotoSourceUrl('https://images.example/a.png', { maxBytes: 4, fetchFn: async () => response }));
+    }
+});
+
+test('a readable image-host 429 is explicit without confusing CORS or access failures with a limit', async () => {
+    await assert.rejects(readPhotoSourceUrl('https://images.example/ridge.png', {
+        maxBytes: 16, fetchFn: async () => new Response('unreadable', { status: 429, headers: { 'retry-after': '60' } }),
+    }), (error: unknown) => error instanceof Error && 'code' in error && error.code === 'rate-limit'
+        && /Image host request limit reached\. Try again after/.test(error.message));
+    await assert.rejects(readPhotoSourceUrl('https://images.example/ridge.png', {
+        maxBytes: 16, fetchFn: async () => new Response('', { status: 403 }),
+    }), (error: unknown) => error instanceof Error && (!('code' in error) || error.code !== 'rate-limit'));
+});

@@ -7,14 +7,14 @@
 
 import { readVectorPaint } from '../maps/vector-basemap.ts';
 import type { VectorPaint } from '../maps/vector-basemap.ts';
-import { settings } from '../settings/settings.js';
-import { terrainCamera } from './terrain-camera.js';
-import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.js';
+import { settings } from '../settings/settings.ts';
+import { terrainCamera } from './terrain-camera.ts';
+import { readSnotelMapStations, readSnotelMapOcclusions } from '../snow/snotel-map-data.ts';
 import { readLayerSnapshot, readLayerStatus, readBasemapChoices, readAttributionInset } from '../maps/map-layer-protocol.ts';
-import { sentinelTarget } from '../maps/sentinel-core.js';
+import { sentinelTarget } from '../maps/sentinel-core.ts';
 import { overlayBounds } from '../maps/map-overlay-providers.ts';
-import { terrainFailure } from './terrain-failure.js';
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.js';
+import { terrainFailure } from './terrain-failure.ts';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from './terrain-lifecycle.ts';
 
 interface TerrainInitData { [field: string]: unknown; }
 type LayerSnapshot = NonNullable<ReturnType<typeof readLayerSnapshot>>;
@@ -153,9 +153,9 @@ interface BasicRuntime { sendMessage?(message: unknown): Promise<{ ok?: boolean;
     const frameOrigin = () => {
         try {
             const parsed = new URL(globalThis.chrome.runtime.getURL('terrain/terrain.html'));
-            // Node/jsdom follows the generic URL standard and reports opaque
-            // origins for browser-extension schemes. Browsers give extension
-            // documents their scheme+host origin; spell out that equivalent so
+            // Node and ordinary web pages follow the generic URL standard and
+            // can report opaque origins for browser-extension schemes. Browsers
+            // give extension documents their scheme+host origin; spell out that equivalent so
             // the same exact-origin contract is testable outside a browser.
             if (parsed.origin !== 'null') return parsed.origin;
             return parsed.protocol.endsWith('-extension:') && parsed.host

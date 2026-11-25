@@ -1,0 +1,182 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import type { StubMessage } from '../helpers/page-types.mts';
+import { loadFavoritesPage, el, waitFor, registerCleanup, peakbaggerFetch, pageResponse, climberPageFixture } from '../helpers/options-page.mts';
+registerCleanup();
+for (const kind of ['favorite', 'saved buddy', 'live buddy']) {
+    test(`Ignored manager rejects a ${kind} with an actionable reason`, async () => {
+        const entry = { cid: 900002, name: 'Alex Doe', addedAt: 1, source: 'manual' };
+        const dom = await loadFavoritesPage({}, { local: {
+            ...(kind === 'favorite' ? { bpbFavoriteClimbers: { schemaVersion: 1, entries: [entry] } } : {}),
+            ...(kind === 'saved buddy' ? { bpbBuddyCache: { ownerCid: 900001, fetchedAt: Date.now(), entries: [entry] } } : {}),
+        }, prepareWindow: window => {
+            window.fetch = kind === 'live buddy' ? async () => pageResponse(
+                climberPageFixture.replaceAll('900001', '900002').replace('</body>',
+                    '<input type="button" value="Remove from My Buddy List"></body>'))
+                : peakbaggerFetch({ climberCid: 900002 });
+        } });
+        el(dom, 'ignored-tab').click();
+        await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+        el(dom, 'ignored-add-input').value = '900002';
+        el(dom, 'ignored-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+        await waitFor(dom, () => /before ignoring/.test(el(dom, 'ignored-status').textContent));
+        assert.match(el(dom, 'ignored-status').textContent, /Alex Doe.*Remove/);
+        assert.equal(dom.chrome._localStore.bpbIgnoredClimbers?.entries.length || 0, 0);
+        assert.equal(el(dom, 'ignored-add-input').value, '900002');
+    });
+}
+test('Ignored tab adds confirmed identities, supports search, and undoes only the removed entry', async () => {
+    const dom = await loadFavoritesPage({}, { prepareWindow: window => {
+        window.fetch = peakbaggerFetch({ climberCid: 900002 });
+    } });
+    el(dom, 'ignored-tab').click();
+    assert.equal(el(dom, 'ignored-workspace').hidden, false);
+    await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+    el(dom, 'ignored-add-input').value = '900002';
+    el(dom, 'ignored-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(dom, () => dom.chrome._localStore.bpbIgnoredClimbers?.entries.length === 1);
+    assert.equal(el(dom, 'ignored-list').querySelector('.favorite-name').textContent, 'Alex Doe');
+    el(dom, 'ignored-list').querySelector('button').click();
+    await waitFor(dom, () => !el(dom, 'ignored-undo').hidden);
+    const current = dom.chrome._localStore.bpbIgnoredClimbers as unknown as { revision: number };
+    await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { ...current, revision: current.revision + 1,
+        entries: [{ cid: 900003, name: '<script>other</script>', addedAt: 1 }] } });
+    el(dom, 'ignored-undo-button').click();
+    await waitFor(dom, () => dom.chrome._localStore.bpbIgnoredClimbers.entries.length === 2);
+    assert.equal(el(dom, 'ignored-list').querySelector('script'), null);
+    el(dom, 'ignored-search').value = '900003';
+    el(dom, 'ignored-search').dispatchEvent(new dom.window.Event('input'));
+    assert.equal(el(dom, 'ignored-list').children.length, 1);
+});
+
+const ignoredEntry = (cid: number) => ({ cid, name: `Climber ${cid}`, addedAt: cid });
+const loadDeferredIgnored = async (ids = [1, 2, 3]) => {
+    const calls: { resolve: (reply: unknown) => void; apply: () => Promise<unknown> }[] = [];
+    const dom = await loadFavoritesPage({}, {
+        local: { bpbIgnoredClimbers: { schemaVersion: 1, revision: 1, entries: ids.map(ignoredEntry) } },
+        prepareChrome: chrome => {
+            const send = chrome.runtime.sendMessage.bind(chrome.runtime);
+            Object.defineProperty(chrome.runtime, 'sendMessage', {
+                value: (message: StubMessage) => message.type === 'IGNORED_MUTATE'
+                    ? new Promise(resolve => calls.push({ resolve, apply: async () => send(message) }))
+                    : send(message),
+            });
+        },
+    });
+    el(dom, 'ignored-tab').click();
+    await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+    const finish = async (index: number, error = '') => {
+        calls[index]!.resolve(error ? { ok: false, error: { message: error } } : await calls[index]!.apply());
+        await waitFor(dom, () => el(dom, 'ignored-list').getAttribute('aria-busy') === 'false');
+    };
+    const control = (cid: number, kind = 'button') => el(dom, 'ignored-list').querySelector(`[data-cid="${cid}"] ${kind}`);
+    return { dom, calls, finish, control };
+};
+
+for (const { ids, removed, next } of [
+    { ids: [1, 2, 3], removed: 3, next: 2 },
+    { ids: [1, 2, 3], removed: 1, next: 2 },
+    { ids: [1], removed: 1, next: null },
+]) {
+    test(`unignoring ${removed} from ${ids.length} rows keeps pending focus and selects a visible successor`, async () => {
+        const { dom, calls, finish, control } = await loadDeferredIgnored(ids);
+        control(removed).focus();
+        control(removed).click();
+        assert.equal(dom.window.document.activeElement, control(removed));
+        assert.equal(control(removed).getAttribute('aria-disabled'), 'true');
+        control(removed).click();
+        assert.equal(calls.length, 1, 'a busy control must not submit a second mutation');
+
+        // Real worker storage notifications can arrive before its reply.
+        const reply = await calls[0].apply();
+        await waitFor(dom, () => !control(removed));
+        const expected = next ? control(next) : el(dom, 'ignored-add-input');
+        assert.equal(dom.window.document.activeElement, expected);
+        calls[0].resolve(reply);
+        await waitFor(dom, () => el(dom, 'ignored-list').getAttribute('aria-busy') === 'false');
+        assert.equal(dom.window.document.activeElement, next ? control(next) : expected);
+
+        el(dom, 'ignored-undo-button').focus();
+        el(dom, 'ignored-undo-button').click();
+        assert.equal(el(dom, 'ignored-undo-button').getAttribute('aria-disabled'), 'true');
+        el(dom, 'ignored-undo-button').click();
+        assert.equal(calls.length, 2, 'a pending undo must not submit a second restoration');
+        await finish(1);
+        assert.equal(dom.window.document.activeElement, control(removed));
+        assert.equal(el(dom, 'ignored-undo').hidden, true);
+    });
+}
+
+test('failed unignore and undo retain their focused action for retry', async () => {
+    const { dom, finish, control } = await loadDeferredIgnored();
+    control(3).focus(); control(3).click();
+    await finish(0, 'Could not save ignored climbers.');
+    assert.equal(dom.window.document.activeElement, control(3));
+    assert.equal(control(3).getAttribute('aria-disabled'), 'false');
+    assert.match(el(dom, 'ignored-status').textContent, /Could not save/);
+    assert.equal(el(dom, 'ignored-undo').hidden, true);
+
+    control(3).click(); await finish(1);
+    el(dom, 'ignored-undo-button').focus(); el(dom, 'ignored-undo-button').click();
+    await finish(2, 'Could not restore ignored climber.');
+    assert.equal(dom.window.document.activeElement, el(dom, 'ignored-undo-button'));
+    assert.equal(el(dom, 'ignored-undo-button').getAttribute('aria-disabled'), 'false');
+    assert.equal(el(dom, 'ignored-undo').hidden, false);
+});
+
+test('pending unignore and undo leave focus elsewhere alone', async () => {
+    const { dom, finish, control } = await loadDeferredIgnored();
+    control(3).focus(); control(3).click();
+    el(dom, 'ignored-search').focus();
+    await finish(0);
+    assert.equal(dom.window.document.activeElement, el(dom, 'ignored-search'));
+
+    el(dom, 'ignored-undo-button').focus(); el(dom, 'ignored-undo-button').click();
+    el(dom, 'favorites-tab').focus(); el(dom, 'favorites-tab').click();
+    await finish(1);
+    assert.equal(dom.window.document.activeElement, el(dom, 'favorites-tab'));
+});
+
+test('storage refresh preserves profile-link focus and undo respects a changed search', async () => {
+    const { dom, finish, control } = await loadDeferredIgnored();
+    control(3, 'a').focus();
+    const current = dom.chrome._localStore.bpbIgnoredClimbers;
+    await dom.chrome.storage.local.set({ bpbIgnoredClimbers: { ...current, revision: 2,
+        entries: [...current.entries, ignoredEntry(4)] } });
+    await waitFor(dom, () => !!control(4));
+    assert.equal(dom.window.document.activeElement, control(3, 'a'));
+
+    control(3).focus(); control(3).click(); await finish(0);
+    el(dom, 'ignored-search').value = 'Climber 4';
+    el(dom, 'ignored-search').dispatchEvent(new dom.window.Event('input'));
+    el(dom, 'ignored-undo-button').focus(); el(dom, 'ignored-undo-button').click();
+    await finish(1);
+    assert.equal(control(3), null, 'Undo must not clear the active search');
+    assert.equal(dom.window.document.activeElement, el(dom, 'ignored-add-input'));
+});
+
+test('Ignored lookup reports Peakbagger limits and retains the entered climber', async () => {
+    const dom = await loadFavoritesPage({}, { prepareWindow: window => {
+        window.fetch = async () => new Response('', { status: 429, headers: { 'retry-after': '60' } });
+    } });
+    el(dom, 'ignored-tab').click();
+    await waitFor(dom, () => !el(dom, 'ignored-add-button').disabled);
+    el(dom, 'ignored-add-input').value = '900002';
+    el(dom, 'ignored-add-form').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(dom, () => el(dom, 'ignored-status').textContent.includes('Peakbagger request limit reached'));
+    assert.match(el(dom, 'ignored-status').textContent, /Try again after/);
+    assert.equal(el(dom, 'ignored-add-input').value, '900002');
+    assert.equal(dom.chrome._localStore.bpbIgnoredClimbers?.entries.length || 0, 0);
+});
+
+test('keyboard climber-list tab changes preserve their deep-link hash', async () => {
+    const dom = await loadFavoritesPage({});
+    el(dom, 'favorites-tab').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    assert.equal(dom.window.location.hash, '#ignored');
+    assert.equal(el(dom, 'ignored-workspace').hidden, false);
+    el(dom, 'ignored-tab').dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    assert.equal(dom.window.location.hash, '#favorites');
+});

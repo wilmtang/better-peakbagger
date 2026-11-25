@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { isDeepStrictEqual } from 'node:util';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { verificationScreenshots } from './browser-verification-evidence.mjs';
-import { waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mjs';
+import { verificationScreenshots } from './browser-verification-evidence.mts';
+import { waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { assertPeakMapLinks, readPeakMapLinks } from './peak-map-links-verification.mts';
 
 declare global {
     interface Window {

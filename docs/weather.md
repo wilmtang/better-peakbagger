@@ -538,11 +538,11 @@ Pinned calculation sources, inspected October 24–25, 2026:
 
 | Owner | Responsibility |
 | --- | --- |
-| `src/weather/peak-weather.js`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
-| `src/ascent/ascent-weather.js`, `ascent-weather-subject.ts` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
-| `src/weather/open-meteo-client.js`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
+| `src/weather/peak-weather.ts`, subject/location readers, `weather-week.js` | Peak identity, selected location, periods, source display and bounded window |
+| `src/ascent/ascent-weather.ts`, `ascent-weather-subject.ts` | Strict saved identity/day, first-party summit lookup, archive/docking/GPX adapter |
+| `src/weather/open-meteo-client.ts`, model registries, `weather-day.js` | Bounded surface transport, model/date policy, validation and aggregation |
 | `src/weather/summit-cloud.ts`, client/models/core | Cloud card, pressure-profile capabilities, sampling and prediction |
-| `src/weather/peak-weather-updates.js`, AQI client/view | Separate metadata and AQI ownership/caches |
+| `src/weather/peak-weather-updates.ts`, AQI client/view | Separate metadata and AQI ownership/caches |
 | `src/weather/weather-hourly-table.ts`, `weather-chart-scale.js` | Shared interval series, conditions table and chart scale/ticks |
 | `src/ui/card-read-gate.ts`, `latest-read.ts`, `page-lifecycle.ts` | Eligibility/lazy start, superseding-read ownership, BFCache lifetime |
 | `src/ui/card.css`, peak layout, drag helpers | Opt-in palette/shell and surface adapters; see card conventions |
@@ -562,8 +562,12 @@ MAIN-world GPX/Sun ownership and worker-owned mutations remain distinct.
 | Layout / movement / pending feedback | `npm run verify -- peak-cards`, `npm run verify -- weather-interactions` |
 | 3D point-weather integration | `node scripts/verify-peak-weather-3d.mts` |
 | Real manifest startup | `npm run verify -- chrome` |
-| Request-count / axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts`; `node docs/plans/evidence/card-reuse-audit.mjs` |
+| Request-count and axis probes | `node docs/plans/evidence/open-meteo-peak-request-audit.mts` for requests and `node docs/plans/evidence/card-reuse-audit.mts` for browser-rendered axis labels |
 | Documentation integrity | `node --test test/project/documentation.test.mts`; `git diff --check` |
+
+The Open-Meteo audit needs a development build with source maps. It runs the
+three hashed bundles in hidden Chromium over routed HTTPS fixtures and stubs
+the provider responses, settings, clock and intersections.
 
 Follow [development](development.md) and AGENTS for hidden HTTPS Peakbagger fixtures,
 Chrome launch guards, real browser zoom, renderer checks when terrain is involved,

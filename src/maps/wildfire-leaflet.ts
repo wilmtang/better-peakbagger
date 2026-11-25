@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createWildfireSession } from './wildfire-session.ts';
 import type { WildfireData } from './wildfire-session.ts';
-import { wildfireDetails } from './wildfire-details.js';
-import { wildfireRecords, wildfireWorldCopy } from './wildfire-core.js';
+import { wildfireDetails } from './wildfire-details.ts';
+import { wildfireRecords, wildfireWorldCopy } from './wildfire-core.ts';
 // The minimal page-owned Leaflet contract this module reads.
 interface FireFeature { id?: unknown; properties: Record<string, unknown>; geometry: { type: string }; }
 interface FireLayer {

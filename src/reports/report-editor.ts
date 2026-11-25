@@ -23,22 +23,22 @@
 // therefore keep the local recovery copy.
 
 import { installReportLocalPhotos } from './report-local-photos.ts';
-import { createInstagramPresentation } from './instagram-ui.js';
-import { createStableText } from '../ui/stable-text.js';
-import { reportPhoto as PendingPhoto } from '../photos/report-photo.js';
-import { settings as Settings } from '../settings/settings.js';
+import { createInstagramPresentation } from './instagram-ui.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { reportPhoto as PendingPhoto } from '../photos/report-photo.ts';
+import { settings as Settings } from '../settings/settings.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { reportMarkup as Markup } from './report-markup.ts';
 import type { ConversionDiagnostic } from './report-markup.ts';
-import { reportDrafts as ReportDrafts } from './report-drafts.js';
+import { reportDrafts as ReportDrafts } from './report-drafts.ts';
 import { ascentSnapshot as AscentSnapshot } from '../ascent/ascent-snapshot.ts';
-import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.js';
+import { ascentDeletion as AscentDeletion } from '../ascent/ascent-delete.ts';
 import { createRichEditor, richCommands, richState } from './report-rich-editor.ts';
 import { createFormatPainter } from './report-format-painter.ts';
 import { createMarkdownEditor } from './report-md-editor.ts';
-import { dom as Dom } from '../ui/dom.js';
-import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.js';
-import { trustedAction as TrustedAction } from '../ui/trusted-action.js';
+import { dom as Dom } from '../ui/dom.ts';
+import { runtimeMessage as RuntimeMessage } from '../ui/runtime-message.ts';
+import { trustedAction as TrustedAction } from '../ui/trusted-action.ts';
 import type { Editor } from '@tiptap/core';
 
 // Kept as an IIFE for early-exit control flow (no editor form → nothing to do);
@@ -46,6 +46,7 @@ import type { Editor } from '@tiptap/core';
 interface PhotoReturnMessage { type: string; returnToken?: string; localPhotoId?: string; url?: string; alt?: string; caption?: string; displayWidth?: number; imageEditId?: string; [field: string]: unknown }
 interface ImageEditTarget { src: string; alt?: string; caption?: string; getPos?: () => number | undefined; editor?: Editor | null }
 interface DraftRecord { text: string; mode: string | null; savedAt: number; source?: string; pendingSave?: { attemptId?: string; [field: string]: unknown } | null; label?: object; [field: string]: unknown }
+interface DraftMutationReply { ok?: boolean; written?: boolean; removed?: boolean; version?: string | null; record?: DraftRecord; [field: string]: unknown }
 
 (() => {
     'use strict';
@@ -875,7 +876,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
     // ---- Local drafts ---------------------------------------------------------
 
     const localStore = ext.storage.local;
-    const mutateDraft = (message: object) => RuntimeMessage.send(ext, { ...message, draftKey });
+    const mutateDraft = (message: object) => RuntimeMessage.send<DraftMutationReply>(ext, { ...message, draftKey });
     let draftEditRevision = 0;
     let draftVersion: string | null = null, persistedDraftContent: string | null = null, persistedDraftRevision = 0, initialDraftText = textarea.value;
     let draftDeletionEpoch: unknown = null;
@@ -964,7 +965,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
                 });
                 if (!result?.ok) throw new Error('draft persistence failed');
                 if (!(removing ? result.removed : result.written)) throw draftConflict();
-                draftVersion = removing ? result.version : ReportDrafts.version(result.record);
+                draftVersion = removing ? (result.version ?? null) : ReportDrafts.version(result.record);
                 persistedDraftContent = content;
                 persistedDraftRevision = revision;
                 if (state.terminalSubmission) {
@@ -1014,7 +1015,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
             } : {}),
         }).then(result => {
             if (!result?.ok) throw new Error('draft removal failed');
-            if (stored && result.removed && draftVersion === ReportDrafts.version(stored)) draftVersion = result.version;
+            if (stored && result.removed && draftVersion === ReportDrafts.version(stored)) draftVersion = result.version ?? null;
         }).catch(() => {
             if (!state.terminalSubmission) {
                 setDraftPersistenceStatus('Older saved draft couldn’t be removed', {
@@ -1851,7 +1852,7 @@ interface DraftRecord { text: string; mode: string | null; savedAt: number; sour
         mdEditor.view.scrollDOM.addEventListener('scroll', syncPreviewScroll);
 
         // Test-only handle. Content scripts run in an isolated world, so page
-        // scripts on Peakbagger can never observe this expando; the jsdom
+        // scripts on Peakbagger can never observe this expando; the test
         // harness (one shared world) drives the editors through it instead of
         // synthesizing keystrokes. `rich` is a getter because rich-mode entry
         // rebuilds its editor.

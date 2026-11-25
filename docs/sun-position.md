@@ -19,11 +19,11 @@ deliberately not used as an observer-height or terrain-horizon correction.
 
 The **Sun & Moon** disclosure is collapsed by default and never overlays a map.
 
-- On a Peak page, `src/maps/peak-map.js` creates it directly below the Dynamic
+- On a Peak page, `src/maps/peak-map.ts` creates it directly below the Dynamic
   Map only after the page id, Full Screen Peak-map id, bounded focus coordinate,
   and subject name agree. The validated summit coordinate is its subject. An
   ambiguous or unsupported page gets no calculator.
-- In the GPX Analyzer, `src/gpx/gpx-analyzer.js` places it after the chart so
+- In the GPX Analyzer, `src/gpx/gpx-analyzer.ts` places it after the chart so
   opening or updating the calculator cannot move the chart point under the
   pointer. Its collapsed card shows level-horizon sunrise and sunset, each with
   the event's timezone, in a fixed-height two-column row. Before selection, the
@@ -56,7 +56,7 @@ cannot move the chart selection, map marker, native map, or 3D highlight.
 
 ## Timezone and daylight-saving behavior
 
-`src/time/mountain-time.js` is the shared clock policy for the GPX chart and the
+`src/time/mountain-time.ts` is the shared clock policy for the GPX chart and the
 calculator. It resolves coordinates through the packaged `tz-lookup` raster and
 uses the browser's `Intl` timezone data. The Peak surface resolves the summit;
 the GPX surface continues to use the route's starting coordinate even if the
@@ -76,7 +76,7 @@ fallback, and GPX timing-quality contract.
 
 ## Astronomy, Moon phase, and compass orientation
 
-`src/sun/sun-position.js` is a narrow pure wrapper around the locally bundled
+`src/sun/sun-position.ts` is a narrow pure wrapper around the locally bundled
 `suncalc` 2.0.1 package. It validates coordinates, instants, and package output,
 then returns apparent Sun and Moon azimuth clockwise from true north, apparent
 elevation, 16-point compass labels, Sun rise/set or polar-day/polar-night state,
@@ -148,7 +148,7 @@ code download is used.
 
 Only the MAIN-world GPX Analyzer and Peak-map bundles contain the astronomy
 modules, and only those manifest entries load `css/sun-calculator.css`. The
-pure state owner, `src/sun/sun-state.js`, keeps route selection one-way and
+pure state owner, `src/sun/sun-state.ts`, keeps route selection one-way and
 clears stale subjects. A valid subject with a date/time or formatting failure
 keeps its controls open and usable so another selection can recover. A missing
 subject or zone is terminal and may disable or omit the calculator. Neither

@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { decodePng } from './browser-verification-png.mts';
 import { readTerrainToggleReadiness } from './terrain-toggle-readiness.mts';
-import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mjs';
+import { installTerrainLifecycleProbe, readTerrainReadiness } from './terrain-readiness-diagnostics.mts';
 import { readSentinelCooldown, verifyTerrainCredits, verifyTerrainProviderRecovery, verifyTerrainVectorPending } from './verify-terrain-provider-ui.mts';
 
 import {
@@ -22,14 +22,14 @@ import {
     sendFixtureText,
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
-} from './browser-verification-fixtures.mjs';
+} from './browser-verification-fixtures.mts';
 import {
     closeServer,
     createResourceStack,
     listenServer,
     manageChildProcess,
-} from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+} from './resource-stack.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 import { connectCdp, evaluate, waitForDebugPort, type Cdp, type CdpResult } from './terrain-cdp.mts';
 
 type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
@@ -61,7 +61,7 @@ const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 // renders "Better Peakbagger refused an invalid Peakbagger request.", the route
 // never loads, and the 3D toggle stays disabled, so every check downstream of
 // it times out. Self-signed for this host, exactly as
-// scripts/browser-verification-fixtures.mjs does; Chrome is launched with
+// scripts/browser-verification-fixtures.mts does; Chrome is launched with
 // trust scoped to this disposable certificate at launch below.
 const resources = createResourceStack();
 let primaryError: unknown = null;
@@ -711,7 +711,9 @@ const navigate = async (cdp: Cdp, url: string, width: number, height: number) =>
 
 await resources.guard(mkdir(outputDir, { recursive: true }));
 await resources.guard(listenServer(server, 0, '127.0.0.1'));
-const serverPort = server.address().port;
+const serverAddress = server.address();
+if (!serverAddress || typeof serverAddress === 'string') throw new Error('Expected TCP address for terrain visual fixture server');
+const serverPort = serverAddress.port;
 const profile = await resources.guard(
     mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-terrain-profile-')));
 // Chrome's helper processes can outlive the browser and write one last file while

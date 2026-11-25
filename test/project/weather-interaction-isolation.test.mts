@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { verifyPeakWeatherInteractions, waitForWeatherRefresh, type WeatherInteractionDependencies } from '../../scripts/verify-peak-weather-interactions.mts';
 import { resolveSummitCloudModels } from '../../src/weather/summit-cloud-models.ts';
-import { summitCloudRequest } from '../../src/weather/summit-cloud-client.js';
+import { summitCloudRequest } from '../../src/weather/summit-cloud-client.ts';
 
 const subject = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };
 const day = { start: Date.UTC(2026, 10, 9), end: Date.UTC(2026, 10, 10) };

@@ -3,7 +3,7 @@
 //
 // Checks the Node TypeScript project as two programs. Files that need DOM
 // types (see domRootFiles: their static, dynamic or type-only import closure
-// reaches jsdom or extension source, or they declare a DOM lib reference) are
+// reaches extension source, or they declare a DOM lib reference) are
 // checked with the DOM library (tsconfig.dom.check.json); every other script,
 // test and tool is checked without DOM globals (tsconfig.node.check.json), so
 // Node code cannot silently start depending on browser types. The split
@@ -16,7 +16,6 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import { AUTHORED_SOURCE_ROOTS } from './build-config.mts';
 
-export const DOM_MODULE = 'jsdom';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const parseProject = (configPath: string): ts.ParsedCommandLine => {
@@ -27,12 +26,11 @@ export const parseProject = (configPath: string): ts.ParsedCommandLine => {
     return parsed;
 };
 
-// Every root file that needs DOM types: it imports the DOM module, imports
-// extension source (whose browser modules are written against DOM and
+// Every root file that needs DOM types: it imports extension source (whose browser modules are written against DOM and
 // extension globals), or declares `/// <reference lib="dom" />` itself
 // (browser callbacks evaluated by a Playwright or WebDriver script); or it
-// imports such a file, statically, dynamically or type-only, through
-// JavaScript helpers too. A lib reference applies to its whole program, so
+// imports such a file directly or through helpers, statically, dynamically or
+// type-only. A lib reference applies to its whole program, so
 // leaving one in the Node program would give every Node file DOM globals.
 export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerOptions, cwd = root): string[] => {
     const browserRoots = AUTHORED_SOURCE_ROOTS.map(directory => path.join(cwd, directory) + path.sep);
@@ -46,7 +44,6 @@ export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerO
         const { importedFiles, libReferenceDirectives } = ts.preProcessFile(readFileSync(file, 'utf8'), true, true);
         if (libReferenceDirectives.some(({ fileName }) => /^dom(?:\.|$)/i.test(fileName))) marked.add(file);
         for (const { fileName } of importedFiles) {
-            if (fileName === DOM_MODULE || fileName.startsWith(`${DOM_MODULE}/`)) { marked.add(file); continue; }
             const resolved = ts.resolveModuleName(fileName, file, options, ts.sys).resolvedModule;
             if (!resolved || resolved.isExternalLibraryImport || /[\\/]node_modules[\\/]/.test(resolved.resolvedFileName)) continue;
             const dependency = resolved.resolvedFileName;
@@ -56,7 +53,7 @@ export const domRootFiles = (fileNames: readonly string[], options: ts.CompilerO
             pending.push(dependency);
         }
     }
-    // Walk importer edges back from every direct DOM-module importer.
+    // Walk importer edges back from every file that needs DOM types directly.
     const reached = [...marked];
     for (let file = reached.pop(); file !== undefined; file = reached.pop()) {
         for (const importer of importers.get(file) ?? []) {

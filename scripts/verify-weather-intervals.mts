@@ -4,14 +4,31 @@
 /// <reference types="chrome" />
 
 import assert from 'node:assert/strict';
-import { JSDOM } from 'jsdom';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { weatherFixture } from '../test/helpers/weather-fixture.mjs';
+import { weatherFixture } from '../test/helpers/weather-fixture.mts';
+
+function nepalPeakFixture(html: string): string {
+    const rainierCoordinates = '46.851731, -121.760395 (Dec Deg)'
+        + "<br>46° 51' 6'' N, 121° 45' 37'' W (DMS)<br>594502 E, 5189434 N, Zone 10 (UTM)";
+    const rows = [
+        ['Latitude/Longitude (WGS84)', rainierCoordinates, '27.7, 85.3 (Dec Deg)'],
+        ['Nation', 'United States', 'Nepal'],
+    ];
+    for (const [label, current, replacement] of rows) {
+        const valueCell = `<tr><td valign="top">${label}</td><td>`;
+        const original = `${valueCell}${current}</td></tr>`;
+        // The no-GPX ascent links to the Rainier fixture. Fail explicitly if
+        // it no longer contains the two rows this verifier needs to replace.
+        assert.equal(html.split(original).length, 2, `expected one Rainier fixture row for ${label}`);
+        html = html.replace(original, `${valueCell}${replacement}</td></tr>`);
+    }
+    return html;
+}
 
 if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-weather-intervals.mts');
 
@@ -46,12 +63,7 @@ try {
             // ignoreHTTPSErrors is not a typed route.fetch option; it was always passed and is kept unchanged.
             const response = await route.fetch({ url: `https://127.0.0.1:${fixture.port}${url.pathname}${url.search}`, ignoreHTTPSErrors: true } as Parameters<typeof route.fetch>[0]);
             if (/^\/peak\.aspx$/i.test(url.pathname)) {
-                const html = new JSDOM(await response.text());
-                const rows = [...html.window.document.querySelectorAll('tr')].filter(row => row.cells.length === 2);
-                rows.find(row => row.cells[0].textContent!.trim() === 'Latitude/Longitude (WGS84)')!.cells[1].textContent = '27.7, 85.3 (Dec Deg)';
-                rows.find(row => row.cells[0].textContent!.trim() === 'Nation')!.cells[1].textContent = 'Nepal';
-                const body = html.serialize(); html.window.close();
-                return route.fulfill({ response, body });
+                return route.fulfill({ response, body: nepalPeakFixture(await response.text()) });
             }
             return route.fulfill({ response });
         }

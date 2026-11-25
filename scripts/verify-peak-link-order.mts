@@ -8,9 +8,9 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { BrowserContext } from 'playwright';
-import { createBrowserFixtureServer, projectRoot, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer, projectRoot, waitForCondition as untypedWaitForCondition } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 const waitForCondition = untypedWaitForCondition as unknown as <T>(read: () => Promise<T>, options: { description: string; isReady?: (value: T) => boolean }) => Promise<T>;

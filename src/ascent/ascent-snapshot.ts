@@ -18,7 +18,7 @@
 // has no server-assigned aid yet.
 // It does NOT read the token or touch the network; it only reads the form.
 
-import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.js';
+import { PEAKBAGGER_ORIGIN } from '../peakbagger/peakbagger-origin.ts';
 
 type MaybeForm = HTMLFormElement | null | undefined;
 type FormControl = HTMLInputElement & Omit<HTMLSelectElement, 'type' | keyof HTMLInputElement> & Pick<HTMLSelectElement, 'options' | 'selectedIndex'>;

@@ -5,7 +5,7 @@
 /* eslint-disable @typescript-eslint/no-shadow -- page-world callbacks take the outer value as their argument. */
 import assert from 'node:assert/strict';
 import type { Page } from 'playwright';
-import { settingsTransfer } from '../src/settings/settings-transfer.js';
+import { settingsTransfer } from '../src/settings/settings-transfer.ts';
 
 // The stubbed extension API and the probes this check plants in the page.
 interface ActionProbes {

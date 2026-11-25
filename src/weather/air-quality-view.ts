@@ -1,9 +1,9 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { dom } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
-import { mountainTime } from '../time/mountain-time.js';
-import { createAirQualityClient, airQualityCategory } from './air-quality-client.js';
+import { dom } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { mountainTime } from '../time/mountain-time.ts';
+import { createAirQualityClient, airQualityCategory } from './air-quality-client.ts';
 import { compactWeatherHours, sizeWeatherStrip } from './weather-hourly-table.ts';
 
 interface AirPoint { latitude: number; longitude: number }

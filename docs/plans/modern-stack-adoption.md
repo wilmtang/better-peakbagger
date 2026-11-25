@@ -1,16 +1,14 @@
 # Modern stack adoption with legacy compatibility
 
-Last updated November 13, 2026 against `0444ff28`. This update audited the plan
-against the tree: counts, statuses and stale references were corrected, M4 was
-re-aimed at the route the pilot really uses, and the owner settled three
-choices the same day, recorded under [Owner decisions](#owner-decisions).
+The November 13, 2026 audit at `0444ff28` corrected counts, statuses and stale
+references and aligned M4 with the route the pilot uses. The owner settled
+three choices the same day, recorded under [Owner decisions](#owner-decisions).
 
 ## Goal
 
 Write new and changed extension code in checked TypeScript and, where a UI owner
-benefits, Svelte. Do this through the existing esbuild build, beside legacy
-JavaScript, without changing behavior, storage or wire formats, permissions or
-packaging.
+benefits, Svelte. Preserve behavior, storage and wire formats, permissions and
+packaging through the compiler cutover.
 
 - **Production adoption is done at M6:** one real settings panel ships through
   checked TS/Svelte beside unchanged legacy code and passes the browser and
@@ -20,11 +18,14 @@ packaging.
   scripts and tests move to TypeScript in small batches. Generated output and
   upstream third-party code keep their required formats. Svelte conversion stays
   per surface and is not required for every UI.
-- **WXT/Vite is optional (M8):** declining it is a supported outcome.
+- **Vite is the production compiler (M8).** The owner accepted WXT/Vite's
+  measured time cost for maintainability. WXT contributed only a build
+  scheduler around per-bundle Vite library builds, so production now calls
+  Vite directly with byte-identical code.
 
 Out of scope: rewriting working features in Svelte for uniformity, adding a demonstration
-feature to exercise the stack, and requiring WXT/Vite or replacement messaging,
-storage or chart libraries first. The supplied
+feature to exercise the stack, and replacing messaging, storage or chart libraries.
+The supplied
 `ts_svelte_vite_migration_and_stack_report.md` proposes WXT/Vite for a greenfield
 extension; treat that as a candidate, and measure its size estimates and chart
 replacement before they become acceptance criteria.
@@ -49,7 +50,7 @@ of effort.
 | M6 — Ship one bounded Svelte island | Large; UI integration plus release/browser evidence | M1–M5 and dependency-audit gate | The existing Units settings panel works through checked TS/Svelte beside unchanged legacy sections. |
 | M7 — Convert all remaining JavaScript in batches | Very large in aggregate; small modules first | M3; M4.5 before DOM test batches; M6 before more production Svelte | No authored JavaScript remains, from pure TS domains through owned pages, high-risk coordinators, scripts and tests. |
 | M7.5 — Retire jsdom | Large; a test-environment migration, owner by owner | M4.5's browser tier; independent of finishing M7 | No test or script depends on jsdom; the package, its types and its checking project are removed. |
-| M8 — Evaluate and optionally cut over WXT/Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | A separately built parity candidate, then a dedicated cutover only if all contracts survive. |
+| M8 — Cut over production to Vite | Largest cross-cutting risk; separate project | M6 baseline; independent of finishing M7 | One compiler for development and release with manifest, runtime, reload and package parity. |
 
 M4.5 was inserted after M0–M3 shipped, and M7.5 was split from M7 on
 November 13, so other milestone numbers stay stable in existing commits and
@@ -57,9 +58,10 @@ evidence.
 
 ## Current progress
 
-**Next: M6.** M0–M5 are
-complete; M7's pure-TS batches are also unblocked by M3. Production Svelte adoption has not started: Svelte is installed
-and compiles, but nothing ships through it.
+**M7 is complete locally.** The runtime, Node tooling and tests use TypeScript.
+The Units settings panel and Summit Cloud controls ship through checked Svelte
+and TypeScript. M7.5 retired jsdom. Vite builds the production bundles, and
+hosted and store verification remains in the release checklist.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -67,13 +69,13 @@ and compiles, but nothing ships through it.
 | M1 | Done | `c1ba9599` (JSON privacy scan), `6e4a3041` (`.mts` script inventory), `01616f47` (`minimatch` removal), `a9de7d7b` (`npm run audit:ci` dev classification). Upstream removed `deepmerge`, leaving zero production advisories; only the unpatched dev-only `picomatch` chain remains in the [follow-up ledger](follow-ups.md). |
 | M2 | Done | `src/ui/latest-read.ts` (`730c7039`) and `src/ui/page-lifecycle.ts` (`7d916b3d`) are converted with focused and real-browser verification. |
 | M3 | Done | `scripts/build-config.mts` (`bc5fa3b3`) and `scripts/build.mts` (`8d4590ef`) are converted; `watchAll` (`17606ac8`) watches all `AUTHORED_SOURCE_ROOTS` and copied asset roots/files with deduplicated recursive watches and disposable-fixture regression coverage. |
-| M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.js` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
-| M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
-| M5 | Done | Svelte 5.57.3, esbuild-svelte 0.9.5, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned; every bundle compiles Svelte through [svelte-build.mts](../../scripts/svelte-build.mts) with byte-identical production output; [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter; no shipped bundle imports a component. |
-| M6 | Not started | `options/unit-settings.ts` is typed but still imperative DOM; depends on M4 and M5 (`npm run audit:ci` now passes via `a9de7d7b`). |
-| M7 | Started out of order | 72 runtime modules are TS. 30 were converted after `64b522e1`, mostly under the TypeScript-on-modification policy, including the background worker (`c45d32ef`) that the plan had scheduled last. The first planned batch, starting with `src/storage/storage-value.js`, is still JavaScript. |
-| M7.5 | Not started | 118 test files construct jsdom 297 times; six `scripts/verify-*` files and two `docs/plans/evidence/` scripts import it too. Depends on M4.5's browser tier. |
-| M8 | Not started | Depends on M6. |
+| M4 | Done | [unit-settings-contract.ts](../../options/unit-settings-contract.ts) defines the Units projection, allowlisted patch and `save`/`populate` interface; [settings-patch-route.ts](../../options/settings-patch-route.ts) declares the `SETTINGS_PATCH` request and reply shapes around the unchanged `settings.js`, pinned by tests; no production caller uses that adapter until `options/options.ts` converts (M7). `options/unit-settings.ts` is converted. Pinned by [unit-settings-route.test.mts](../../test/options/unit-settings-route.test.mts). |
+| M4.5 | Done | Introduced typed jsdom and the hidden Chromium and Firefox DOM tier. [typecheck-node.mts](../../scripts/typecheck-node.mts) checks browser-driving tests with the DOM library and the remaining Node files without it. The `dom-tier` CI job gates the required `chrome-required` aggregate. M7.5 later retired the jsdom dependency. |
+| M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. The Vite builder uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
+| M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
+| M7 | Done locally | `9370d6d9` finished the last of 53 remaining test conversions. `8e7fe0a9` removed `allowJs` and enforced TypeScript across the staged index and committed tree. See the [M7 closure ledger](#m7-closure-ledger). |
+| M7.5 | Done | Complete on November 22, 2026. No file imports jsdom, and `jsdom` and `@types/jsdom` are gone. DOM tests run as in-page browser tests in hidden Chromium and Firefox; the production-scale ones run on the `--scale` lane of `npm run test:scale`. See [M7.5](#m75--retire-jsdom). |
+| M8 | Done locally | Vite builds development and release generations ([vite-build.mts](../../scripts/vite-build.mts)); WXT (`133384ab`) was removed after it proved to be only a scheduler. Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-vite). |
 
 Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 
@@ -84,41 +86,49 @@ Remaining conversion scope at `0444ff28`, all of which M7 must finish:
 | `test/` | 110 | 258 |
 | Other (root config, `docs/plans/`, `store-assets/`) | 3 | 15 |
 
-These are a dated snapshot, not a target to maintain by hand. There are no
-production Svelte components. The build produces 67 outputs: 65 IIFEs and two ESM frames.
+These counts describe `0444ff28`, before the first production Svelte component
+shipped in `options/UnitSettingsPanel.svelte`. The build produces 67 outputs,
+including 65 IIFEs and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
 
+On November 25, 2026, the migration converted 41 Node test suites between
+`d3cff3f5` and `6ec95603`. At that checkpoint, three worker suites remained
+for capture and photos, one for Garmin imports, three for GitHub, and five for
+photo tooling. The full Node suite passed 2,178 tests on Node `24.22.0`, along
+with typecheck, lint (10 existing `web-ext` warnings), and the staged TypeScript
+policy.
+
+Local verification at `dc985cc9` passed on Node 24.22.3. It covered 4,213
+Node tests, 14 scale tests, typecheck, lint, the full branch TypeScript diff,
+and the dependency audit. The hidden browser DOM tier passed 60 cases across
+Chromium 158.0.8127.18 and Firefox 159.0. The fixture preflight passed in both
+engines. Hosted Linux jobs and their browser-floor results remain open.
+
 Limits of what is proven:
 
-- **Verified:** the last recorded full-suite runs are `4,165/4,165` at `c45d32ef`
+- **Earlier full-suite runs:** `4,165/4,165` at `c45d32ef`
   and `4,177/4,177` at `166e55fc` (without a recorded Node version), `3,874/3,874`
-  on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), and `4,208/4,208`
-  on Node `v26.13.1` at `f599ca20` (November 17, 2026). None was re-run for this
-  document-only update.
-- **Known gap in a guard:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
-  scans source imports and cannot classify compiled Svelte or type-only imports.
-  M6 replaces it before the first component ships.
-- **Changed but not fully proven:** four conversions made outside the planned
-  batches still owe the M7 gate for their kind of owner. Three recorded no
-  real-browser run: `src/capture/provider-page.ts` (`79fe003c`, "No browser run
-  yet"), `src/terrain/terrain-coordinator.ts` (`20e54c38`) and
-  `src/maps/big-map.ts` (`c3b47b04`), the last two with Node tests and typecheck
-  only. The worker conversion (`c45d32ef`) ran `npm run verify -- chrome`, and
-  no later commit records a local Firefox or `browsers` run, so Firefox's
-  `background.scripts` path is unproven locally. Hosted CI was not consulted
-  for this update.
+  on Node `24.22.2` at `69c7a321` (November 6, 2026 baseline), `4,208/4,208`
+  on Node `v26.13.1` at `f599ca20` (November 17, 2026), and `4,209/4,209` on
+  Node `v26.13.1` at `0aa1c6ef` (November 18, 2026), and `4,213/4,213` on
+  Node `24.22.3` at `3a3b61a6`.
+- **Resolved guard gap:** the [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
+  inspects actual production Vite/Rolldown module inputs for all 67 `ENTRIES`.
+  It includes compiled Svelte runtime imports (`svelte`, `esm-env`, `clsx`)
+  and excludes erased type-only imports.
+- The **minified esbuild archives** at `fd12835a`
+  passed real packaged Chromium 158.0.8127.18 and Firefox 160.0.1 checks at
+  1000 × 760, including BFCache restore, worker and bridge checks. The four
+  early M7 runtime conversions have [additional fixture evidence](#m7--convert-all-remaining-javascript-in-increasing-cost-batches).
 - **Published peer ranges only (npm registry, November 13):** `@types/jsdom`
   30.0.0 exists for the locked jsdom 30.1.3; `esbuild-svelte` 0.9.5 admits
   esbuild ≥0.17 and Svelte ≥4.2.1 <6; `svelte-check` 4.7.8 admits TypeScript 5
-  and 6; `eslint-plugin-svelte` 3.24.1 admits ESLint 8.57.1 through 10. A
-  locked install, build and check of that set is still unproven.
-- **Not established:** Svelte at the Chrome 128 and Firefox 152.0 floors,
-  production CSP and AMO behavior, bundle size, BFCache and geometry behavior,
-  and WXT parity. The manifest also declares a Firefox for Android 142.0 floor;
-  desktop automation cannot run it, so Svelte there rests on the manual device
-  step in [the release guide](../releasing.md).
+  and 6; `eslint-plugin-svelte` 3.24.1 admits ESLint 8.57.1 through 10.
+- The declared desktop floors passed on macOS. Hosted Linux jobs, native
+  focus and window placement, the Firefox Android 142.0 floor and signed store
+  delivery require their respective [release checks](../releasing.md).
 
 ## Owner decisions
 
@@ -127,7 +137,7 @@ decided them that day; the milestone text below follows these decisions.
 
 | Decision | Chosen | Why | Not chosen |
 | --- | --- | --- | --- |
-| How M4 types the settings write route | A narrow typed adapter beside the Units owner | `settings.js` is a source in 24 bundles, and M7 step 2 already owns converting the store. | Converting `src/settings/settings.js` inside M4. |
+| How M4 types the settings write route | A narrow typed adapter beside the Units owner | `settings.js` is a source in 24 bundles, and M7 step 2 already owns converting the store. | Converting `src/settings/settings.ts` inside M4. |
 | Runner for M4.5's browser tier | A `verify` target on the existing `playwright` library harness | [verify-layout-stability.mts](../../scripts/verify-layout-stability.mts) already drives fixture pages in both engines inside CI's `layout` and `fixture-preflight` jobs. A second runner would add a package and a file convention that the `npm test` glob would also try to execute. | `@playwright/test`, which `904317c4` had named. |
 | Where jsdom's retirement lives | Its own milestone, M7.5 | "No authored JavaScript" and "no jsdom" are different results. Once jsdom is gone every DOM test needs a browser, and Chrome launches are forbidden in the Codex Seatbelt sandbox, so that cost should not hold M7 open. | Keeping it in M7's exit, or dropping the retirement. |
 
@@ -224,8 +234,8 @@ Status: complete on November 13, 2026.
   the worker's `applyPatch`, and cover transport loss, invalid replies,
   rejected writes and storage failure; ten `@ts-expect-error` examples fail the
   checker on misuse.
-- **Intentionally not changed:** `src/settings/settings.js` and the options
-  controller `options/options.js` stay JavaScript (M7). The controller's `save`
+- **Intentionally not changed:** `src/settings/settings.ts` and the options
+  controller `options/options.ts` stay JavaScript at M4 (M7). The controller's `save`
   still calls the store's `set` directly; the Units owner sees it only through
   the typed `UnitSettingsSave` contract. Reply validation and error messages are
   settings.js's own, including its existing acceptance of `{ ok: true }` with
@@ -239,8 +249,8 @@ Status: complete on November 13, 2026.
   Node's `structuredClone` is not proof of Chrome's JSON messaging. No
   real-browser run; `test/options` and `test/settings` pass.
 
-The Units panel never touches `src/ui/runtime-message.js`. Its `save` goes from
-the options controller to `set` in [settings.js](../../src/settings/settings.js),
+The Units panel never touches `src/ui/runtime-message.ts`. Its `save` goes from
+the options controller to `set` in [settings.ts](../../src/settings/settings.ts),
 which sends a `SETTINGS_PATCH` runtime message; the worker case in
 [background.ts](../../src/background/background.ts) applies the patch. The
 options page does not write storage itself. M4 types that route. Converting
@@ -279,14 +289,14 @@ Step 1 status (November 13, 2026):
   DOM program from import closures (jsdom, extension source, or a
   `/// <reference lib="dom" />`) instead of a hand-kept list, so the remaining
   Node files are checked without DOM globals. The page loader is
-  [load-page.mts](../../test/helpers/load-page.mts) with typed `LoadedPage`
+  `load-page.mts` (since removed) with typed `LoadedPage`
   and `PageChrome`; its trusted-dispatch internals sit behind one declaration
   that throws on a different jsdom major. All suppressed jsdom imports and both
   hand-typed constructors are gone; `test-dom.mts` only re-exports jsdom's
   types. Guard tests in `test/project/typescript-tooling.test.mts` pin the
   split and reject a suppressed or `require`d jsdom import.
 - **Intentionally not changed:** fixture pages are typed through
-  [page-dom.mts](../../test/helpers/page-dom.mts) and `page-types.mts`, which
+  `page-dom.mts` (since replaced by `fixture-dom.mts`) and `page-types.mts`, which
   treat lookups in this repository's known markup as present; tests stub
   window members through narrow `as { member: unknown }` assignments, pass a
   jsdom window where a browser global is expected only through
@@ -297,7 +307,7 @@ Step 1 status (November 13, 2026):
   follows imports, Node release tooling that imports one extension-source
   module (for example `publish-chrome.mts`) is checked in the DOM program.
   `fireTrustedEvent` is pinned to jsdom's major, and
-  [jsdom-trusted-event.test.mts](../../test/project/jsdom-trusted-event.test.mts)
+  `jsdom-trusted-event.test.mts` (since removed)
   proves on every run that it still dispatches trusted events of the right
   interface.
 - **Changed but not fully proven:** type-only changes; no runtime behavior of
@@ -345,14 +355,14 @@ Steps 2–4 status (November 13, 2026):
 `npm test` evaluates the shipped IIFE bundles in jsdom: 118 test files construct
 it 297 times. When M4.5 started, jsdom shipped no type declarations here, so 18
 converted tests suppressed the import (for example
-[page-lifecycle.test.mts](../../test/ui/page-lifecycle.test.mts)) and two files
+[page-lifecycle.browser.mts](../../test/ui/page-lifecycle.browser.mts)) and two files
 hand-typed a constructor:
-[map-layer-inspection.test.mts](../../test/maps/map-layer-inspection.test.mts)
-and the shared [test-dom.mts](../../test/helpers/test-dom.mts), which 14 tests
+[map-layer-inspection.browser.mts](../../test/maps/map-layer-inspection.browser.mts)
+and the shared `test-dom.mts` (since removed), which 14 tests
 imported as an interim stand-in. Every M7 test batch would have repeated one of
 those. jsdom also has no layout, mints only
 untrusted events and is not Firefox; the shared
-[page loader](../../test/helpers/load-page.mts) already reaches into jsdom
+page loader (`load-page.mts`, since removed) already reaches into jsdom
 internals to dispatch trusted input. Settle both before M5 adds component tests
 and before M7 converts DOM tests to TypeScript. This milestone changes test tooling only; no
 shipped output changes.
@@ -365,7 +375,7 @@ shipped output changes.
    typed page objects so callers drop their `as unknown` casts, and keep its
    trusted-dispatch internals behind one narrow local declaration pinned to the
    locked jsdom version. Remove every suppressed import and both hand-typed
-   constructors, retiring `test/helpers/test-dom.mts` or reducing it to a
+   constructors, retiring `test-dom.mts` or reducing it to a
    re-export of the real types. Group `jsdom` and `@types/jsdom` in Dependabot
    so their majors move together; this holds jsdom at 30 while `@types/jsdom`
    has no 31 (jsdom 31.0.1 is already published). Add `@types/jsdom` to
@@ -513,14 +523,27 @@ proves tooling and a fixture contract, not production CSP or host integration.
 
 ### M6 — Ship one bounded Svelte island
 
+Status: complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`).
+
+- **Fixed and verified:**
+  - Pre-edit baseline verified (`npm run verify -- layout-stability --surface=settings` 8/8 in Chrome `158.0.8127.18` and Firefox `159.0`; `npm run verify -- chrome` passed).
+  - [test/project/dependabot-auto-merge.test.mts](../../test/project/dependabot-auto-merge.test.mts) (`83541e1f`) derives bundled npm packages from actual esbuild `metafile.inputs` across all 67 `ENTRIES`, catches transitive bundled packages, includes compiled Svelte runtime packages (`svelte`, `esm-env`, `clsx`), ignores erased `import type` statements, and fails if `svelte`, `clsx`, or `esm-env` is removed from `.github/dependabot.yml`.
+  - [scripts/svelte-build.mts](../../scripts/svelte-build.mts) sets `fragments: 'tree'` and `discloseVersion: false`, emitting DOM tree operations with zero `.innerHTML` assignments (`0` new `web-ext lint` warnings; `10` owned warnings observed within `WEB_EXT_WARNING_BASELINE` cap `11`).
+  - `options/options.html` preserves `#general-units` and `#general-units-heading` while replacing the card interior with `<div data-unit-settings></div>`; `options/UnitSettingsPanel.svelte` and `options/unit-settings.ts` mount via [svelte-island.ts](../../src/ui/svelte-island.ts) (`initUnitSettings({ save })` / `{ populate }` unchanged so `options/options.ts`, then `.js`, needed no code edit).
+  - Converted [scripts/dependency-metadata.mts](../../scripts/dependency-metadata.mts) and [scripts/third-party-notices.mts](../../scripts/third-party-notices.mts) from `.mjs`, registered `svelte` (`shipped: true`), updated [ACKNOWLEDGEMENTS.md](../../ACKNOWLEDGEMENTS.md) (version-neutral), [scripts/create-amo-metadata.mts](../../scripts/create-amo-metadata.mts) (`<= 3,000` chars), `.github/dependabot.yml`, and [docs/development.md](../development.md).
+  - Measured `dist/options/options.js` bundle size: baseline dev `302,024` raw / `72,106` gzip, min `154,283` raw / `52,075` gzip; post-M6 dev `493,928` raw / `113,672` gzip (`+191,904` raw / `+41,566` gzip), min `216,442` raw / `74,975` gzip (`+62,159` raw / `+22,900` gzip); `dist/options/options.js` is the only production bundle importing `svelte`.
+  - Verified full suite (`npm test` `4,209/4,209` including unchanged [options-units.test.mjs](../../test/options/options-units.browser.mts)), `npm run typecheck` (`594` files, 0 errors/warnings), `npm run lint` (`10` owned warnings), `npm run audit:ci` (0 shipped advisories), [test/dom/options-units.dom.mts](../../test/dom/options-units.dom.mts) (mutated-`dist` failure proved in both Chromium `158.0.8127.18` and Firefox `159.0`; `verify -- dom` `16/16` cases passed hidden across Chromium & Firefox including failed-save rollback, queued saves, external storage updates, BFCache suspend/resume/dispose, keyboard use, `390x900` 200% zoom, dark mode), `verify -- layout-stability --surface=settings` (`8/8` across `390`/`1280` light/dark), `verify -- settings-navigation` (Chrome `158.0.8127.18` `97`+`45`, Firefox `160.0` `96`+`45`), real unpacked `verify -- chrome` (`158.0.8127.18`) & `verify -- firefox` (`160.0`) with live `SETTINGS_PATCH` persistence (`options/unit-settings.ts` -> worker -> `storage.sync`), and `npm run release:verify-packages` (minified Chrome & Firefox store archives passed).
+- **Intentionally not changed:** `options/options.ts` stayed JavaScript until M7 Batch 2.3; styles remain in `options/options.css` (component `<style>` omitted to preserve single-stylesheet tokens and avoid inline style rules); existing `WEB_EXT_WARNING_BASELINE` (cap `11`, `10` observed) stayed unchanged.
+- **Changed but not fully proven:** Chrome `128` (`chrome-floor`) and Firefox `152.0` (`firefox-floor`) are tested by hosted Linux CI rather than local macOS installs; native focus/window placement, live extension store submission, and Firefox for Android `142.0` device checks remain outside automated desktop evidence.
+
 1. Confirm the hidden verifier can load the real options page before editing UI.
    Use [the Units panel](../../options/unit-settings.ts) as the default pilot:
    it already has a small `initUnitSettings({ save })` / `populate` boundary,
-   no native permission prompt and [focused behavior tests](../../test/options/options-units.test.mjs).
+   no native permission prompt and [focused behavior tests](../../test/options/options-units.browser.mts).
    Preserve the existing settings choices, IDs, examples, disclosure behavior
    and reset semantics. Do not redesign the rest of Settings.
 2. Convert the
-   [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mjs)
+   [Dependabot graph test](../../test/project/dependabot-auto-merge.test.mts)
    to `.mts` and derive bundled packages from actual esbuild metafile inputs,
    as notices already do. Test compiled implicit imports and erased type-only
    imports using fixtures. Keep compiler-only dependencies classified separately
@@ -571,10 +594,10 @@ The per-owner checklist does not exist yet; start it with the first planned
 batch and backfill the conversions already listed there.
 
 1. **Small pure modules:** begin with
-   [storage-value.js](../../src/storage/storage-value.js), then bounded helpers
-   such as [theme-resolve.js](../../src/theme/theme-resolve.js),
-   [provider-url.js](../../src/capture/provider-url.js) and
-   [runtime-message.js](../../src/ui/runtime-message.js) (preserve `send` and
+   [storage-value.ts](../../src/storage/storage-value.ts), then bounded helpers
+   such as [theme-resolve.ts](../../src/theme/theme-resolve.ts),
+   [provider-url.ts](../../src/capture/provider-url.ts) and
+   [runtime-message.ts](../../src/ui/runtime-message.ts) (preserve `send` and
    the `sendResult` response/unavailable distinction). Keep exports, algorithms
    and source-policy exceptions unchanged; run the owning behavior tests.
 2. **Shared domain contracts/services:** convert the settings store (its schema
@@ -595,7 +618,7 @@ batch and backfill the conversions already listed there.
 5. **Large coordinators and cross-world graphics:** convert the MAIN-world GPX
    analyzer, the worker's remaining JavaScript route modules and other
    coordinators last, one boundary at a time. The background worker itself is
-   already converted (`c45d32ef`) and still owes this batch's Firefox check.
+   already converted (`c45d32ef`) and passed the packaged Firefox check.
    Keep bundle order, sender/privacy/Save gates and shared math.
    Require real-manifest/worker/bridge checks and hardware-rendered terrain
    verification for affected graphics paths; pure unit tests cannot close these.
@@ -610,30 +633,215 @@ A test converted alongside its runtime owner stays on typed jsdom, so a runtime
 batch does not also become a test-environment migration. Moving tests off jsdom
 is M7.5, not part of this milestone.
 
-Exit: no authored JavaScript remains anywhere in the repository, including
-`scripts/`, `test/`, `docs/plans/` and `store-assets/`, and the affected gates
-pass. TypeScript tests may still use typed jsdom. The exclusions in `scripts/typescript-policy.mts` stay explicit for generated
-and upstream code; a file a tool requires in JavaScript needs its own narrow
-documented exception. To keep the result, make the policy reject any authored
-JavaScript file rather than only changed ones, and remove `allowJs` from the
-checking projects. Svelte conversion remains per-surface, based on a useful
-ownership boundary rather than a percentage target.
+The exit gate requires zero tracked authored JavaScript across the repository,
+including scripts, tests, documentation, fixtures and store tooling. The Git
+index and committed tree each have a complete scan. The browser and Node
+checking projects run with TypeScript inputs. M7.5 tracks the separate jsdom
+exit, and Svelte conversion remains a per-surface decision.
+
+#### M7 closure ledger
+
+- **Fixed and verified.** Between `d3cff3f5` and `9370d6d9`, all 53 remaining
+  Node suites moved to strict TypeScript. The tracked inventory contains zero
+  `.js`, `.mjs`, `.cjs` or `.jsx` files. `8e7fe0a9` removes the JavaScript test
+  glob and `allowJs` from the checking projects. The pre-commit guard scans the
+  whole index after privacy checks. CI and release scan the committed tree with
+  `--committed`. A disposable repository proved both scans reject an unchanged
+  tracked JavaScript file accepted by the old diff check. On Node `24.22.0`,
+  2,177 Node tests, typecheck, lint and both policy modes passed. Lint rebuilt
+  67 bundles and reported the 10 owned `web-ext` warnings. A later audit
+  compared each of the 53 suites with its JavaScript original: no test was
+  dropped or skipped and assertions rose overall. The one suite with fewer
+  assertions, `gaia-routes`, moved its two permission checks into the shared
+  map-import harness and replaced a string search with an identity check of
+  the injected function. The audit also removed the Garmin store's
+  `as unknown as` cast by typing the store by its owner's state. The browser
+  tier and scale lane passed on that tree.
+- **Intentionally not changed.** Generated bundle filenames and manifest load
+  order follow the existing distribution contract. The policy keeps explicit
+  exclusions for generated output and upstream code. The M7 verification
+  covers test and tooling changes alongside the earlier owner-specific browser
+  evidence below.
+- **Changed but not fully proven.** The CI and release workflow commands are
+  covered by local policy and workflow tests. Hosted Actions and Linux browser
+  floors, Firefox Android and signed store delivery still require release
+  environments. The plan stays active while that evidence is open.
+
+Local owner verification at `b66b506e` used Node 24.22.3 and freshly built
+esbuild bundles. The checks ran hidden, with isolated browser profiles.
+
+| Converted owner | Local evidence |
+| --- | --- |
+| `src/terrain/terrain-coordinator.ts` (`20e54c38`), terrain frame and analyzer | Both `verify -- terrain` engines passed on ANGLE Metal Apple M3 Pro. Chromium 158.0.8127.18 exercised wide Ascent at 1280 × 950, BigMap at 1000 × 760 and Peak layouts at 820/375 × 900. Firefox 159.0 exercised Ascent and Peak at a 1000 × 760 baseline with a 375 px narrow layout. Both used synthetic terrain and activation fixtures. |
+| `src/maps/big-map.ts` (`c3b47b04`) | `verify -- map-controls` passed 14 cases per engine, including both BigMap modes, in Chromium 158.0.8127.18 and Firefox 159.0 at 1280/375 × 1000 on the same renderer. |
+| `src/capture/provider-page.ts` (`79fe003c`) | `verify -- provider-contracts` passed in Chromium 158.0.8127.18 and Firefox 159.0 at 1280 × 720 with intercepted provider fixtures. It exercised ownership, route changes and export responses. |
+| `src/background/background.ts` (`c45d32ef`) | `verify -- capture-readiness` passed pending-image capture, helper startup and signed-out privacy gates with the real worker and a fixture provider in Chromium 158.0.8127.18 at 1000 × 760 and Firefox 160.0.1 at 1000 × 675. |
+
+Teardown removed the browser profiles. Native window focus, live provider
+permissions and hosted Linux browser-floor results require separate evidence.
 
 ### M7.5 — Retire jsdom
+
+Status: complete on November 22, 2026. The last owners moved in `e3934460`
+(options pages), `c0a9d66a` (photo page, popup, report markup, peak weather
+and Summit Cloud), `76c001c9` (scale tests, on a new `--scale` lane that the
+default browser run leaves out) and the removal commit, which also splits the
+fixture privacy suite (its parser checks run in the browser tier against an
+XML fixture list that the Node half pins), deletes the jsdom-only page loader
+and trusted-event check, removes the packages, their Dependabot group and
+audit entries, and drops jsdom from the Node typecheck's DOM split. Every
+port kept its assertions; the ledger below records each intentional change.
 
 Split from M7's exit on November 13 ([owner decision](#owner-decisions)). This
 is a test-environment migration, independent of the language conversion: it may
 start once M4.5's browser tier exists and does not block M7 or M8.
 
-1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner (118
-   files and 297 constructions at `0444ff28`). Pure logic that needs no DOM
+The [provider access suite](../../test/dom/map-access/provider-access.dom.mts)
+uses the shipped pages with a controlled permission response and close handler.
+Packaging order remains covered by the pure
+[map-access test](../../test/ui/map-access.test.mts). The full browser tier
+ran 28 cases. All eight provider cases passed again after adding startup
+observation, at 390 × 760 in hidden Chromium 158.0.8127.18 and Firefox 159.0.
+Both engines rejected disposable builds that requested permission on load
+or accepted synthetic input. These fixtures use stubs for the native
+permission dialog and tab close.
+The packaged BC parcel access page now uses this tier. Both browsers passed
+the five provider cases at 390 × 760. For BC, duplicate activation was
+ignored, keyboard focus stayed on the shared action, and only the source tab
+received the grant. A disposable BC bundle that accepted synthetic clicks
+failed in both engines. The permission response, tab message and close
+remain fixture stubs.
+
+The [saved-ascent chart probe](evidence/card-reuse-audit.mts) now renders
+the shipped bundles in the browser tier. Hidden Chromium 158.0.8127.18 and
+Firefox 159.0 at 1000 × 760 rendered wind labels `0, 2, 4`. A disposable
+bundle with the original narrow scale reproduced `0, 1, 1` in both engines.
+
+The [avalanche planning links suite](../../test/dom/avalanche/avalanche-links.dom.mts)
+runs the shipped peak-links bundle on HTTPS fixtures. All 32 cases passed
+across hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760. In both
+engines a disposable bundle without the idempotence guard created a duplicate
+panel and failed the new assertion. Provider registry and coordinate math
+stay in the checked [Node suite](../../test/avalanche/avalanche-links.test.mts).
+The [weather interval verifier](../../scripts/verify-weather-intervals.mts)
+now prepares its Nepal fixture without jsdom. The old and new versions both
+passed in hidden Chromium 158.0.8127.18 at 1440 × 1000, with the same 24.0 mm
+sum, GMT+5:45 boundary labels, keyboard readout and two intercepted requests.
+The ascent backup lifecycle and layout verifiers now share a checked edit-form
+fixture transform. Hidden Chromium 158.0.8127.18 restored the exact BFCache
+document with one control and zero writes at 1000 × 760 and 390 × 760. The
+layout surface passed eight cases in that Chromium and Firefox 159.0 at
+390 × 900 and 1280 × 900 in both themes. The fixture guard accepts LF and
+CRLF checkouts and rejects missing and duplicate fields.
+The profile units verifier prepares its metric fixture in a separate offline
+browser page. Its before-and-after results matched across 16 cases each in
+hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1280/720 × 900, with both
+themes and simulated 2× reflow. Chromium loaded the real unpacked extension.
+Firefox used the shipped bundles with stubbed settings APIs.
+The ascent columns and filters layout surfaces also prepare their native
+fixtures offline in the browser. Each passed 16 cases across those two
+hidden engines, at 390/1280 × 900 and 260/853 × 600, including light, dark
+and simulated 150% reflow. This removes the last direct verifier imports.
+All 28 terrain cache cases run in Node with the existing in-memory storage,
+native fetch primitives, and controlled transports. The cases produced the
+same results with and without the unused jsdom windows. A disposable change
+to the tile coordinate bound failed the preserved out-of-range assertion.
+The stable text case preserves all eight assertions in the real DOM tier.
+Hidden Chromium 158.0.8127.18 and Firefox 159.0 passed at 1000 × 760. Removing
+the equality guard in a disposable module produced 120 unwanted mutation
+records in both engines, where the normal module produced zero.
+The [Open-Meteo request audit](evidence/open-meteo-peak-request-audit.mts) ran
+the exact built bundles in hidden Chromium 158.0.8127.18 at 1000 × 760. All
+23 records and the default request URL/cache tuples matched the current jsdom
+baseline after bypassing its obsolete standalone esbuild step. Source
+fingerprints now use embedded development bundle maps. Suppressing the weather
+intersection callback in a disposable bundle failed the `Only weather
+intersects` count assertion.
+The local GPX timestamp filter now exercises the native XML parser and
+serializer in hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760.
+Both passed the removal, metadata retention and invalid XML checks. Both
+detected retained timestamps when the removal loop was disabled in a
+disposable module. The complete DOM lane passed 64 cases.
+The backup replacement review now checks its Cancel label, native Escape
+handling, hidden state and return to the original trigger in the same two
+hidden browsers at 1000 × 760. Removing Cancel focus in a disposable module
+failed the opening focus assertion in each engine. The DOM lane passed 66
+cases after the port.
+The packaged early and complete dark stylesheets retained the dark root
+background and vertical overscroll setting before and after their handoff.
+Hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760 computed
+`none` from both sheets, and rejected a disposable early sheet with that rule
+removed. The fixture supplies the native wallpaper locally. The full DOM
+lane passed 70 cases. The test measures computed styles and sheet replacement.
+The peak elevation unit probe now uses native HTML parsing. Both hidden
+browsers at 1000 × 760 preserved all twelve valid and inconclusive heading
+inputs, and both rejected a disposable version that chose the second unit.
+The 124 Node weather and snow consumer cases also passed.
+All 14 page settings client cases now use Node's native message events and
+ports with the existing deterministic timers. They passed with jsdom
+resolution blocked. Removing the stale-revision check in a disposable module
+allowed an older acknowledgement to replace the newer settings, as detected
+by the preserved ordering case. The 80 settings owner cases passed.
+The five ascent settings bridge cases now run the shipped bridge bundle
+against the real settings store in hidden Chromium 158.0.8127.18 and
+Firefox 159.0 at 1000 × 760. A disposable bundle that allowed page-world
+theme writes failed the allowlist case in Chromium.
+
+**Approach change (November 18).** Rewriting each jsdom file as a
+Node-orchestrated `.dom.mts` suite moved about 20 owners in five hours and
+risked silently dropping assertions in the rewrite; 168 files (about 72,000
+lines) still reached jsdom. The DOM tier now also runs in-page browser tests
+(`*.browser.mts`, [browser-tests.mts](../../scripts/browser-tests.mts)): the
+existing `node:test` files run inside hidden Chromium and Firefox with small
+in-page runtimes for the Node modules they use, and
+[fixture-dom.mts](../../test/helpers/fixture-dom.mts) replaces `new JSDOM()`
+with a same-origin frame that has real layout, inert inline scripts and the
+fixture URL as its own URL and base URL. Trusted input is real automation
+input. A port keeps the test's assertions and changes them only where the
+real browser differs, recording why. The first port,
+[ascent-filter.browser.mts](../../test/ascent/ascent-filter.browser.mts),
+passes in hidden Chromium 158.0.8127.18 and Firefox 159.0 at 1000 × 760. Real
+input changed these cases: modifier clicks use Command on macOS (a
+Control-click there is a secondary click with no `click`, so Control is
+exercised on Linux CI); the pointer drag uses real pointer input and asserts
+that the lifted chip stays under the pointer (jsdom's zero `offsetLeft` had
+fixed its translate at -290 px) and that the displaced filter eases in from
+its old slot; the Settings cases check that an activation was sent within the
+click's own dispatch, observed by a later listener, because automation can
+return before the page handles input; and successive key presses pause as a
+person would, since browsers run queued input ahead of zero-delay timers.
+Playwright's Firefox dispatches no `auxclick` for a middle click, so that case
+is a separate test skipped in Firefox. Disposable bundles without the
+trusted-click guard and without the keyboard click's `detail === 0` check
+failed their cases (the latter in both engines).
+
+**Ledger of what the browser ports pin or drop.** Recorded so the exit's
+"ported or dropped with a reason" can be checked:
+
+- Dropped: the ascent-upload "cleared selection" invalidation case. It fired
+  a trusted change on an emptied file input, which no browser lets a user
+  produce (cancelling the picker keeps the selection in Chromium and Firefox,
+  and DevTools' empty `DOM.setFileInputFiles` dispatches nothing). Native
+  Remove and a non-GPX replacement still cover invalidation, and a new case
+  asserts that an untrusted clearing change leaves the swap in place.
+- Pinned: the photo editor's viewport. Most cases keep the page's fallback
+  view (1148 × 873, unpadded, at the origin) because their exact arithmetic
+  assumes it. One case fits a photo into the real laid-out viewport and
+  fails when the padding subtraction is removed; the user-set viewport size
+  (`applyViewportSize`) is still exercised only against the pinned view.
+- Modelled: pointer capture for the photo editor's synthetic gestures, which
+  the real capture API rejects. The model releases capture after `pointerup`
+  or `pointercancel` and then fires `lostpointercapture`, as browsers do; a
+  disposable build in which `pointerup` no longer ends a text resize fails
+  two cases through that trailing event.
+
+1. Move the remaining jsdom tests to M4.5's browser tier, owner by owner. At
+   `dc985cc9`, 93 files under `test/` directly import or re-export from jsdom,
+   and additional tests reach it through helpers. Pure logic that needs no DOM
    moves to plain `node:test` instead. For each ported owner, show the new
    assertion fails against a deliberately broken disposable copy, and delete
    the jsdom original in the same change.
-2. Move the non-test consumers: six `scripts/verify-*` files and two
-   `docs/plans/evidence/` scripts import jsdom, so the package cannot be removed
-   while they do.
-3. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
+2. Remove `jsdom`, `@types/jsdom`, the jsdom checking project, the shared page
    loader's trusted-dispatch internals, and their Dependabot and
    `DEVELOPMENT_TOOLS` entries.
 
@@ -643,7 +851,87 @@ with a reason. Cost to accept before starting: every DOM test then needs a
 browser launch, which the Codex Seatbelt sandbox forbids for Chrome, so those
 tests can no longer run there, and `npm test` covers pure logic only.
 
-### M8 — Evaluate and optionally cut over WXT/Vite
+### M8 — Cut over production to Vite
+
+The owner selected WXT/Vite for production after reviewing the
+[full candidate evaluation](experiments/wxt-evaluation.md), accepting a
+slower build for easier maintenance. The first cutover (`133384ab`) used WXT's
+build API only as a scheduler: it wrote one inert WXT entry per bundle,
+replaced each entry's Vite configuration with a library build of the ordered
+sources, ran every generation in a child process and temporary workspace
+because WXT keeps module-global state, and restored the manifest WXT
+regenerated. None of WXT's entrypoint, manifest or development-server
+features applied, because `manifest.json` and the ordered `ENTRIES` stay the
+source of truth.
+
+[vite-build.mts](../../scripts/vite-build.mts) now calls Vite's `build()`
+directly, one library build per entry with bounded concurrency, in process.
+Every compiled bundle is byte-identical to the WXT output except module
+region comments. WXT compiled from its temporary workspace, so the shipped
+minified terrain and vector-map frame bundles
+contained 28 comments naming the builder's absolute home directory. The
+direct build pins Rolldown's `cwd` to the real project root, and release
+generations now fail if any bundle contains the project or home path. On the
+same machine the release build took about 0.6 s instead of 2.0 s. The existing
+publisher, reload signal and browser packaging are unchanged.
+
+#### Verified locally
+
+The direct Vite build was verified on its own output: the real unpacked
+extension in hidden Chromium 158.0.8127.18 and Firefox 160.0.1 at 1000 × 760
+(including BFCache restoration and teardown), the full DOM tier, and the
+exact release archives: a 3,632,927-byte Chrome ZIP and a 3,632,869-byte
+Firefox ZIP passed the packaged verifier in the same browsers and viewport,
+with no local path in any bundle. Builder regressions are
+pinned in [vite-build.test.mts](../../test/project/vite-build.test.mts): an
+unresolved bare import fails the generation, a failed entry stops the queue
+and returns only after in-flight builds finish, and release bundles cannot
+contain the project or home path. Each failed against a disposable copy of
+the earlier adapter logic. The items below were recorded on the WXT output
+(`133384ab`, `4286ede2`); its compiled code was byte-identical except for
+the path comments, so they still describe the shipped runtime.
+
+- The WXT-era production compiler passed 4,213 Node tests, 14 scale tests, strict
+  typecheck, lint, the full branch TypeScript policy check, the dependency
+  audit, and the 60-case DOM browser tier. Hidden Chromium 158.0.8127.18 and
+  Firefox 160.0.1 at 1000 × 760
+  passed the real unpacked and exact packaged verifiers on macOS, including
+  BFCache restoration. Chrome for Testing 128.0.6613.137 and Firefox 152.0
+  passed the same package verifier at the declared browser floors. Each
+  archive contained 145 entries. The Chrome ZIP was 3,632,959 bytes and the
+  Firefox ZIP was 3,632,901 bytes.
+- Hardware terrain passed on Apple M3 Pro Metal in hidden Chromium with
+  448 × 448 and 798 × 448 render canvases, and in hidden Firefox 159.0 at a
+  1000 × 760 viewport.
+- Hidden managed Chrome 158.0.8127.18 (1000 × 560) and Firefox 160.0.1
+  (1000 × 675) loaded fresh HTTPS fixture documents after an edit, a syntax
+  error, and its repair. The injected revision and external generation marker
+  advanced together on both successful builds and kept their prior values
+  during the error. Both processes and their profiles shut down cleanly.
+  Filesystem tests forced Firefox swap and signal failures and verified
+  rollback of both trees.
+- Hidden Chromium 158.0.8127.18 and Firefox 160.0.1 at 1000 × 760 retained
+  their extension identities and the dark theme and metric units settings
+  when upgrading locally from esbuild 4.0.2 to the exact WXT 4.1.0 payloads.
+  The worker migrated the legacy 287 MB terrain cache limit from sync to
+  device storage. The Chrome rehearsal cleared the previous `Service Worker`
+  directory in its disposable profile before reopening the same unpacked path.
+  Extension settings storage was retained. Firefox migrated during same-ID
+  temporary add-on replacement.
+- Reversing `4286ede2` and `133384ab` in a disposable checkout reproduced the
+  last esbuild tree and Git index at `d0eea8b2`. A clean pinned install built
+  all 67 bundles on both sides. Five interleaved release builds on macOS arm64
+  with Node 24.22.3 took a median 672 ms with esbuild and 2,568 ms with WXT.
+  Wall time includes process startup, compilation, assets and notice writing.
+  The owner accepted the roughly 1.9-second increase; the later direct Vite
+  build takes about 0.6 s. With the same ZIP Deflate settings, the release
+  trees compressed to 3,702,067 bytes for esbuild and 3,631,327 bytes for WXT.
+
+Hosted Actions, Firefox Android, and a signed store-delivered update still
+require their respective release environments. The local update used unpacked
+Chrome and a temporary Firefox add-on in disposable profiles.
+
+#### Original cutover plan
 
 This is feasible to investigate alongside legacy sources, but it is not just a
 bundle-format flag. [WXT migration](https://wxt.dev/guide/resources/migrate)
@@ -680,9 +968,9 @@ top-level side effects.
 
 Exit: the candidate passes the same manifest, runtime, reload, package and
 upgrade checks as production, with reviewed size/startup differences and a
-rollback path. A successful one-page spike alone cannot close M8. Do not combine
-the cutover with new messaging/storage libraries or a visual redesign. Keep
-declining WXT as an explicit supported outcome if parity or benefit is absent.
+rollback path. The owner accepted the performance cost of the full candidate.
+Any failure of a release compatibility gate still warrants restoring the last
+verified publisher until the failure is fixed.
 
 ## Compatibility checklist for every implementation milestone
 
@@ -704,27 +992,23 @@ declining WXT as an explicit supported outcome if parity or benefit is absent.
   and [the transform-affecting options](https://esbuild.github.io/content-types/#tsconfig-json).
 - Keep browser checking scoped to `src/`, `options/`, `popup/` and `photos/`,
   matching `AUTHORED_SOURCE_ROOTS`; retain the existing divergence guard.
-  Use `allowJs: true`, `checkJs: false`, `strict: true`, `noEmit: true`,
-  `isolatedModules: true`, `erasableSyntaxOnly: true`,
+  Use `strict: true`, `noEmit: true`, `isolatedModules: true`, `erasableSyntaxOnly: true`,
   `verbatimModuleSyntax: true`, explicit-extension support and bundler resolution.
   TypeScript 6 changed several defaults and deprecated older options, so set
   every option this plan depends on explicitly, including `types`, rather than
   inheriting defaults that a later major may change again.
-  Keep the existing browser targets in esbuild and the separate Node checking
-  project for tooling/tests. Do not merge their globals into one project.
-- `checkJs: false` leaves legacy JS outside strict checking; it does not make
-  everything imported from JS safe. Keep declarations beside their owners or
-  use a narrow adapter in that domain. Prefer inferred types and signatures
-  checked against real behavior; use `unknown` plus validation for untrusted
-  replies. Avoid blanket ambient modules or `as SomeResponse` at trust boundaries.
+  Keep the browser targets in the Vite builder and the separate Node checking
+  project for tooling and tests. Keep their globals scoped to each project.
+- Keep declarations beside their owners or use a narrow adapter in that domain.
+  Prefer inferred types and signatures checked against real behavior. Validate
+  untrusted replies from `unknown` at the trust boundary.
 - Cover both the `chrome` and `browser` names actually used. Keep MAIN-world
   adapters free of extension APIs; compiler globals alone cannot enforce the
   execution world. Add declarations for existing `Chart`/`marked` globals only
   where consumed, preserving their manifest preload order.
-- Keep the Node runner for pure and legacy jsdom tests, and untouched `.mjs`
-  tests until M7 converts them to `.mts`; new/substantively changed Node tests use `.mts`.
-  New DOM-behavior tests use M4.5's browser tier once it exists. Plain erasable `.ts` domain modules can be tested
-  directly. Components and rune modules must be compiled
+- Keep the Node runner for `.test.mts` suites and the browser tier for DOM
+  behavior. Plain erasable `.ts` domain modules can be tested directly.
+  Components and rune modules must be compiled
   first and exercised through client bundles. Do not let a Node-imported
   controller transitively import `.svelte` or `.svelte.ts`.
 - Add compiler-failure fixtures that run the actual check commands with nonzero
@@ -770,7 +1054,7 @@ if a syntax form evades a policy, use language-aware extraction for that rule.
 Loose-file and page-local lint coverage are also migrated in
 [development.test.mts](../../test/project/development.test.mts).
 
-The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mjs)
+The [Dependabot group test](../../test/project/dependabot-auto-merge.test.mts)
 is a package-graph guard, not a policy scan: broadening its file matcher does not
 fix it. Replace its source-text import walk with metafile inputs in M6, before
 the first production component ships.
@@ -803,7 +1087,7 @@ the first production component ships.
   emission, copying, manifest/page references and package expectations as one
   change; do not silently accept an unstyled widget.
 - When Svelte is first shipped, update
-  [reviewed dependency metadata](../../scripts/dependency-metadata.mjs),
+  [reviewed dependency metadata](../../scripts/dependency-metadata.mts),
   [AMO notes](../../scripts/create-amo-metadata.mts) and
   [acknowledgements](../../ACKNOWLEDGEMENTS.md). Notices are generated into
   `dist/THIRD_PARTY_NOTICES.txt` from bundled inputs, including shipped transitive
@@ -867,7 +1151,7 @@ working shared owner; broad protocol/storage migration has the greatest cost.
 
 | Report layer | Incremental decision | Later conversion gate |
 | --- | --- | --- |
-| WXT / Vite | Defer build ownership replacement; new TS/Svelte does not depend on it. | Separate compatibility build and manifest/output parity proof in M8. |
+| Vite | Compile all development and release bundles through the public build API. | M8 records manifest, output, reload, package and local upgrade checks. |
 | Valibot | Optional for a new protocol/schema in its existing owning domain. Keep `settings-schema.ts` authoritative. | Replacing a validator requires parity for coercion, defaults, bounds, unknown keys and failure behavior; no second settings schema. |
 | `@webext-core/messaging` | Use typed wrappers over the current wire protocol first. | A new RPC library needs an explicit adapter or new protocol on both ends, sender validation and compatibility tests; it is not a transparent replacement for raw envelopes. |
 | WXT storage | Keep the existing settings owner, sync/device split, subscriptions, write queue and theme mirror. | Demonstrate identical keys, migrations, authorization, error behavior and update/rollback behavior before replacement. |

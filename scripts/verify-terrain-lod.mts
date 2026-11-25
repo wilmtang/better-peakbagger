@@ -24,7 +24,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEM_FIXTURE_CONTENT_TYPE, syntheticDemWebp } from './terrain-dem-fixture.mjs';
+import { DEM_FIXTURE_CONTENT_TYPE, syntheticDemWebp } from './terrain-dem-fixture.mts';
 
 import {
     createFixtureCertificate,
@@ -34,16 +34,16 @@ import {
     sendFixtureNotFound,
     instrumentTerrainFrameHtml,
     instrumentTerrainFrameModule,
-} from './browser-verification-fixtures.mjs';
+} from './browser-verification-fixtures.mts';
 import {
     closeServer,
     createResourceStack,
     listenServer,
     manageChildProcess,
-} from './resource-stack.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+} from './resource-stack.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 import { connectCdp, evaluate, waitForDebugPort, type Cdp, type CdpResult } from './terrain-cdp.mts';
-import { installTerrainLodProbe } from './terrain-lod-probe.mjs';
+import { installTerrainLodProbe } from './terrain-lod-probe.mts';
 import { tiltTransientFailure } from './terrain-lod-criteria.mts';
 
 type RequestListener = NonNullable<Parameters<typeof createServer>[1]>;
@@ -287,7 +287,9 @@ const widestLevelGap = (sample: ProbeSample) => {
 };
 
 await resources.guard(listenServer(server, 0, '127.0.0.1'));
-const serverPort = server.address().port;
+const serverAddress = server.address();
+if (!serverAddress || typeof serverAddress === 'string') throw new Error('Expected TCP address for terrain LOD fixture server');
+const serverPort = serverAddress.port;
 const profile = await resources.guard(
     mkdtemp(path.join(os.tmpdir(), 'better-peakbagger-lod-profile-')));
 resources.defer('terrain LOD Chrome profile', () => rm(profile, { recursive: true, force: true }));

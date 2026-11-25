@@ -3,7 +3,7 @@
 import { VectorTile } from '@mapbox/vector-tile';
 import { PbfReader } from 'pbf';
 import { fromGeojsonVt } from '@maplibre/vt-pbf';
-import { CUSTOM_LIMITS } from './custom-overlay-schema.js';
+import { CUSTOM_LIMITS } from './custom-overlay-schema.ts';
 
 type Point2D = [number, number];
 type Ring2D = Point2D[];

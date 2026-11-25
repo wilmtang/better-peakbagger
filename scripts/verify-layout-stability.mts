@@ -8,21 +8,20 @@ import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { chromium, firefox } from 'playwright';
-import { JSDOM } from 'jsdom';
-import { layoutVerificationPlan } from './layout-verification-plan.mjs';
-import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mjs';
-import { createBrowserFixtureServer, fixtureContentType, projectRoot } from './browser-verification-fixtures.mjs';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
-import { createResourceStack } from './resource-stack.mjs';
-import { gpxPanelCss } from '../src/gpx/gpx-panel-css.js';
-import { darkCss } from '../src/theme/site-dark-css.js';
+import { layoutVerificationPlan } from './layout-verification-plan.mts';
+import { retainBrowserFailure, verificationScreenshots } from './browser-verification-evidence.mts';
+import { createBrowserFixtureServer, fixtureContentType, prepareAscentBackupEditFixture, projectRoot } from './browser-verification-fixtures.mts';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
+import { createResourceStack } from './resource-stack.mts';
+import { gpxPanelCss } from '../src/gpx/gpx-panel-css.ts';
+import { darkCss } from '../src/theme/site-dark-css.ts';
 import { verifySettingsActions } from './verify-settings-actions.mts';
-import { verifyClimberFiles } from './verify-climber-files.mjs';
-import { verifyPhotoReportEdit } from './verify-photo-report-edit.mjs';
-import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mjs';
+import { verifyClimberFiles } from './verify-climber-files.mts';
+import { verifyPhotoReportEdit } from './verify-photo-report-edit.mts';
+import { verifyPeakWeatherRefresh } from './verify-peak-weather-refresh.mts';
 import { verifyReportCaptionStability } from './verify-report-caption-stability.mts';
-import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mjs';
-import { verifyAscentFilters } from './verify-ascent-filters.mjs';
+import { verifyAscentColumnWidths, verifyPeakColumnWidths } from './verify-ascent-column-widths.mts';
+import { verifyAscentFilters } from './verify-ascent-filters.mts';
 import { verifyProfileFeedback, verifyBuddyPresentation, verifyPendingMembership, verifyCardFeedback } from './verify-climber-transitions.mts';
 import type { Page, Route } from 'playwright';
 
@@ -297,12 +296,8 @@ async function handoffCase(page: Page, origin: string, variant: LayoutVariant) {
 }
 async function ascentBackupCase(page: Page, origin: string, variant: LayoutVariant) {
     const html = await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascent.html'), 'utf8');
-    const edit = new JSDOM(await readFile(path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html'), 'utf8'));
-    (edit.window.document.getElementById('PeakListBox') as FixtureElement).innerHTML = '<option value="2296" selected>Mount Rainier</option>';
-    (edit.window.document.getElementById('DateText') as FixtureElement).setAttribute('value', '2026-07-12');
-    (edit.window.document.getElementById('PointFt') as FixtureElement).setAttribute('value', '14411');
-    const editHtml = edit.serialize();
-    edit.window.close();
+    const editPath = path.join(projectRoot, 'test/fixtures/pages/climber-ascentedit.html');
+    const editHtml = prepareAscentBackupEditFixture(await readFile(editPath, 'utf8'), { elevationFeet: 14411 });
     await page.route('**/climber/ascent.aspx?aid=7654321', (route: Route) => route.fulfill({ contentType: 'text/html', body: html }));
     await page.route('**/climber/ascentedit.aspx**', (route: Route) => route.fulfill({ contentType: 'text/html', body: editHtml }));
     await page.route('**/climber/GPXFile.aspx**', (route: Route) => route.fulfill({ contentType: 'application/gpx+xml',

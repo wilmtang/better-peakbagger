@@ -11,8 +11,8 @@ import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { firefox } from 'playwright';
 import type { BrowserContext, Page } from 'playwright';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
+import { createResourceStack } from './resource-stack.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 declare global { interface Window { profileProbe: { submissions: Record<string, FormDataEntryValue>[] } } }

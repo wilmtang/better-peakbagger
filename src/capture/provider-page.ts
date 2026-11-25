@@ -6,26 +6,26 @@
 // used for analysis leave by default; an explicit capture setting may also
 // allowlist waypoint coordinates/names and the track name used for Trip Info.
 
-import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.js';
+import { isProviderHost, providerFromUrl, providerProfileId } from './provider-url.ts';
 import {
     PROVIDER_RESPONSE_PROBE_BYTES,
     PROVIDER_RESPONSE_PROBE_CHARS,
     classifyProviderBody,
     classifyProviderResponse,
-} from './provider-response.js';
-import { captureErrorMessage } from './capture-error-policy.js';
+} from './provider-response.ts';
+import { captureErrorMessage } from './capture-error-policy.ts';
 import {
     PROVIDER_EXPORT_TIMEOUT_MS,
     PROVIDER_OWNERSHIP_TIMEOUT_MS,
-} from './provider-timing.js';
-import { gpxParse } from '../gpx/gpx-parse.js';
-import { requestDeadline as Deadline } from '../net/request-deadline.js';
-import { boundedText as BoundedText } from '../net/bounded-text.js';
+} from './provider-timing.ts';
+import { gpxParse } from '../gpx/gpx-parse.ts';
+import { requestDeadline as Deadline } from '../net/request-deadline.ts';
+import { boundedText as BoundedText } from '../net/bounded-text.ts';
 import {
     MAX_GPX_BYTES,
     MAX_GPX_TEXT_CHARS,
     gpxLimitMessage,
-} from './capture-resource-limits.js';
+} from './capture-resource-limits.ts';
 
 type ProviderName = 'garmin' | 'strava';
 interface ExpectedActivity { provider: ProviderName; activityId: string }

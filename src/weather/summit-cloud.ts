@@ -1,21 +1,23 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom } from '../ui/dom.js';
-import { settings } from '../settings/settings.js';
-import { units } from '../ui/units.js';
+import { dom } from '../ui/dom.ts';
+import { settings } from '../settings/settings.ts';
+import { units } from '../ui/units.ts';
 import { readPeakUnitSystem } from '../peakbagger/peak-units.ts';
-import { mountainTime } from '../time/mountain-time.js';
+import { mountainTime } from '../time/mountain-time.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
 import { createCardReadGate } from '../ui/card-read-gate.ts';
 import { createLatestRead } from '../ui/latest-read.ts';
-import { createRetryCooldown } from '../ui/retry-cooldown.js';
-import { createStableText } from '../ui/stable-text.js';
+import { createRetryCooldown } from '../ui/retry-cooldown.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { mountIsland, type Island } from '../ui/svelte-island.ts';
+import SummitCloudControls from './SummitCloudControls.svelte';
 import { readPeakWeatherSubject } from './peak-weather-subject.ts';
-import { weatherDayWindow } from './weather-day.js';
-import { createWeatherIcon } from './weather-icon.js';
+import { weatherDayWindow } from './weather-day.ts';
+import { createWeatherIcon } from './weather-icon.ts';
 import { summitCloudModel, eligibleSummitCloudModels, resolveSummitCloudModels, type SummitCloudModel } from './summit-cloud-models.ts';
-import { createSummitCloudClient } from './summit-cloud-client.js';
+import { createSummitCloudClient } from './summit-cloud-client.ts';
 import { CLOUD_STATES, predictSummitCloud, type CloudDataset, type CloudSubject } from './summit-cloud-core.ts';
 
 const ID = 'bpb-summit-cloud', HOUR = 3600000, DAY = 24 * HOUR, element = dom.element;
@@ -35,10 +37,7 @@ export function mountSummitCloud() {
     const zone = mountainTime.resolve(subject.latitude, subject.longitude);
     const localDate = (time: number) => mountainTime.localDate(zone, time) as string;
     const card = element('section', { id: ID, hidden: '', 'aria-labelledby': `${ID}-heading`, 'aria-busy': 'false' });
-    const modelSelect = element('select', { id: `${ID}-model`, form: '' });
-    const dateSelect = element('select', { id: `${ID}-date`, form: '' });
-    const refresh = element('button', { type: 'button', class: 'bpb-cloud-refresh', text: 'Refresh', 'aria-label': 'Refresh summit cloud forecast' });
-    const control = (label: string, input: HTMLElement) => element('label', { class: 'bpb-cloud-control', for: input.id }, [element('span', { text: label }), input]);
+    const controlsHost = element('div', { class: 'bpb-cloud-controls', 'data-summit-cloud-controls': '' });
     const status = element('p', { class: 'bpb-cloud-status', role: 'status', 'aria-live': 'polite' });
     const statusText = createStableText(status); statusText.reserve(messages); statusText.set('Loading cloud profiles…');
     const source = element('p', { class: 'bpb-cloud-source' }), sourceText = createStableText(source);
@@ -68,7 +67,7 @@ export function mountSummitCloud() {
         element('p', { text: 'We compare cloud and moisture at summit height, four surrounding profiles and moist air blowing toward higher terrain. Most model cloud values are derived from humidity. Small cap clouds and valley fog may be missed; this is not an exact view in every direction.' })]);
     card.append(element('header', {}, [element('h2', { id: `${ID}-heading` }, [createWeatherIcon('cloud'),
         element('span', { class: 'bpb-cloud-heading-label' }, [element('span', { text: 'Summit Cloud Cover' }), element('span', { class: 'bpb-cloud-badge', text: 'Experimental' })])])]),
-    element('div', { class: 'bpb-cloud-controls' }, [control('Model', modelSelect), control('Date', dateSelect), refresh]), status, source,
+    controlsHost, status, source,
     element('div', { class: 'bpb-cloud-navigation' }, [earlier, range, later]), hours,
     element('div', { class: 'bpb-cloud-result' }, [selectedClock, title, confidence]), details,
     element('footer', {}, [element('span', { text: 'Cloud estimates only · Accuracy not yet validated' }),
@@ -81,18 +80,29 @@ export function mountSummitCloud() {
     const reads = createLatestRead();
     let preference = settings.DEFAULTS, ready = false, selection = 'auto', requestedDate = '';
     let current: CloudDisplay | null = null;
-    let pending = false, writeGeneration = 0;
+    let pending = false, blockedControls = false, writeGeneration = 0;
     let lifecycle: ReturnType<typeof createPageLifecycle>;
     let selectedIndex = 0, revealSelection = true, failed = false, savingChoice = false;
     let clockTimer: ReturnType<typeof setTimeout> | undefined;
+    let controlsModels: readonly SummitCloudModel[] = [];
+    let controlsUnavailableLabel: string | null = null;
+    let controlsDates: string[] = [];
+    let controlsIsland: Island<{
+        readonly models: readonly SummitCloudModel[];
+        readonly selection: string;
+        readonly unavailableLabel: string | null;
+        readonly dates: readonly { readonly value: string; readonly label: string }[];
+        readonly requestedDate: string;
+        readonly blocked: boolean;
+        readonly pending: boolean;
+        readonly onModelChange: (value: string) => void;
+        readonly onDateChange: (value: string) => void;
+        readonly onRefresh: () => void;
+    }> | null = null;
     const enabled = () => ready && preference.showSummitCloud;
     const readGate = createCardReadGate({ card, enabled, active: () => lifecycle?.state === 'active',
         collapsed: () => preference.peakCloudCollapsed, onChange: () => visibility() });
     const active = readGate.eligible;
-    const cooldown = createRetryCooldown((blocked: boolean) => {
-        refresh.setAttribute('aria-disabled', String(pending || blocked));
-        modelSelect.setAttribute('aria-disabled', String(blocked)); dateSelect.setAttribute('aria-disabled', String(blocked));
-    });
     const elevation = (value: number) => units.formatElevation(value, units.resolveUnits(preference, () => readPeakUnitSystem(document), 'elevation'));
     const clock = (time: number) => `${mountainTime.formatClock(zone, time)} ${mountainTime.zoneLabel(zone, time)}`;
     const relativeDate = (date: string, now = Date.now()) => {
@@ -100,20 +110,35 @@ export function mountSummitCloud() {
         const relative = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : date === addDays(today, -1) ? 'Yesterday' : '';
         return `${relative ? `${relative} · ` : ''}${dateLabel(date)}`;
     };
+    const buildDateOptions = (now = Date.now()) => controlsDates.map(date => ({ value: date, label: relativeDate(date, now) }));
+    const syncControls = (now = Date.now()) => {
+        controlsIsland?.update({
+            models: controlsModels,
+            selection,
+            unavailableLabel: controlsUnavailableLabel,
+            dates: buildDateOptions(now),
+            requestedDate,
+            blocked: blockedControls,
+            pending,
+        });
+    };
+    const cooldown = createRetryCooldown((blocked: boolean) => {
+        blockedControls = blocked;
+        syncControls();
+    });
     const temporalLabel = (time: number, now: number) => time + HOUR <= now ? 'Past forecast' : time <= now ? 'Current hour' : 'Future forecast';
     const horizon = () => selection === 'auto' ? 10 : Math.ceil(summitCloudModel(selection)?.days || 1);
     function populateControls() {
+        const now = Date.now();
         const models = eligibleSummitCloudModels(subject);
-        modelSelect.replaceChildren(element('option', { value: 'auto', text: 'Automatic · compare models' }), ...models.map(model => element('option', {
-            value: model.id, text: `${model.label} · ${model.gridKm} km · up to ${model.days} days` })));
-        if (![...modelSelect.options].some(option => option.value === selection)) modelSelect.append(element('option', {
-            value: selection, text: `${summitCloudModel(selection)?.label || 'Saved model'} · unavailable here`, disabled: '' }));
-        modelSelect.value = selection;
-        const today = localDate(Date.now());
+        controlsModels = models;
+        controlsUnavailableLabel = selection !== 'auto' && !models.some(model => model.id === selection)
+            ? `${summitCloudModel(selection)?.label || 'Saved model'} · unavailable here` : null;
+        const today = localDate(now);
         const dates = Array.from({ length: horizon() }, (_, index) => addDays(today, index));
+        controlsDates = dates;
         if (!dates.includes(requestedDate)) requestedDate = today;
-        dateSelect.replaceChildren(...dates.map(date => element('option', { value: date, text: relativeDate(date) })));
-        dateSelect.value = requestedDate;
+        syncControls(now);
         const pairs = [0, 1, 2].map(lead => resolveSummitCloudModels(subject, 'auto', lead).map(model => model.label).join(' + '));
         sourceText.reserve([...pairs, ...models.map(model => model.label)].map(label => `Showing: ${label} · Summit 29,029 ft`));
         reserveReasons(models.map(model => model.label));
@@ -173,9 +198,9 @@ export function mountSummitCloud() {
         const context = (time: number) => `Summit time · Now ${clock(time)}${zone?.estimated ? ' · estimated zone' : ''}`;
         contextText.reserve(times.map(context)); contextText.set(context(now));
         hours.setAttribute('aria-label', `${relativeDate(data.day.date, now)} · ${times.length} hours of summit cloud predictions. Use left and right arrows to select an hour.`);
-        for (const option of dateSelect.options) option.textContent = relativeDate(option.value, now);
+        if (controlsDates.length) syncControls(now);
         populateHours(times.length);
-        const compactClocks = times.map(time => mountainTime.formatClock(zone, time).replace(/^0(?=\d)/, '').replace(':00', '').replace(/\s+/g, ' '));
+        const compactClocks = times.map(time => (mountainTime.formatClock(zone, time) ?? '').replace(/^0(?=\d)/, '').replace(':00', '').replace(/\s+/g, ' '));
         const selectionLabel = (time: number, temporal = temporalLabel(time, now)) => `${relativeDate(localDate(time), now)} · ${clock(time).replace(/^0(?=\d)/, '')} · ${temporal}`;
         hourNodes.forEach(({ button, marker, clock: clockNode, clockText, timezone, text }, index) => {
             const time = times[index], prediction = predictions[index], temporal = temporalLabel(time, now);
@@ -214,7 +239,7 @@ export function mountSummitCloud() {
     function cancel() {
         if (pending) statusText.set('Forecast paused. Expand to continue.');
         reads.cancel(); pending = false; clearTimeout(clockTimer);
-        card.setAttribute('aria-busy', 'false'); cooldown.refresh(); readGate.cancelWait();
+        card.setAttribute('aria-busy', 'false'); cooldown.refresh(); syncControls(); readGate.cancelWait();
     }
     async function load({ refresh: force = false } = {}) {
         if (!active() || pending || cooldown.active()) return;
@@ -225,7 +250,7 @@ export function mountSummitCloud() {
         try { models = resolveSummitCloudModels(subject, selection, (Date.parse(requestedDate) - Date.parse(localDate(Date.now()))) / DAY); }
         catch { failed = true; statusText.set('Choose another model for this summit.'); paint(); return; }
         cancel(); const request = reads.start();
-        pending = true; failed = false; card.setAttribute('aria-busy', 'true'); cooldown.refresh(); statusText.set('Loading cloud profiles…');
+        pending = true; failed = false; card.setAttribute('aria-busy', 'true'); cooldown.refresh(); syncControls(); statusText.set('Loading cloud profiles…');
         if (!current) { selectNearNow(displayed()); paint(); }
         const results = await Promise.allSettled(models.map(model => {
             // API horizon bounds are UTC dates. The local day's remaining hours
@@ -244,7 +269,7 @@ export function mountSummitCloud() {
             if (changedDay) selectNearNow(current);
             statusText.set(limited ? 'Cloud requests limited. Try again later.' : errors.length ? 'One forecast could not be loaded.' : 'Cloud profiles updated.');
         } else { failed = true; statusText.set(limited ? 'Cloud requests limited. Try again later.' : current ? 'Refresh failed. Showing the previous result.' : 'Cloud forecast unavailable. Try Refresh.'); }
-        cooldown.refresh(); paint();
+        cooldown.refresh(); syncControls(); paint();
     }
     function begin() {
         if (!active() || pending || failed) return;
@@ -259,24 +284,37 @@ export function mountSummitCloud() {
         revealSelection = true; paint(); hourNodes[selectedIndex]!.button.focus({ preventScroll: true });
     });
     hours.addEventListener('scroll', updateNavigation, { passive: true });
-    for (const [button, direction] of [[earlier, -1], [later, 1]]) button.addEventListener('click', () => {
+    for (const [button, direction] of [[earlier, -1], [later, 1]] as const) button.addEventListener('click', () => {
         if (button.getAttribute('aria-disabled') === 'true') return;
         hours.scrollLeft += direction * Math.max(1, hours.clientWidth - (hourNodes[0]?.button.offsetWidth || 0));
         updateNavigation();
     });
     const timelineObserver = typeof ResizeObserver === 'function' ? new ResizeObserver(() => { revealHour(); updateNavigation(); }) : null;
     timelineObserver?.observe(hours);
-    refresh.addEventListener('click', () => { if (!pending && !cooldown.active()) { failed = false; void load({ refresh: true }); } });
-    modelSelect.addEventListener('change', () => {
-        if (cooldown.active()) { modelSelect.value = selection; return; }
-        selection = modelSelect.value; const choice = selection, write = ++writeGeneration; savingChoice = true;
-        cancel(); failed = false; populateControls(); void load();
-        settings.set({ bpbSummitCloudModel: choice }).catch(() => { if (write === writeGeneration && lifecycle.state !== 'disposed') statusText.set('Model choice could not be saved.'); })
-            .finally(() => { if (write === writeGeneration) savingChoice = false; });
-    });
-    dateSelect.addEventListener('change', () => {
-        if (cooldown.active()) { dateSelect.value = requestedDate; return; }
-        requestedDate = dateSelect.value; cancel(); failed = false; void load();
+    controlsIsland = mountIsland(SummitCloudControls, {
+        target: controlsHost,
+        ownerWindow: window,
+        props: {
+            models: controlsModels,
+            selection,
+            unavailableLabel: controlsUnavailableLabel,
+            dates: buildDateOptions(),
+            requestedDate,
+            blocked: blockedControls,
+            pending,
+            onRefresh: () => { if (!pending && !cooldown.active()) { failed = false; void load({ refresh: true }); } },
+            onModelChange: (nextModel: string) => {
+                if (cooldown.active()) { syncControls(); return; }
+                selection = nextModel; const choice = selection, write = ++writeGeneration; savingChoice = true;
+                cancel(); failed = false; populateControls(); void load();
+                settings.set({ bpbSummitCloudModel: choice }).catch(() => { if (write === writeGeneration && lifecycle.state !== 'disposed') statusText.set('Model choice could not be saved.'); })
+                    .finally(() => { if (write === writeGeneration) savingChoice = false; });
+            },
+            onDateChange: (nextDate: string) => {
+                if (cooldown.active()) { syncControls(); return; }
+                requestedDate = nextDate; cancel(); failed = false; syncControls(); void load();
+            },
+        },
     });
     const visibility = () => {
         if (!active()) { cancel(); cooldown.suspend(); return; }
@@ -296,7 +334,7 @@ export function mountSummitCloud() {
     const unsubscribe = settings.subscribe(applyPreference);
     const stop = () => { cancel(); cooldown.suspend(); readGate.refresh(); };
     lifecycle = createPageLifecycle({ onSuspend: stop, onResume: () => { if (!readGate.refresh()) visibility(); },
-        onDispose: () => { stop(); timelineObserver?.disconnect(); readGate.dispose(); unsubscribe(); cooldown.dispose(); client.clear(); } });
+        onDispose: () => { stop(); timelineObserver?.disconnect(); readGate.dispose(); unsubscribe(); cooldown.dispose(); client.clear(); controlsIsland?.dispose(); } });
     settings.requireCurrent().then(next => { if (!ready && lifecycle.state !== 'disposed') applyPreference(next); }).catch(() => {});
     return { card, lifecycle };
 }

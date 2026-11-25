@@ -12,10 +12,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium, firefox } from 'playwright';
 import type { Browser, BrowserType, LaunchOptions, Page } from 'playwright';
-import { createResourceStack } from './resource-stack.mjs';
-import { activateToolbarTarget, waitForCondition } from './browser-verification-fixtures.mjs';
+import { createResourceStack } from './resource-stack.mts';
+import { activateToolbarTarget, waitForCondition } from './browser-verification-fixtures.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
-import { assertChromeLaunchAllowed } from './chrome-launch-guard.mjs';
+import { assertChromeLaunchAllowed } from './chrome-launch-guard.mts';
 
 const popupHtml = await fs.readFile(new URL('../dist/popup/popup.html', import.meta.url), 'utf8');
 const panelCss = await fs.readFile(new URL('../dist/css/panel.css', import.meta.url), 'utf8');

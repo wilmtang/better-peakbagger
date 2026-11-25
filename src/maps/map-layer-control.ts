@@ -3,9 +3,9 @@
 
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
 import { OVERLAY_MIN_ZOOM } from './map-overlay-providers.ts';
-import { createWildfireList } from './wildfire-details.js';
-import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.js';
-import { SENTINEL_MIN_ZOOM } from './sentinel-core.js';
+import { createWildfireList } from './wildfire-details.ts';
+import { WILDFIRE_MIN_ZOOM, WILDFIRE_SOURCE } from './wildfire-core.ts';
+import { SENTINEL_MIN_ZOOM } from './sentinel-core.ts';
 
 import { registerLayerInspection, notifyLayerInspection } from './map-layer-inspection.ts';
 import type { LayerControlModel, LayerLegendEntry } from './map-layer-inspection.ts';

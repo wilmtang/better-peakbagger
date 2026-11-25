@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
 import { createVerificationRoot, launchVerificationChrome, launchVerificationFirefox, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
-import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mjs';
-import { createResourceStack } from './resource-stack.mjs';
+import { snowMapDocument, snowMapDem } from './verify-snow-map-fixture.mts';
+import { createResourceStack } from './resource-stack.mts';
 
 declare global {
     interface Window { inspectionFixture: {open(): void; finishElevation(): void; toggle(): void; dispose(): void}; }

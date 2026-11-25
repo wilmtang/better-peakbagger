@@ -1,0 +1,60 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { imgbbAuth as Auth } from '../../src/photos/imgbb-auth.ts';
+
+const fakeArea = () => {
+    const values: Record<string, unknown> = {};
+    return {
+        values,
+        async get(key: string) { return { [key]: values[key] }; },
+        async set(patch: Record<string, unknown>) { Object.assign(values, structuredClone(patch)); },
+        async remove(key: string) { delete values[key]; },
+    };
+};
+
+test('stores a valid ImgBB key only in its device-local record', async () => {
+    const area = fakeArea();
+    const store = Auth.createKeyStore(area);
+    assert.equal(await store.getKey(), null);
+    assert.deepEqual(await store.setKey(' api-key ', '2026-07-27T18:00:00.000Z'), {
+        configured: true,
+        savedAt: '2026-07-27T18:00:00.000Z',
+    });
+    assert.deepEqual(area.values, {
+        [Auth.STORAGE_KEY]: {
+            key: 'api-key',
+            savedAt: '2026-07-27T18:00:00.000Z',
+        },
+    });
+    assert.equal(await store.getKey(), 'api-key');
+    await store.clear();
+    assert.equal(await store.getKey(), null);
+});
+
+test('rejects malformed keys and ignores malformed stored values', async () => {
+    const area = fakeArea();
+    const store = Auth.createKeyStore(area);
+    await assert.rejects(store.setKey('has whitespace'), /invalid/);
+    area.values[Auth.STORAGE_KEY] = { key: 'has whitespace' };
+    assert.equal(await store.read(), null);
+});
+
+test('conditional key restore yields to a newer queued replacement', async () => {
+    const area = fakeArea();
+    const store = Auth.createKeyStore(area);
+    const previous = await store.replace({ key: 'old-key', savedAt: 'old-time' });
+    const imported = await store.replace({ key: 'imported-key', savedAt: 'import-time' });
+
+    const newer = store.setKey('newer-key', 'newer-time');
+    const rollback = store.replaceIfCurrent(imported, previous);
+    await newer;
+
+    assert.deepEqual(await rollback, {
+        replaced: false,
+        current: { key: 'newer-key', savedAt: 'newer-time' },
+    });
+    assert.equal(await store.getKey(), 'newer-key');
+});

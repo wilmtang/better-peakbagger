@@ -2,9 +2,9 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.js';
+import { TERRAIN_FRAME_KEEP_ALIVE_MS } from '../src/terrain/terrain-lifecycle.ts';
 import { AUTHORED_SOURCE_ROOTS } from './build-config.mts';
-import { dependencyVersionsFromLock } from './dependency-metadata.mjs';
+import { dependencyVersionsFromLock } from './dependency-metadata.mts';
 
 export const AMO_APPROVAL_NOTES_MAX_LENGTH = 3_000;
 
@@ -35,6 +35,7 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         'sunCalc',
         'tiptap',
         'prosemirrorView',
+        'svelte',
     ];
     if (!dependencyVersions
         || requiredDependencyVersions.some((key) => !dependencyVersions[key])) {
@@ -59,6 +60,8 @@ export function buildAmoMetadata({ licenseText, description, dependencyVersions 
         `SunCalc ${versions.sunCalc} (BSD-3-Clause) is bundled only into Peak-page and GPX-analyzer consumers for offline Sun/Moon positions, events, and phase. Package: https://www.npmjs.com/package/suncalc/v/${versions.sunCalc} ; source: https://github.com/mourner/suncalc/tree/v${versions.sunCalc}`,
         '',
         `The report editor bundles TipTap core ${versions.tiptap}, ProseMirror view ${versions.prosemirrorView}, and their dependency graph into content/ascent-editor.js. THIRD_PARTY_NOTICES.txt records their package metadata and licenses.`,
+        '',
+        `options/options.js and content/summit-cloud.js precompile and bundle Svelte ${versions.svelte} (MIT; DOM tree fragments, no innerHTML) for the Units settings panel and Summit Cloud Cover controls; Svelte runtime helpers (esm-env, clsx) are recorded in THIRD_PARTY_NOTICES.txt.`,
         '',
         `The optional 3D view is off by default. Its setting discloses external tile requests. An explicit 3D action loads elevation data (not code) from https://tiles.mapterhorn.com and may re-request the selected map layer; providers receive the viewed area and request metadata. Returning to 2D stops tile activity and parks a loaded renderer idle and non-interactive for up to ${terrainKeepAliveMinutes} minutes. After that—or immediately if startup fails or 3D is disabled—the renderer is destroyed.`,
         '',

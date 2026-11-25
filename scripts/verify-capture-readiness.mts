@@ -15,10 +15,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Builder } from 'selenium-webdriver';
 import firefox, { type Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
-import { createFixtureCertificate, verificationViewport } from './browser-verification-fixtures.mjs';
-import { createResourceStack, closeServer, listenServer } from './resource-stack.mjs';
-import { prepareFirefoxSource } from './run-firefox.mjs';
-import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mjs';
+import { createFixtureCertificate, verificationViewport } from './browser-verification-fixtures.mts';
+import { createResourceStack, closeServer, listenServer } from './resource-stack.mts';
+import { prepareFirefoxSource } from './run-firefox.mts';
+import { quitFirefoxDriver, stopOwnedFirefoxProcesses } from './firefox-verifier-processes.mts';
 import { createVerificationRoot, launchVerificationChrome } from './verification-launch.mts';
 
 type Resources = ReturnType<typeof createResourceStack>;

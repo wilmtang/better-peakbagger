@@ -7,7 +7,7 @@
 // 2D layer menu and the 3D drape picker cannot diverge. Pure with respect to
 // the extension: it only reads the same-origin page/frame that owns Leaflet.
 
-import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.js';
+import { SENTINEL_CODE, SENTINEL_NAME, sentinelTarget } from '../maps/sentinel-core.ts';
 import { vectorBasemap } from '../maps/vector-basemap.ts';
 
 

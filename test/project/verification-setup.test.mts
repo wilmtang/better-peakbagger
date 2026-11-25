@@ -175,7 +175,7 @@ test('shared setup exports the installed paths and versions and keeps exact tool
         assert.match(contract.run, new RegExp(`BPB_EXPECT_${browser}_VERSION=`));
         assert.match(contract.run, new RegExp(`${browser}_BIN=`));
     }
-    assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mjs --playwright-chromium')));
+    assert.ok(steps.some((step: WorkflowStep) => step.run?.includes('verification-browser-identity.mts --playwright-chromium')));
     assert.ok(steps.filter((step: WorkflowStep) => step.uses).every((step: WorkflowStep) => /@[a-f0-9]{40}$/.test(step.uses!)));
 
     const directory = await mkdtemp(path.join(tmpdir(), 'bpb-setup-contract-'));

@@ -1,0 +1,302 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { FixtureDom } from '../helpers/fixture-dom.mts';
+import { ascentTableSplit as Split } from '../../src/ascent/ascent-table-split.ts';
+import { pointerEvent } from '../helpers/pointer-event.mts';
+
+const legacyHtml = ({ between = '' } = {}) => `<!doctype html><html><body><form>
+  <table class="gray" id="report" width="49%" align="left">
+    <tr><th>Ascent Trip Report</th></tr><tr><td>A long report.</td></tr>
+  </table>
+  ${between}
+  <table class="gray" id="summary" width="50%" align="right">
+    <tr><th>Summary Total Data</th></tr><tr><td>Distance</td></tr>
+  </table>
+</form></body></html>`;
+
+// The heading is absent on saved ascents with no trip-report prose.
+const detailsHtml = ({ between = '' } = {}) => legacyHtml({ between }).replace(
+    '<tr><th>Ascent Trip Report</th></tr><tr><td>A long report.</td></tr>',
+    `<tr><td><b>Other People:</b></td><td>Solo Ascent</td></tr>
+    <tr><td><b>Date:</b></td><td>Saturday, August 26, 2023</td></tr>
+    <tr><td><b>Ascent Type:</b></td><td>Successful Summit Attained</td></tr>
+    <tr><td><b>Peak:</b></td><td><a href="/peak.aspx?pid=1">Fixture Peak</a></td></tr>`,
+);
+
+const rect = (values: Partial<DOMRect>) => values as DOMRect;
+
+const setup = ({ html = legacyHtml(), saved = null as string | null, storage = null as Pick<Storage, 'getItem' | 'setItem'> | null } = {}) => {
+    const dom = new FixtureDom(html, {
+        url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1',
+    });
+    if (saved !== null) dom.window.localStorage.setItem(Split.storageKey, saved);
+    const split = Split.mount({
+        doc: dom.window.document as unknown as Document,
+        storage: storage || dom.window.localStorage,
+    });
+    if (split) split.handle.getBoundingClientRect = () => rect({ width: 13 });
+    const restore = () => {
+        dom.window.close();
+    };
+    return { dom, split, restore };
+};
+
+test('the exact legacy report / summary pair becomes one accessible split', () => {
+    const { dom, split, restore } = setup();
+    try {
+        assert.ok(split);
+        assert.deepEqual(Array.from(split.wrapper.children).map(element => element.id), [
+            'bpb-ascent-report-column', 'bpb-ascent-table-resize-handle', 'bpb-ascent-summary-column',
+        ]);
+        assert.equal(split.reportColumn.firstElementChild, split.left);
+        assert.equal(split.summaryColumn.firstElementChild, split.right);
+        assert.equal(split.handle.type, 'button', 'the handle cannot submit Peakbagger\'s page form');
+        assert.equal(split.handle.getAttribute('role'), 'separator');
+        assert.equal(split.handle.getAttribute('aria-orientation'), 'vertical');
+        assert.equal(split.handle.getAttribute('aria-valuemin'), '25');
+        assert.equal(split.handle.getAttribute('aria-valuemax'), '75');
+        assert.match(split.handle.getAttribute('aria-valuetext') ?? '', /Trip report 49%; summary 51%/);
+        assert.ok(split.left.classList.contains('bpb-ascent-table-split__report'));
+        assert.ok(split.right.classList.contains('bpb-ascent-table-split__summary'));
+        assert.equal(dom.window.document.querySelectorAll('#bpb-ascent-table-split').length, 1);
+        assert.equal(Split.mount({
+            doc: dom.window.document as unknown as Document,
+            storage: dom.window.localStorage,
+        }), null, 'mounting is idempotent');
+    } finally { restore(); }
+});
+
+test('an ascent without trip-report prose still gets the adjacent table split', () => {
+    const { dom, split, restore } = setup({ html: detailsHtml() });
+    try {
+        assert.ok(split);
+        assert.equal(split.left.id, 'report');
+        assert.equal(split.right.id, 'summary');
+        assert.equal(split.handle.getAttribute('role'), 'separator');
+        assert.equal(dom.window.document.querySelectorAll('#bpb-ascent-table-resize-handle').length, 1);
+    } finally { restore(); }
+});
+
+test('details-only detection requires all metadata labels and an adjacent summary', () => {
+    const invalid = [
+        ...['Date:', 'Ascent Type:', 'Peak:'].map(label => detailsHtml().replace(label, 'Other:')),
+        detailsHtml({ between: '<p>Native content</p>' }),
+        detailsHtml().replace('Summary Total Data', 'Unrelated data'),
+        legacyHtml().replace('Ascent Trip Report', 'Date: Ascent Type: Peak:'),
+        legacyHtml().replace('Ascent Trip Report', 'Unrelated').replace('A long report.',
+            '<table><tr><td>Date:</td></tr><tr><td>Ascent Type:</td></tr><tr><td>Peak:</td></tr></table>'),
+    ];
+    for (const html of invalid) {
+        const { split, restore } = setup({ html });
+        try { assert.equal(split, null); }
+        finally { restore(); }
+    }
+});
+
+test('unrelated or separated gray tables are left untouched', () => {
+    const modern = setup({
+        html: '<!doctype html><table class="gray"><tr><td>Trip Report</td></tr></table>',
+    });
+    try { assert.equal(modern.split, null); }
+    finally { modern.restore(); }
+
+    const separated = setup({ html: legacyHtml({ between: '<p>Native content</p>' }) });
+    try {
+        assert.equal(separated.split, null,
+            'moving tables across native intervening content would change page meaning');
+    } finally { separated.restore(); }
+});
+
+test('image height caps and authored ratios preserve saved dimensions', () => {
+    const { dom, split, restore } = setup({ html: legacyHtml().replace('A long report.', `
+        <img id="height-only" height="200">
+        <img id="sized" width="640" height="200">
+        <img id="original">
+        <img id="invalid" height="invalid">
+    `) + '<img id="outside" height="200">' });
+    try {
+        assert.ok(split);
+        const image = dom.window.document.getElementById('height-only');
+        assert.equal(image.style.getPropertyValue('--bpb-ascent-image-max-height'), '200px');
+        split.applyPercent(25);
+        split.applyPercent(75);
+        assert.equal(image.getAttribute('height'), '200');
+        assert.equal(image.getAttribute('width'), null);
+        const sized = dom.window.document.getElementById('sized');
+        assert.equal(sized.style.getPropertyValue('--bpb-ascent-image-aspect-ratio'), '640 / 200');
+        assert.equal(sized.getAttribute('width'), '640');
+        assert.equal(sized.getAttribute('height'), '200');
+        for (const id of ['original', 'invalid', 'outside']) {
+            assert.equal(dom.window.document.getElementById(id).getAttribute('style'), null);
+        }
+    } finally { restore(); }
+});
+
+test('pointer dragging resizes both columns and persists once released', () => {
+    const { dom, split, restore } = setup();
+    try {
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013, left: 0, right: 1013 });
+        const initial = split.leftPercent;
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            button: 0, clientX: 500,
+        }));
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            clientX: 600,
+        }));
+        assert.equal(split.leftPercent, initial + 10,
+            '100 px of a 1000 px split adds ten percentage points');
+        assert.equal(dom.window.localStorage.getItem(Split.storageKey), null,
+            'an in-progress gesture is not persisted');
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', { clientX: 600 }));
+        const saved = JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!);
+        assert.equal(saved.leftPercent, split.leftPercent);
+        assert.equal(dom.window.document.documentElement.classList
+            .contains('bpb-ascent-table-split-resizing'), false);
+    } finally { restore(); }
+});
+
+test('touch cancellation and capture loss restore the original split', () => {
+    const writes: [string, string][] = [];
+    const storage = {
+        getItem: () => null,
+        setItem: (key: string, value: string) => { writes.push([key, value]); },
+    };
+    const { dom, split, restore } = setup({ storage });
+    try {
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1044, left: 0, right: 1044 });
+        split.handle.getBoundingClientRect = () => rect({ width: 44 });
+        const initial = split.leftPercent;
+        const touch = { pointerId: 11, pointerType: 'touch' };
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            ...touch, button: 0, clientX: 500,
+        }));
+        const move = pointerEvent(dom, 'pointermove', {
+            ...touch, clientX: 600,
+        });
+        split.handle.dispatchEvent(move);
+        assert.equal(split.leftPercent, initial + 10,
+            'touch dragging uses the wider rendered handle when calculating the split');
+        assert.equal(move.defaultPrevented, true, 'touch movement cannot scroll the page');
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointercancel', touch));
+        split.handle.dispatchEvent(pointerEvent(dom, 'lostpointercapture', touch));
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerup', touch));
+
+        assert.equal(writes.length, 0, 'cancelled gestures do not commit');
+        assert.equal(split.leftPercent, initial);
+        assert.equal(dom.window.document.documentElement.classList
+            .contains('bpb-ascent-table-split-resizing'), false);
+    } finally { restore(); }
+});
+
+test('Escape cancels an active pointer resize without saving it', () => {
+    const { dom, split, restore } = setup();
+    try {
+        assert.ok(split);
+        const initial = split.leftPercent;
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013, left: 0, right: 1013 });
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', {
+            button: 0, clientX: 500,
+        }));
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointermove', {
+            clientX: 650,
+        }));
+        assert.notEqual(split.leftPercent, initial);
+        dom.window.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+            key: 'Escape', bubbles: true, cancelable: true,
+        }));
+        assert.equal(split.leftPercent, initial);
+        assert.equal(dom.window.localStorage.getItem(Split.storageKey), null);
+        assert.equal(dom.window.document.documentElement.classList
+            .contains('bpb-ascent-table-split-resizing'), false);
+    } finally { restore(); }
+});
+
+test('keyboard resizing is bounded, persisted, and resettable', () => {
+    const { dom, split, restore } = setup();
+    try {
+        assert.ok(split);
+        split.handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+            key: 'End', bubbles: true, cancelable: true,
+        }));
+        assert.equal(split.leftPercent, 75);
+        split.handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+            key: 'ArrowRight', bubbles: true, cancelable: true,
+        }));
+        assert.equal(split.leftPercent, 75, 'the summary keeps its 25% minimum');
+        split.handle.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+            key: 'ArrowLeft', shiftKey: true, bubbles: true, cancelable: true,
+        }));
+        assert.equal(split.leftPercent, 70);
+        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!).leftPercent, 70);
+
+        split.handle.dispatchEvent(new dom.window.MouseEvent('dblclick', {
+            bubbles: true, cancelable: true,
+        }));
+        assert.ok(split.leftPercent > 49 && split.leftPercent < 50,
+            'double-click restores Peakbagger\'s original 49 / 50 ratio');
+    } finally { restore(); }
+});
+
+test('a saved split is cleaned and restored on the next ascent page', () => {
+    const restored = setup({ saved: JSON.stringify({ leftPercent: 68 }) });
+    try {
+        assert.ok(restored.split);
+        assert.equal(restored.split.leftPercent, 68);
+        assert.equal(restored.split.wrapper.style.getPropertyValue('--bpb-ascent-report-share'), '68fr');
+    } finally { restored.restore(); }
+
+    const corrupt = setup({ saved: '{broken' });
+    try {
+        assert.ok(corrupt.split);
+        assert.ok(corrupt.split.leftPercent > 49 && corrupt.split.leftPercent < 50,
+            'corrupt storage falls back to the native ratio');
+    } finally { corrupt.restore(); }
+});
+
+test('clicking the divider offers single-pointer resizing without dragging or losing focus', () => {
+    const { dom, split, restore } = setup();
+    try {
+        assert.ok(split);
+        const before = split.leftPercent;
+        split.handle.click();
+        const menu = dom.window.document.querySelector('.bpb-layout-menu');
+        assert.equal(menu.hidden, false);
+        assert.equal(menu.querySelectorAll('button').length, 3);
+        menu.querySelector('button').click();
+        assert.equal(split.leftPercent, before + 5);
+        assert.equal(menu.hidden, true);
+        assert.equal(dom.window.document.activeElement, split.handle);
+        assert.equal(JSON.parse(dom.window.localStorage.getItem(Split.storageKey)!).leftPercent, before + 5);
+        split.handle.click();
+        const focused: Element | null = dom.window.document.activeElement;
+        assert.ok(focused);
+        focused.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        assert.equal(menu.hidden, true); assert.equal(dom.window.document.activeElement, split.handle);
+    } finally { restore(); }
+});
+
+test('a failed pointer capture still receives movement and completion outside the handle', () => {
+    const writes: [string, string][] = [], storage = {
+        getItem: () => null,
+        setItem: (key: string, value: string) => { writes.push([key, value]); },
+    };
+    const { dom, split, restore } = setup({ storage });
+    try {
+        assert.ok(split);
+        split.wrapper.getBoundingClientRect = () => rect({ width: 1013 });
+        split.handle.getBoundingClientRect = () => rect({ width: 13 });
+        const initial = split.leftPercent;
+        split.handle.setPointerCapture = () => { throw new Error('capture unavailable'); };
+        split.handle.dispatchEvent(pointerEvent(dom, 'pointerdown', { pointerId: 2, button: 0, clientX: 500 }));
+        dom.window.dispatchEvent(pointerEvent(dom, 'pointermove', { pointerId: 2, clientX: 600 }));
+        dom.window.dispatchEvent(pointerEvent(dom, 'pointerup', { pointerId: 2, clientX: 600 }));
+        assert.equal(split.leftPercent, initial + 10);
+        assert.equal(writes.length, 1);
+        assert.equal(dom.window.document.documentElement.classList.contains('bpb-ascent-table-split-resizing'), false);
+    } finally { restore(); }
+});

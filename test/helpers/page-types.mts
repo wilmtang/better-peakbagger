@@ -2,7 +2,7 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// Structural types for tests that drive packaged pages in jsdom. The pages'
+// Structural types for tests that drive packaged pages in fixture frames. The pages'
 // markup is owned by this repository, so a lookup is typed as the union of the
 // form and action elements the tests read; a test that needs one element's
 // own API asks for it with `byId<T>()` instead of relying on the intersection.
@@ -11,7 +11,7 @@
 
 export type TestWindow = Window & typeof globalThis;
 
-type ElementBase = HTMLElement & HTMLInputElement & HTMLSelectElement & HTMLDialogElement & HTMLAnchorElement;
+type ElementBase = HTMLElement & HTMLInputElement & HTMLSelectElement & HTMLDialogElement & HTMLAnchorElement & Pick<HTMLFormElement, 'elements' | 'requestSubmit' | 'submit' | 'reset' | 'action' | 'method'>;
 // Lookups from a page element stay page elements. Like the document's, they
 // are typed as present: a missing node fails the test at the lookup.
 export interface PageElement extends Omit<ElementBase, 'querySelector' | 'querySelectorAll' | 'closest' | 'parentElement'
@@ -63,6 +63,8 @@ export interface StoredRecord {
     settings: Record<string, unknown>;
     deletedGeneration: string;
     storageGeneration: string;
+    fetchedAt: number;
+    ownerCid: number | null;
     [field: string]: unknown;
 }
 
@@ -102,7 +104,7 @@ export interface PageLoadOptions {
 export type LoadPage = (settings?: Record<string, unknown>, options?: PageLoadOptions) => Promise<PageDom>;
 export type WaitFor = (dom: { window: unknown }, condition: () => unknown, timeoutMs?: number) => Promise<void>;
 
-// jsdom has no layout. Tests that exercise geometry-driven code stub only the
+// Tests that pin geometry-driven code to exact readings stub only the
 // readings the feature takes; these complete the stub into the DOM type.
 export const rect = (box: Partial<Omit<DOMRect, 'toJSON'>> = {}): DOMRect => {
     const value = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, ...box };

@@ -1,7 +1,7 @@
 # Development guide
 
 Better Peakbagger is a Manifest V3 extension whose `src/` is written as **ES
-modules** and bundled with **esbuild** into `dist/`. `dist/` is the extension:
+modules** and bundled with **Vite** into `dist/`. `dist/` is the extension:
 it is what you load in a browser, what the release packagers zip, and what the
 real-extension checks exercise. You never load the repo root directly.
 
@@ -18,11 +18,11 @@ Better Peakbagger module uses a global as an internal dependency.
   TypeScript from authored `.ts`/`.mts` tooling and tests; type checking remains
   a separate required command.
 - `npm ci` to install the exact dependency graph in `package-lock.json`
-  (esbuild, runtime vendor packages, jsdom, Playwright, Selenium, and web-ext).
+  (Vite, runtime vendor packages, Playwright, Selenium, and web-ext).
   Its `prepare` step also points this clone's `core.hooksPath` at `.githooks`,
   which makes `.githooks/pre-commit` scan staged contents and paths and
   `.githooks/commit-msg` scan the proposed message through
-  `scripts/privacy-guard.mjs`. Salted hashes cover personal identifiers and
+  `scripts/privacy-guard.mts`. Salted hashes cover personal identifiers and
   complete private hostnames/IPs, including compound resource names; common
   hostname words and individual IP octets are not banned. Never commit the
   plaintext identifiers as test cases. This is the one check whose absence is
@@ -36,7 +36,7 @@ Better Peakbagger module uses a global as an internal dependency.
   On macOS, run browser checks outside Codex's Seatbelt sandbox through its
   approved execution path. Headless Chrome still registers with macOS and can
   abort during a sandboxed launch, causing a visible system crash dialog.
-  Repository verifiers use `scripts/chrome-launch-guard.mjs` to stop that
+  Repository verifiers use `scripts/chrome-launch-guard.mts` to stop that
   launch before Chrome starts. Keep test profiles isolated and Chrome hidden;
   do not disable the system's crash reporting.
 - For Firefox verification: Firefox Stable and `geckodriver` on `PATH`.
@@ -48,22 +48,16 @@ Better Peakbagger module uses a global as an internal dependency.
   terrain verifiers, and `showcase:render` — creates a one-day self-signed
   certificate in a disposable directory and deletes it in teardown, so the local
   fixture is served over HTTPS on a real Peakbagger hostname. That is required
-  by the product, not a formality: `src/peakbagger/peakbagger-request.js`
+  by the product, not a formality: `src/peakbagger/peakbagger-request.ts`
   refuses any other origin.
 
 ## TypeScript creation and modification policy
 
-New authored JavaScript-family modules use TypeScript: `.ts` for browser code,
-`.mts` for Node ESM scripts, tests and configuration. Modifying an existing
-`.js`, `.mjs`, `.cjs` or `.jsx` module requires converting it in the same change;
-untouched legacy modules remain supported. This includes authored fixtures,
-documentation probes and store-asset tooling. HTML, CSS, JSON and prose keep
-their existing formats. Generated bundles and reviewed upstream code retain
-their required JavaScript formats; exclusions are limited to the output/vendor
-roots recorded in [the guard](../scripts/typescript-policy.mts).
-Exact filename-reference upgrades to TypeScript may remain in legacy callers
-when every other byte is unchanged; the guard verifies this exception. Substantive
-edits still require conversion. Importing untouched JS from TS remains supported.
+Use `.ts` for browser modules and `.mts` for Node ESM scripts, tests and
+configuration. This covers authored fixtures, documentation probes and
+store-asset tooling. HTML, CSS, JSON and prose keep their existing formats.
+Generated bundles and reviewed upstream code retain their JavaScript formats
+in the explicit roots listed by [the guard](../scripts/typescript-policy.mts).
 
 Convert the actual implementation, update exact import extensions, build entry
 aliases, scripts/workflows, source readers and test discovery, and preserve the
@@ -71,14 +65,13 @@ generated `.js` filenames consumed by the manifest and pages. New Node tests use
 `.test.mts`; run converted scale tests explicitly until their owning runner is
 updated. Do not add forwarding JavaScript stubs or disable checking. Runtime
 conversion must also update the relevant source guards and watch coverage from
-[the adoption plan](plans/modern-stack-adoption.md). Svelte is installed and
-compiles, but no shipped bundle imports a component yet (M6).
+[the adoption plan](plans/modern-stack-adoption.md). The Units settings panel
+and Summit Cloud controls ship as Svelte islands.
 
 Svelte components (`.svelte`) and rune modules (`.svelte.ts`) compile through
-[svelte-build.mts](../scripts/svelte-build.mts), which every bundle in
-`scripts/build.mts` receives: runes mode, production client output in every
-build including watch, and styles injected by the component so a bundle keeps
-one output file. `npm run typecheck` runs
+[the shared Svelte settings](../scripts/svelte-build.mts) applied by Vite.
+Every build uses runes mode and production client output. The component
+injects its styles so each bundle keeps one output file. `npm run typecheck` runs
 `svelte-check --tsconfig ./tsconfig.check.json` over the browser project, and
 ESLint lints components and rune modules in the runtime roots with the
 TypeScript rules, requiring `<script lang="ts">`. Mount a component beside
@@ -87,7 +80,7 @@ mount, prop updates and BFCache-aware disposal, and removes a half-mounted
 component if its first update throws. ESLint forbids other runtime TypeScript
 from importing components or rune modules. Svelte resolves to its server build
 in Node and rune modules only run compiled, so test an island's owner through
-its built bundle or the browser DOM tier, not unbundled jsdom imports. Scoped
+its built bundle in the browser DOM tier, not unbundled imports. Scoped
 style names hash the CSS, so builds are identical from any working directory,
 and the runtime's development flag is pinned off. Test-only components live in `test/fixtures/svelte/`, with
 `valid.check.json` and `invalid.check.json` as their explicitly selected checking
@@ -111,29 +104,24 @@ owner changes.
 
 `npm run typecheck` checks separate browser/Node projects without emitting files.
 [typecheck-node.mts](../scripts/typecheck-node.mts) splits the Node project by
-import closure: a script or test that imports `jsdom` or extension source, or
-declares `/// <reference lib="dom" />` for browser callbacks, is checked with the
+import closure: a script or test that imports extension source, or declares
+`/// <reference lib="dom" />` (browser tests and callbacks), is checked with the
 DOM library through `tsconfig.dom.check.json`; every other Node file is checked
-without DOM globals. jsdom tests use the published `@types/jsdom` declarations;
-[page-dom.mts](../test/helpers/page-dom.mts) and
+without DOM globals.
+[fixture-dom.mts](../test/helpers/fixture-dom.mts) and
 [page-types.mts](../test/helpers/page-types.mts) type fixture pages as known
-markup, and [load-page.mts](../test/helpers/load-page.mts) keeps its
-trusted-event internals behind one local declaration pinned to jsdom's major.
-Do not suppress a jsdom import or hand-type its constructor.
+markup. jsdom is not a dependency: DOM behavior is tested in real browsers.
 The current Chrome definitions include the cross-browser `browser` alias; do not
 install conflicting global definitions or assume these types prove Firefox API
 support. ESLint loads [its TypeScript config](../eslint.config.mts) through the
-locked Jiti loader. Existing JS retains its rules; TS uses compiler name checking
-and the TypeScript-aware unused/shadow rules. The checking projects deliberately
-are not named `tsconfig.json`, so esbuild cannot silently change legacy output
-through automatic configuration discovery.
+locked Jiti loader. TypeScript uses compiler name checking and TypeScript-aware
+unused and shadow rules. The checking projects use separate config filenames
+to keep compiler checks independent of build configuration discovery.
 
-`npm run check:typescript-policy` examines the staged Git index, including partial
-staging. CI independently checks the full committed PR/push diff with `--base`;
-release verification compares with the policy-adoption baseline. Deletions and
-JS-to-TS renames are allowed. Moving code to another JavaScript path is rejected.
-The pre-commit hook runs this guard after privacy scanning, and an unknown option
-or unavailable base revision fails rather than skipping enforcement.
+`npm run check:typescript-policy` examines every tracked path in the Git index,
+including paths outside the staged diff. The pre-commit hook runs the guard after
+privacy scanning. CI and release use `--committed` to inspect all of `HEAD`.
+An unknown option or unavailable Git snapshot fails the check.
 
 ## Shared UI/UX skill
 
@@ -168,7 +156,7 @@ check. It runs entirely on GitHub, without Codex or the maintainer's computer.
 Verified skill updates are committed directly to `main`; no feature branch or
 pull request is created.
 
-`scripts/update-ui-ux-skill.mjs` pins the upstream commit, verifies downloaded
+`scripts/update-ui-ux-skill.mts` pins the upstream commit, verifies downloaded
 blob hashes, and three-way merges `SKILL.md` with the installed upstream version
 to retain project guidance. Changed local helpers, merge conflicts, license
 changes, unsupported layouts, and divergent upstream history stop the run.
@@ -187,7 +175,7 @@ pushes. Keep future deploy keys subject to the check-bypass policy in mind. Auto
 commits include `[skip ci]`; conflicts and failed skill checks stop the run.
 Updater and publisher regressions also run with `npm test`.
 
-For a local preview, run `node scripts/update-ui-ux-skill.mjs --check`; omit
+For a local preview, run `node scripts/update-ui-ux-skill.mts --check`; omit
 `--check` to apply the proposed update in a clean skill working tree. Neither
 command commits, pushes, or merges anything locally.
 
@@ -243,8 +231,8 @@ npm run start -- chromium --chromium-binary "/path/to/chrome-for-testing"
 ```
 
 Without additional profile flags, each command makes the initial `dist/` build,
-launches web-ext with a temporary browser profile, keeps esbuild watching the
-source tree, and reloads the extension after every successful rebuild. Stop the
+launches web-ext with a temporary browser profile, watches the source tree,
+and reloads the extension after every successful build generation. Stop the
 command with Ctrl+C; the watchers, browser process, and Firefox temporary source
 are then cleaned up.
 
@@ -313,10 +301,10 @@ Creating new nested subdirectories or files inside an already-watched root works
 live without restarting. Restart any watcher after adding a new top-level source
 or asset directory, creating a configured top-level directory that did not exist
 when the watcher started, or changing entry or compiler configuration
-(`scripts/build-config.mts`, `scripts/build.mts`, `tsconfig.check.json`,
+(`scripts/build-config.mts`, `scripts/build.mts`, `scripts/vite-build.mts`, `tsconfig.check.json`,
 `tsconfig.node.check.json`) or installed dependencies (`package.json`,
-`package-lock.json`, `node_modules/`)—the running Node process has already
-created its esbuild contexts and loaded those inputs.
+`package-lock.json`, `node_modules/`). A restart reloads the watch layout and
+compiler settings together.
 
 Do **not** load the repo root — `manifest.json` there names bundle files that
 only exist under `dist/` after a build.
@@ -348,7 +336,7 @@ touched surface. Skip unrelated surfaces, but follow each touched surface's
 Chrome and Firefox requirement. Run `npm run verify -- chrome` or `browsers`
 after manifest, build-configuration, worker, execution-world or content-script
 load changes. Run `npm run test:scale` when changing what it covers. Stage the
-files before `npm run check:typescript-policy`, which reads staged paths.
+files before `npm run check:typescript-policy`, which reads the full index.
 
 A pass stays valid until something it covers changes. After a failure, rerun
 the failing check, then any earlier check that covers what the fix changed.
@@ -382,10 +370,10 @@ script is added or removed without updating it.
 | `npm run build:release` | Minified production build (no source maps). |
 | `npm run watch` | Transactionally rebuild on change and re-copy static assets; does not launch or control a browser. |
 | `npm run start -- BROWSER [web-ext options]` | With `BROWSER` set to `chromium` or `firefox`, builds, watches, launches an isolated web-ext development browser, and reloads after complete builds. Firefox mirrors each build into an inline-Preferences source first. |
-| `npm test` | Builds `dist/`, then runs the normal pure/jsdom/project suite in `.test.mjs` and `.test.mts` files under `test/`. Runs three test files in parallel locally and Node's default when `CI` is set. Flags appended after `npm test --` have no effect, because Node ignores flags after the file globs; to change the concurrency, build and then run `node --test --test-concurrency=N` with the flag before the glob. The override uses POSIX shell syntax. |
-| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a jsdom/DOM program; runs in Test CI and release verification. |
-| `npm run check:typescript-policy` | Rejects new or modified authored JavaScript in staged changes; use `-- --base REVISION` to check a committed PR/push or release comparison. |
-| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library; discovers JavaScript and TypeScript scale tests separately from the fast default suite. |
+| `npm test` | Builds `dist/` and runs the `.test.mts` suites under `test/`. DOM behavior runs through `npm run verify -- dom`. Runs three test files in parallel locally. CI uses available parallelism minus one. To change concurrency, build first and run `node --test --test-concurrency=N` with the flag before the file glob. |
+| `npm run typecheck` | Strict, no-emit TypeScript checks: the browser project with `tsc` and `svelte-check`, then the Node project split into a DOM-free program and a DOM program; runs in Test CI and release verification. |
+| `npm run check:typescript-policy` | Rejects authored JavaScript across the Git index. Use `-- --committed` to scan the committed tree. |
+| `npm run test:scale` | Exercises the 4,145-row ascent fixture, a complete 100,000-point/5,000-peak cooperative capture analysis, 100,000-point provider parsing, the full 1,500-entry favorite manager/search/backup path, and a 1,200-photo library. Runs the Node `*.scale.mts` tests, then the `*.scale.browser.mts` tests in hidden Chromium and Firefox (`npm run verify -- dom --scale`); the default browser run leaves them out. |
 | `npm run verify -- TARGET [arguments]` | Runs a named verification target; see the target reference below. Builds once first, except when checking supplied package archives. Use `npm run verify -- --help` to list targets. |
 | `npm run lint` | Runs ESLint over source, page-local surfaces, scripts, and tests; then builds and runs `web-ext lint` against `dist/`, accepting only the owner-reviewed warning baseline. |
 | `npm run audit:ci` | Requires zero advisories in shipped code, and reports but accepts advisories in build and test tooling at any severity. `DEVELOPMENT_TOOLS` in `scripts/check-npm-audit.mts` names the tools; every other direct dependency and everything it depends on counts as shipped, because `package.json` lists shipped libraries under `devDependencies`. See [releasing](releasing.md). |
@@ -414,7 +402,7 @@ script is added or removed without updating it.
 
 ### Verification targets
 
-`npm run verify -- dom [chrome] [firefox] [--case TEXT] [--dist DIR]` runs the
+`npm run verify -- dom [chrome] [firefox] [--suite TEXT] [--case TEXT] [--dist DIR]` runs the
 browser DOM tier: the suites in `test/dom/`, each case in a fresh context of one
 hidden browser per engine (Chrome for Testing in new headless mode, and
 Playwright's Firefox). Pages load at their real HTTPS Peakbagger URL entirely
@@ -425,6 +413,37 @@ an empty selection are rejected, and `BPB_VERIFY_ARTIFACTS` retains failure
 evidence. CI runs it in the required `dom-tier` job. It does not load the
 extension, Playwright's Firefox is a patched build, and hidden runs do not
 establish native focus or window placement.
+
+The same command then runs in-page browser tests, `test/**/*.browser.mts`
+([browser-tests.mts](../scripts/browser-tests.mts)). These are written like
+`node:test` files: the runner bundles each one with small in-page runtimes for
+`node:test`, `node:assert/strict`, read-only `node:fs`, `node:path` and
+`node:url` (`test/dom/runtime/`), and opens it in a fresh hidden page per
+engine on its HTTPS fixture origin (`// @browser-origin https://host`
+overrides www.peakbagger.com). A file fails on a failing test, an uncaught
+error or unhandled rejection in the page or a fixture frame, a load error, a
+hung test or hook, a missing built file, or when none of its tests passed.
+Requests no route serves (fixture images, page scripts) are listed in the
+output. A complete run (no `--suite` or `--case`) first proves the runner
+rejects each broken file in `test/dom/runtime/negative/`; the assertion
+runtime is checked against `node:assert/strict` by
+[browser-assert-runtime.test.mts](../test/project/browser-assert-runtime.test.mts).
+
+Fixture documents are frames from
+[fixture-dom.mts](../test/helpers/fixture-dom.mts) with real layout, at the
+fixture URL as their own URL and base URL. Fixture markup cannot run code: the runner's CSP refuses inline scripts,
+handler attributes and `javascript:` URLs, while evaluated bundles run.
+`await FixtureDom.open()` navigates a real frame, which an extension page with
+its own CSP needs and which reaches same-site hosts such as peakbagger.com.
+[fixture-page.mts](../test/helpers/fixture-page.mts) loads a Peakbagger
+fixture with the extension stub and built bundles, and `fireTrustedEvent`
+performs real automation input, so events are trusted. Each test starts with
+empty web storage on the test origin and ends by clearing and closing every
+fixture frame it opened. A fixture frame is not a top-level page: `window.top`,
+`window.parent` and `frameElement` describe the runner page, so an owner that
+checks them (for example the climber hover card or the terrain frame) belongs
+in a `.dom.mts` suite. `--suite` matches the file path and `--case` the test
+name; set `BPB_BROWSER_TEST_CONSOLE=1` to follow a test's console.
 
 Pass one target after `npm run verify --`. Arguments after the target go to each
 selected verifier; there is no second npm `--` separator. For example:
@@ -672,23 +691,27 @@ Chrome stable 137+ rejects command-line `--load-extension`, so
 web-ext's `--chromium-binary` after the `chromium` argument) or it will fail. Manual **Load
 unpacked** from `dist/` remains the simplest Chrome-family loop.
 
-The reload marker (`dist/.better-peakbagger-reload`) exists only in watch mode.
-It is an internal development coordination file, not extension runtime state;
-one-off and release builds replace `dist/` and do not package it.
+The in-tree build marker (`dist/.better-peakbagger-reload`) exists only in watch
+mode. One-off and release builds replace `dist/` without packaging it. The
+managed development command gives web-ext a separate, nonhidden `generation`
+file under its disposable control directory so its watcher sees the signal
+even when an extension directory is replaced.
 
-The managed Firefox loop derives its Firefox-specific source in a sibling
-candidate directory, validates that complete generation, and publishes it with
-the same rollback-capable directory swap as `dist/`. A failed copy, manifest
-transformation, validation, or publication leaves the prior tree and reload
-token unchanged.
+The managed Firefox loop derives and validates its Firefox-specific source
+before swapping either tree. The watched file advances after both swaps. A
+failed generation, including a candidate superseded by a source edit during
+the build, leaves both published trees and the reload signal on the last
+successful generation when rollback succeeds. If restoration itself fails,
+the watcher reports that error without issuing a reload.
 
 ## How the build works
 
 `scripts/build-config.mts` is the **single source of truth** for how the
 extension is assembled—which source roots belong to each bundle and which
-assets/vendor distributions are copied. `scripts/build.mts` turns that config
-into esbuild calls. The manifest names only generated bundle paths; tests
-cross-check those references against the config.
+assets/vendor distributions are copied. `scripts/vite-build.mts` runs one Vite
+library build per bundle from its ordered source imports. `scripts/build.mts`
+validates and publishes the complete tree. The manifests, copied vendor files
+and notice inventory share this build in development and releases.
 
 Every classic browser entry point (the service worker, each content script, and
 the options and popup pages) is bundled into one self-contained **IIFE** file.
@@ -725,7 +748,7 @@ build config.
 
 ## Adding or changing a source module
 
-1. Write `src/<domain>/foo.js` as an ES module: `export` what other modules
+1. Write `src/<domain>/foo.ts` as an ES module: `export` what other modules
    need, and `import` your own dependencies. Do **not** publish a `globalThis`
    global.
    - Modules that only run for side effects and need an early `return` (e.g. "no
@@ -733,7 +756,7 @@ build config.
      control flow. That is fine as long as they publish no globals.
 2. Add the module to the relevant bundle(s) in `scripts/build-config.mts`
    `ENTRIES` as an explicit root. A module can appear in several bundles;
-   esbuild follows and deduplicates imports within each bundle.
+   Vite follows and deduplicates imports within each bundle.
 3. If it's a brand-new entry point (a new content script, page, or worker), add
    an `ENTRIES` record **and** wire it into `manifest.json` (or the page HTML).
 4. Add focused coverage and run `npm test`.
@@ -749,22 +772,25 @@ build config does not ship.
 ### Testing a module
 
 - **Pure logic** (no DOM/chrome/vendor globals): `import` it directly in a
-  `test/<domain>/*.test.mts` and call it. Set any ambient browser global the
-  module reads (`DOMParser`, `location`, …) from a throwaway jsdom.
-- **Content-script behaviour**: evaluate the *built bundle* into a jsdom page
-  with `evalBundle` from `test/helpers/load-page.mts`. This runs exactly what
+  `test/<domain>/*.test.mts` and call it. A module that needs a browser global
+  (`DOMParser`, `location`, …) is tested in the browser tier instead.
+- **Content-script behaviour**: evaluate the *built bundle* into a fixture page
+  in a `*.browser.mts` test, with `loadPage`/`evalBundle` from
+  `test/helpers/fixture-page.mts`. This runs exactly what
   ships and needs no Better Peakbagger module globals. Feed settings through a
   `chrome.storage` stub (`makeChromeStub`), not a `globalThis.BPBSettings` stub
   — modules import settings now.
 - **Behaviour that depends on layout, scrolling, trusted input, focus or
-  browser-specific DOM**: write a new test for the browser DOM tier in
-  `test/dom/*.dom.mts` (a default-exported `defineDomSuite` from
-  [dom-tier.mts](../scripts/dom-tier.mts)), not in jsdom. It runs in hidden
-  Chromium and Firefox through `npm run verify -- dom`, never in `npm test`.
+  browser-specific DOM**: write an in-page `*.browser.mts` test beside its
+  owner, or, when the case must drive the page from outside, a `.dom.mts`
+  suite under `test/dom/` (a default-exported `defineDomSuite` from
+  [dom-tier.mts](../scripts/dom-tier.mts)). Both run in hidden Chromium and
+  Firefox through `npm run verify -- dom`. Use
+  `npm run verify -- dom --suite OWNER` to select by suite name or relative
+  path. The browser tier runs separately from `npm test`.
 
-Routing rule: pure logic stays in `node:test` with no DOM; new DOM-behaviour
-tests use the browser tier; legacy jsdom tests stay on typed jsdom until M7.5
-of the [stack adoption plan](plans/modern-stack-adoption.md) moves them.
+Routing rule: pure logic stays in `node:test` with no DOM; DOM behaviour uses
+the browser tier ([M7.5](plans/modern-stack-adoption.md) retired jsdom).
 
 Keep degradation tests for genuinely absent third-party globals where the
 runtime supports that fallback. Do not recreate removed `BPB*` module globals
@@ -773,7 +799,7 @@ as test seams.
 ### Peak planning link order
 
 The **Better Peakbagger links** panel on `Peak.aspx` is rendered by
-`src/maps/peak-links.ts`; `src/maps/peak-link-order.js` owns grip dragging,
+`src/maps/peak-links.ts`; `src/maps/peak-link-order.ts` owns grip dragging,
 keyboard movement, cancellation, and persistence. The saved `peakLinkOrder`
 contains link IDs only, with its allowed IDs and default order defined by
 `PEAK_LINK_ORDER` in `src/settings/settings-schema.ts`.
@@ -833,7 +859,7 @@ exactly by `package-lock.json`. The build sources them from `node_modules` into
   `scripts/maplibre-terrain-lod-patch.mts`; worker/shared code stays verbatim.
   Dependency upgrades must review or remove that patch. The native terrain-frame
   entry imports the main module directly and sets the packaged worker URL.
-- **tz-lookup** ships only CommonJS, so esbuild bundles it directly into the GPX
+- **tz-lookup** ships only CommonJS, so Vite bundles it directly into the GPX
   analyzer and ascent-editor bundles that import it.
 
 Chart and marked stay **separately-loaded browser globals** because the manifest
@@ -868,7 +894,7 @@ Dependency updates arrive automatically; see
 deliberate boundary rather than a module dependency: `background.js` injects
 the built adapter into a provider page, then injects inline functions that call
 the API across the worker→page boundary, where an ES import cannot reach.
-`src/peakbagger/peakbagger-page.js` uses the same mechanism for capture requests
+`src/peakbagger/peakbagger-page.ts` uses the same mechanism for capture requests
 that Cloudflare can reject from the worker while accepting from the signed-in
 site. Its request API accepts only the canonical login page and bounded
 summit-box endpoint. Its account-evidence API exposes only allowlisted global
@@ -940,11 +966,10 @@ attributed:
 
 | Group | Reaches `dist/` via | Ships? |
 | --- | --- | --- |
-| `bundled-runtime` | bundled by esbuild | yes |
+| `bundled-runtime` | bundled by Vite | yes |
 | `copied-runtime` | copied by `scripts/build-config.mts` | yes |
-| `tooling` | nothing; build and test only | no |
-| `jsdom` | nothing; jsdom and `@types/jsdom`, test only, majors held together | no |
-| `svelte` | the `svelte` runtime once a bundle imports a component; the compiler, checker and lint tools never | not yet (M6) |
+| `tooling` | Vite, Rolldown, and other build and test tooling | no |
+| `svelte` | `svelte`, `clsx`, and `esm-env` runtime helpers bundled by Vite | yes (runtime only) |
 | `remaining-npm` | depends on the owning dependency path | inspect |
 | `security-fixes` | depends on the vulnerable dependency path | inspect |
 
@@ -1131,10 +1156,11 @@ add it to the merge-step condition, for example
 
 ## What each check can and cannot see
 
-- `npm test` builds `dist/` first and runs in jsdom. It evaluates
-  the shipped bundles, but it does not exercise the real manifest — execution
+- `npm test` builds `dist/` first and runs pure logic and Node-side state;
+  `npm run verify -- dom` evaluates the shipped bundles in hidden Chromium and
+  Firefox fixture pages. Neither exercises the real manifest — execution
   worlds, injection order, and the live service-worker lifecycle are invisible
-  to it.
+  to them.
 - `npm run test:scale` keeps the expensive 4,145-row ascent fixture,
   100,000-point GPX completeness case, 100,000-point/5,000-peak analysis, and
   1,500-entry favorite render/search/backup path and 1,200-photo library out of
@@ -1227,7 +1253,7 @@ add it to the merge-step condition, for example
 - Every fixture server — the terrain verifiers, `verify -- terrain lod`, and `showcase:render` — serves
   over **HTTPS on `www.peakbagger.com`**, with a self-signed certificate minted
   per run and deleted in teardown. This is a product constraint, not a
-  preference: `src/peakbagger/peakbagger-request.js` refuses any URL that is not
+  preference: `src/peakbagger/peakbagger-request.ts` refuses any URL that is not
   `https:` on a Peakbagger host, and the GPX Analyzer fetches its track through
   that guard. See *A plain-HTTP fixture breaks these checks* below.
 - `npm run verify -- browsers` loads the real Chrome and derived Firefox manifests.
@@ -1268,10 +1294,10 @@ toolbar click that grants `activeTab`. Those remain explicit release checks.
 
 The [climber lists guide](climber-lists.md) describes behavior; the
 [archived ledger](https://github.com/wilmtang/better-peakbagger/blob/9bcb42a3e0572218f7fe244eeaacf6197fab54f1/docs/archive/ignored-climbers.md) records proof and release gaps.
-Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.test.mjs`,
-`test/ascent/ascent-report-visibility.test.mjs`,
-`test/background/climber-list-sync.test.mjs` and
-`test/options/options-ignored-backup.test.mjs`. They cover exact author evidence,
+Focused tests live in `test/favorites/`, `test/ascent/ascent-filter.browser.mts`,
+`test/ascent/ascent-report-visibility.browser.mts`,
+`test/background/climber-list-sync.test.mts` and
+`test/options/options-ignored-backup.browser.mts`. They cover exact author evidence,
 visibility/count composition, unknown/empty/error states, mutation races, bounded
 files, reviewed replacements, three-way deletions/conflicts, ref retry, journal
 recovery, cancellation and durable scheduling. Scale coverage includes native
@@ -1312,7 +1338,7 @@ and screen-reader speech remain separate checks.
 
 ### A plain-HTTP fixture breaks these checks
 
-`src/peakbagger/peakbagger-request.js` refuses any URL whose protocol is not
+`src/peakbagger/peakbagger-request.ts` refuses any URL whose protocol is not
 `https:` or whose host is not `peakbagger.com`/`www.peakbagger.com`, before it
 fetches anything. That guard is a security property and must not be relaxed to
 suit a test. The GPX Analyzer fetches its track through it, so a fixture served
@@ -1334,7 +1360,7 @@ three scripts therefore mint a disposable self-signed certificate for
 to the local server (`--host-resolver-rules` in Chrome,
 `network.dns.localDomains` in Firefox), accept the certificate for that launch
 only, and delete the key and certificate in teardown.
-`test/project/showcase.test.mjs` fails if any of them regresses to HTTP, and
+`test/project/showcase.test.mts` fails if any of them regresses to HTTP, and
 also asserts the product-side refusal is still in force — the fixtures follow
 the product, not the reverse.
 

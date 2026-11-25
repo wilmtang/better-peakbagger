@@ -6,8 +6,8 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { createResourceStack } from './resource-stack.mjs';
-import { createBrowserFixtureServer } from './browser-verification-fixtures.mjs';
+import { createResourceStack } from './resource-stack.mts';
+import { createBrowserFixtureServer } from './browser-verification-fixtures.mts';
 import { createVerificationRoot, launchVerificationChrome, PEAKBAGGER_HOST_RULE } from './verification-launch.mts';
 
 if (process.argv.length > 2) throw new Error('Usage: node scripts/verify-api-rate-limits.mts');

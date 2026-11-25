@@ -8,10 +8,6 @@ import { terrainBasemap } from '../../src/terrain/terrain-basemap.ts';
 
 const load = () => terrainBasemap;
 
-// The module builds objects in the JSDOM realm, so strict deepEqual would trip
-// on the foreign prototype; compare structure by value instead.
-const plain = (value: unknown) => JSON.parse(JSON.stringify(value));
-
 // A minimal #selmap-like select without a real DOM: enumerate/active only read
 // .options, .value, .selectedIndex, and each option's .value/.textContent.
 type SelectOption = { value: unknown; textContent: string | null; dataset?: { bpbSentinelCapture?: string } };
@@ -25,7 +21,7 @@ const option = (value: string, textContent: string): SelectOption => ({ value, t
 test('drapeFromCode maps known #selmap codes to fixed xyz raster specs and rejects the rest', () => {
     const B = load();
     const calTopo = B.drapeFromCode('L_CT', 'CalTopo');
-    assert.deepEqual(plain(calTopo), {
+    assert.deepEqual(calTopo, {
         name: 'CalTopo',
         tiles: ['https://caltopo.s3.amazonaws.com/topo/{z}/{x}/{y}.png?v=1'],
         tileSize: 256,
@@ -52,10 +48,10 @@ test('enumerate mirrors the drape-able #selmap options in order, deduped', () =>
         option('L_CT', 'CalTopo (dup)'),  // duplicate code — dropped
         option('L_OS', 'Open Street Map')
     ]);
-    assert.deepEqual(plain(B.enumerate(select).map(basemap => basemap.name)),
+    assert.deepEqual(B.enumerate(select).map(basemap => basemap.name),
         ['CalTopo', 'MyTopo USA/Canada', 'Open Street Map']);
-    assert.deepEqual(plain(B.enumerate(null)), []);
-    assert.deepEqual(plain(B.enumerate({})), []);
+    assert.deepEqual(B.enumerate(null), []);
+    assert.deepEqual(B.enumerate({}), []);
 });
 
 test('active prefers the known-code spec for the selected layer', () => {

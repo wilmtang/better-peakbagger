@@ -152,9 +152,10 @@ The first implementation is confined to the existing peak-links entry and a
 pure, locally maintained source registry. Implemented files:
 
 ```text
-src/avalanche/avalanche-links.js       provider registry and safe URL builders
+src/avalanche/avalanche-links.ts       provider registry and safe URL builders
 src/avalanche/avalanche-location.ts    strict Nation parsing, if needed
-test/avalanche/avalanche-links.test.mjs
+test/avalanche/avalanche-links.test.mts
+test/dom/avalanche/avalanche-links.dom.mts
 ```
 
 Keep the coordinate/Links anchoring invariants. Parse only the peak-details
@@ -242,7 +243,7 @@ flowchart LR
   requests when supported. Cache freshness never extends bulletin validity.
   Recheck validity while a tab stays open, after suspension, and on BFCache
   restore. Abort on deactivation and reject stale generation responses.
-- **Rendering:** follow [map-overlay-leaflet.js](../../src/maps/map-overlay-leaflet.js) for
+- **Rendering:** follow [map-overlay-leaflet.ts](../../src/maps/map-overlay-leaflet.ts) for
   bounded attachment and teardown on the native MAIN-world map. Add a dedicated
   Leaflet pane for forecast polygons rather than altering native layers.
   [terrain-frame-runtime.ts](../../src/terrain/terrain-frame-runtime.ts) owns

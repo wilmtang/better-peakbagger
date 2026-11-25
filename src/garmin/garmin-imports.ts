@@ -1,12 +1,12 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { createGarminBadge } from './garmin-badge.ts';
-import { createGarminStore, garminPublicSummary } from './garmin-store.js';
+import { createGarminStore, garminPublicSummary } from './garmin-store.ts';
 import { createGarminClient, GarminError, GARMIN_PERMISSION, positiveId } from './garmin-api.ts';
-import { decodeGarminRecording } from './fit-activity.js';
-import { createPackagedPageMatcher } from '../background/sender-policy.js';
+import { decodeGarminRecording } from './fit-activity.ts';
+import { createPackagedPageMatcher } from '../background/sender-policy.ts';
 import { settingsSchema as Schema } from '../settings/settings-schema.ts';
-import { publicErrors as PublicErrors } from '../background/public-errors.js';
+import { publicErrors as PublicErrors } from '../background/public-errors.ts';
 
 type GarminExt = typeof chrome;
 type GarminPreferences = typeof Schema.DEFAULTS;
@@ -43,6 +43,8 @@ interface GarminState {
     peakbaggerBlocked?: { code: string; retryAt: number } | null;
 }
 type GarminSummary = ReturnType<typeof garminPublicSummary>;
+// The stored state as this owner reads it, for callers that open the store directly.
+export type GarminImportState = GarminState;
 interface GarminStore {
     read(): Promise<GarminState>; summary(): Promise<GarminSummary>;
     mutate<Result>(mutate: (state: GarminState) => Result): Promise<Result>; close(): Promise<void>;
@@ -80,7 +82,7 @@ export function importRange(settings: GarminPreferences, connectionDate: string 
     const catchup = lastCheck ? new Date(lastCheck - DAY).toISOString().slice(0, 10) : lookback;
     return { from: full ? scope : [scope, [lookback, catchup].sort()[0]].sort().at(-1) as string, to: date };
 }
-export function createGarminImports({ ext, settings, store: durableStore = createGarminStore() as unknown as GarminStore,
+export function createGarminImports({ ext, settings, store: durableStore = createGarminStore<GarminState>(),
     clientFactory = createGarminClient as unknown as NonNullable<GarminImportDependencies['clientFactory']>,
     decode = decodeGarminRecording as unknown as NonNullable<GarminImportDependencies['decode']>,
     prepare, binding, openDrafts, clock = Date.now, date = today }: GarminImportDependencies) {

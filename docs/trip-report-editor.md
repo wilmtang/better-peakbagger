@@ -655,6 +655,16 @@ someone reads the report. Direct videos retain no-referrer in saved markup;
 remote images use Peakbagger's page policy. These policies do not hide the
 requesting browser's IP address or ordinary request metadata.
 
+## Known gaps
+
+- A remote image that fails to load cannot be double-clicked into the photo
+  editor. A broken inline image renders as a small alt-text box, and selecting
+  it on the first click shows its resize handle over that box, so the second
+  click lands on the handle. A loaded image keeps the handle at its corner.
+  Older reports whose image hosts have gone away are the likely case. Found
+  when the editor tests moved to real browsers; the editor behavior is
+  unchanged.
+
 ## Device-local trip report draft lifecycle
 
 Trip report drafts are recovery snapshots for the trip-report field. They are separate
@@ -665,8 +675,8 @@ and never leaves the browser profile. It is not synced to another browser or
 device and is not sent to Peakbagger, GitHub, or the extension developer.
 
 `src/reports/report-editor.ts` owns persistence and recovery. The pure
-`src/reports/report-drafts.js` module is the shared identity, expiry, and limit contract
-used by the editor and the manager in `options/drafts.js`.
+`src/reports/report-drafts.ts` module is the shared identity, expiry, and limit contract
+used by the editor and the manager in `options/drafts.ts`.
 
 ### Identity: one key per climber and form target
 
@@ -1037,13 +1047,13 @@ shows the exact bracket source.
 - Parser tests pin structured drop/unwrap/neutralize diagnostics for unsupported
   tags, attributes, and nesting, while proving aliases, legacy lists, and
   whitespace normalization remain warning-free.
-- `test/reports/report-markup.test.mts` pins Markdown tokens, bracket aliases, DOM
+- `test/reports/report-markup.browser.mts` pins Markdown tokens, bracket aliases, DOM
   import, canonical output, unsafe-input neutralization, raw color validation,
   TipTap color-token revalidation, and round trips.
-- `test/reports/report-editor-mount.test.mjs`,
-  `test/reports/report-editor-modes.test.mjs`,
-  `test/reports/report-editor-media.test.mts`, and
-  `test/reports/report-editor-drafts.test.mjs` pin the native-textarea source of
+- `test/reports/report-editor-mount.browser.mts`,
+  `test/reports/report-editor-modes.browser.mts`,
+  `test/reports/report-editor-media.browser.mts`, and
+  `test/reports/report-editor-drafts.browser.mts` pin the native-textarea source of
   truth, untouched-value preservation, expanded rich DOM, toolbar active
   states, image-source validation, hex-color preservation after Rich and
   Markdown edits, undo isolation across mode switches, mode switching
@@ -1055,9 +1065,9 @@ shows the exact bracket source.
   modes through native editing, pending autosave, Save snapshot, page exit, and
   restore. They drive the TipTap and CodeMirror instances through the mount's
   test handle.
-- `test/reports/report-drafts.test.mjs` pins key construction/parsing, edit URLs,
+- `test/reports/report-drafts.test.mts` pins key construction/parsing, edit URLs,
   compatibility record validation, fallback titles, and expiry arithmetic.
-- `test/options/options-github.test.mts` pins manager ordering, labels, exact Markdown copy
+- `test/options/options-github.browser.mts` pins manager ordering, labels, exact Markdown copy
   versus bracket conversion, expiry cleanup, live refresh, and reversible
   single/bulk deletion.
 - `test/project/manifest-capture.test.mts` pins the vendored parser before the converter
@@ -1214,8 +1224,8 @@ loading still requires **Load post** or this device's automatic-load
 consent. No link/image toolbar tool or Instagram API key is required.
 
 The shared URL/label/standalone-line rules live in
-[instagram-url.js](../src/reports/instagram-url.js), with regression examples in
-[instagram-url.test.mjs](../test/reports/instagram-url.test.mjs) and the native
+[instagram-url.ts](../src/reports/instagram-url.ts), with regression examples in
+[instagram-url.test.mts](../test/reports/instagram-url.test.mts) and the native
 reader case in [report-security.test.mts](../test/reports/report-security.test.mts).
 
 ### Loading and privacy

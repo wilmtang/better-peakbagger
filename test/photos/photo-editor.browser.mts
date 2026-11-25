@@ -1,0 +1,4462 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// @browser-origin https://options.better-peakbagger.test
+//
+// Drives the real photo page (photos.html + the built photos.js bundle) in
+// a real browser against fake-indexeddb, so the editor's gestures — placing a mark,
+// dragging a slider, holding an arrow key, moving a route vertex — are
+// exercised the way a user performs them rather than asserted from source.
+
+import test from 'node:test';
+import type { TestContext } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
+import { evalBundle, fireTrustedEvent, makeChromeStub, waitFor } from '../helpers/fixture-page.mts';
+import { FixtureDom, browserWindow } from '../helpers/fixture-dom.mts';
+import { OPTIONS_ORIGIN } from '../helpers/options-page.mts';
+import { photoArchive as Archive } from '../../src/photos/photo-archive.ts';
+import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { photoProject as Project } from '../../src/photos/photo-project.ts';
+import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.ts';
+import { photoStore as Store } from '../../src/photos/photo-store.ts';
+
+import type { ChromeStub, PageDocument, PageElement, StubMessage, TestWindow } from '../helpers/page-types.mts';
+
+// What these tests read back from the page's IndexedDB stores. The catalog and
+// project shapes come from their cleaners; journal rows are read by state.
+type CatalogRow = NonNullable<ReturnType<typeof Library.cleanPhoto>> & { deletedAt: string | null; [field: string]: unknown };
+type ProjectRow = { localId: string; export: { mime: string; quality: number }; objects: ProjectObject[]; [field: string]: unknown };
+type ProjectObject = { id: string; type: string; style: Record<string, unknown> & { opacity?: number; color?: string };
+    geometry: { points: [number, number][]; x: number; y: number; width?: number | null; rotation?: number; [field: string]: unknown };
+    text?: string; [field: string]: unknown };
+type JournalRow = { state: string; operationId: string; localId: string; [field: string]: unknown };
+interface StoreRows {
+    photos: CatalogRow; projects: ProjectRow; operations: JournalRow;
+    originals: { localId: string; blob: Blob }; thumbnails: { localId: string; blob: Blob };
+    secrets: { localId: string; deleteUrl: string }; tombstones: { localId: string; deletedAt: string };
+}
+type EditorWindow = TestWindow & { chrome: ChromeStub; [probe: string]: unknown };
+// fake-indexeddb's own bookkeeping, which the transaction hooks below reach into.
+interface FakeDatabase {
+    _closed: boolean;
+    transaction: (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => IDBTransaction;
+}
+interface FakeFactory { _databases: Map<string, { connections: FakeDatabase[] }> }
+const fakeDatabase = (indexedDB: IDBFactory) => (indexedDB as unknown as FakeFactory)._databases
+    .get('betterPeakbaggerPhotos')?.connections.find(connection => !connection._closed);
+type CreateDraft = (input: Record<string, unknown>) => CatalogRow;
+type EditorPage = Awaited<ReturnType<typeof loadEditor>>;
+interface EditorOptions {
+    returnToReport?: boolean; imageUrl?: string | null; localPhotoId?: string | null; imageCaption?: string | null;
+    nativeBlobs?: boolean; imgbbStatus?: { ok: boolean; configured: boolean; permissionGranted: boolean };
+    runtimeHandler?: (message: StubMessage) => Promise<unknown> | unknown;
+    fetchImpl?: ((url: string, init?: RequestInit) => Promise<unknown>) | null;
+    indexedDB?: IDBFactory; pickPhoto?: boolean; pickedFileSize?: number | null;
+    imageLoader?: ((image: { onload?: (() => void) | null; currentSrc?: string }) => void) | null;
+    fileName?: string; fileType?: string;
+    onStoreReady?: ((context: { indexedDB: IDBFactory; win: EditorWindow }) => unknown) | null;
+    startMode?: string | null; fixedNow?: string | null; confirmImpl?: ((message?: string) => boolean) | null;
+    clipboard?: object | null; clipboardItem?: boolean;
+    storageEstimate?: (() => Promise<{ usage?: number; quota?: number }>) | null;
+    subtle?: Pick<SubtleCrypto, 'digest'>; imageSize?: { width: number; height: number };
+    localPreferences?: Record<string, unknown>; syncedPreferences?: Record<string, unknown>;
+    pinViewport?: boolean;
+}
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+const html = await readFile(path.join(root, 'photos', 'photos.html'), 'utf8');
+
+// The photo the harness picks is 1600 × 1200 shown in an 800 × 600 box, so a
+// CSS pixel is two image pixels and the arithmetic in the assertions is exact.
+const IMAGE = { width: 1600, height: 1200 };
+const VIEW = { width: 800, height: 600 };
+
+// Every gesture below renders synchronously; only opening IndexedDB and
+// decoding the picked file are asynchronous, and each is gated on the DOM state
+// it produces rather than on a sleep. `settle` exists solely to let the
+// already-resolved autosave/render microtasks drain before an assertion reads
+// the DOM, and never carries the weight of an await that has real work behind it.
+const settle = (win: TestWindow) => new Promise(resolve => win.setTimeout(resolve, 0));
+
+// The page's fallback view, which most cases' exact arithmetic assumes:
+// 1148 × 873, unpadded, at the page origin.
+const pinFallbackViewport = (viewportElement: PageElement) => {
+    Object.defineProperty(viewportElement, 'clientWidth', { value: 1148, configurable: true });
+    Object.defineProperty(viewportElement, 'clientHeight', { value: 873, configurable: true });
+    viewportElement.style.padding = '0px';
+    viewportElement.getBoundingClientRect = () => {
+        const { clientWidth: width, clientHeight: height } = viewportElement;
+        return { x: 0, y: 0, left: 0, top: 0, right: width, bottom: height, width, height, toJSON() { return this; } };
+    };
+};
+
+const loadEditor = async ({
+    returnToReport = false,
+    imageUrl = null, localPhotoId = null, imageCaption = null,
+    nativeBlobs = false,
+    imgbbStatus = { ok: true, configured: false, permissionGranted: false },
+    runtimeHandler = async () => ({ ok: true }),
+    fetchImpl = null,
+    indexedDB = new IDBFactory(),
+    pickPhoto = true,
+    pickedFileSize = null,
+    imageLoader = null,
+    fileName = 'north-face.jpg',
+    fileType = 'image/jpeg',
+    onStoreReady = null,
+    startMode = null,
+    fixedNow = null,
+    confirmImpl = null,
+    clipboard = undefined,
+    clipboardItem = false,
+    storageEstimate = undefined,
+    subtle = globalThis.crypto.subtle,
+    imageSize = IMAGE,
+    localPreferences = {}, syncedPreferences = {},
+    pinViewport = true,
+}: EditorOptions = {}) => {
+    const params = new URLSearchParams();
+    if (returnToReport) params.set('returnToken', 'return-test');
+    if (imageUrl) params.set('imageUrl', imageUrl);
+    if (localPhotoId) params.set('localPhotoId', localPhotoId);
+    if (imageCaption !== null) params.set('imageCaption', imageCaption);
+    if (startMode) params.set('mode', startMode);
+    const dom = await FixtureDom.open(html, { url: `${OPTIONS_ORIGIN}/photos/photos.html${params.size ? `?${params}` : ''}` });
+    const win = browserWindow<EditorWindow>(dom.window);
+    if (nativeBlobs) win.Blob = Blob as typeof win.Blob;
+    const doc = win.document as unknown as PageDocument;
+    if (fixedNow) {
+        const NativeDate = win.Date;
+        const fixedTime = NativeDate.parse(fixedNow);
+        class FixedDate extends NativeDate {
+            constructor(...args: ConstructorParameters<DateConstructor>) {
+                super(...((args.length ? args : [fixedTime]) as [number]));
+            }
+
+            static now() {
+                return fixedTime;
+            }
+        }
+        win.Date = FixedDate as DateConstructor;
+    }
+    if (confirmImpl) win.confirm = confirmImpl;
+    if (clipboardItem) {
+        win.ClipboardItem = class ClipboardItem {
+            items: Record<string, Promise<Blob> | Blob>;
+            types: string[];
+            constructor(items: Record<string, Promise<Blob> | Blob>) { this.items = items; this.types = Object.keys(items); }
+        } as unknown as typeof win.ClipboardItem;
+    }
+    // null removes the browser's Clipboard API; an object stands in for it.
+    if (clipboard !== undefined) {
+        Object.defineProperty(win.navigator, 'clipboard', {
+            value: clipboard ?? undefined,
+            configurable: true,
+        });
+    }
+    Object.defineProperty(win, 'indexedDB', { value: indexedDB, configurable: true });
+    win.IDBKeyRange = IDBKeyRange as typeof win.IDBKeyRange;
+    if (storageEstimate !== undefined) {
+        Object.defineProperty(win.navigator, 'storage', {
+            value: storageEstimate === null ? {} : { estimate: storageEstimate },
+            configurable: true,
+        });
+    }
+    let ids = 0;
+    win.crypto.randomUUID = (() => `mark-${++ids}`) as typeof win.crypto.randomUUID;
+    // Tests may substitute the digest the page hashes the picked file with.
+    if (subtle !== globalThis.crypto.subtle) Object.defineProperty(win.crypto, 'subtle', { value: subtle, configurable: true });
+    // Decoding and thumbnailing are the browser's, not the editor's, so the
+    // harness answers for them with the fixture's dimensions.
+    const decodedBitmaps: { width: number; height: number; closed: boolean; close(): void }[] = [];
+    win.createImageBitmap = (async () => {
+        const bitmap = {
+            ...imageSize,
+            closed: false,
+            close() { this.closed = true; },
+        };
+        decodedBitmaps.push(bitmap);
+        return bitmap;
+    }) as unknown as typeof win.createImageBitmap;
+    win.HTMLCanvasElement.prototype.getContext = (() => ({ drawImage() {} })) as never;
+    const encodeCalls: { mime: string; quality: number | undefined; bytes: number }[] = [];
+    win.HTMLCanvasElement.prototype.toBlob = function toBlob(
+        this: HTMLCanvasElement,
+        callback: BlobCallback,
+        mime = 'image/png',
+        quality?: number,
+    ) {
+        const fullResolution = this.width === imageSize.width && this.height === imageSize.height;
+        const bytes = mime === 'image/png'
+            ? 6 * 1024 * 1024
+            : Math.round(2 * 1024 * 1024 * (quality ?? 0.92));
+        const blob = new win.Blob([fullResolution ? 'encoded-photo' : 'thumbnail'], { type: mime });
+        if (fullResolution) {
+            Object.defineProperty(blob, 'size', { value: bytes });
+            encodeCalls.push({ mime, quality, bytes });
+        }
+        callback(blob);
+    };
+    class OverlayImage {
+        currentSrc = '';
+        onload: (() => void) | null = null;
+        set src(value: string) {
+            this.currentSrc = value;
+            if (imageLoader) imageLoader(this);
+            else win.setTimeout(() => this.onload?.(), 0);
+        }
+    }
+    Object.defineProperty(win, 'Image', { value: OverlayImage, configurable: true });
+    // These gestures are synthetic pointer events with no browser pointer
+    // behind them, which the real capture API rejects; track capture per
+    // element instead, as a trusted pointer would have it. Like a browser,
+    // `pointer` below releases it after pointerup or pointercancel and then
+    // fires lostpointercapture at the element that held it.
+    const captured = new Map<Element, Set<number>>();
+    const captures = (element: Element) => captured.get(element) ?? captured.set(element, new Set()).get(element)!;
+    Object.assign(win.Element.prototype, {
+        setPointerCapture(this: Element, id: number) { captures(this).add(id); },
+        releasePointerCapture(this: Element, id: number) { captures(this).delete(id); },
+        hasPointerCapture(this: Element, id: number) { return captures(this).has(id); },
+    });
+    const releaseImplicitCapture = (id: number) => {
+        for (const [element, held] of captured) {
+            if (!held.delete(id)) continue;
+            element.dispatchEvent(new win.PointerEvent('lostpointercapture', { bubbles: true, pointerId: id, isPrimary: true }));
+        }
+    };
+    win.URL.createObjectURL = () => 'blob:test';
+    win.URL.revokeObjectURL = () => {};
+    if (fetchImpl) win.fetch = fetchImpl as unknown as typeof win.fetch;
+    const chrome = makeChromeStub({ bpbSettings: { reportImageWidth: 640, ...syncedPreferences } }, localPreferences) as unknown as ChromeStub;
+    chrome.runtime.sendMessage = async (message: StubMessage) => {
+        if (message?.type === 'PHOTO_IMGBB_STATUS') return imgbbStatus;
+        if (message?.type === 'PHOTO_IMGBB_LEASE_KEY') return { ok: true, key: 'test-imgbb-key' };
+        return runtimeHandler(message);
+    };
+    chrome.permissions = {
+        contains: async () => imgbbStatus.permissionGranted,
+        request: async () => imgbbStatus.permissionGranted,
+    };
+    chrome.tabs = { create: () => {} };
+    (win as { chrome: ChromeStub }).chrome = chrome;
+    const errors: string[] = [];
+    win.addEventListener('error', (event: ErrorEvent) => errors.push(String(event.error?.stack || event.message)));
+    win.addEventListener('unhandledrejection', (event: PromiseRejectionEvent) => {
+        errors.push(String(event.reason?.stack || event.reason));
+    });
+    // Images that failed to load, recorded from boot onward.
+    const imageErrors: Element[] = [];
+    doc.addEventListener('error', (event: Event) => {
+        if ((event.target as Element).tagName === 'IMG') imageErrors.push(event.target as Element);
+    }, true);
+    const viewportElement = doc.getElementById('photo-viewport');
+    // Pinned so the frame's own size and the panel padding do not move the
+    // stage; cases may override either, or measure the real layout instead.
+    if (pinViewport) pinFallbackViewport(viewportElement);
+    await evalBundle(win, 'photos/photos.js');
+    // The page paints its empty library last, so this is the boot finishing —
+    // in particular the IndexedDB handle the first autosave needs.
+    await waitFor(dom, () => doc.getElementById('library-empty').hidden === false
+        || doc.getElementById('library-list').children.length > 0);
+    if (onStoreReady) await onStoreReady({ indexedDB, win });
+
+    const overlay = doc.getElementById('photo-overlay');
+    overlay.getBoundingClientRect = () => ({
+        x: 0, y: 0, left: 0, top: 0, right: VIEW.width, bottom: VIEW.height, ...VIEW, toJSON() { return this; },
+    });
+    const click = (node: EventTarget) => node.dispatchEvent(new win.MouseEvent('click', { bubbles: true }));
+    // Gestures arrive as pointer events, which keep fractional coordinates
+    // (a mouse event's are whole pixels); other mouse events stay mouse events.
+    const pointer = (type: string, x: number, y: number, node: EventTarget = overlay) => {
+        const result = node.dispatchEvent(type.startsWith('pointer')
+            ? new win.PointerEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y, pointerId: 1, isPrimary: true })
+            : new win.MouseEvent(type, { bubbles: true, button: 0, clientX: x, clientY: y }));
+        if (type === 'pointerup' || type === 'pointercancel') releaseImplicitCapture(1);
+        return result;
+    };
+    // The secondary button, both halves of it: the press the editor must ignore
+    // and the context menu the browser raises from it.
+    const rightClick = (x: number, y: number) => {
+        overlay.dispatchEvent(new win.MouseEvent('pointerdown', {
+            bubbles: true, button: 2, clientX: x, clientY: y,
+        }));
+        const menu = new win.MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true, button: 2, clientX: x, clientY: y,
+        });
+        overlay.dispatchEvent(menu);
+        return menu.defaultPrevented;
+    };
+    const key = (type: string, init: KeyboardEventInit) => doc.dispatchEvent(new win.KeyboardEvent(type, { bubbles: true, ...init }));
+    const emit = (node: EventTarget, type: string) => node.dispatchEvent(new win.Event(type, { bubbles: true }));
+    const harness = {
+        dom,
+        win,
+        imageErrors,
+        chrome,
+        doc,
+        errors,
+        encodeCalls,
+        decodedBitmaps,
+        overlay,
+        click,
+        pointer,
+        rightClick,
+        key,
+        emit,
+        settle: () => settle(win),
+        status: () => doc.getElementById('editor-status').textContent,
+        drawing: () => doc.getElementById('finish-route').hidden === false,
+        // One handle per point, drawn only for the selected route under Select.
+        vertexCount: () => overlay.querySelectorAll('.vertex-handle').length,
+        tool: (name: string) => click(doc.querySelector(`[data-tool="${name}"]`)),
+        armedTool: () => [...doc.querySelectorAll('[data-tool]')]
+            .find(button => button.getAttribute('aria-pressed') === 'true')?.dataset.tool,
+        undoDepth: async () => {
+            const undo = doc.getElementById('undo');
+            let steps = 0;
+            while (!undo.disabled && steps < 500) {
+                click(undo);
+                steps += 1;
+            }
+            await settle(win);
+            return steps;
+        },
+        markCount: () => Number(doc.getElementById('export-summary').textContent!.match(/^(\d+)/)![1]),
+        routePath: () => overlay.querySelector('path[d]')?.getAttribute('d') ?? '',
+    };
+    if (!pickPhoto) return harness;
+
+    // Pick a photo the way the page's file input does.
+    const input = doc.getElementById('photo-file');
+    const pickedFile = new win.File(['pixels'], fileName, { type: fileType });
+    if (pickedFileSize != null) {
+        Object.defineProperty(pickedFile, 'size', { value: pickedFileSize });
+    }
+    Object.defineProperty(input, 'files', {
+        value: [pickedFile],
+        configurable: true,
+    });
+    input.dispatchEvent(new win.Event('change'));
+    await waitFor(dom, () => doc.getElementById('editor-workspace').hidden === false);
+
+    return harness;
+};
+
+test('the photo library distinguishes saved records, newer edits, and unconfirmed backup status', async () => {
+    const syncedAt = '2026-07-27T18:10:00.000Z';
+    const cases = [
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date in me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: { syncedAt, generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
+            reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 3,
+            reconciliationPending: true },
+        text: 'Backed up to me/backup · local backup status needs updating.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4,
+            confirmedGeneration: 3, reconciliationPending: true },
+        text: 'Photo-library changes are not yet backed up to me/backup.' },
+        { state: { syncedAt, reconciliationPending: true },
+            text: 'Latest photo-library backup is not yet confirmed for me/backup.' },
+        { state: { restoredAt: syncedAt, generation: 4, catalogGeneration: 4, confirmedGeneration: 4 },
+            text: `Up to date · restored from me/backup · ${new Date(syncedAt).toLocaleString()}` },
+        { state: null, text: null },
+    ];
+    for (const auto of [false, true]) {
+        let state = cases[2].state;
+        const page = await loadEditor({ pickPhoto: false, runtimeHandler: async (message: StubMessage) => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') return {
+                ok: true, connected: true, auto,
+                repo: { owner: 'me', name: 'backup', fullName: 'me/backup' }, state,
+            };
+            return { ok: true };
+        } });
+        try {
+            await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent.includes('me/backup'));
+            assert.equal(page.doc.getElementById('photo-backup-status').textContent,
+                `${auto ? 'Automatic backup on · ' : ''}${cases[2].text}`);
+            for (const [index, scenario] of cases.entries()) {
+                state = scenario.state;
+                await page.win.chrome.storage.local.set({ bpbPhotoLibraryBackupState: { serial: index } });
+                const expected = scenario.state
+                    ? `${auto ? 'Automatic backup on · ' : ''}${scenario.text}`
+                    : auto ? 'Automatic backup on · No photo-library backup confirmed yet for me/backup.'
+                        : 'Ready to back up photo records to me/backup.';
+                await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent === expected);
+                assert.equal(page.doc.getElementById('photo-backup-status').textContent, expected);
+            }
+            assert.deepEqual(page.errors, []);
+        } finally { page.dom.window.close(); }
+    }
+});
+
+test('a confirmed backup with pending local reconciliation is never announced as failed', async () => {
+    let pending = false;
+    let releaseStatus!: (value?: unknown) => void;
+    const statusBarrier = new Promise(resolve => { releaseStatus = resolve; });
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async (message: StubMessage) => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                if (pending) await statusBarrier;
+                return {
+                    ok: true,
+                    connected: true,
+                    repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    state: pending ? {
+                        syncedAt: '2026-07-27T18:10:00.000Z',
+                        generation: 4, catalogGeneration: 5, confirmedGeneration: 4,
+                        reconciliationPending: true,
+                    } : null,
+                };
+            }
+            if (message.type === 'GITHUB_PHOTOS_BACKUP') {
+                pending = true;
+                return {
+                    ok: true,
+                    current: false,
+                    reconciliationPending: true,
+                    warning: {
+                        code: 'photo-backup-reconciliation',
+                        message: 'The GitHub backup is safe, but newer local photo changes still need another backup.',
+                    },
+                };
+            }
+            return { ok: true };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => pending);
+
+    assert.equal(page.doc.getElementById('photo-backup-status').textContent,
+        'Backing up photo metadata…');
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent,
+        /GitHub backup is safe|backed up/i);
+
+    releaseStatus();
+    await waitFor(page.dom, () => /Photo-library changes are not yet backed up/.test(
+        page.doc.getElementById('photo-backup-status').textContent));
+    await waitFor(page.dom, () => /GitHub backup is safe/.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.match(page.doc.getElementById('photo-backup-status').textContent,
+        /Photo-library changes are not yet backed up to me\/backup/);
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /failed/i);
+    assert.deepEqual(page.errors, []);
+});
+
+test('backup completion does not claim success when authoritative status cannot refresh', async () => {
+    let statusCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async (message: StubMessage) => {
+            if (message.type === 'GITHUB_PHOTOS_STATUS') {
+                statusCalls += 1;
+                return statusCalls === 1 ? {
+                    ok: true,
+                    connected: true,
+                    repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                    state: null,
+                } : null;
+            }
+            if (message.type === 'GITHUB_PHOTOS_BACKUP') return { ok: true };
+            return { ok: true };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent
+        === 'GitHub recovery is unavailable.');
+    await waitFor(page.dom, () => /status could not be refreshed/i.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.doesNotMatch(page.doc.getElementById('toast-message').textContent, /backed up/i);
+    assert.deepEqual(page.errors, []);
+});
+
+test('photo backup capacity failures preserve the worker action and byte details', async () => {
+    const message = 'Photo-library metadata uses 8.4 MiB, above the 8 MiB GitHub recovery limit. '
+        + 'Move unneeded drafts to Recently Deleted; after their editing-data window ends, try again.';
+    const page = await loadEditor({
+        pickPhoto: false,
+        runtimeHandler: async (request: StubMessage) => request.type === 'GITHUB_PHOTOS_STATUS'
+            ? {
+                ok: true,
+                connected: true,
+                repo: { owner: 'me', name: 'backup', fullName: 'me/backup' },
+                state: null,
+            }
+            : request.type === 'GITHUB_PHOTOS_BACKUP'
+                ? {
+                    ok: false,
+                    error: {
+                        code: 'photo-backup-too-large',
+                        message,
+                        actualBytes: 8_800_000,
+                        maxBytes: 8_388_608,
+                    },
+                }
+                : { ok: true },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('backup-library').disabled === false);
+
+    page.doc.getElementById('backup-library').click();
+    await waitFor(page.dom, () => page.doc.getElementById('photo-backup-status').textContent === message);
+
+    assert.deepEqual(page.errors, []);
+});
+
+const readPhotoStore = <K extends keyof StoreRows>(win: TestWindow, storeName: K): Promise<StoreRows[K][]> => new Promise((resolve, reject) => {
+    const opened = win.indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+        const database = opened.result;
+        const transaction = database.transaction(storeName, 'readonly');
+        const request = transaction.objectStore(storeName).getAll();
+        transaction.oncomplete = () => {
+            database.close();
+            resolve(request.result);
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    };
+});
+
+const deletePhotoStoreRecord = (indexedDB: IDBFactory, storeName: keyof StoreRows, key: string) => new Promise<void>((resolve, reject) => {
+    const opened = indexedDB.open('betterPeakbaggerPhotos', Store.DATABASE_VERSION);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+        const database = opened.result;
+        const transaction = database.transaction(storeName, 'readwrite');
+        transaction.objectStore(storeName).delete(key);
+        transaction.oncomplete = () => {
+            database.close();
+            resolve();
+        };
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+    };
+});
+
+const seedUploadedLibraryPhoto = async (indexedDB: IDBFactory, {
+    localId = 'copy-url-photo',
+    url = 'https://i.ibb.co/a/topo.jpg',
+    withoutThumbnail = false,
+    sourceSha256 = null,
+}: { localId?: string; url?: string; withoutThumbnail?: boolean; sourceSha256?: string | null } = {}) => {
+    sourceSha256 ??= Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(localId))), byte => byte.toString(16).padStart(2, '0')).join('');
+    const store = await Store.createPhotoStore({ indexedDB });
+    const input = {
+        photo: (Library.createDraft as unknown as CreateDraft)({
+            localId,
+            title: 'Copy URL topo',
+            source: {
+                fileName: 'copy-url.jpg',
+                mime: 'image/jpeg',
+                bytes: 6,
+                width: 1600,
+                height: 1200,
+                sha256: sourceSha256,
+            },
+            now: '2026-08-01T12:00:00.000Z',
+        }),
+        project: Project.createProject({
+            localId,
+            width: 1600,
+            height: 1200,
+            sourceSha256,
+            updatedAt: '2026-08-01T12:00:00.000Z',
+        }),
+        original: new Blob(['source'], { type: 'image/jpeg' }),
+        thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+    };
+    input.photo = await store.putDraft(input) as CatalogRow;
+    const photo = await store.putPhoto(Library.completeUpload(input.photo, {
+        mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
+    }, {
+        providerId: localId,
+        url,
+        displayUrl: url,
+        viewerUrl: `https://ibb.co/${localId}`,
+        thumbnailUrl: `https://i.ibb.co/a/${localId}-thumb.jpg`,
+        mediumUrl: null,
+        uploadedAt: '2026-08-02T12:00:00.000Z',
+        expiresAt: null,
+    }, '2026-08-02T12:00:00.000Z'));
+    store.close();
+    if (withoutThumbnail) await deletePhotoStoreRecord(indexedDB, 'thumbnails', localId);
+    return photo;
+};
+
+const seedDeletedLibraryPhotos = async (indexedDB: IDBFactory, count: number, {
+    deletedAt = '2026-06-01T12:00:00.000Z',
+} = {}) => {
+    const store = await Store.createPhotoStore({ indexedDB });
+    for (let index = 0; index < count; index += 1) {
+        const localId = `expired-photo-${String(index).padStart(3, '0')}`;
+        const sourceSha256 = String(index % 10).repeat(64);
+        const input = {
+            photo: (Library.createDraft as unknown as CreateDraft)({
+                localId,
+                title: `Expired topo ${index + 1}`,
+                source: {
+                    fileName: `${localId}.jpg`, mime: 'image/jpeg', bytes: 6,
+                    width: IMAGE.width, height: IMAGE.height, sha256: sourceSha256,
+                },
+                now: deletedAt,
+            }),
+            project: Project.createProject({
+                localId,
+                width: IMAGE.width,
+                height: IMAGE.height,
+                sourceSha256,
+                updatedAt: deletedAt,
+            }),
+            original: new Blob(['source'], { type: 'image/jpeg' }),
+            thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+        };
+        input.photo = await store.putDraft(input) as CatalogRow;
+        await store.putPhoto(Library.markDeleted(input.photo, deletedAt));
+    }
+    store.close();
+};
+
+test('one photo-page lifetime drains more than two expired maintenance batches', async t => {
+    const indexedDB = new IDBFactory();
+    await seedDeletedLibraryPhotos(indexedDB, 45);
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        fixedNow: '2026-08-14T12:00:00.000Z',
+    });
+    t.after(() => page.dom.window.close());
+
+    const photos = await waitForPhotoStore(page.win, 'photos', (records) => records.length === 45
+        && records.every((photo: CatalogRow) => !photo.assets.originalRetained
+            && !photo.assets.projectRetained && !photo.assets.thumbnailRetained));
+    assert.equal(photos.length, 45);
+    assert.equal((await readPhotoStore(page.win, 'originals')).length, 0);
+    assert.equal((await readPhotoStore(page.win, 'projects')).length, 0);
+    assert.equal((await readPhotoStore(page.win, 'thumbnails')).length, 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('photo maintenance pauses while hidden and retries one failed batch after visibility returns', async t => {
+    const indexedDB = new IDBFactory();
+    await seedDeletedLibraryPhotos(indexedDB, 1);
+    let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
+    const warnings = [];
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        fixedNow: '2026-08-14T12:00:00.000Z',
+        onStoreReady: ({ win }: { win: EditorWindow }) => {
+            win.console.warn = (...args: unknown[]) => warnings.push(args);
+            quotaFailure = failNextDraftTransactionWithQuota(indexedDB);
+            Object.defineProperty(win.document, 'visibilityState', {
+                value: 'hidden', configurable: true,
+            });
+            win.document.dispatchEvent(new win.Event('visibilitychange'));
+        },
+    });
+    t.after(() => {
+        quotaFailure.restore();
+        page.dom.window.close();
+    });
+
+    await new Promise(resolve => page.win.setTimeout(resolve, 1100));
+    assert.equal(quotaFailure.triggered(), false, 'hidden maintenance owns no live timer');
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].assets.originalRetained, true);
+
+    Object.defineProperty(page.doc, 'visibilityState', { value: 'visible', configurable: true });
+    page.doc.dispatchEvent(new page.win.Event('visibilitychange'));
+    await waitForPhotoStore(page.win, 'photos', (records) => records.length === 1
+        && !records[0].assets.originalRetained);
+    assert.equal(quotaFailure.triggered(), true);
+    assert.equal(warnings.length, 1, 'the first transient failure remains diagnosable without retry spam');
+    assert.deepEqual(page.errors, []);
+});
+
+const waitForPhotoStore = async <K extends keyof StoreRows>(win: TestWindow, storeName: K,
+    predicate: (records: StoreRows[K][]) => unknown, ms = 5000) => {
+    const start = Date.now();
+    while (true) {
+        const records = await readPhotoStore(win, storeName);
+        if (predicate(records)) return records;
+        if (Date.now() - start > ms) {
+            throw new Error(`photo store wait timed out; store=${storeName} count=${records.length}`);
+        }
+        await new Promise(resolve => win.setTimeout(resolve, 5));
+    }
+};
+
+// Hold the completion callback of one real fake-indexeddb draft transaction.
+// The records themselves commit normally; only the page's awaited completion
+// is delayed, which reproduces the browser race where a large blob write
+// finishes after the user has already made another editor mutation.
+const deferNextDraftCompletion = (indexedDB: IDBFactory, matchesStores: (names: string[]) => boolean = () => true) => {
+    const database = fakeDatabase(indexedDB);
+    assert.ok(database, 'the photo page must have an open IndexedDB connection');
+    const transaction = database.transaction.bind(database);
+    let armed = true;
+    let release!: (value?: unknown) => void;
+    let started!: (value?: unknown) => void;
+    const released = new Promise(resolve => { release = resolve; });
+    const transactionStarted = new Promise(resolve => { started = resolve; });
+
+    database.transaction = (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
+        const next = transaction(storeNames, mode, options);
+        const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+        if (!armed || mode !== 'readwrite'
+            || !['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))
+            || !matchesStores(names)) {
+            return next;
+        }
+        armed = false;
+        let completion: ((event: Event) => void) | null = null;
+        Object.defineProperty(next, 'oncomplete', {
+            configurable: true,
+            get: () => completion,
+            set: (handler: (this: IDBTransaction, event: Event) => void) => {
+                completion = (event: Event) => { void released.then(() => handler.call(next, event)); };
+            },
+        });
+        started();
+        return next;
+    };
+
+    return {
+        started: transactionStarted,
+        release,
+        restore: () => { database.transaction = transaction; },
+    };
+};
+
+const failNextDraftTransactionWithQuota = (indexedDB: IDBFactory) => {
+    const database = fakeDatabase(indexedDB);
+    assert.ok(database, 'the photo page must have an open IndexedDB connection');
+    const transaction = database.transaction.bind(database);
+    let armed = true;
+    database.transaction = (storeNames: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
+        const names = typeof storeNames === 'string' ? [storeNames] : [...storeNames];
+        if (armed && mode === 'readwrite'
+            && ['photos', 'projects', 'originals', 'thumbnails'].every(name => names.includes(name))) {
+            armed = false;
+            throw new DOMException('The storage quota was exceeded.', 'QuotaExceededError');
+        }
+        return transaction(storeNames, mode, options);
+    };
+    return {
+        triggered: () => !armed,
+        restore: () => { database.transaction = transaction; },
+    };
+};
+
+const holdPhotoAutosave = (page: EditorPage, t: TestContext) => {
+    const { win } = page;
+    const nativeSet = win.setTimeout.bind(win);
+    const nativeClear = win.clearTimeout.bind(win);
+    const held = new Set();
+    let next = 987600;
+    win.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        if (delay !== 500) return nativeSet(callback, delay, ...args);
+        held.add(++next);
+        return next;
+    }) as typeof win.setTimeout;
+    win.clearTimeout = (timer?: Parameters<typeof win.clearTimeout>[0]) => { if (!held.delete(timer)) nativeClear(timer); };
+    t.after(() => { win.setTimeout = nativeSet; win.clearTimeout = nativeClear; });
+};
+
+const pickReplacementPhoto = (page: EditorPage, name = 'second.jpg') => {
+    const file = new page.win.File(['second pixels'], name, { type: 'image/jpeg' });
+    const input = page.doc.getElementById('photo-file');
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+};
+
+for (const destination of ['new file', 'new version']) {
+    test(`switching to ${destination} saves outgoing edits before replacing the project`, async t => {
+        const page = await loadEditor({
+            onStoreReady: ({ win }: { win: EditorWindow }) => {
+                // Native blobs survive fake-indexeddb's structured clone.
+                win.Blob = Blob;
+                win.File = File;
+            },
+        });
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+            === 'Saved on this device');
+        holdPhotoAutosave(page, t);
+        const title = page.doc.getElementById('photo-title');
+        title.value = 'important outgoing edit';
+        page.emit(title, 'input');
+        page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+        if (destination === 'new file') {
+            pickReplacementPhoto(page);
+            await waitFor(page.dom, () => title.value === 'second');
+        } else {
+            page.click(page.doc.getElementById('show-library'));
+            await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+            [...page.doc.querySelectorAll('.photo-card button')]
+                .find((button: PageElement) => button.dataset.action === 'edit')!.click();
+            await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false && title.value === 'important outgoing edit');
+        }
+        const photos = await readPhotoStore(page.win, 'photos');
+        if (destination === 'new version') assert.equal(photos.length, 1, 'resuming a draft keeps its id');
+        const outgoing = photos.find((photo: CatalogRow) => photo.title === 'important outgoing edit')!;
+        assert.ok(outgoing, 'the outgoing title remains durable');
+        const projects = await readPhotoStore(page.win, 'projects');
+        assert.equal(projects.find((project: ProjectRow) => project.localId === outgoing.localId)!.objects.length, 1);
+        assert.deepEqual(page.errors, []);
+    });
+
+    test(`a failed outgoing save blocks switching to ${destination}`, async t => {
+        const indexedDB = new IDBFactory();
+        const page = await loadEditor({ indexedDB });
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+            === 'Saved on this device');
+        holdPhotoAutosave(page, t);
+        const title = page.doc.getElementById('photo-title');
+        title.value = 'keep this unsaved title'; page.emit(title, 'input');
+        const failure = failNextDraftTransactionWithQuota(indexedDB);
+        t.after(failure.restore);
+        if (destination === 'new file') pickReplacementPhoto(page);
+        else {
+            page.click(page.doc.getElementById('show-library'));
+            await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+            [...page.doc.querySelectorAll('.photo-card button')]
+                .find((button: PageElement) => button.dataset.action === 'edit')!.click();
+        }
+        await waitFor(page.dom, () => /Resolve the save problem/.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(title.value, 'keep this unsaved title');
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.match(page.doc.getElementById('save-status').textContent, /Not saved/);
+        assert.equal(page.doc.getElementById('photo-file').disabled, false);
+        assert.deepEqual(page.errors, []);
+    });
+}
+
+test('photo replacement waits for an in-flight save and persists edits made after its snapshot', async t => {
+    const indexedDB = new IDBFactory();
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
+    const page = await loadEditor({
+        indexedDB, onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
+    await deferred.started;
+    holdPhotoAutosave(page, t);
+    const title = page.doc.getElementById('photo-title');
+    title.value = 'edit after first snapshot'; page.emit(title, 'input');
+    pickReplacementPhoto(page);
+    assert.equal(title.value, 'edit after first snapshot');
+    assert.equal(title.disabled, true, 'replacement freezes mutations while the save settles');
+    deferred.restore(); deferred.release();
+    await waitFor(page.dom, () => title.value === 'second');
+    assert.ok((await readPhotoStore(page.win, 'photos'))
+        .some((photo: CatalogRow) => photo.title === 'edit after first snapshot'));
+    assert.deepEqual(page.errors, []);
+});
+
+for (const destination of ['new file', 'new version']) {
+    for (const points of [1, 2]) {
+        test(`${destination} ends an outgoing ${points}-point route before project replacement`, async t => {
+            const page = await loadEditor({ onStoreReady: ({ win }: { win: EditorWindow }) => { win.Blob = Blob; win.File = File; } });
+            t.after(() => page.dom.window.close());
+            await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+            page.tool('route'); page.pointer('pointerdown', 100, 100);
+            if (points === 2) page.pointer('pointerdown', 200, 200);
+            if (destination === 'new file') {
+                page.win.createImageBitmap = async () => ({ width: 600, height: 800, close() {} });
+                pickReplacementPhoto(page);
+                await waitFor(page.dom, () => page.doc.getElementById('photo-title').value === 'second');
+            } else {
+                page.click(page.doc.getElementById('show-library'));
+                await waitFor(page.dom, () => page.doc.querySelector('.photo-card'));
+                [...page.doc.querySelectorAll('.photo-card button')]
+                    .find((button: PageElement) => button.dataset.action === 'edit')!.click();
+                await waitFor(page.dom, () => page.doc.getElementById('editor-view').hidden === false);
+            }
+            assert.equal(page.drawing(), false);
+            page.pointer('pointerdown', 300, 300);
+            page.key('keydown', { key: 'Escape' });
+            await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+            const photos = await readPhotoStore(page.win, 'photos');
+            const projects = await readPhotoStore(page.win, 'projects');
+            const outgoing = photos.find((photo: CatalogRow) => photo.title === 'north-face')!;
+            assert.equal(projects.find((project: ProjectRow) => project.localId === outgoing.localId)!.objects.length,
+                points === 2 ? 1 : 0, 'placed routes are saved; a single-point preview is discarded');
+            if (destination === 'new file') {
+                assert.match(page.doc.getElementById('export-summary').textContent, /600 × 800/);
+                assert.equal(page.markCount(), 0);
+            } else {
+                const child = outgoing;
+                assert.equal(projects.find((project: ProjectRow) => project.localId === child.localId)!.objects.length,
+                    points === 2 ? 1 : 0, 'Escape after replacement stays scoped to the new project');
+            }
+            assert.deepEqual(page.errors, []);
+        });
+    }
+}
+
+for (const gesture of ['freehand', 'object drag']) {
+    test(`file replacement settles the outgoing ${gesture} and ignores its late pointer release`, async t => {
+        const page = await loadEditor();
+        t.after(() => page.dom.window.close());
+        await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+        if (gesture === 'freehand') {
+            page.tool('drawing'); page.pointer('pointerdown', 100, 100);
+        } else {
+            page.tool('bolt'); page.pointer('pointerdown', 100, 100); page.tool('select');
+            page.pointer('pointerdown', 100, 100, page.overlay.querySelector('[data-bpb-object]'));
+        }
+        page.pointer('pointermove', 150, 150);
+        pickReplacementPhoto(page);
+        await waitFor(page.dom, () => page.doc.getElementById('photo-title').value === 'second');
+        page.pointer('pointerup', 200, 200);
+        assert.equal(page.markCount(), 0);
+        assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+        const projects = await readPhotoStore(page.win, 'projects');
+        const outgoing = projects.find((project: ProjectRow) => project.objects.length)!;
+        if (gesture === 'object drag') assert.equal(outgoing.objects[0].geometry.x, 300);
+        else assert.equal(outgoing, undefined, 'an uncommitted freehand preview is not transferred');
+        assert.deepEqual(page.errors, []);
+    });
+}
+
+test('Edit has one owner across rapid same-card and cross-card actions', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first-version' });
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second-version', sourceSha256: 'c'.repeat(64) });
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    t.after(() => {
+        deferred.restore();
+        deferred.release();
+        page.dom.window.close();
+    });
+    const edits = [...page.doc.querySelectorAll('.photo-card button')]
+        .filter((button: PageElement) => button.dataset.action === 'edit');
+    assert.equal(edits.length, 2);
+
+    edits[0].click();
+    edits[0].dispatchEvent(new page.win.Event('click', { bubbles: true }));
+    edits[1].dispatchEvent(new page.win.Event('click', { bubbles: true }));
+    assert.equal(edits[0].disabled, true);
+    assert.equal(edits[0].getAttribute('aria-busy'), 'true');
+    await deferred.started;
+    deferred.restore();
+    deferred.release();
+
+    const photos = await waitForPhotoStore(page.win, 'photos', (records) => records.length === 3);
+    const children = photos.filter((photo: CatalogRow) => photo.lineage.parentLocalId);
+    assert.equal(children.length, 1, 'one action owner creates at most one child draft');
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('editing an older report URL resumes the latest source draft after historical pixels are reclaimed', async t => {
+    const indexedDB = new IDBFactory();
+    const published = (await seedUploadedLibraryPhoto(indexedDB))!;
+    const store = await Store.createPhotoStore({ indexedDB });
+    const bundle = await store.getBundle(published.localId);
+    const latest = (Library.createDraft as unknown as CreateDraft)({ localId: 'current-version', title: 'Current title',
+        source: published.source, parentLocalId: published.localId, now: '2026-08-03T00:00:00Z' });
+    await store.putDraft({ ...bundle, photo: latest, project: { ...bundle.project, localId: latest.localId } });
+    store.close();
+    const page = await loadEditor({ indexedDB, pickPhoto: false, nativeBlobs: true,
+        returnToReport: true, imageUrl: (published.remote as { url: string }).url,
+        fetchImpl: () => { throw new Error('must reuse local original'); } });
+    t.after(() => page.dom.window.close());
+    await waitFor(page.dom, () => !page.doc.getElementById('editor-workspace').hidden);
+    assert.equal(page.doc.getElementById('photo-title').value, 'Current title');
+    const photos = await readPhotoStore(page.win, 'photos');
+    assert.equal(photos.length, 2, 'opening the old public link creates no extra draft');
+    assert.equal(photos.find((photo: CatalogRow) => photo.localId === published.localId)!.assets.originalRetained, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Edit closes its fallback bitmap after successful ownership transfer', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, {
+        localId: 'missing-thumbnail-success',
+        withoutThumbnail: true,
+    });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    const deferred = deferNextDraftCompletion(indexedDB, (names: string[]) => names.includes('operations'));
+    t.after(() => { deferred.restore(); deferred.release(); page.dom.window.close(); });
+    const edit = [...page.doc.querySelectorAll('.photo-card button')]
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
+
+    edit.click();
+    await waitForPhotoStore(page.win, 'photos', (records) => records.length === 2).catch(error => {
+        error.message += `; toast=${JSON.stringify(page.doc.getElementById('toast-message').textContent)}`
+            + ` decoded=${page.decodedBitmaps.length} errors=${JSON.stringify(page.errors)}`;
+        throw error;
+    });
+    await deferred.started;
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(edit.getAttribute('aria-busy'), 'true', 'the editor can be visible while pruning is pending');
+    assert.equal(page.decodedBitmaps[0].closed, false, 'the fallback is retained until the Edit transaction completes');
+    deferred.restore();
+    deferred.release();
+    // Workspace visibility precedes pruning and the Edit action's finally.
+    await waitFor(page.dom, () => !edit.disabled && edit.getAttribute('aria-busy') === 'false');
+    assert.equal(page.decodedBitmaps.length, 2,
+        'thumbnail fallback and editor load each decode their own bitmap');
+    assert.equal(page.decodedBitmaps[0].closed, true, 'temporary thumbnail pixels are released');
+    assert.equal(page.decodedBitmaps[1].closed, false, 'the editor owns its live source bitmap');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Edit releases decoded pixels and its owner when thumbnailing or storage fails', async t => {
+    await t.test('thumbnail failure', async () => {
+        const indexedDB = new IDBFactory();
+        await seedUploadedLibraryPhoto(indexedDB, {
+            localId: 'thumbnail-failure',
+            withoutThumbnail: true,
+        });
+        const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+        Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+        page.win.HTMLCanvasElement.prototype.toBlob = (callback: BlobCallback) => callback(null);
+        const edit = [...page.doc.querySelectorAll('.photo-card button')]
+            .find((button: PageElement) => button.dataset.action === 'edit')!;
+
+        edit.click();
+        await waitFor(page.dom, () => /could not be saved/i.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(page.decodedBitmaps.length, 1);
+        assert.equal(page.decodedBitmaps[0].closed, true);
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.equal(edit.disabled, false);
+        assert.equal(edit.getAttribute('aria-busy'), 'false');
+        assert.deepEqual(page.errors, []);
+        page.dom.window.close();
+    });
+
+    await t.test('draft transaction failure', async () => {
+        const indexedDB = new IDBFactory();
+        await seedUploadedLibraryPhoto(indexedDB, {
+            localId: 'storage-failure',
+            withoutThumbnail: true,
+        });
+        let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
+        const page = await loadEditor({
+            indexedDB,
+            pickPhoto: false,
+            startMode: 'library',
+            onStoreReady: () => { quotaFailure = failNextDraftTransactionWithQuota(indexedDB); },
+        });
+        Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+        const edit = [...page.doc.querySelectorAll('.photo-card button')]
+            .find((button: PageElement) => button.dataset.action === 'edit')!;
+
+        edit.click();
+        await waitFor(page.dom, () => /could not be saved/i.test(
+            page.doc.getElementById('toast-message').textContent));
+        assert.equal(quotaFailure.triggered(), true);
+        assert.equal(page.decodedBitmaps.length, 1);
+        assert.equal(page.decodedBitmaps[0].closed, true);
+        assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+        assert.equal(edit.disabled, false);
+        assert.deepEqual(page.errors, []);
+        quotaFailure.restore();
+        page.dom.window.close();
+    });
+});
+
+test('a committed new version stays recoverable when its editor load fails', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, {
+        localId: 'editor-load-failure',
+        withoutThumbnail: true,
+    });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    t.after(() => page.dom.window.close());
+    const decode = page.win.createImageBitmap;
+    let decodeAttempts = 0;
+    page.win.createImageBitmap = ((...args: Parameters<typeof createImageBitmap>) => {
+        decodeAttempts += 1;
+        if (decodeAttempts > 1) return Promise.reject(new Error('injected editor decode failure'));
+        return (decode as (...input: Parameters<typeof createImageBitmap>) => Promise<ImageBitmap>)(...args);
+    }) as typeof page.win.createImageBitmap;
+    const edit = [...page.doc.querySelectorAll('.photo-card button')]
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
+
+    edit.click();
+    await waitFor(page.dom, () => /new version was saved.*reopen it from the library/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    const photos = await readPhotoStore(page.win, 'photos');
+    assert.equal(photos.length, 2);
+    assert.equal(photos.filter((photo: CatalogRow) => photo.lineage.parentLocalId === 'editor-load-failure').length, 1);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, true);
+    assert.equal(page.doc.getElementById('library-view').hidden, false);
+    assert.equal(page.doc.querySelectorAll('.photo-card').length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a photo-store version change retires the editor and asks for a reload', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    t.after(() => page.dom.window.close());
+
+    const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(Store.DATABASE_NAME, Store.DATABASE_VERSION + 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => reject(new Error('photo editor kept its old database open'));
+    });
+    t.after(() => upgraded.close());
+
+    await waitFor(page.dom, () => /updated in another tab.*Reload/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.doc.getElementById('photo-title').disabled, true);
+    assert.equal(page.doc.getElementById('photo-file').disabled, true);
+    assert.equal(page.doc.getElementById('show-library').disabled, true);
+    assert.equal(page.doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'true');
+    assert.match(page.status(), /Reload to continue/);
+    assert.deepEqual(page.errors, []);
+});
+
+const imgbbSuccess = {
+    data: {
+        id: 'provider-1',
+        url_viewer: 'https://ibb.co/provider-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        display_url: 'https://i.ibb.co/a/topo.jpg',
+        width: '1600',
+        height: '1200',
+        size: 123456,
+        time: 1785213600,
+        expiration: 0,
+        thumb: { url: 'https://i.ibb.co/a/topo-thumb.jpg' },
+        medium: null,
+        delete_url: 'https://ibb.co/delete/delete-capability',
+    },
+    success: true,
+    status: 200,
+};
+
+const transferEvent = (win: TestWindow, type: string, property: string, transfer: object) => {
+    const event = new win.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, property, { value: transfer });
+    return event;
+};
+
+const annotationTransfer = (text = '') => {
+    const values = new Map([['text/plain', text]]);
+    return {
+        getData: (type: string) => values.get(type) || '',
+        setData: (type: string, value: string) => values.set(type, value),
+    };
+};
+
+const dispatchClipboard = (page: EditorPage, type: string, transfer: object, node: EventTarget = page.doc as unknown as EventTarget) => {
+    const event = transferEvent(page.win, type, 'clipboardData', transfer);
+    node.dispatchEvent(event);
+    return event;
+};
+
+const photoTransfer = (file: File) => ({
+    types: ['Files'],
+    items: [{
+        kind: 'file',
+        type: file.type,
+        getAsFile: () => file,
+    }],
+    files: [file],
+    dropEffect: 'none',
+});
+
+const selectPhotoFile = (page: EditorPage, {
+    size = null,
+    name = 'north-face.jpg',
+    type = 'image/jpeg',
+}: { size?: number | null; name?: string; type?: string } = {}) => {
+    const input = page.doc.getElementById('photo-file');
+    const file = new page.win.File(['pixels'], name, { type });
+    if (size != null) Object.defineProperty(file, 'size', { value: size });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+    return file;
+};
+
+test('dragging a photo highlights the empty editor and imports through the normal file path', async () => {
+    const page = await loadEditor({ pickPhoto: false });
+    const { doc, win } = page;
+    const target = doc.getElementById('editor-empty');
+    const file = new win.File(['pixels'], 'dragged-north-face.jpg', { type: 'image/jpeg' });
+    const transfer = photoTransfer(file);
+
+    const enter = transferEvent(win, 'dragenter', 'dataTransfer', transfer);
+    target.dispatchEvent(enter);
+    assert.equal(enter.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-photo-drag-over'), true);
+
+    const over = transferEvent(win, 'dragover', 'dataTransfer', transfer);
+    target.dispatchEvent(over);
+    assert.equal(over.defaultPrevented, true);
+    assert.equal(transfer.dropEffect, 'copy');
+
+    const drop = transferEvent(win, 'drop', 'dataTransfer', transfer);
+    target.dispatchEvent(drop);
+    assert.equal(drop.defaultPrevented, true);
+    assert.equal(target.classList.contains('is-photo-drag-over'), false);
+    await waitFor(page.dom, () => doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(doc.getElementById('photo-title').value, 'dragged-north-face');
+    assert.deepEqual(page.errors, []);
+});
+
+test('pasting imports an image only while the editor is empty and leaves text paste alone', async () => {
+    const page = await loadEditor({ pickPhoto: false });
+    const { doc, win } = page;
+
+    const textPaste = transferEvent(win, 'paste', 'clipboardData', {
+        types: ['text/plain'],
+        items: [],
+        files: [],
+    });
+    doc.dispatchEvent(textPaste);
+    assert.equal(textPaste.defaultPrevented, false);
+    assert.equal(doc.getElementById('editor-workspace').hidden, true);
+
+    const file = new win.File(['pixels'], 'pasted-mountain.png', { type: 'image/png' });
+    const imagePaste = transferEvent(win, 'paste', 'clipboardData', photoTransfer(file));
+    doc.dispatchEvent(imagePaste);
+    assert.equal(imagePaste.defaultPrevented, true);
+    await waitFor(page.dom, () => doc.getElementById('editor-workspace').hidden === false);
+    assert.equal(doc.getElementById('photo-title').value, 'pasted-mountain');
+
+    const replacement = new win.File(['different'], 'replacement.jpg', { type: 'image/jpeg' });
+    const laterPaste = transferEvent(win, 'paste', 'clipboardData', photoTransfer(replacement));
+    doc.dispatchEvent(laterPaste);
+    assert.equal(laterPaste.defaultPrevented, false,
+        'an incidental paste must not replace the open project');
+    assert.equal(doc.getElementById('photo-title').value, 'pasted-mountain');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a late autosave completion cannot replace a newer editor revision', async t => {
+    const indexedDB = new IDBFactory();
+    let deferred!: ReturnType<typeof deferNextDraftCompletion>;
+    const page = await loadEditor({
+        indexedDB,
+        onStoreReady: () => { deferred = deferNextDraftCompletion(indexedDB); },
+    });
+    t.after(() => {
+        deferred.restore();
+        deferred.release();
+    });
+
+    await deferred.started;
+    deferred.restore();
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.doc.getElementById('save-status').textContent, 'Unsaved changes');
+
+    // The first write contains the empty project. Its completion must not put
+    // that snapshot back into the live editor before the second save begins.
+    deferred.release();
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device').catch(error => {
+        throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
+            + `pageErrors=${page.errors.map((value: string) => value).join(' | ')}`);
+    });
+    const projects = await waitForPhotoStore(page.win, 'projects', (records) =>
+        records[0]?.objects.length === 1);
+    assert.equal(projects[0].objects.length, 1);
+    assert.equal(page.markCount(), 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a conflicting autosave keeps local edits and replaces the newer draft only on request', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const otherTab = await Store.createPhotoStore({ indexedDB });
+    t.after(() => otherTab.close());
+    const [initial] = await otherTab.listPhotos();
+    const referenced = (await otherTab.putPhoto(Library.addReference(initial, {
+        kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: new Date().toISOString(),
+    }))) as CatalogRow;
+    await otherTab.putPhoto(Library.cleanPhoto({
+        ...referenced, title: 'Other tab title', updatedAt: new Date().toISOString(),
+    }));
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await waitFor(page.dom, () => page.doc.getElementById('save-conflicted-draft').hidden === false);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.doc.getElementById('save-status').textContent, /Not saved.*another tab/i);
+    assert.equal((await otherTab.getBundle(initial.localId))!.project!.objects.length, 0,
+        'autosave does not silently overwrite the other tab');
+
+    const title = page.doc.getElementById('photo-title');
+    title.value = 'My unsaved title';
+    title.dispatchEvent(new page.win.Event('input', { bubbles: true }));
+    page.click(page.doc.getElementById('save-conflicted-draft'));
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device').catch(error => {
+        throw new Error(`${error.message}; status=${page.doc.getElementById('save-status').textContent}; `
+            + `toast=${page.doc.getElementById('toast-message').textContent}; `
+            + `errors=${page.errors.join(' | ')}`);
+    });
+    const saved = (await otherTab.getBundle(initial.localId)) as unknown as { project: ProjectRow; photo: CatalogRow };
+    assert.equal(saved.project.objects.length, 1);
+    assert.equal(saved.photo.title, 'My unsaved title');
+    assert.deepEqual(saved.photo.references, referenced.references,
+        'the override preserves metadata written by the other tab');
+    assert.equal(page.doc.getElementById('save-conflicted-draft').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('pagehide flushes an edit before its autosave debounce expires', async t => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+
+    const setTimeout = win.setTimeout.bind(win);
+    const clearTimeout = win.clearTimeout.bind(win);
+    const heldTimer = 987654;
+    let heldAutosave = false;
+    win.setTimeout = ((callback: TimerHandler, delay?: number, ...args: unknown[]) => {
+        if (delay === 500 && !heldAutosave) {
+            heldAutosave = true;
+            return heldTimer;
+        }
+        return setTimeout(callback, delay, ...args);
+    }) as typeof win.setTimeout;
+    win.clearTimeout = (timer?: Parameters<typeof win.clearTimeout>[0]) => {
+        if (timer !== heldTimer) clearTimeout(timer);
+    };
+    t.after(() => {
+        win.setTimeout = setTimeout;
+        win.clearTimeout = clearTimeout;
+    });
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(heldAutosave, true, 'the normal 500 ms autosave is held by the test');
+    assert.equal(doc.getElementById('save-status').textContent, 'Unsaved changes');
+    win.dispatchEvent(new win.PageTransitionEvent('pagehide'));
+
+    const projects = await waitForPhotoStore(win, 'projects', (records) =>
+        records[0]?.objects.length === 1);
+    assert.equal(projects[0].objects.length, 1,
+        'pagehide, not the held debounce callback, persists the annotation');
+    assert.equal(doc.getElementById('save-status').textContent, 'Saved on this device');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a report size resizes only the stage preview and is remembered across both views', async () => {
+    const page = await loadEditor({ returnToReport: true });
+    const { chrome, doc, win } = page;
+    const controls = [...doc.querySelectorAll('[data-report-width-control]')];
+    const selects = [...doc.querySelectorAll('[data-report-width]')];
+    const stage = doc.getElementById('photo-stage');
+
+    assert.ok(controls.every(control => control.hidden === false));
+    assert.deepEqual(selects.map(select => select.value), ['640', '640']);
+    assert.equal(stage.style.width, '640px');
+    assert.equal(stage.style.maxWidth, '640px');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/,
+        'the project and future raster export retain their source dimensions');
+
+    selects[0].value = '320';
+    selects[0].dispatchEvent(new win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === 320);
+    assert.deepEqual(selects.map(select => select.value), ['320', '320']);
+    assert.equal(stage.style.width, '320px');
+    assert.equal(stage.style.maxWidth, '320px');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+
+    selects[1].value = 'original';
+    selects[1].dispatchEvent(new win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => chrome._store.bpbSettings.reportImageWidth === null);
+    assert.deepEqual(selects.map(select => select.value), ['original', 'original']);
+    assert.equal(stage.style.width, '1100px');
+    assert.equal(stage.style.maxWidth, '1100px',
+        'Original remains contained by the editor canvas');
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('the photo fits the real viewport content box of the laid-out page', async () => {
+    const page = await loadEditor({ pinViewport: false });
+    const { doc, win } = page;
+    const viewport = doc.getElementById('photo-viewport');
+    const stage = doc.getElementById('photo-stage');
+    const style = win.getComputedStyle(viewport);
+    const availableWidth = viewport.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    const availableHeight = viewport.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+    assert.ok(availableWidth > 0 && availableHeight > 0, 'the stylesheet lays the viewport out');
+    const width = parseFloat(stage.style.width);
+    assert.ok(Math.abs(width - Math.min(availableWidth, 1100, availableHeight * IMAGE.width / IMAGE.height)) < 0.01,
+        `the standalone photo fits within ${availableWidth} × ${availableHeight}, got ${width}`);
+    const box = stage.getBoundingClientRect(), frame = viewport.getBoundingClientRect();
+    assert.ok(box.left >= frame.left - 0.5 && box.right <= frame.right + 0.5, 'the fitted photo stays inside the viewport');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a portrait photo fits the viewport height without changing its source dimensions', async () => {
+    const page = await loadEditor({ imageSize: { width: 900, height: 1600 } });
+    const { doc, win } = page;
+    const stage = doc.getElementById('photo-stage');
+    const viewport = doc.getElementById('photo-viewport');
+    Object.defineProperty(viewport, 'clientHeight', { value: 600, configurable: true });
+    viewport.style.paddingTop = '24px';
+    viewport.style.paddingBottom = '24px';
+    // The editor uses the project's dimensions, not a CSS guess about the
+    // rendered image, when a resize changes the available canvas height.
+    page.win.dispatchEvent(new win.Event('resize'));
+    assert.equal(stage.style.maxWidth, '310.5px');
+    assert.equal(stage.style.aspectRatio, '900 / 1600');
+    assert.match(doc.getElementById('export-summary').textContent, /900 × 1600/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('PNG can stay lossless or switch to a quality-controlled JPEG with real size estimates', async () => {
+    const page = await loadEditor({ fileName: 'north-face.png', fileType: 'image/png' });
+    const { chrome, doc, encodeCalls } = page;
+    const format = doc.getElementById('upload-format');
+    const original = doc.getElementById('upload-format-original');
+    const qualityControl = doc.getElementById('jpeg-quality-control');
+    const quality = doc.getElementById('jpeg-quality');
+    const estimate = doc.getElementById('upload-estimate');
+    const note = doc.getElementById('upload-estimate-note');
+
+    assert.equal(format.value, 'original');
+    assert.equal(original.disabled, false);
+    assert.match(original.textContent, /original format.+PNG/i);
+    assert.equal(qualityControl.hidden, true);
+    await waitFor(page.dom, () => /6\.0 MB PNG/.test(estimate.textContent));
+    assert.match(note.textContent, /1600 × 1200.+full resolution/i);
+    assert.doesNotMatch(note.textContent, /GitHub/i,
+        'an ascent-backup warning is noise while that feature is off');
+
+    await chrome.runtime.sendMessage({ type: 'SETTINGS_PATCH', patch: { enableGithubBackup: true } });
+    await page.settle();
+    assert.doesNotMatch(note.textContent, /GitHub/i, 'the GitHub size note belongs to report sessions');
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(estimate.parentElement!.classList.contains('is-warning'), false);
+    assert.match(doc.getElementById('output-summary').textContent, /^PNG · 6\.0 MB$/);
+
+    format.value = 'jpeg';
+    page.emit(format, 'change');
+    assert.equal(qualityControl.hidden, false);
+    await waitFor(page.dom, () => /1\.8 MB JPEG/.test(estimate.textContent));
+    assert.match(note.textContent, /1600 × 1200.+full resolution/i);
+
+    quality.value = '70';
+    page.emit(quality, 'input');
+    page.emit(quality, 'change');
+    assert.equal(doc.getElementById('jpeg-quality-value').textContent, '70%');
+    await waitFor(page.dom, () => /1\.4 MB JPEG/.test(estimate.textContent));
+    assert.deepEqual(encodeCalls.at(-1), {
+        mime: 'image/jpeg',
+        quality: 0.7,
+        bytes: Math.round(2 * 1024 * 1024 * 0.7),
+    });
+
+    format.value = 'png';
+    page.emit(format, 'change');
+    assert.equal(qualityControl.hidden, true);
+    await waitFor(page.dom, () => /6\.0 MB PNG/.test(estimate.textContent));
+    assert.deepEqual(page.errors, []);
+});
+
+test('unsupported source formats expose JPEG fallback instead of a false original promise', async () => {
+    const page = await loadEditor({ fileName: 'north-face.webp', fileType: 'image/webp' });
+    const { doc } = page;
+    const format = doc.getElementById('upload-format');
+    const original = doc.getElementById('upload-format-original');
+
+    assert.equal(format.value, 'jpeg');
+    assert.equal(original.disabled, true);
+    assert.match(original.textContent, /unavailable/i);
+    assert.equal(doc.getElementById('jpeg-quality-control').hidden, false);
+    await waitFor(page.dom, () => /JPEG/.test(doc.getElementById('upload-estimate').textContent));
+    assert.deepEqual(page.errors, []);
+});
+
+test('with no key the editor shows no key form until Upload asks for one', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const dialog = doc.getElementById('imgbb-dialog');
+    assert.equal(doc.getElementById('credential-card'), null);
+    assert.equal(dialog.open, false);
+    assert.equal(dialog.closest('#editor-view'), null, 'the dialog lives outside the editor');
+    const upload = doc.getElementById('upload-insert');
+    assert.equal(upload.textContent.trim(), 'Upload to ImgBB…');
+    assert.ok(upload.classList.contains('quiet'));
+    assert.ok(doc.getElementById('export-image').classList.contains('primary'));
+    const actions = [...doc.getElementById('finish-actions').querySelectorAll('button')].map((button: PageElement) => button.id);
+    assert.deepEqual(actions, ['upload-insert', 'copy-image', 'export-image'], 'standalone ends on Export');
+
+    // A real press focuses Upload, which the dialog returns focus to.
+    await fireTrustedEvent(upload);
+    assert.equal(dialog.open, true);
+    assert.equal(doc.activeElement, doc.getElementById('imgbb-key'));
+    // Keys typed while the dialog is open never reach the editor behind it.
+    page.key('keydown', { key: 'b' });
+    assert.notEqual(doc.querySelector('[data-tool="bolt"]').getAttribute('aria-pressed'), 'true');
+    doc.getElementById('imgbb-key').value = 'not a key';
+    doc.getElementById('imgbb-dialog').querySelector('form').dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+    assert.match(doc.getElementById('imgbb-error').textContent, /no spaces/);
+    assert.equal(dialog.open, true);
+    page.click(doc.getElementById('imgbb-cancel'));
+    assert.equal(dialog.open, false);
+    assert.equal(doc.getElementById('imgbb-key').value, '');
+    assert.equal(doc.activeElement, upload);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a device-saved key uploads without a form and offers no tab-only escape hatch', async () => {
+    const page = await loadEditor({ imgbbStatus: { ok: true, configured: true, permissionGranted: true } });
+    const { doc } = page;
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB');
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a key typed for this tab is held until ImgBB has seen it, then kept with a way to forget it', async () => {
+    const saved: string[] = [];
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
+            return { ok: true };
+        },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    doc.getElementById('imgbb-key').value = 'tab-only-key';
+    doc.getElementById('remember-key').checked = false;
+    doc.getElementById('imgbb-dialog').querySelector('form').dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+    await waitFor(page.dom, () => /Uploaded to ImgBB/.test(page.status())).catch(error => {
+        error.message += `; status=${JSON.stringify(page.status())} toast=${JSON.stringify(doc.getElementById('toast-message').textContent)}`;
+        throw error;
+    });
+    await waitFor(page.dom, () => !doc.getElementById('forget-key').hidden);
+    assert.deepEqual(saved, [], 'a tab-only key is never saved');
+    assert.match(doc.getElementById('finish-note').textContent, /ImgBB key for this tab only/);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Copy link',
+        'a published standalone photo offers its link in the same place');
+
+    page.click(doc.getElementById('forget-key'));
+    await page.settle();
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.deepEqual(page.errors, []);
+});
+
+const submitKey = (page: EditorPage, key: string, { remember = true } = {}) => {
+    page.doc.getElementById('imgbb-key').value = key;
+    page.doc.getElementById('remember-key').checked = remember;
+    page.doc.getElementById('imgbb-dialog').querySelector('form')
+        .dispatchEvent(new page.win.Event('submit', { cancelable: true }));
+};
+
+test('a remembered key is saved once ImgBB has the image, and the page never drops back to no key meanwhile', async () => {
+    const saved: string[] = [];
+    let finishSave!: (value: unknown) => void;
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type !== 'PHOTO_IMGBB_SAVE_KEY') return { ok: true };
+            saved.push(String(message.key));
+            return new Promise(resolve => { finishSave = resolve; });
+        },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'remembered-key');
+    await waitFor(page.dom, () => saved.length === 1);
+    // Mid-save the key already counts: no keyless label, no dialog.
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Copy link');
+    assert.equal(doc.getElementById('imgbb-dialog').open, false);
+    // Nor is it a tab-only key while it is on its way to the device: no note
+    // row comes and goes, and no Forget races the save.
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
+    page.win.dispatchEvent(new page.win.Event('focus'));
+    await page.settle();
+    assert.equal(doc.getElementById('finish-note').hidden, true, 'a redraw mid-save keeps the note away');
+    finishSave({ ok: true });
+    await page.settle();
+    assert.equal(doc.getElementById('finish-note').hidden, true);
+    assert.equal(doc.getElementById('forget-key').hidden, true);
+    assert.deepEqual(saved, ['remembered-key']);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Esc while the browser asks for ImgBB access leaves Connect usable and starts nothing', async () => {
+    const answers: ((granted: boolean) => void)[] = [];
+    let uploads = 0;
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: false },
+        fetchImpl: async () => { uploads++; return { ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }; },
+    });
+    const { doc } = page;
+    let granted = false;
+    page.win.chrome.permissions!.contains = async () => granted;
+    page.win.chrome.permissions!.request = () => new Promise<boolean>(resolve => {
+        answers.push(answer => { granted ||= answer; resolve(answer); });
+    });
+    const dialog = doc.getElementById('imgbb-dialog');
+    const connect = doc.getElementById('save-key');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'first-key');
+    assert.equal(connect.getAttribute('aria-busy'), 'true');
+    // Esc closes a modal dialog natively, without going through Cancel.
+    const closed = new Promise(resolve => dialog.addEventListener('close', resolve, { once: true }));
+    await fireTrustedEvent(doc.getElementById('imgbb-key'), { type: 'press', key: 'Escape' });
+    await closed;
+    assert.equal(dialog.open, false);
+    assert.equal(connect.hasAttribute('aria-busy'), false);
+    page.click(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    submitKey(page, 'second-key');
+    assert.equal(answers.length, 2, 'the reopened dialog asks again instead of ignoring Connect');
+    answers[0](true);
+    await page.settle();
+    assert.equal(uploads, 0, 'the abandoned request starts no upload');
+    assert.equal(dialog.open, true);
+    answers[1](true);
+    await waitFor(page.dom, () => uploads === 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a dialog reopened before its earlier close event keeps the new session intact', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const dialog = doc.getElementById('imgbb-dialog');
+    const field = doc.getElementById('imgbb-key');
+    await fireTrustedEvent(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    // Cancel queues the close event a task later; reopen before it lands.
+    page.click(doc.getElementById('imgbb-cancel'));
+    page.click(doc.getElementById('upload-insert'));
+    assert.equal(dialog.open, true);
+    field.value = 'typed-after-reopen';
+    await page.settle();
+    assert.equal(dialog.open, true);
+    assert.equal(field.value, 'typed-after-reopen', 'the earlier close must not clear the reopened dialog');
+    assert.equal(doc.activeElement, field, 'focus stays in the reopened dialog');
+    assert.deepEqual(page.errors, []);
+});
+
+test('ImgBB rejecting the key itself drops the held key and reopens the dialog without a toast', async () => {
+    const saved: string[] = [];
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: false, permissionGranted: true },
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
+            return { ok: true };
+        },
+        fetchImpl: async () => ({
+            ok: false, status: 400,
+            text: async () => JSON.stringify({ status_code: 400, error: { message: 'Invalid API v1 key.', code: 100 }, status_txt: 'Bad Request' }),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    submitKey(page, 'mistyped-key');
+    await waitFor(page.dom, () => doc.getElementById('imgbb-dialog').open
+        && /didn’t accept that key/.test(doc.getElementById('imgbb-error').textContent));
+    assert.deepEqual(saved, []);
+    assert.equal(doc.getElementById('toast').hidden, true);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB…');
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.remote.state, 'draft', 'a clear refusal leaves a retryable draft');
+    assert.deepEqual(page.errors, []);
+});
+
+test('offline stops Upload before any journal entry, and a held key that never reached ImgBB waits for the next try', async () => {
+    const saved: string[] = [];
+    const sentKeys: string[] = [];
+    const status = { ok: true, configured: false, permissionGranted: true };
+    let online = true;
+    const page = await loadEditor({
+        imgbbStatus: status,
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_IMGBB_SAVE_KEY') saved.push(String(message.key));
+            return { ok: true };
+        },
+        fetchImpl: async (_url: string, init?: RequestInit) => {
+            sentKeys.push(String((init?.body as FormData | undefined)?.get?.('key') ?? _url));
+            return { ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) };
+        },
+    });
+    const { doc } = page;
+    Object.defineProperty(page.win.navigator, 'onLine', { get: () => online, configurable: true });
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    online = false;
+    page.click(doc.getElementById('upload-insert'));
+    assert.match(doc.getElementById('toast-message').textContent, /offline/i);
+    assert.equal(doc.getElementById('imgbb-dialog').open, false, 'offline never asks for a key');
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 0);
+
+    online = true;
+    page.click(doc.getElementById('upload-insert'));
+    online = false;
+    submitKey(page, 'held-key');
+    await waitFor(page.dom, () => !doc.getElementById('imgbb-dialog').open);
+    assert.equal(doc.getElementById('upload-insert').textContent.trim(), 'Upload to ImgBB', 'the held key counts');
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 0);
+    assert.deepEqual(saved, []);
+
+    // A key saved in Settings meanwhile wins over the one still held here.
+    online = true;
+    status.configured = true;
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /Uploaded to ImgBB/.test(page.status()));
+    assert.equal(sentKeys.length, 1);
+    assert.match(sentKeys[0], /test-imgbb-key/);
+    assert.doesNotMatch(sentKeys[0], /held-key/);
+    assert.deepEqual(saved, [], 'the held key is dropped, not saved over the device key');
+    assert.deepEqual(page.errors, []);
+});
+
+test('Export ignores a second activation while it is still encoding', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const clicks: string[] = [];
+    page.win.HTMLAnchorElement.prototype.click = function click(this: HTMLAnchorElement) { clicks.push(this.download); };
+    const exportButton = doc.getElementById('export-image');
+    exportButton.focus();
+    page.click(exportButton);
+    assert.equal(exportButton.getAttribute('aria-disabled'), 'true');
+    assert.equal(doc.activeElement, exportButton, 'focus stays on the busy action');
+    page.click(exportButton);
+    await waitFor(page.dom, () => clicks.length === 1 && !exportButton.hasAttribute('aria-busy'));
+    await page.settle();
+    assert.deepEqual(clicks, ['north-face-topo.jpg']);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Copy writes PNG without disturbing the JPEG estimate that Upload reuses', async () => {
+    const written: { types: string[]; items: Record<string, Promise<Blob>> }[][] = [];
+    const page = await loadEditor({
+        clipboardItem: true,
+        clipboard: { write: async (items: { types: string[]; items: Record<string, Promise<Blob>> }[]) => { written.push(items); await items[0].items['image/png']; } },
+    });
+    const { doc, encodeCalls } = page;
+    await waitFor(page.dom, () => /JPEG/.test(doc.getElementById('upload-estimate').textContent));
+    const estimate = doc.getElementById('upload-estimate').textContent;
+    page.click(doc.getElementById('copy-image'));
+    assert.equal(written.length, 1, 'write() ran inside the click');
+    assert.deepEqual(written[0][0].types, ['image/png']);
+    await waitFor(page.dom, () => doc.getElementById('copy-image').textContent.trim() === 'Copied');
+    assert.equal(encodeCalls.at(-1)!.mime, 'image/png');
+    assert.equal(doc.getElementById('upload-estimate').textContent, estimate);
+    assert.match(doc.getElementById('output-summary').textContent, /^JPEG · /);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a confirmed report insertion shows Inserted and retires New photo', async () => {
+    const page = await loadEditor({
+        returnToReport: true,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        runtimeHandler: async (message: StubMessage) => message?.type === 'PHOTO_INSERT_COMMIT'
+            ? { ok: true, identity: { cid: 1, aid: 2, pid: 3 } } : { ok: true },
+        fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify(imgbbSuccess) }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const actions = [...doc.getElementById('finish-actions').children].map((node: Element) => node.id || node.className);
+    assert.deepEqual(actions, ['copy-image', 'export-image', 'finish-gap', 'upload-insert', 'finish-status'],
+        'report sessions end on the upload, set apart by the gap');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => !doc.getElementById('finish-status').hidden);
+    assert.equal(doc.getElementById('finish-status').textContent, 'Inserted');
+    assert.equal(doc.getElementById('upload-insert').hidden, true);
+    assert.ok(doc.getElementById('new-photo').classList.contains('is-retired'));
+    assert.deepEqual(page.errors, []);
+});
+
+test('accepts an encoded source at the exact 128 MiB ceiling with storage headroom', async () => {
+    const sourceLimit = 128 * 1024 * 1024;
+    const page = await loadEditor({
+        pickedFileSize: sourceLimit,
+        storageEstimate: async () => ({
+            usage: 4 * 1024 * 1024,
+            quota: 4 * 1024 * 1024 + sourceLimit + 8 * 1024 * 1024,
+        }),
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.source.bytes, sourceLimit);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('rejects limit-plus-one encoded bytes before decoding or hashing a small image', async () => {
+    let hashCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        subtle: {
+            digest: async (...args: Parameters<SubtleCrypto['digest']>) => {
+                hashCalls += 1;
+                return globalThis.crypto.subtle.digest(...args);
+            },
+        },
+    });
+    selectPhotoFile(page, { size: 128 * 1024 * 1024 + 1 });
+    await waitFor(page.dom, () => /up to 128 MiB/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.equal(page.decodedBitmaps.length, 0);
+    assert.equal(hashCalls, 0);
+    assert.equal(page.doc.getElementById('toast-action').textContent, 'Choose smaller photo');
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.deepEqual(page.errors, []);
+});
+
+test('rejects a source before decode when the available quota estimate lacks headroom', async () => {
+    const sourceBytes = 48 * 1024 * 1024;
+    const required = sourceBytes + 8 * 1024 * 1024;
+    const page = await loadEditor({
+        pickPhoto: false,
+        storageEstimate: async () => ({ usage: 10, quota: 10 + required - 1 }),
+    });
+    selectPhotoFile(page, { size: sourceBytes });
+    await waitFor(page.dom, () => /free browser storage/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(page.decodedBitmaps.length, 0);
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.deepEqual(page.errors, []);
+});
+
+test('continues when the browser cannot provide a storage estimate', async () => {
+    let estimateCalls = 0;
+    const page = await loadEditor({
+        storageEstimate: async () => {
+            estimateCalls += 1;
+            throw new Error('estimate unavailable');
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.ok(estimateCalls >= 2, 'library display and source preflight both tolerate the failure');
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a hashing failure closes prepared pixels and leaves the editor ready for another file', async () => {
+    let hashCalls = 0;
+    const page = await loadEditor({
+        pickPhoto: false,
+        subtle: {
+            digest: async () => {
+                hashCalls += 1;
+                throw new Error('hash unavailable');
+            },
+        },
+    });
+    selectPhotoFile(page);
+    await waitFor(page.dom, () => /could not verify this photo/i.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(hashCalls, 1);
+    assert.equal(page.decodedBitmaps.length, 1);
+    assert.equal(page.decodedBitmaps[0].closed, true);
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, true);
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+
+    Object.defineProperty(page.win.crypto, 'subtle', {
+        value: globalThis.crypto.subtle,
+        configurable: true,
+    });
+    selectPhotoFile(page, { name: 'retry.jpg' });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.equal(page.doc.getElementById('photo-title').value, 'retry');
+    assert.equal((await readPhotoStore(page.win, 'photos')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a persistence quota failure writes no partial bundle and can retry', async t => {
+    const indexedDB = new IDBFactory();
+    let quotaFailure!: ReturnType<typeof failNextDraftTransactionWithQuota>;
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        onStoreReady: () => { quotaFailure = failNextDraftTransactionWithQuota(indexedDB); },
+    });
+    t.after(() => quotaFailure.restore());
+    selectPhotoFile(page);
+    await waitFor(page.dom, () => /storage is full/i.test(
+        page.doc.getElementById('save-status').textContent));
+    assert.equal(quotaFailure.triggered(), true);
+    for (const storeName of ['photos', 'projects', 'originals', 'thumbnails']) {
+        assert.deepEqual(await readPhotoStore(page.win, storeName as keyof StoreRows), [], storeName);
+    }
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /editable copy could not be saved.*original file was not changed/i);
+
+    page.doc.getElementById('photo-title').value = 'Retried after quota';
+    page.doc.getElementById('photo-title').dispatchEvent(new page.win.Event('input', { bubbles: true }));
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].title, 'Retried after quota');
+    assert.equal((await readPhotoStore(page.win, 'projects')).length, 1);
+    assert.equal((await readPhotoStore(page.win, 'originals')).length, 1);
+    assert.equal((await readPhotoStore(page.win, 'thumbnails')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a large source below the encoded ceiling can flatten to an accepted upload', async () => {
+    let uploaded = false;
+    const page = await loadEditor({
+        pickedFileSize: 32 * 1024 * 1024 + 1,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async (_url: string, options?: RequestInit) => {
+            uploaded = true;
+            const image = (options?.body as FormData).get('image') as File;
+            assert.ok(image.size < 32 * 1024 * 1024,
+                'the provider receives the flattened export, not the larger source');
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => uploaded
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
+        && /Uploaded to ImgBB/i.test(page.status()));
+
+    const [catalog] = await readPhotoStore(page.win, 'photos');
+    assert.equal(catalog.source.bytes, 32 * 1024 * 1024 + 1);
+    assert.ok(catalog.export!.bytes < catalog.source.bytes);
+    assert.equal(catalog.remote.state, 'uploaded');
+    assert.deepEqual(page.errors, []);
+});
+
+test('project import rejects valid matching hashes when decoded dimensions disagree', async () => {
+    const original = new Blob(['pixels'], { type: 'image/jpeg' });
+    const sourceSha256 = await Renderer.sha256(original);
+    const project = Project.createProject({
+        localId: 'mismatched-dimensions',
+        width: IMAGE.height,
+        height: IMAGE.width,
+        sourceSha256,
+        updatedAt: '2026-07-30T18:00:00.000Z',
+    })!;
+    const photo = (Library.createDraft as unknown as CreateDraft)({
+        localId: project.localId,
+        title: 'Mismatched dimensions',
+        source: {
+            fileName: 'mismatch.jpg',
+            mime: 'image/jpeg',
+            bytes: original.size,
+            width: project.image.width,
+            height: project.image.height,
+            sha256: sourceSha256,
+        },
+        now: project.updatedAt,
+    });
+    const archive = await Archive.createProjectArchive({ project, photo, original });
+    const page = await loadEditor({ pickPhoto: false });
+    const input = page.doc.getElementById('import-project');
+    const file = new page.win.File(
+        [await archive.arrayBuffer()],
+        'mismatch.bpb-photo',
+        { type: 'application/zip' },
+    );
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new page.win.Event('change'));
+    await waitFor(page.dom, () => /dimensions do not match its image/i.test(
+        page.doc.getElementById('toast-message').textContent,
+    ));
+
+    assert.deepEqual(await readPhotoStore(page.win, 'photos'), []);
+    assert.equal(page.doc.getElementById('photo-viewport').getAttribute('aria-busy'), 'false');
+    assert.deepEqual(page.errors, []);
+});
+
+test('imported annotations enter the same semantic keyboard selection list', async () => {
+    const original = new Blob(['pixels'], { type: 'image/jpeg' });
+    const sourceSha256 = await Renderer.sha256(original);
+    let project = Project.createProject({
+        localId: 'accessible-import',
+        width: IMAGE.width,
+        height: IMAGE.height,
+        sourceSha256,
+        updatedAt: '2026-08-08T12:00:00.000Z',
+    })!;
+    project = Project.addObject(project, {
+        id: 'imported-anchor',
+        type: 'anchor',
+        geometry: { x: 500, y: 400, rotation: 0 },
+        style: { color: '#e53935', scale: 1, opacity: 1 },
+    })!;
+    project = Project.addObject(project, {
+        id: 'imported-route',
+        type: 'route',
+        geometry: { points: [[200, 800], [600, 500], [1000, 300]], controls: [] },
+        style: {
+            color: '#1e88e5', width: 12, stroke: 'solid', end: 'none', opacity: 1, smooth: false,
+        },
+    })!;
+    const photo = (Library.createDraft as unknown as CreateDraft)({
+        localId: project.localId,
+        title: 'Accessible import',
+        source: {
+            fileName: 'import.jpg',
+            mime: 'image/jpeg',
+            bytes: original.size,
+            ...IMAGE,
+            sha256: sourceSha256,
+        },
+        now: project.updatedAt,
+    });
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        onStoreReady: async ({ win }: { win: EditorWindow }) => {
+            await new Promise<void>((resolve, reject) => {
+                const opened = win.indexedDB.open(
+                    'betterPeakbaggerPhotos', Store.DATABASE_VERSION);
+                opened.onerror = () => reject(opened.error);
+                opened.onsuccess = () => {
+                    const database = opened.result;
+                    const transaction = database.transaction(
+                        ['photos', 'projects', 'originals', 'thumbnails'],
+                        'readwrite',
+                    );
+                    transaction.objectStore('photos').put(photo);
+                    transaction.objectStore('projects').put(project);
+                    transaction.objectStore('originals').put({
+                        localId: project.localId,
+                        blob: new Blob(['pixels'], { type: 'image/jpeg' }),
+                    });
+                    transaction.objectStore('thumbnails').put({
+                        localId: project.localId,
+                        blob: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+                    });
+                    transaction.oncomplete = () => {
+                        database.close();
+                        resolve();
+                    };
+                    transaction.onerror = () => reject(transaction.error);
+                };
+            });
+        },
+    });
+    // fake-indexeddb clones the seeded records in the test realm's Blob. Bind
+    // the page to that same constructor for this pre-existing/imported-bundle
+    // path; ordinary file-picking tests keep the page's own File/Blob realm.
+    Object.defineProperty(page.win, 'Blob', { value: Blob, configurable: true });
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
+        .some((button: PageElement) => button.dataset.action === 'edit'));
+    const editImported = [...page.doc.querySelectorAll('.photo-card button')]
+        .find((button: PageElement) => button.dataset.action === 'edit')!;
+    editImported.focus();
+    editImported.click();
+    await waitFor(page.dom, () => page.doc.getElementById('editor-workspace').hidden === false)
+        .catch(error => {
+            error.message += `; toast=${JSON.stringify(page.doc.getElementById('toast-message').textContent)}`
+                + ` errors=${JSON.stringify(page.errors)}`;
+            throw error;
+        });
+
+    const buttons = [...page.doc.querySelectorAll('#annotation-list [data-object-id]')];
+    assert.deepEqual(buttons.map(button => button.textContent), ['Anchor', 'Route, 3 points']);
+    buttons[1].focus();
+    buttons[1].click();
+    assert.equal(page.doc.activeElement.dataset.objectId, 'imported-route');
+    assert.equal(page.doc.activeElement.getAttribute('aria-pressed'), 'true');
+    assert.equal(page.doc.querySelectorAll('#route-point-list button').length, 3);
+    assert.deepEqual(page.errors, []);
+});
+
+test('remote thumbnail presentation failures never rewrite catalog health or backup state', async () => {
+    const indexedDB = new IDBFactory();
+    const store = await Store.createPhotoStore({ indexedDB });
+    const now = '2026-07-30T12:00:00.000Z';
+    const sourceSha256 = 'a'.repeat(64);
+    const exported = {
+        mime: 'image/jpeg', bytes: 8, width: 1600, height: 1200, sha256: 'b'.repeat(64),
+    };
+    const draft = (Library.createDraft as unknown as CreateDraft)({
+        localId: 'remote-thumbnail',
+        title: 'Remote-only topo',
+        source: {
+            fileName: 'remote.jpg', mime: 'image/jpeg', bytes: 6,
+            width: 1600, height: 1200, sha256: sourceSha256,
+        },
+        now,
+    });
+    const project = Project.createProject({
+        localId: draft.localId,
+        width: 1600,
+        height: 1200,
+        sourceSha256,
+        updatedAt: now,
+    })!;
+    const published = Library.completeUpload(draft, exported, {
+        providerId: 'provider-1',
+        url: 'https://i.ibb.co/a/topo.jpg',
+        displayUrl: 'https://i.ibb.co/a/topo.jpg',
+        viewerUrl: 'https://ibb.co/provider-1',
+        thumbnailUrl: 'https://i.ibb.co/a/topo-thumb.jpg',
+        mediumUrl: null,
+        uploadedAt: now,
+        expiresAt: null,
+    }, now);
+    await store.putBundle({
+        photo: published,
+        project,
+        original: new Blob(['source'], { type: 'image/jpeg' }),
+        thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+    });
+    await store.removeLocalAssets(draft.localId, now);
+    store.close();
+
+    const page = await loadEditor({ indexedDB, pickPhoto: false });
+    const before = await readPhotoStore(page.win, 'photos');
+    // The fixture serves no ImgBB host, so each library view's thumbnail
+    // fails to load in the browser itself, as offline, blocked, timed-out and
+    // 5xx loads all do.
+    const failed = page.imageErrors;
+    for (const view of [1, 2, 3, 4]) {
+        await waitFor(page.dom, () => failed.length === view);
+        const image = failed[view - 1]!;
+        assert.match(image.getAttribute('src') ?? '', /^https:\/\/i\.ibb\.co\//);
+        await waitFor(page.dom, () => !image.isConnected);
+        assert.match(page.doc.querySelector('.photo-card .photo-placeholder').textContent,
+            /Preview unavailable/);
+        assert.deepEqual(await readPhotoStore(page.win, 'photos'), before,
+            `failed view ${view} must not mutate durable catalog truth`);
+        page.doc.getElementById('show-library').click();
+    }
+    assert.deepEqual(page.errors, []);
+});
+
+test('Recently Deleted discloses the asset deadline and restores exact-expiry records only', async t => {
+    const indexedDB = new IDBFactory();
+    const fixedNow = '2026-08-09T12:00:00.000Z';
+    const exactExpiryDeletion = new Date(
+        Date.parse(fixedNow) - Library.DELETED_EDITING_RECOVERY_MS,
+    ).toISOString();
+    const beforeExpiryDeletion = new Date(Date.parse(exactExpiryDeletion) + 60_000).toISOString();
+    const afterExpiryDeletion = new Date(Date.parse(exactExpiryDeletion) - 60_000).toISOString();
+
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        fixedNow,
+        onStoreReady: async () => {
+            const seedStore = await Store.createPhotoStore({ indexedDB });
+            const seed = async ({
+                localId,
+                title,
+                deletedAt,
+                remoteState = 'draft',
+                referenced = false,
+                backedUp = false,
+                prune = false,
+            }: { localId: string; title: string; deletedAt: string | null; remoteState?: string; referenced?: boolean; backedUp?: boolean; prune?: boolean }) => {
+                const sourceSha256 = 'a'.repeat(64);
+                const input = {
+                    photo: (Library.createDraft as unknown as CreateDraft)({
+                        localId,
+                        title,
+                        source: {
+                            fileName: `${localId}.jpg`,
+                            mime: 'image/jpeg',
+                            bytes: 6,
+                            width: 1600,
+                            height: 1200,
+                            sha256: sourceSha256,
+                        },
+                        now: '2026-07-01T12:00:00.000Z',
+                    }),
+                    project: Project.createProject({
+                        localId,
+                        width: 1600,
+                        height: 1200,
+                        sourceSha256,
+                        updatedAt: '2026-07-01T12:00:00.000Z',
+                    }),
+                    original: new Blob(['source'], { type: 'image/jpeg' }),
+                    thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }),
+                };
+                let photo = await seedStore.putDraft(input);
+                if (remoteState !== 'draft') {
+                    photo = Library.completeUpload(photo, {
+                        mime: 'image/jpeg',
+                        bytes: 8,
+                        width: 1600,
+                        height: 1200,
+                        sha256: 'b'.repeat(64),
+                    }, {
+                        providerId: localId,
+                        url: `https://i.ibb.co/a/${localId}.jpg`,
+                        displayUrl: `https://i.ibb.co/a/${localId}.jpg`,
+                        viewerUrl: `https://ibb.co/${localId}`,
+                        thumbnailUrl: `https://i.ibb.co/a/${localId}-thumb.jpg`,
+                        mediumUrl: null,
+                        uploadedAt: '2026-07-02T12:00:00.000Z',
+                        expiresAt: null,
+                    }, '2026-07-02T12:00:00.000Z')!;
+                    if (remoteState === 'unreachable') {
+                        photo = Library.markUnreachable(photo, true, '2026-07-03T12:00:00.000Z')!;
+                    }
+                    photo = await seedStore.putPhoto(photo);
+                }
+                if (referenced) {
+                    photo = await seedStore.putPhoto(Library.addReference(photo, {
+                        kind: 'ascent', cid: 1, aid: 2, pid: 3,
+                        insertedAt: '2026-07-04T12:00:00.000Z',
+                    }, '2026-07-04T12:00:00.000Z'));
+                }
+                if (backedUp) {
+                    photo = await seedStore.putPhoto(Library.cleanPhoto({
+                        ...photo,
+                        backup: {
+                            state: 'current',
+                            signature: 'c'.repeat(64),
+                            backedUpAt: '2026-07-05T12:00:00.000Z',
+                            commitUrl: 'https://github.com/example/photos/commit/abc',
+                        },
+                    }));
+                }
+                photo = await seedStore.putPhoto(Library.markDeleted(photo, deletedAt ?? undefined));
+                if (prune) await seedStore.removeLocalAssets(photo!.localId, fixedNow);
+            };
+
+            await seed({
+                localId: 'local-pre-expiry',
+                title: 'Local editing data',
+                deletedAt: beforeExpiryDeletion,
+            });
+            await seed({
+                localId: 'uploaded-reference',
+                title: 'Uploaded and referenced',
+                deletedAt: beforeExpiryDeletion,
+                remoteState: 'uploaded',
+                referenced: true,
+                backedUp: true,
+            });
+            await seed({
+                localId: 'unreachable-photo',
+                title: 'Unreachable upload',
+                deletedAt: beforeExpiryDeletion,
+                remoteState: 'unreachable',
+            });
+            await seed({
+                localId: 'exact-expiry',
+                title: 'Exact expiry',
+                deletedAt: exactExpiryDeletion,
+            });
+            await seed({
+                localId: 'post-prune',
+                title: 'Post-prune record',
+                deletedAt: afterExpiryDeletion,
+                prune: true,
+            });
+        },
+    });
+    t.after(() => page.dom.window.close());
+
+    const filter = page.doc.getElementById('library-filter');
+    filter.value = 'recently-deleted';
+    filter.dispatchEvent(new page.win.Event('change', { bubbles: true }));
+    await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 5);
+    const card = (title: string) => [...page.doc.querySelectorAll('.photo-card')]
+        .find(candidate => candidate.querySelector('h3')?.textContent === title)!;
+
+    assert.match(card('Local editing data').textContent, /Editing data is available/);
+    assert.match(card('Local editing data').textContent, /Local: original, project, thumbnail retained/);
+    assert.match(card('Uploaded and referenced').textContent,
+        /Remote: ImgBB image retained · used in 1 report · backup pending/);
+    assert.match(card('Unreachable upload').textContent, /ImgBB image marked unreachable/);
+    assert.match(card('Post-prune record').textContent,
+        /Editing data is no longer retained.*Local: record only/s);
+    assert.equal(card('Local editing data').querySelector('button').textContent,
+        'Restore with editing data');
+
+    const exactCard = card('Exact expiry');
+    assert.match(exactCard.textContent, /Editing recovery has expired/);
+    const exactRestore = exactCard.querySelector('button');
+    assert.equal(exactRestore.textContent, 'Restore record only');
+    exactRestore.click();
+    await waitFor(page.dom, () => !card('Exact expiry'));
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /record restored.*Editing data is no longer available/i);
+
+    const [restored] = (await readPhotoStore(page.win, 'photos'))
+        .filter((photo: CatalogRow) => photo.localId === 'exact-expiry');
+    assert.equal(restored.deletedAt, null);
+    assert.deepEqual(restored.assets, {
+        originalRetained: false,
+        projectRetained: false,
+        thumbnailRetained: false,
+    });
+    assert.deepEqual(page.errors, []);
+});
+
+test('removing a photo needs no confirmation and states the 30-day editing-data window with Undo', async t => {
+    let confirmations = 0;
+    const page = await loadEditor({
+        confirmImpl: () => { confirmations++; return false; },
+    });
+    t.after(() => page.dom.window.close());
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    page.click(page.doc.getElementById('show-library'));
+    await waitFor(page.dom, () => [...page.doc.querySelectorAll('.photo-card button')]
+        .some(button => button.textContent === 'Remove'));
+    page.click([...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Remove')!);
+    await waitFor(page.dom, () => /Moved to Recently Deleted/.test(
+        page.doc.getElementById('toast-message').textContent));
+
+    assert.equal(confirmations, 0, 'a reversible removal asks nothing');
+    assert.match(page.doc.getElementById('toast-message').textContent,
+        /Restorable with editing data for 30 days/i);
+    assert.deepEqual(page.errors, []);
+});
+
+test('library URL copy falls back to the complete selected value for every clipboard failure', async t => {
+    const longUrl = `https://i.ibb.co/a/topo.jpg?token=${'x'.repeat(3500)}`;
+    const cases = [
+        ['missing API', null],
+        ['synchronous throw', { writeText: () => { throw new Error('blocked'); } }],
+        ['rejected promise', { writeText: async () => { throw new Error('denied'); } }],
+    ];
+    for (const [name, clipboard] of cases as [string, object | null][]) {
+        await t.test(name, async () => {
+            const indexedDB = new IDBFactory();
+            await seedUploadedLibraryPhoto(indexedDB, { url: longUrl });
+            const page = await loadEditor({
+                indexedDB,
+                pickPhoto: false,
+                startMode: 'library',
+                clipboard,
+            });
+            const copy = [...page.doc.querySelectorAll('.photo-card button')]
+                .find(button => button.textContent === 'Copy URL')!;
+            copy.click();
+            await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
+
+            const fallback = page.doc.getElementById('toast-copy-value');
+            assert.equal(fallback.value, longUrl);
+            assert.equal(page.doc.activeElement, fallback);
+            assert.equal(fallback.selectionStart, 0);
+            assert.equal(fallback.selectionEnd, longUrl.length);
+            assert.match(page.doc.getElementById('toast-copy-status').textContent,
+                /complete URL is selected/i);
+            assert.equal(copy.disabled, false);
+            assert.deepEqual(page.errors, []);
+            page.dom.window.close();
+        });
+    }
+});
+
+test('library URL copy recovers after lost focus and a repeated click', async () => {
+    const indexedDB = new IDBFactory();
+    const copied: string[] = [];
+    await seedUploadedLibraryPhoto(indexedDB);
+    const page = await loadEditor({
+        indexedDB,
+        pickPhoto: false,
+        startMode: 'library',
+        clipboard: {
+            writeText: async (value: string) => {
+                copied.push(value);
+                if (copied.length <= 2) throw new Error('clipboard denied');
+            },
+        },
+    });
+    const copy = [...page.doc.querySelectorAll('.photo-card button')]
+        .find(button => button.textContent === 'Copy URL')!;
+    copy.click();
+    await waitFor(page.dom, () => page.doc.getElementById('toast-copy-value').hidden === false);
+    page.doc.getElementById('library-search').focus();
+    assert.notEqual(page.doc.activeElement, page.doc.getElementById('toast-copy-value'));
+
+    copy.click();
+    const fallback = page.doc.getElementById('toast-copy-value');
+    await waitFor(page.dom, () => copied.length === 2 && page.doc.activeElement === fallback);
+    assert.equal(page.doc.activeElement, fallback,
+        'a repeated failure must restore focus to the complete value');
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+
+    copy.click();
+    await waitFor(page.dom, () => /Image URL copied/.test(
+        page.doc.getElementById('toast-message').textContent));
+    assert.equal(copied.length, 3);
+    assert.equal(copied[0], 'https://i.ibb.co/a/topo.jpg');
+    assert.equal(page.doc.getElementById('toast-copy-value').hidden, true);
+    assert.equal(page.doc.getElementById('toast-copy-value').value, '');
+    assert.equal(copy.disabled, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a failed report insertion keeps the real page catalog at its committed ImgBB success', async () => {
+    const messages: StubMessage[] = [];
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({
+        returnToReport: true,
+        // The recovery copy starts from the fallback for a missing Clipboard API.
+        clipboard: null,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        indexedDB,
+        runtimeHandler: async (message: StubMessage) => {
+            messages.push(structuredClone(message));
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                return {
+                    ok: false,
+                    error: { message: 'The waiting report tab is no longer available.' },
+                };
+            }
+            return { ok: true };
+        },
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            text: async () => JSON.stringify(imgbbSuccess),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
+        && /uploaded and saved in the library/i.test(page.status())).catch(error => {
+        error.message += `; status=${JSON.stringify(page.status())}`
+            + ` toast=${JSON.stringify(doc.getElementById('toast-message').textContent)}`
+            + ` errors=${JSON.stringify(page.errors)}`;
+        throw error;
+    });
+
+    const [catalog, secrets, operations] = await Promise.all([
+        readPhotoStore(page.win, 'photos'),
+        readPhotoStore(page.win, 'secrets'),
+        readPhotoStore(page.win, 'operations'),
+    ]);
+    assert.equal(messages.filter(message => message.type === 'PHOTO_INSERT_COMMIT').length, 1);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].remote.state, 'uploaded');
+    assert.equal((catalog[0].remote as { url: string }).url, 'https://i.ibb.co/a/topo.jpg');
+    assert.ok(catalog[0].export?.sha256);
+    assert.equal(catalog[0].references.length, 0);
+    assert.deepEqual(secrets, [{
+        localId: catalog[0].localId,
+        deleteUrl: 'https://ibb.co/delete/delete-capability',
+    }]);
+    assert.equal(operations.length, 1, 'the committed journal stays available for insertion recovery');
+    assert.equal(operations[0].state, 'catalog-committed');
+    assert.match(doc.getElementById('toast-message').textContent, /waiting report tab/i);
+    assert.doesNotMatch(doc.getElementById('toast-message').textContent, /outcome unknown|cataloging failed/i);
+    const recoveryUrl = doc.getElementById('toast-copy-value');
+    assert.equal(recoveryUrl.hidden, false);
+    assert.equal(recoveryUrl.value, (catalog[0].remote as { url: string }).url);
+    doc.getElementById('toast-action').click();
+    await waitFor(page.dom, () => /complete URL is selected/i.test(
+        doc.getElementById('toast-copy-status').textContent));
+    assert.equal(doc.activeElement, recoveryUrl);
+    assert.equal(recoveryUrl.selectionStart, 0);
+    assert.equal(recoveryUrl.selectionEnd, (catalog[0].remote as { url: string }).url.length);
+
+    let finishCopy!: (value?: unknown) => void;
+    let recoveryCopyCalls = 0;
+    const pendingCopy = new Promise(resolve => { finishCopy = resolve; });
+    Object.defineProperty(page.win.navigator, 'clipboard', {
+        value: {
+            writeText: () => {
+                recoveryCopyCalls += 1;
+                return pendingCopy;
+            },
+        },
+        configurable: true,
+    });
+    const recoveryAction = doc.getElementById('toast-action');
+    recoveryAction.click();
+    await waitFor(page.dom, () => recoveryCopyCalls === 1);
+    doc.getElementById('forget-key').click();
+    await waitFor(page.dom, () => /forgotten for this tab/.test(
+        doc.getElementById('toast-message').textContent));
+    finishCopy();
+    await page.settle();
+    assert.match(doc.getElementById('toast-message').textContent, /forgotten for this tab/);
+    assert.doesNotMatch(doc.getElementById('toast-message').textContent, /copied/i);
+    assert.equal(recoveryUrl.hidden, true);
+    assert.equal(recoveryUrl.value, '');
+    recoveryAction.click();
+    assert.equal(recoveryCopyCalls, 1,
+        'a replaced recovery surface must not retain a callable URL action');
+    assert.deepEqual(page.errors, []);
+
+    page.win.dispatchEvent(new page.win.Event('beforeunload'));
+    page.dom.window.close();
+    const recoveryMessages: StubMessage[] = [];
+    const recoveredPage = await loadEditor({
+        returnToReport: true,
+        pickPhoto: false,
+        indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        runtimeHandler: async (message: StubMessage) => {
+            recoveryMessages.push(structuredClone(message));
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
+            }
+            return { ok: true };
+        },
+    });
+    const [recoveredCatalog, recoveredOperations] = await Promise.all([
+        readPhotoStore(recoveredPage.win, 'photos'),
+        readPhotoStore(recoveredPage.win, 'operations'),
+    ]);
+    assert.equal(recoveryMessages.filter(message => message.type === 'PHOTO_INSERT_COMMIT').length, 1);
+    assert.equal(recoveredCatalog[0].remote.state, 'uploaded');
+    assert.equal(recoveredCatalog[0].references.length, 1);
+    assert.equal(recoveredOperations.length, 0, 'recovery removes the journal without another upload');
+    assert.deepEqual(recoveredPage.errors, []);
+});
+
+test('an accepted but uncataloged upload keeps its last-resort URL visible and selectable', async () => {
+    const indexedDB = new IDBFactory();
+    let concurrentEditApplied = false;
+    const page = await loadEditor({
+        indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        clipboard: { writeText: async () => { throw new Error('clipboard denied'); } },
+        fetchImpl: async () => {
+            const otherTab = await Store.createPhotoStore({ indexedDB });
+            const [current] = await otherTab.listPhotos({ includeDeleted: true });
+            await otherTab.putPhoto(Library.cleanPhoto({
+                ...current,
+                title: 'Concurrent title',
+                updatedAt: '2026-08-09T12:00:00.000Z',
+            }));
+            otherTab.close();
+            concurrentEditApplied = true;
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+    });
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent
+        === 'Saved on this device');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => concurrentEditApplied
+        && page.doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false'
+        && /could not finish cataloging/i.test(page.doc.getElementById('toast-message').textContent));
+
+    const fallback = page.doc.getElementById('toast-copy-value');
+    assert.equal(fallback.hidden, false);
+    assert.equal(fallback.value, 'https://i.ibb.co/a/topo.jpg');
+    page.click(page.doc.getElementById('toast-action'));
+    await waitFor(page.dom, () => /complete URL is selected/i.test(
+        page.doc.getElementById('toast-copy-status').textContent));
+    assert.equal(page.doc.activeElement, fallback);
+    assert.equal(fallback.selectionStart, 0);
+    assert.equal(fallback.selectionEnd, fallback.value.length);
+    assert.equal(page.doc.getElementById('toast').hidden, false,
+        'last-resort upload recovery must remain until another surface replaces it');
+    assert.deepEqual(page.errors, []);
+});
+
+test('export and upload hold one immutable snapshot behind every editor mutation path', async () => {
+    let releaseExport!: (value?: unknown) => void;
+    const exportGate = new Promise(resolve => { releaseExport = resolve; });
+    let exportStarted = false;
+    let resolveUpload!: (value?: unknown) => void;
+    let uploadStarted = false;
+    const uploadGate = new Promise(resolve => { resolveUpload = resolve; });
+    const insertionMessages: StubMessage[] = [];
+    const page = await loadEditor({
+        returnToReport: true,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        imageLoader: (image: { onload?: (() => void) | null; currentSrc?: string }) => {
+            exportStarted = true;
+            void exportGate.then(() => image.onload?.());
+        },
+        fetchImpl: async () => {
+            uploadStarted = true;
+            await uploadGate;
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify(imgbbSuccess),
+            };
+        },
+        runtimeHandler: async (message: StubMessage) => {
+            if (message?.type === 'PHOTO_INSERT_COMMIT') {
+                insertionMessages.push(structuredClone(message));
+                return { ok: true, identity: { cid: 10, aid: 20, pid: 30 } };
+            }
+            return { ok: true };
+        },
+    });
+    const { doc, win } = page;
+    const title = doc.getElementById('photo-title');
+    const alt = doc.getElementById('photo-caption');
+    title.value = 'Snapshot title';
+    alt.value = 'Snapshot caption';
+    page.emit(title, 'input');
+    page.emit(alt, 'input');
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await waitForPhotoStore(win, 'photos', (records) =>
+        records[0]?.title === 'Snapshot title' && records[0]?.caption === 'Snapshot caption');
+    await waitForPhotoStore(win, 'projects', (records) => records[0]?.objects.length === 1);
+
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const snapshotClipboard = annotationTransfer(); dispatchClipboard(page, 'copy', snapshotClipboard);
+
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => exportStarted && doc.getElementById('photo-viewport')
+        .getAttribute('aria-busy') === 'true');
+
+    const mutationControls = [
+        title,
+        alt,
+        doc.getElementById('undo'),
+        doc.getElementById('redo'),
+        doc.getElementById('finish-route'),
+        doc.getElementById('insert-route-point'),
+        doc.getElementById('remove-route-point'),
+        doc.getElementById('object-color'),
+        doc.getElementById('object-opacity'),
+        doc.getElementById('route-width'),
+        doc.getElementById('route-stroke'),
+        doc.getElementById('route-arrow'),
+        doc.getElementById('route-smooth'),
+        doc.getElementById('object-scale'),
+        doc.getElementById('object-rotation'),
+        doc.getElementById('pitch-number'),
+        doc.getElementById('object-text'),
+        doc.getElementById('text-align'),
+        doc.getElementById('label-background'),
+        doc.getElementById('send-back'),
+        doc.getElementById('bring-front'),
+        doc.getElementById('duplicate-object'),
+        doc.getElementById('delete-object'),
+        doc.getElementById('clear-annotations'),
+        doc.getElementById('upload-format'),
+        doc.getElementById('jpeg-quality'),
+        ...doc.querySelectorAll('[data-tool]'),
+    ];
+    assert.ok(mutationControls.every(control => control.disabled),
+        'every visible editor mutation is disabled before export begins');
+    assert.equal(doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'true');
+    assert.equal(doc.getElementById('photo-file').disabled, true);
+    assert.equal(doc.getElementById('import-project').disabled, true);
+    assert.ok([...doc.querySelectorAll('[data-report-width]')].every(control => control.disabled));
+
+    // Dispatch directly as well as clicking disabled controls: the mutation
+    // helpers themselves must reject programmatic and already-queued events.
+    title.value = 'Late title';
+    alt.value = 'Late caption';
+    page.emit(title, 'input');
+    page.emit(alt, 'input');
+    page.emit(doc.getElementById('object-opacity'), 'input');
+    doc.getElementById('upload-format').value = 'png';
+    page.emit(doc.getElementById('upload-format'), 'change');
+    doc.getElementById('jpeg-quality').value = '70';
+    page.emit(doc.getElementById('jpeg-quality'), 'input');
+    page.emit(doc.getElementById('jpeg-quality'), 'change');
+    page.click(doc.getElementById('duplicate-object'));
+    page.click(doc.getElementById('delete-object'));
+    page.click(doc.getElementById('clear-annotations'));
+    page.tool('anchor');
+    page.pointer('pointerdown', 200, 200);
+    page.key('keydown', { key: 'Delete' });
+    page.key('keydown', { key: 'z', metaKey: true });
+    page.key('keydown', { key: 'ArrowRight' });
+    page.key('keydown', { key: 'a' });
+    const input = doc.getElementById('photo-file');
+    Object.defineProperty(input, 'files', {
+        value: [new win.File(['replacement'], 'replacement.jpg', { type: 'image/jpeg' })],
+        configurable: true,
+    });
+    input.dispatchEvent(new win.Event('change'));
+
+    for (const type of ['copy', 'paste']) {
+        assert.equal(dispatchClipboard(page, type, snapshotClipboard).defaultPrevented, false,
+            'clipboard commands cannot change a frozen export');
+    }
+
+    releaseExport();
+    await waitFor(page.dom, () => uploadStarted);
+    title.value = 'Later still';
+    page.emit(title, 'input');
+    page.click(doc.getElementById('undo'));
+    page.pointer('pointerdown', 300, 300);
+    resolveUpload();
+    await waitFor(page.dom, () => /Uploaded and inserted/.test(page.status())
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false');
+
+    const [catalog, projects] = await Promise.all([
+        readPhotoStore(win, 'photos'),
+        readPhotoStore(win, 'projects'),
+    ]);
+    assert.equal(catalog.length, 1);
+    assert.equal(catalog[0].remote.state, 'uploaded');
+    assert.equal(catalog[0].title, 'Snapshot title');
+    assert.equal(catalog[0].caption, 'Snapshot caption');
+    assert.equal(projects[0].objects.length, 1);
+    assert.equal(projects[0].export.mime, 'image/jpeg',
+        'a programmatic format change cannot replace the frozen upload settings');
+    assert.equal(title.value, 'Snapshot title');
+    assert.equal(alt.value, 'Snapshot caption');
+    assert.equal(insertionMessages.length, 1);
+    assert.equal(insertionMessages[0].caption, 'Snapshot caption');
+    assert.ok(mutationControls.every(control => control.disabled),
+        'the committed snapshot remains read-only until Edit');
+    assert.equal(doc.getElementById('photo-file').disabled, false,
+        'choosing a different source remains available after commit');
+    assert.equal(doc.getElementById('import-project').disabled, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a definite provider refusal unlocks the draft for correction and retry', async () => {
+    const page = await loadEditor({
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async () => ({
+            ok: false,
+            status: 400,
+            text: async () => JSON.stringify({
+                error: { message: 'Unsupported or unrecognized file format', code: 415 },
+            }),
+        }),
+    });
+    const { doc } = page;
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.click(doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /JPEG or PNG/.test(page.status())
+        && doc.getElementById('photo-viewport').getAttribute('aria-busy') === 'false');
+
+    assert.equal(doc.getElementById('photo-title').disabled, false);
+    assert.ok([...doc.querySelectorAll('[data-tool]')].every(control => control.disabled === false));
+    assert.equal(doc.getElementById('undo').disabled, false);
+    assert.equal(doc.getElementById('upload-insert').disabled, false);
+    assert.equal(doc.getElementById('photo-overlay').getAttribute('aria-disabled'), 'false');
+    assert.deepEqual(page.errors, []);
+});
+
+// One drag of a slider used to push one history entry per intermediate value:
+// Undo stepped back a single tick, and Route width (1–100) alone pushed the
+// full 100-entry limit, evicting every real edit behind it.
+test('a slider drag is one undo step, and it does not evict the edits behind it', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await page.settle();
+    assert.equal(page.markCount(), 1);
+
+    const opacity = doc.getElementById('object-opacity');
+    assert.equal(doc.getElementById('inspector').hidden, false, 'placing a mark selects it');
+    for (let value = 100; value >= 20; value -= 5) {
+        opacity.value = String(value);
+        page.emit(opacity, 'input');
+    }
+    page.emit(opacity, 'change');
+    await page.settle();
+    assert.equal(doc.getElementById('object-opacity-value').textContent, '20%');
+
+    page.click(doc.getElementById('undo'));
+    await page.settle();
+    assert.equal(doc.getElementById('object-opacity-value').textContent, '100%',
+        'one Undo returns to the value before the drag, not one tick back');
+    assert.equal(page.markCount(), 1, 'the mark itself survives undoing its restyle');
+
+    // A second drag of the same slider on the same mark is its own step.
+    for (let value = 100; value >= 50; value -= 5) {
+        opacity.value = String(value);
+        page.emit(opacity, 'input');
+    }
+    page.emit(opacity, 'change');
+    await page.settle();
+    page.click(doc.getElementById('undo'));
+    await page.settle();
+    assert.equal(doc.getElementById('object-opacity-value').textContent, '100%');
+
+    assert.deepEqual(page.errors, []);
+});
+
+test('rotation is offered only for tools and selected marks with a visible orientation', async () => {
+    const page = await loadEditor({ localPreferences: {
+        'bpbPhotoTool:anchor': { rotation: 35 },
+        'bpbPhotoTool:belay': { rotation: -40 },
+    } });
+    const { doc } = page;
+    const rotation = doc.getElementById('object-rotation').closest('label');
+    try {
+        for (const type of ['anchor', 'bolt', 'belay', 'piton', 'rappel', 'pitch', 'text', 'route', 'drawing']) {
+            const hidden = ['anchor', 'belay', 'route', 'drawing'].includes(type);
+            page.tool(type);
+            assert.equal(rotation!.hidden, hidden, `${type} preset rotation visibility`);
+            if (type === 'route' || type === 'drawing') continue;
+            page.pointer('pointerdown', 100, 100);
+            assert.equal(rotation!.hidden, hidden, `${type} placed rotation visibility`);
+            const mark = doc.querySelector('#annotation-list li:last-child button');
+            const id = mark.dataset.objectId;
+            page.tool(hidden ? 'piton' : 'belay');
+            page.click(doc.querySelector(`#annotation-list [data-object-id="${id}"]`));
+            assert.equal(rotation!.hidden, hidden, `${type} reselected rotation visibility`);
+            assert.equal(doc.getElementById('object-scale').closest('label')!.hidden, false,
+                `${type} still offers size`);
+        }
+        assert.deepEqual(page.errors, []);
+    } finally {
+        page.dom.window.close();
+    }
+});
+
+// The style controls used to wait for a mark to exist, so the first symbol was
+// always placed at the previous style and then corrected. Arming a tool shows
+// the style its next mark will take instead.
+test('arming a placement tool shows its style before anything is placed', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const inspector = doc.getElementById('inspector');
+    const heading = () => doc.getElementById('inspector-heading').textContent;
+
+    assert.equal(inspector.hidden, true, 'Select with nothing selected has nothing to show');
+
+    page.tool('bolt');
+    await page.settle();
+    assert.equal(inspector.hidden, false);
+    assert.equal(heading(), 'Bolt style');
+    assert.equal(doc.getElementById('object-actions').hidden, true,
+        'there is no mark yet to reorder, duplicate, or delete');
+    assert.equal(doc.querySelector('.point-only').hidden, false,
+        'rotation can be preset before placing a mark');
+    assert.equal(doc.querySelector('.scale-only').hidden, false);
+    assert.equal(doc.querySelector('.route-only').hidden, true);
+    assert.equal(doc.getElementById('object-scale-value').textContent, '32 px',
+        'marker size is reported in source-image pixels');
+
+    const scale = doc.getElementById('object-scale');
+    scale.value = '2';
+    page.emit(scale, 'input');
+    assert.equal(doc.getElementById('object-scale-value').textContent, '65 px');
+
+    page.tool('route');
+    await page.settle();
+    assert.equal(heading(), 'Route style');
+    assert.equal(doc.querySelector('.route-only').hidden, false);
+    assert.equal(doc.querySelector('.scale-only').hidden, true);
+    assert.equal(doc.getElementById('route-width-value').textContent, '12 px');
+
+    const width = doc.getElementById('route-width');
+    width.value = '24';
+    page.emit(width, 'input');
+    assert.equal(doc.getElementById('route-width-value').textContent, '24 px');
+
+    page.tool('text');
+    await page.settle();
+    assert.equal(doc.getElementById('object-scale-value').textContent, '42 px',
+        'text owns its scale independently of the bolt tool');
+
+    page.tool('select');
+    await page.settle();
+    assert.equal(inspector.hidden, true, 'Select has only a selection to describe');
+    assert.equal(page.markCount(), 0, 'none of this drew anything');
+    assert.deepEqual(page.errors, []);
+});
+
+// Presetting is the point: the value chosen before the click has to be the
+// value the mark lands with, and choosing it must not cost an Undo step.
+test('a style chosen before the first click is the style the mark is placed at', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('bolt');
+    await page.settle();
+    const opacity = doc.getElementById('object-opacity');
+    opacity.value = '40';
+    page.emit(opacity, 'input');
+    page.emit(opacity, 'change');
+    const color = doc.getElementById('object-color');
+    color.value = '#1e88e5';
+    page.emit(color, 'change');
+    await page.settle();
+    assert.equal(page.markCount(), 0, 'presetting a tool draws nothing');
+
+    page.pointer('pointerdown', 120, 140);
+    await page.settle();
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.getElementById('inspector-heading').textContent, 'Selection');
+    assert.equal(doc.getElementById('object-opacity-value').textContent, '40%');
+    assert.equal(doc.getElementById('object-color').value, '#1e88e5');
+
+    // Placing the bolt is the only thing that happened to the photo.
+    assert.equal(await page.undoDepth(), 1);
+    assert.equal(page.markCount(), 0);
+    assert.deepEqual(page.errors, []);
+});
+
+// Arming a placement tool is a statement about the next mark, not the last one.
+// Select is the exception: pressing V after placing a symbol is how the user
+// goes on to adjust that symbol.
+test('arming a placement tool releases the selected mark, and Select keeps it', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    const heading = () => doc.getElementById('inspector-heading').textContent;
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    await page.settle();
+    assert.equal(heading(), 'Selection', 'placing a mark selects it');
+
+    page.tool('anchor');
+    await page.settle();
+    assert.equal(heading(), 'Anchor style');
+    assert.equal(doc.getElementById('object-actions').hidden, true);
+
+    page.pointer('pointerdown', 200, 200);
+    page.tool('select');
+    await page.settle();
+    assert.equal(heading(), 'Selection');
+    assert.equal(doc.getElementById('object-actions').hidden, false);
+    assert.equal(page.markCount(), 2);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a full-range Route width drag leaves the marks behind it recoverable', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('route');
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointerdown', 300, 300);
+    page.pointer('pointerdown', 400, 250);
+    page.click(doc.getElementById('finish-route'));
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.markCount(), 2);
+
+    const width = doc.getElementById('route-width');
+    assert.equal(doc.querySelector('.route-only').hidden, false, 'the route is the selected mark');
+    for (let value = 1; value <= 100; value += 1) {
+        width.value = String(value);
+        page.emit(width, 'input');
+    }
+    page.emit(width, 'change');
+    await page.settle();
+
+    // Bolt, route, width drag — three things the user did, three Undo steps,
+    // and the history limit is nowhere near reached.
+    assert.equal(await page.undoDepth(), 3);
+    assert.equal(page.markCount(), 0, 'undoing everything must clear the photo');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a held arrow key is one nudge, and releasing it starts the next', async () => {
+    const page = await loadEditor();
+
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('select');
+    await page.settle();
+
+    for (let repeat = 0; repeat < 30; repeat += 1) page.key('keydown', { key: 'ArrowRight' });
+    page.key('keyup', { key: 'ArrowRight' });
+    for (let repeat = 0; repeat < 30; repeat += 1) page.key('keydown', { key: 'ArrowDown' });
+    page.key('keyup', { key: 'ArrowDown' });
+    await page.settle();
+
+    // Placing the bolt, the rightward run, the downward run.
+    assert.equal(await page.undoDepth(), 3);
+    assert.equal(page.markCount(), 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Library keyboard input cannot mutate the hidden editor project', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('select');
+    await waitForPhotoStore(win, 'projects', (records) => records[0]?.objects.length === 1);
+    const before = JSON.parse(JSON.stringify((await readPhotoStore(win, 'projects'))[0]));
+
+    page.click(doc.getElementById('show-library'));
+    await waitFor(page.dom, () => doc.getElementById('library-view').hidden === false
+        && doc.querySelector('.photo-card button'));
+    const targets = [doc.getElementById('show-library'), doc.querySelector('.photo-card button')];
+    const keys = [
+        { key: 'Delete' },
+        { key: 'Backspace' },
+        { key: 'ArrowRight' },
+        { key: 'a' },
+        { key: 'z', ctrlKey: true },
+        { key: 'z', ctrlKey: true, shiftKey: true },
+    ];
+    for (const target of targets) {
+        target.focus();
+        for (const init of keys) {
+            const event = new win.KeyboardEvent('keydown', {
+                bubbles: true,
+                cancelable: true,
+                ...init,
+            });
+            target.dispatchEvent(event);
+            assert.equal(event.defaultPrevented, false,
+                `${init.key} should remain available to the visible Library`);
+        }
+    }
+    await page.settle();
+
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.armedTool(), 'select');
+    assert.deepEqual(JSON.parse(JSON.stringify((await readPhotoStore(win, 'projects'))[0])), before);
+    page.click(doc.getElementById('show-editor'));
+    page.click(doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0, 'hidden input must not add to or consume editor history');
+    assert.deepEqual(page.errors, []);
+});
+
+test('leaving the editor ends the current coalesced keyboard or control gesture', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.tool('select');
+    const opacity = doc.getElementById('object-opacity');
+
+    opacity.value = '80';
+    page.emit(opacity, 'input');
+    page.click(doc.getElementById('show-library'));
+    await waitFor(page.dom, () => doc.getElementById('library-view').hidden === false);
+    page.click(doc.getElementById('show-editor'));
+    opacity.value = '60';
+    page.emit(opacity, 'input');
+    page.click(doc.getElementById('undo'));
+
+    assert.equal(opacity.value, '80', 'the edit after returning must have its own Undo step');
+    assert.deepEqual(page.errors, []);
+});
+
+test('keyboard controls add, select, reorder, duplicate, nudge, delete, and undo marks', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const activate = (node: HTMLElement) => {
+        node.focus();
+        node.click();
+    };
+    const press = (node: EventTarget, key: string, init: KeyboardEventInit = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true, ...init,
+    }));
+    const annotationButtons = () => [...doc.querySelectorAll('#annotation-list [data-object-id]')];
+
+    activate(doc.querySelector('[data-tool="bolt"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(annotationButtons()[0].textContent, 'Bolt');
+    assert.equal(annotationButtons()[0].getAttribute('aria-pressed'), 'true');
+
+    activate(doc.querySelector('[data-tool="anchor"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.deepEqual(annotationButtons().map(button => button.textContent), ['Bolt', 'Anchor']);
+
+    activate(annotationButtons()[0]);
+    assert.equal(page.armedTool(), 'select');
+    assert.equal(annotationButtons()[0].getAttribute('aria-pressed'), 'true');
+    press(annotationButtons()[0], 'ArrowRight', { shiftKey: true });
+    annotationButtons()[0].dispatchEvent(new win.KeyboardEvent('keyup', {
+        key: 'ArrowRight', bubbles: true,
+    }));
+    assert.equal(doc.activeElement.dataset.objectId, annotationButtons()[0].dataset.objectId,
+        'an immutable rerender restores annotation-list focus');
+
+    activate(doc.getElementById('bring-front'));
+    assert.deepEqual(annotationButtons().map(button => button.textContent), ['Anchor', 'Bolt']);
+    activate(doc.getElementById('duplicate-object'));
+    assert.equal(page.markCount(), 3);
+    assert.equal(annotationButtons().at(-1)!.getAttribute('aria-pressed'), 'true');
+
+    activate(annotationButtons().at(-1)!);
+    const removedId = doc.activeElement.dataset.objectId;
+    press(doc.activeElement, 'Delete');
+    assert.equal(page.markCount(), 2);
+    assert.notEqual(doc.activeElement.dataset.objectId, removedId,
+        'deleting from the list moves focus to a surviving annotation');
+    const focusAfterDelete = doc.activeElement.dataset.objectId;
+    press(doc.activeElement, 'z', { ctrlKey: true });
+    assert.equal(page.markCount(), 3);
+    assert.equal(doc.activeElement.dataset.objectId, focusAfterDelete,
+        'Undo keeps focus on the same surviving annotation after rerender');
+    assert.deepEqual(page.errors, []);
+});
+
+test('keyboard controls add a centered route and edit one focusable vertex', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const activate = (node: HTMLElement) => {
+        node.focus();
+        node.click();
+    };
+    const press = (node: EventTarget, key: string, init: KeyboardEventInit = {}) => node.dispatchEvent(new win.KeyboardEvent('keydown', {
+        key, bubbles: true, cancelable: true, ...init,
+    }));
+
+    activate(doc.querySelector('[data-tool="route"]'));
+    activate(doc.getElementById('add-at-center'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Route, 2 points');
+
+    activate(doc.querySelector('#annotation-list button'));
+    const points = [...doc.querySelectorAll('#route-point-list [data-vertex]')];
+    assert.equal(points.length, 2);
+    activate(points[1]);
+    const before = page.routePath();
+    press(doc.activeElement, 'ArrowDown');
+    doc.activeElement.dispatchEvent(new win.KeyboardEvent('keyup', {
+        key: 'ArrowDown', bubbles: true,
+    }));
+    assert.notEqual(page.routePath(), before);
+    assert.equal(doc.activeElement.dataset.vertex, '1');
+    assert.equal(doc.activeElement.getAttribute('aria-pressed'), 'true');
+
+    press(doc.activeElement, 'z', { ctrlKey: true });
+    assert.equal(page.routePath(), before);
+    assert.equal(doc.activeElement.dataset.vertex, '1',
+        'Undo preserves focus on the route point it rerenders');
+    assert.deepEqual(page.errors, []);
+});
+
+test('a finished route can insert and remove points without deleting the route', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('route');
+    page.click(doc.getElementById('add-at-center'));
+    page.click(doc.querySelector('#annotation-list button'));
+    const points = () => [...doc.querySelectorAll('#route-point-list [data-vertex]')];
+    const insert = doc.getElementById('insert-route-point');
+    const remove = doc.getElementById('remove-route-point');
+    assert.equal(points().length, 2);
+    assert.equal(remove.disabled, true);
+
+    page.click(points()[0]);
+    const originalPath = page.routePath();
+    page.click(insert);
+    assert.equal(points().length, 3);
+    assert.equal(points()[1].getAttribute('aria-pressed'), 'true');
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Route, 3 points');
+    assert.notEqual(page.routePath(), originalPath);
+
+    points()[1].focus();
+    const deletion = new win.KeyboardEvent('keydown', {
+        key: 'Delete', bubbles: true, cancelable: true,
+    });
+    points()[1].dispatchEvent(deletion);
+    assert.equal(deletion.defaultPrevented, true);
+    assert.equal(points().length, 2);
+    assert.equal(page.markCount(), 1, 'Delete on a selected vertex preserves the route');
+    assert.equal(page.routePath(), originalPath);
+    assert.equal(doc.activeElement.dataset.vertex, '1');
+    assert.equal(remove.disabled, true, 'two points is the route minimum');
+
+    const minimumDeletion = new win.KeyboardEvent('keydown', {
+        key: 'Backspace', bubbles: true, cancelable: true,
+    });
+    doc.activeElement.dispatchEvent(minimumDeletion);
+    assert.equal(points().length, 2);
+    assert.equal(page.markCount(), 1);
+    page.click(doc.getElementById('undo'));
+    assert.equal(points().length, 3);
+    page.click(remove);
+    assert.equal(points().length, 2);
+    assert.deepEqual(page.errors, []);
+});
+
+test('Select copies a snapshot and pastes independently selected, undoable annotations', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer();
+    assert.equal(dispatchClipboard(page, 'copy', transfer).defaultPrevented, true);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    assert.deepEqual(Object.keys(payload).sort(), ['kind', 'object', 'version']);
+    assert.equal(payload.object.geometry.x, 200);
+    doc.getElementById('object-color').value = '#ffffff';
+    page.emit(doc.getElementById('object-color'), 'change');
+    page.click(doc.getElementById('delete-object'));
+    assert.equal(page.markCount(), 0);
+    const readSelection = () => {
+        const copied = annotationTransfer(); dispatchClipboard(page, 'copy', copied);
+        return JSON.parse(copied.getData('text/plain')).object;
+    };
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, true);
+    assert.equal(page.markCount(), 1);
+    assert.equal(doc.getElementById('object-color').value, payload.object.style.color,
+        'clipboard content does not track edits or deletion of the original');
+    assert.equal(doc.activeElement, doc.getElementById('photo-viewport'));
+    // Inspect without another copy command, which would start a new paste run.
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(224 224\)/);
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, true);
+    assert.equal(page.markCount(), 2);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(248 248\)/);
+    const second = readSelection();
+    assert.notEqual(second.id, payload.object.id);
+    page.click(doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1, 'one Undo removes one paste');
+    page.click(doc.getElementById('redo'));
+    assert.equal(page.markCount(), 2);
+    const buttons = [...doc.querySelectorAll('#annotation-list button')];
+    assert.equal(new Set(buttons.map(button => button.dataset.objectId)).size, 2);
+    assert.deepEqual(page.errors, []);
+});
+
+test('clipboard round trips text wrapping, route controls, and freehand geometry across editors', async t => {
+    for (const type of ['text', 'route', 'drawing']) {
+        const source = await loadEditor();
+        const target = await loadEditor();
+        t.after(() => { source.win.close(); target.win.close(); });
+        source.tool(type);
+        if (type === 'drawing') {
+            source.pointer('pointerdown', 100, 100);
+            source.pointer('pointermove', 180, 160); source.pointer('pointerup', 240, 190);
+        } else source.click(source.doc.getElementById('add-at-center'));
+        if (type === 'text') {
+            const text = source.doc.getElementById('object-text');
+            text.value = 'North ridge\nKeep left'; source.emit(text, 'input');
+            const width = source.doc.getElementById('text-width');
+            width.value = '275'; source.emit(width, 'change');
+            source.doc.getElementById('text-align').value = 'center';
+            source.emit(source.doc.getElementById('text-align'), 'change');
+        } else {
+            source.doc.getElementById('route-smooth').checked = true;
+            source.emit(source.doc.getElementById('route-smooth'), 'change');
+        }
+        source.tool('select'); source.doc.getElementById('photo-viewport').focus();
+        const transfer = annotationTransfer();
+        assert.equal(dispatchClipboard(source, 'copy', transfer).defaultPrevented, true);
+        const original = JSON.parse(transfer.getData('text/plain')).object;
+        // Each fixture page otherwise restarts the same deterministic id counter.
+        target.win.crypto.randomUUID = (() => `pasted-${type}`) as typeof target.win.crypto.randomUUID;
+        target.doc.getElementById('photo-viewport').focus();
+        assert.equal(dispatchClipboard(target, 'paste', transfer).defaultPrevented, true);
+        const pastedTransfer = annotationTransfer(); dispatchClipboard(target, 'copy', pastedTransfer);
+        const pasted = JSON.parse(pastedTransfer.getData('text/plain')).object;
+        assert.notEqual(pasted.id, original.id);
+        assert.equal(pasted.type, original.type);
+        assert.deepEqual(pasted.style, original.style);
+        if (type === 'text') {
+            assert.equal(pasted.text, original.text);
+            assert.equal(pasted.geometry.width, 275);
+            assert.equal(pasted.geometry.x, original.geometry.x + 24);
+        } else {
+            assert.deepEqual(pasted.geometry.points, original.geometry.points.map(([x, y]: [number, number]) => [x + 24, y + 24]));
+            assert.deepEqual(pasted.geometry.controls, original.geometry.controls.map((control: { in?: number[]; out?: number[] } | null) => control && ({
+                in: control.in && control.in.map((value: number) => value + 24),
+                out: control.out && control.out.map((value: number) => value + 24),
+            })));
+        }
+        assert.equal(target.markCount(), 1);
+        assert.deepEqual([...source.errors, ...target.errors], []);
+    }
+});
+
+test('annotation clipboard leaves native text editing and Library commands alone', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const editable = doc.createElement('div'); editable.contentEditable = 'true';
+    editable.setAttribute('contenteditable', 'true');
+    const nested = doc.createElement('span'); editable.append(nested); doc.getElementById('editor-view').append(editable);
+    for (const node of [doc.getElementById('object-text'), doc.getElementById('photo-title'),
+        doc.getElementById('photo-caption'), nested]) {
+        node.focus();
+        for (const type of ['copy', 'paste']) {
+            assert.equal(dispatchClipboard(page, type, transfer, node).defaultPrevented, false);
+        }
+        assert.equal(page.markCount(), 1);
+    }
+    doc.getElementById('photo-viewport').focus();
+    page.click(doc.getElementById('show-library'));
+    doc.getElementById('library-search').focus();
+    for (const type of ['copy', 'paste']) {
+        assert.equal(dispatchClipboard(page, type, transfer).defaultPrevented, false);
+    }
+    page.click(doc.getElementById('show-editor')); doc.getElementById('photo-viewport').focus();
+    assert.equal(page.markCount(), 1);
+    page.tool('route'); page.pointer('pointerdown', 300, 300);
+    assert.equal(dispatchClipboard(page, 'paste', transfer).defaultPrevented, false);
+    assert.equal(page.markCount(), 1, 'paste cannot interrupt a pending route');
+    assert.deepEqual(page.errors, []);
+});
+
+test('untrusted annotation clipboard rejects invalid data without consuming redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    const { doc } = page;
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    page.tool('select'); doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    page.click(doc.getElementById('undo'));
+    for (const text of ['plain text', '{bad json', 'x'.repeat(1024 * 1024 + 1),
+        JSON.stringify({ ...payload, version: 99 }), JSON.stringify({ ...payload, kind: 'unknown' }),
+        ...[null, { ...payload.object, type: 'unknown' },
+            { ...payload.object, style: { ...payload.object.style, color: 'url(javascript:bad)' } },
+            { ...payload.object, geometry: { x: 999999, y: 0 } },
+            { ...payload.object, type: 'route', geometry: { points: Array.from({ length: Project.MAX_ROUTE_POINTS + 1 }, () => [0, 0]) } },
+        ].map(object => JSON.stringify({ ...payload, object }))]) {
+        dispatchClipboard(page, 'paste', annotationTransfer(text));
+        assert.equal(page.markCount(), 0);
+        assert.equal(doc.getElementById('redo').disabled, false, 'rejected paste preserves history');
+    }
+    page.click(doc.getElementById('redo'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(dispatchClipboard(page, 'copy', { setData() { throw new Error('unavailable'); } }).defaultPrevented, false);
+    assert.deepEqual(page.errors, []);
+});
+
+test('pasting at a geometry boundary preserves a valid annotation without its offset', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100); page.tool('select');
+    page.doc.getElementById('photo-viewport').focus();
+    const transfer = annotationTransfer(); dispatchClipboard(page, 'copy', transfer);
+    const payload = JSON.parse(transfer.getData('text/plain'));
+    payload.object.geometry.x = IMAGE.width * 2;
+    payload.object.geometry.y = IMAGE.height * 2;
+    assert.equal(dispatchClipboard(page, 'paste', annotationTransfer(JSON.stringify(payload))).defaultPrevented, true);
+    assert.equal(page.markCount(), 2);
+    assert.match(page.overlay.querySelector('.selected').getAttribute('transform') || '', /translate\(3200 2400\)/);
+    assert.deepEqual(page.errors, []);
+});
+
+test('placing text keeps the content selected and typing outside tool shortcuts', async t => {
+    for (const placement of ['photo', 'center']) {
+        const page = await loadEditor();
+        t.after(() => page.win.close());
+        const { doc, win, overlay } = page;
+        page.tool('text');
+        if (placement === 'photo') {
+            const press = new win.MouseEvent('pointerdown', {
+                bubbles: true, cancelable: true, button: 0, clientX: 100, clientY: 100,
+            });
+            overlay.dispatchEvent(press);
+            assert.equal(press.defaultPrevented, true, 'placement suppresses native viewport focus');
+            page.pointer('pointerup', 100, 100);
+        } else page.click(doc.getElementById('add-at-center'));
+        const input = doc.getElementById('object-text');
+        assert.equal(doc.activeElement, input, `${placement} placement focuses text`);
+        assert.equal(input.selectionStart, 0);
+        assert.equal(input.selectionEnd, input.value.length);
+        for (const key of ['t', 'a', 'p', 'd', 'v', 'h', ' ', 'Delete', 'ArrowLeft', 'Enter']) {
+            const event = new win.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+            input.dispatchEvent(event);
+            assert.equal(event.defaultPrevented, false, `${key} belongs to text entry`);
+            assert.equal(page.armedTool(), 'text');
+            assert.equal(page.markCount(), 1);
+        }
+        input.value = 'North ridge'; page.emit(input, 'input');
+        assert.equal(overlay.querySelector('text').textContent, 'North ridge');
+        assert.equal(doc.activeElement, input, 'typing and rerender preserve text focus');
+        assert.deepEqual(page.errors, []);
+    }
+});
+
+test('a text label accepts a space between words without losing the input caret', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    page.tool('text');
+    page.click(doc.getElementById('add-at-center'));
+    const input = doc.getElementById('object-text');
+    input.value = 'North ';
+    page.emit(input, 'input');
+    assert.equal(input.value, 'North ');
+    input.value += 'ridge';
+    page.emit(input, 'input');
+    assert.equal(input.value, 'North ridge');
+    assert.equal(page.overlay.querySelector('text').textContent, 'North ridge');
+    assert.equal(doc.querySelector('#annotation-list button').textContent, 'Text: North ridge');
+    assert.deepEqual(page.errors, []);
+});
+
+// Reaching for a browser command used to arm a topo tool behind the dialog, so
+// the user's next click on the photo dropped a mark they never asked for.
+test('browser shortcuts do not arm a topo tool', async () => {
+    const page = await loadEditor();
+
+    page.tool('select');
+    for (const [modifier, letter] of [
+        ['metaKey', 'p'],   // Print
+        ['ctrlKey', 'a'],   // Select all
+        ['metaKey', 's'],   // Save page
+        ['ctrlKey', 'l'],   // Address bar
+        ['altKey', 't'],
+    ]) {
+        page.key('keydown', { key: letter, [modifier]: true });
+        assert.equal(page.armedTool(), 'select', `${modifier}+${letter} must not arm a tool`);
+    }
+
+    // The bare keys still work, and Shift stays this page's own nudge modifier.
+    page.key('keydown', { key: 'p' });
+    assert.equal(page.armedTool(), 'piton');
+    page.key('keydown', { key: 'v', shiftKey: true });
+    assert.equal(page.armedTool(), 'select');
+    assert.deepEqual(page.errors, []);
+});
+
+test('native Undo remains available in every editable photo control', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    assert.equal(page.markCount(), 1);
+
+    const editable = doc.createElement('div');
+    editable.setAttribute('contenteditable', 'true');
+    const nested = doc.createElement('span');
+    editable.append(nested);
+    doc.body.append(editable);
+
+    const dispatchUndo = (node: EventTarget, init: KeyboardEventInit = {}) => {
+        const event = new win.KeyboardEvent('keydown', {
+            key: 'z', metaKey: true, bubbles: true, cancelable: true, ...init,
+        });
+        node.dispatchEvent(event);
+        return event;
+    };
+    for (const node of [
+        doc.getElementById('photo-title'),
+        doc.getElementById('photo-caption'),
+        doc.getElementById('object-text'),
+        doc.getElementById('object-color'),
+        doc.getElementById('object-opacity'),
+        nested,
+    ]) {
+        const undoEvent = dispatchUndo(node);
+        assert.equal(undoEvent.defaultPrevented, false,
+            `${node.id || node.tagName} must retain native Undo`);
+        assert.equal(page.markCount(), 1, 'editable Undo must not consume annotation history');
+        const redoEvent = dispatchUndo(node, { shiftKey: true });
+        assert.equal(redoEvent.defaultPrevented, false,
+            `${node.id || node.tagName} must retain native Redo`);
+        assert.equal(page.markCount(), 1, 'editable Redo must not mutate annotation history');
+    }
+
+    const canvasUndo = dispatchUndo(page.overlay);
+    assert.equal(canvasUndo.defaultPrevented, true, 'canvas Undo is owned by the topo editor');
+    assert.equal(page.markCount(), 0);
+    const toolbarRedo = dispatchUndo(doc.getElementById('redo'), { shiftKey: true });
+    assert.equal(toolbarRedo.defaultPrevented, true, 'non-editable chrome keeps annotation Redo');
+    assert.equal(page.markCount(), 1);
+    assert.deepEqual(page.errors, []);
+});
+
+// Dragging a vertex used to translate only that vertex's own handles, leaving
+// its neighbours' tangents aimed at where the point had been: a smooth route
+// kinked away from the point the user was dragging.
+test('moving a smooth route vertex re-derives the curve around it', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    page.pointer('pointerdown', 450, 50);
+    page.click(doc.getElementById('finish-route'));
+    page.tool('select');
+    const smooth = doc.getElementById('route-smooth');
+    smooth.checked = true;
+    page.emit(smooth, 'change');
+    await page.settle();
+    assert.equal(page.routePath(),
+        'M 100 700 C 166.667 650 366.667 500 500 400 C 633.333 300 833.333 150 900 100');
+
+    const handles = [...page.overlay.querySelectorAll('.vertex-handle')];
+    assert.equal(handles.length, 3, 'a selected route offers one handle per vertex');
+    const middle = handles.find(node => node.dataset.vertex === '1');
+    page.pointer('pointerdown', 125, 100, middle);
+    page.pointer('pointermove', 125, 250);
+    page.pointer('pointerup', 125, 250);
+    await page.settle();
+
+    // The middle point lands at y = 700, level with the first. Both tangents
+    // that touch it follow; a stale neighbour would still read 166.667 650.
+    assert.equal(page.routePath(),
+        'M 100 700 C 166.667 700 366.667 800 500 700 C 633.333 600 833.333 200 900 100');
+    assert.deepEqual(page.errors, []);
+});
+
+// Every advertised way out of a route has to work, because the one the user
+// reaches for is the one they believe. The double-click is the load-bearing
+// case: Chrome withholds the `click` that pairs into `dblclick` whenever the
+// press repaints the node the release lands on, which is every press here, so
+// a route drawn in the real editor could not be ended by the gesture its own
+// status line named. The gesture is read from the presses instead.
+test('a double-click, a right-click, and Enter each end a route', async () => {
+    const page = await loadEditor();
+
+    // Double-click: the second press of the pair lands on the point the first
+    // one placed, and ends the route rather than stacking a duplicate on it.
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    page.pointer('pointerdown', 450, 50);
+    page.pointer('pointerdown', 452, 52);
+    await page.settle();
+    assert.equal(page.drawing(), false, 'the double-click ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 1);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 3, 'the finishing press placed no fourth point');
+
+    // Right-click: the press itself places nothing, and the page's own menu is
+    // suppressed only because a route was in progress.
+    page.tool('route');
+    page.pointer('pointerdown', 60, 360);
+    page.pointer('pointerdown', 260, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true);
+    assert.equal(page.rightClick(300, 150), true, 'the context menu is suppressed mid-route');
+    await page.settle();
+    assert.equal(page.drawing(), false, 'the right-click ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 2);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 2, 'the secondary button placed no point');
+
+    // With no route in progress the menu is the user's again.
+    assert.equal(page.rightClick(300, 150), false);
+
+    // Enter.
+    page.tool('route');
+    page.pointer('pointerdown', 70, 370);
+    page.pointer('pointerdown', 270, 220);
+    page.pointer('pointerdown', 470, 70);
+    await page.settle();
+    page.key('keydown', { key: 'Enter' });
+    await page.settle();
+    assert.equal(page.drawing(), false, 'Enter ended the route');
+    assert.match(page.status(), /^Route added\./);
+    assert.equal(page.markCount(), 3);
+
+    assert.deepEqual(page.errors, []);
+});
+
+// The finishing press is the *double*-click, not any second click: a route
+// traced with slow, deliberate clicks along a tight line must keep drawing.
+test('two unhurried presses on one spot keep the route going', async () => {
+    const page = await loadEditor();
+
+    page.tool('route');
+    page.pointer('pointerdown', 50, 350);
+    page.pointer('pointerdown', 250, 200);
+    await page.settle();
+    // Far enough apart in space to be two points, close enough in time to be
+    // one gesture — the distance alone has to keep them separate.
+    page.pointer('pointerdown', 270, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true, 'a press 22px away is a new point, not a finish');
+
+    // ...and the same spot, once the double-click interval has passed.
+    await new Promise(resolve => page.win.setTimeout(resolve, 450));
+    page.pointer('pointerdown', 270, 210);
+    await page.settle();
+    assert.equal(page.drawing(), true, 'a press half a second later is a new point');
+
+    page.click(page.doc.getElementById('finish-route'));
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 4);
+    assert.deepEqual(page.errors, []);
+});
+
+// Dragging one vertex must move that vertex and leave its neighbours where the
+// user put them. Nothing covered this, and the callback that rebuilds the point
+// list named its parameter over the pointer position — so its untouched branch
+// read `point` and could be "keep this vertex" or "collapse every vertex onto
+// the cursor" depending on which `point` was in scope.
+test('dragging one route vertex moves only that vertex', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+
+    page.tool('route');
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointerdown', 200, 100);
+    page.pointer('pointerdown', 300, 100);
+    page.click(doc.getElementById('finish-route'));
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.vertexCount(), 3, 'the drawn route exposes one handle per point');
+
+    const before = page.routePath();
+    assert.ok(before, 'the route is drawn');
+
+    // Grab the middle vertex by its own handle — the synthetic press is not
+    // hit tested, so it has to land on the element the editor routes drags from — and
+    // pull it down.
+    const handles = [...page.overlay.querySelectorAll('.vertex-handle')];
+    assert.equal(handles.length, 3);
+    page.pointer('pointerdown', 200, 100, handles[1]);
+    page.pointer('pointermove', 200, 260);
+    page.pointer('pointerup', 200, 260);
+    await page.settle();
+
+    const after = page.routePath();
+    assert.notEqual(after, before, 'the dragged vertex moved');
+    const moved = [...after!.matchAll(/-?\d+(?:\.\d+)?/g)].map(Number);
+    // First and last vertices keep their x; only the middle one gained height.
+    assert.ok(moved.length >= 6, `expected at least three coordinate pairs, got ${after}`);
+    assert.equal(page.vertexCount(), 3, 'no vertex was added or lost');
+
+    const ys = [];
+    for (let index = 1; index < moved.length; index += 2) ys.push(moved[index]);
+    const distinctYs = new Set(ys.map(value => Math.round(value)));
+    assert.ok(distinctYs.size > 1,
+        `every vertex ended at the same height, so the drag moved all of them: ${after}`);
+
+    assert.deepEqual(page.errors, []);
+});
+
+
+test('tools share color and opacity but keep their other preferences after reopening', async () => {
+    const page = await loadEditor();
+    const change = (id: string, value: string | number | boolean, event = 'input') => {
+        const control = page.doc.getElementById(id);
+        if (typeof value === 'boolean') control.checked = value;
+        else control.value = String(value);
+        page.emit(control, event);
+    };
+    page.tool('route');
+    change('object-opacity', 40);
+    change('object-color', '#1e88e5', 'change');
+    change('route-width', 27);
+    change('route-arrow', true, 'change');
+    change('route-smooth', true, 'change');
+    page.tool('bolt');
+    assert.equal(page.doc.getElementById('object-opacity').value, '40');
+    assert.equal(page.doc.getElementById('object-color').value, '#1e88e5');
+    change('object-scale', 2);
+    change('object-rotation', 45);
+    page.tool('text');
+    change('label-background', false, 'change');
+    change('text-align', 'right', 'change');
+    await page.settle();
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
+    reopened.tool('route');
+    assert.equal(reopened.doc.getElementById('object-color').value, '#1e88e5');
+    assert.equal(reopened.doc.getElementById('object-opacity').value, '40');
+    assert.equal(reopened.doc.getElementById('route-width').value, '27');
+    assert.equal(reopened.doc.getElementById('route-arrow').checked, true);
+    assert.equal(reopened.doc.getElementById('route-smooth').checked, true);
+    reopened.tool('bolt');
+    reopened.pointer('pointerdown', 100, 100);
+    assert.equal(reopened.doc.getElementById('object-scale').value, '2');
+    assert.equal(reopened.doc.getElementById('object-rotation').value, '45');
+    reopened.tool('text');
+    reopened.pointer('pointerdown', 200, 200);
+    assert.equal(reopened.doc.getElementById('label-background').checked, false);
+    assert.equal(reopened.doc.getElementById('text-align').value, 'right');
+    assert.deepEqual(reopened.errors, []);
+    page.dom.window.close();
+    reopened.dom.window.close();
+});
+
+test('freehand drawing commits one editable stroke and one Undo step', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    assert.equal(page.doc.getElementById('add-at-center').disabled, true);
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointermove', 125, 150);
+    page.pointer('pointermove', 175, 200);
+    assert.equal(page.markCount(), 0, 'an unfinished gesture is not persisted');
+    page.pointer('pointerup', 200, 220);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.doc.getElementById('annotation-list').textContent, /Freehand stroke/);
+    assert.match(page.routePath(), /400 440/);
+    const before = page.routePath();
+    page.tool('select');
+    page.key('keydown', { key: 'ArrowRight' });
+    page.key('keyup', { key: 'ArrowRight' });
+    assert.notEqual(page.routePath(), before);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.routePath(), before);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0);
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(page.routePath(), before);
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('cancelled freehand gestures never enter the project or history', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    for (const cancel of ['pointercancel', 'lostpointercapture', 'Escape']) {
+        page.pointer('pointerdown', 100, 100);
+        page.pointer('pointermove', 140, 160);
+        if (cancel === 'Escape') page.key('keydown', { key: 'Escape' });
+        else page.pointer(cancel, 140, 160);
+        page.pointer('pointerup', 140, 160);
+        assert.equal(page.markCount(), 0);
+        assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+        assert.equal(page.doc.getElementById('undo').disabled, true);
+    }
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('long freehand gestures stay bounded and preserve the release endpoint', async () => {
+    const page = await loadEditor();
+    page.tool('drawing');
+    page.pointer('pointerdown', 100, 100);
+    for (let i = 0; i < 2100; i++) page.pointer('pointermove', 100 + i % 600, 100 + (i % 2) * 10);
+    page.pointer('pointerup', 750, 550);
+    assert.equal(page.markCount(), 1);
+    assert.match(page.routePath(), /1500 1100$/);
+    assert.ok((page.routePath().match(/L/g) || []).length < Project.MAX_ROUTE_POINTS);
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('zoom and pan are view-only and drawing uses zoomed image coordinates', async () => {
+    const page = await loadEditor();
+    const { doc, win } = page;
+    const viewport = doc.getElementById('photo-viewport');
+    const stage = doc.getElementById('photo-stage');
+    Object.defineProperties(viewport, {
+        clientWidth: { value: 800 }, clientHeight: { value: 600 },
+    });
+    win.dispatchEvent(new win.Event('resize'));
+    const zoom = doc.getElementById('photo-zoom');
+    zoom.value = '2'; page.emit(zoom, 'change');
+    assert.equal(stage.style.width, '3200px');
+    assert.equal(doc.getElementById('undo').disabled, true);
+    assert.match(doc.getElementById('export-summary').textContent, /1600 × 1200/);
+    const original = stage.style.transform;
+    page.click(doc.getElementById('pan-photo'));
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointermove', 280, 240);
+    page.pointer('pointerup', 280, 240);
+    assert.notEqual(stage.style.transform, original);
+    assert.equal(page.markCount(), 0, 'Hand must never draw a mark');
+    page.overlay.getBoundingClientRect = () => ({ left: -1120, top: -860, width: 3200, height: 2400 }) as DOMRect;
+    page.tool('drawing');
+    page.pointer('pointerdown', 80, 140);
+    page.pointer('pointermove', 180, 240);
+    page.pointer('pointerup', 280, 340);
+    assert.match(page.routePath(), /^M 600 500 L 650 550 L 700 600$/);
+    page.click(doc.getElementById('fit-photo'));
+    assert.equal(zoom.value, 'fit');
+    assert.equal(stage.style.width, '800px');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('viewport dimensions persist independently of image zoom and reject invalid sizes', async () => {
+    const page = await loadEditor();
+    const { doc } = page;
+    for (const [id, value] of [['viewport-width', '600'], ['viewport-height', '480']]) {
+        doc.getElementById(id).value = value;
+        page.emit(doc.getElementById(id), 'change');
+    }
+    page.click(doc.getElementById('zoom-in'));
+    await page.settle();
+    const next = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
+    assert.equal(next.doc.getElementById('viewport-width').value, '600');
+    assert.equal(next.doc.getElementById('viewport-height').value, '480');
+    assert.equal(next.doc.getElementById('photo-zoom').value, 'fit');
+    assert.equal(next.doc.getElementById('editor-workspace').style.getPropertyValue('--photo-viewport-height'), '480px');
+    next.click(next.doc.getElementById('reset-viewport'));
+    assert.equal(next.doc.getElementById('editor-workspace').style.width, '');
+    const corrupt = await loadEditor({ localPreferences: { bpbPhotoViewport: { width: -100, height: 999999 } } });
+    assert.equal(corrupt.doc.getElementById('viewport-width').value, '');
+    assert.equal(corrupt.doc.getElementById('viewport-height').value, '');
+    for (const editor of [page, next, corrupt]) editor.dom.window.close();
+});
+
+test('zoom is anchored under the wheel pointer and blocked during a drawing gesture', async () => {
+    const page = await loadEditor();
+    const viewport = page.doc.getElementById('photo-viewport');
+    Object.defineProperties(viewport, { clientWidth: { value: 800 }, clientHeight: { value: 600 } });
+    const zoom = page.doc.getElementById('photo-zoom');
+    zoom.value = '1'; page.emit(zoom, 'change');
+    viewport.dispatchEvent(new page.win.WheelEvent('wheel', {
+        bubbles: true, cancelable: true, ctrlKey: true, deltaY: -Math.log(2) * 100,
+        clientX: 200, clientY: 150,
+    }));
+    const stage = page.doc.getElementById('photo-stage');
+    assert.equal(stage.style.width, '3200px');
+    assert.equal(stage.style.transform, 'translate(-1000px, -750px)');
+    page.tool('drawing'); page.pointer('pointerdown', 100, 100);
+    page.click(page.doc.getElementById('zoom-in'));
+    assert.equal(stage.style.width, '3200px');
+    page.pointer('pointercancel', 100, 100);
+    page.key('keydown', { key: ' ' });
+    page.pointer('pointerdown', 100, 100); page.pointer('pointermove', 150, 150); page.pointer('pointerup', 150, 150);
+    page.key('keyup', { key: ' ' });
+    assert.equal(page.markCount(), 0, 'temporary Space pan preserves the drawing tool without drawing');
+    assert.equal(page.armedTool(), 'drawing');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});
+
+test('malformed ImgBB success keeps the photo-page recovery journal and blocks another upload', async t => {
+    const indexedDB = new IDBFactory();
+    let posts = 0;
+    const page = await loadEditor({ indexedDB,
+        imgbbStatus: { ok: true, configured: true, permissionGranted: true },
+        fetchImpl: async () => { posts++; return { ok: true, status: 200, text: async () => 'null' }; } });
+    t.after(() => page.dom.window.close());
+    await waitFor(page.dom, () => page.doc.getElementById('save-status').textContent === 'Saved on this device');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /Check your ImgBB account/i.test(page.doc.getElementById('toast-message').textContent));
+    assert.equal((await readPhotoStore(page.win, 'operations'))[0].state, 'request-started');
+    page.click(page.doc.getElementById('upload-insert'));
+    await waitFor(page.dom, () => /earlier upload may have reached/.test(page.doc.getElementById('toast-message').textContent));
+    assert.equal(posts, 1);
+    assert.equal((await readPhotoStore(page.win, 'operations')).length, 1);
+    assert.deepEqual(page.errors, []);
+});
+
+test('text starts at Auto width and reflows without editing its source', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text');
+    page.click(page.doc.getElementById('add-at-center'));
+    const input = page.doc.getElementById('object-text');
+    const width = page.doc.getElementById('text-width');
+    assert.equal(width.value, '');
+    assert.equal(page.doc.getElementById('text-width-auto').getAttribute('aria-pressed'), 'true');
+    input.value = 'North ridge traverse\nKeep left';
+    page.emit(input, 'input');
+    assert.deepEqual([...page.overlay.querySelectorAll('text tspan')].map(node => node.textContent),
+        ['North ridge traverse', 'Keep left']);
+    const fontSize = page.overlay.querySelector('text').getAttribute('font-size');
+    width.value = '160'; page.emit(width, 'change');
+    assert.ok(page.overlay.querySelectorAll('text tspan').length > 2);
+    assert.equal(input.value, 'North ridge traverse\nKeep left');
+    assert.equal(page.overlay.querySelector('text').getAttribute('font-size'), fontSize);
+    page.click(page.doc.getElementById('text-width-auto'));
+    assert.equal(width.value, '');
+    assert.deepEqual([...page.overlay.querySelectorAll('text tspan')].map(node => node.textContent),
+        ['North ridge traverse', 'Keep left']);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(width.value, '160');
+    page.click(page.doc.getElementById('duplicate-object'));
+    assert.equal(width.value, '160', 'duplicates retain wrap width');
+    assert.deepEqual(page.errors, []);
+});
+
+test('text resize fixes the opposite edge at every alignment and rotation and is one Undo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    page.tool('text'); page.click(page.doc.getElementById('add-at-center'));
+    const { doc, overlay } = page;
+    page.tool('select');
+    page.click(doc.querySelector('#annotation-list button'));
+    doc.getElementById('text-width').value = '448';
+    page.emit(doc.getElementById('text-width'), 'change');
+    const textGeometry = () => {
+        const transform = overlay.querySelector('[data-bpb-object]').getAttribute('transform');
+        return transform!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    };
+    for (const align of ['left', 'center', 'right']) {
+        doc.getElementById('text-align').value = align; page.emit(doc.getElementById('text-align'), 'change');
+        for (const rotation of [0, 45, 90, -135]) {
+            doc.getElementById('object-rotation').value = String(rotation);
+            page.emit(doc.getElementById('object-rotation'), 'input');
+            page.emit(doc.getElementById('object-rotation'), 'change');
+            for (const side of ['left', 'right']) {
+                const baseline = textGeometry();
+                const width = Number(doc.getElementById('text-width').value);
+                const radians = rotation * Math.PI / 180;
+                const sign = side === 'right' ? 1 : -1;
+                page.pointer('pointerdown', 200, 200, overlay.querySelector(`[data-text-resize="${side}"]`));
+                for (const delta of [10, 20, 30]) {
+                    page.pointer('pointermove', 200 + sign * delta * Math.cos(radians),
+                        200 + sign * delta * Math.sin(radians));
+                }
+                page.pointer('pointerup', 0, 0);
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                const current = textGeometry();
+                const factor = (align === 'center' ? 0.5 : align === 'right' ? 1 : 0) - (side === 'left' ? 1 : 0);
+                assert.ok(Math.abs(current[0] - baseline[0] - factor * 60 * Math.cos(radians)) < 0.002);
+                assert.ok(Math.abs(current[1] - baseline[1] - factor * 60 * Math.sin(radians)) < 0.002);
+                page.click(doc.getElementById('undo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width);
+                assert.deepEqual(textGeometry(), baseline);
+                page.click(doc.getElementById('redo'));
+                assert.equal(Number(doc.getElementById('text-width').value), width + 60);
+                page.click(doc.getElementById('undo'));
+            }
+        }
+    }
+    assert.deepEqual(page.errors, []);
+});
+
+test('cancelled and no-op text resizes preserve the label and redo history', async t => {
+    const page = await loadEditor();
+    t.after(() => page.dom.window.close());
+    const { doc, overlay } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    const width = doc.getElementById('text-width');
+    width.value = '448'; page.emit(width, 'change');
+    width.value = '300'; page.emit(width, 'change');
+    page.click(doc.getElementById('undo'));
+    const before = overlay.innerHTML;
+    for (const cancellation of ['Escape', 'pointercancel', 'lostpointercapture', 'return-to-start']) {
+        page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+        page.pointer('pointermove', 240, 200);
+        assert.equal(width.value, '528');
+        if (cancellation === 'Escape') page.key('keydown', { key: 'Escape' });
+        else if (cancellation === 'return-to-start') {
+            page.pointer('pointermove', 200, 200); page.pointer('pointerup', 200, 200);
+        } else page.pointer(cancellation, 240, 200);
+        assert.equal(width.value, '448');
+        assert.equal(overlay.innerHTML, before);
+        assert.equal(doc.getElementById('redo').disabled, false);
+    }
+    page.click(doc.getElementById('redo'));
+    assert.equal(width.value, '300');
+    assert.deepEqual(page.errors, []);
+});
+
+test('autosave excludes text resize previews and persists the released width', async t => {
+    const indexedDB = new IDBFactory();
+    const page = await loadEditor({ indexedDB });
+    t.after(() => page.dom.window.close());
+    const { doc, overlay, win } = page;
+    page.tool('text'); page.click(doc.getElementById('add-at-center'));
+    const text = doc.getElementById('object-text');
+    text.value = 'North ridge traverse\nKeep left'; page.emit(text, 'input');
+    doc.getElementById('text-width').value = '448';
+    page.emit(doc.getElementById('text-width'), 'change');
+    page.tool('select'); page.click(doc.querySelector('#annotation-list button'));
+    page.pointer('pointerdown', 200, 200, overlay.querySelector('[data-text-resize="right"]'));
+    page.pointer('pointermove', 100, 200);
+    assert.equal(doc.getElementById('text-width').value, '248');
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    assert.equal((await readPhotoStore(win, 'projects'))[0].objects[0].geometry.width, 448);
+    page.pointer('pointerup', 100, 200);
+    win.dispatchEvent(new win.Event('pagehide'));
+    await waitFor(page.dom, () => doc.getElementById('save-status').textContent === 'Saved on this device');
+    const [saved] = await readPhotoStore(win, 'projects');
+    assert.equal(saved.objects[0].geometry.width, 248);
+    assert.equal(saved.objects[0].text, text.value);
+    assert.deepEqual(page.errors, []);
+});
+
+test('text labels remember explicit and Auto width across placements and reopening', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('text');
+    page.pointer('pointerdown', 100, 100);
+    const width = page.doc.getElementById('text-width');
+    width.value = '275'; page.emit(width, 'change');
+    page.pointer('pointerdown', 300, 300);
+    assert.equal(width.value, '275');
+    await page.settle();
+    const reopened = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
+    t.after(() => reopened.win.close());
+    reopened.tool('text'); reopened.pointer('pointerdown', 100, 100);
+    assert.equal(reopened.doc.getElementById('text-width').value, '275');
+    page.click(page.doc.getElementById('text-width-auto'));
+    page.pointer('pointerdown', 400, 400);
+    assert.equal(width.value, '');
+    await page.settle();
+    const auto = await loadEditor({ localPreferences: page.chrome._localStore, syncedPreferences: page.chrome._store.bpbSettings });
+    t.after(() => auto.win.close());
+    auto.tool('text'); auto.pointer('pointerdown', 100, 100);
+    assert.equal(auto.doc.getElementById('text-width').value, '');
+});
+
+test('editing an old mark size does not replace the latest shared color or opacity', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 100, 100);
+    const old = page.overlay.querySelector('[data-bpb-object]');
+    const id = old.getAttribute('data-bpb-object');
+    page.tool('text');
+    const color = page.doc.getElementById('object-color');
+    color.value = '#1e88e5'; page.emit(color, 'change');
+    const opacity = page.doc.getElementById('object-opacity');
+    opacity.value = '40'; page.emit(opacity, 'input');
+    page.tool('select');
+    page.pointer('pointerdown', 100, 100, page.overlay.querySelector(`[data-bpb-object="${id}"]`));
+    page.pointer('pointerup', 100, 100);
+    const scale = page.doc.getElementById('object-scale');
+    scale.value = '2'; page.emit(scale, 'input');
+    page.tool('drawing');
+    assert.equal(color.value, '#1e88e5');
+    assert.equal(opacity.value, '40');
+});
+
+test('Cmd and Ctrl Undo remove route points before touching earlier annotations', async t => {
+    for (const modifier of ['metaKey', 'ctrlKey']) {
+        const page = await loadEditor();
+        t.after(() => page.win.close());
+        page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+        page.tool('route');
+        page.pointer('pointerdown', 100, 100);
+        assert.equal(page.doc.getElementById('undo').disabled, false);
+        page.pointer('pointerdown', 200, 200);
+        page.pointer('pointerdown', 300, 300);
+        const routeId = page.overlay.querySelector('g.selected').getAttribute('data-bpb-object');
+        const routePath = () => page.overlay.querySelector(`[data-bpb-object="${routeId}"] > path`)?.getAttribute('d');
+        const full = routePath();
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.notEqual(routePath(), full);
+        assert.equal(page.markCount(), 2, 'the unfinished two-point route and bolt survive');
+        assert.equal(page.drawing(), true);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1);
+        assert.ok(page.overlay.querySelector('.route-preview-dot'));
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'undoing the first point must preserve the bolt');
+        assert.equal(page.overlay.querySelector('.route-preview'), null);
+        for (let i = 0; i < 3; i++) page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        page.key('keydown', { key: 'Enter' });
+        assert.equal(page.drawing(), false);
+        page.key('keydown', { key: 'z', [modifier]: true });
+        assert.equal(page.markCount(), 1, 'the finished route is one project Undo');
+        page.key('keydown', { key: 'z', [modifier]: true, shiftKey: true });
+        assert.equal(routePath(), full);
+        assert.deepEqual(page.errors, []);
+    }
+});
+
+test('route Undo works from the first point and a new point discards point Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('route'); page.pointer('pointerdown', 100, 100);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+    assert.equal(page.doc.getElementById('redo').disabled, false);
+    page.click(page.doc.getElementById('redo'));
+    assert.ok(page.overlay.querySelector('.route-preview-dot'));
+    page.pointer('pointerdown', 200, 200);
+    page.pointer('pointerdown', 300, 300);
+    page.click(page.doc.getElementById('undo'));
+    page.pointer('pointerdown', 400, 350);
+    assert.equal(page.doc.getElementById('redo').disabled, true);
+    assert.match(page.routePath(), /800 700$/);
+    assert.doesNotMatch(page.routePath(), /600 600/);
+    page.key('keydown', { key: 'Escape' });
+    assert.equal(page.markCount(), 0);
+    assert.equal(page.doc.getElementById('undo').disabled, true);
+});
+
+test('route restyling stays in its transaction while point Undo retains the style', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    const smooth = page.doc.getElementById('route-smooth');
+    smooth.checked = true; page.emit(smooth, 'change');
+    const width = page.doc.getElementById('route-width');
+    width.value = '27'; page.emit(width, 'input');
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(width.value, '27');
+    assert.equal(smooth.checked, true);
+    page.key('keydown', { key: 'Enter' });
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 0);
+});
+
+test('Undo during an unfinished freehand gesture leaves previous marks intact', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.tool('drawing'); page.pointer('pointerdown', 100, 100); page.pointer('pointermove', 200, 200);
+    page.key('keydown', { key: 'z', ctrlKey: true });
+    assert.equal(page.overlay.querySelector('.drawing-preview'), null);
+    assert.equal(page.markCount(), 1);
+    page.pointer('pointerup', 200, 200);
+    assert.equal(page.markCount(), 1);
+});
+
+test('undoing every pending route point preserves the previous project Redo', async t => {
+    const page = await loadEditor();
+    t.after(() => page.win.close());
+    page.tool('bolt'); page.pointer('pointerdown', 50, 50);
+    page.click(page.doc.getElementById('undo'));
+    page.tool('route'); page.pointer('pointerdown', 100, 100); page.pointer('pointerdown', 200, 200);
+    page.click(page.doc.getElementById('undo'));
+    page.click(page.doc.getElementById('undo'));
+    page.key('keydown', { key: 'Escape' });
+    page.click(page.doc.getElementById('redo'));
+    assert.equal(page.markCount(), 1);
+    assert.equal(page.drawing(), false);
+    assert.match(page.doc.getElementById('annotation-list').textContent, /Bolt/);
+});
+
+// Fail the page's own transaction, leaving independent inspection reads usable.
+const failNextPhotoTransaction = (indexedDB: IDBFactory, name: string, mode = 'readwrite') => {
+    const database = fakeDatabase(indexedDB)!;
+    const transaction = database.transaction.bind(database);
+    let attempted = false;
+    database.transaction = (names: string | string[], requestedMode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
+        const stores = typeof names === 'string' ? [names] : [...names];
+        if (!attempted && requestedMode === mode && stores.includes('photos')) {
+            attempted = true;
+            if (name === 'AbortError') {
+                const pending = transaction(names, requestedMode, options);
+                queueMicrotask(() => pending.abort());
+                return pending;
+            }
+            throw new DOMException('Injected storage failure', name);
+        }
+        return transaction(names, requestedMode, options);
+    };
+    return { restore: () => { database.transaction = transaction; }, attempted: () => attempted };
+};
+const libraryButton = (page: EditorPage, label: string) => [...page.doc.querySelectorAll('.photo-card button')]
+    .find(button => button.textContent === label)!;
+
+for (const errorName of ['QuotaExceededError', 'AbortError', 'InvalidStateError']) {
+    for (const action of ['Remove', 'Restore with editing data', 'Undo', 'Download project']) {
+        test(`library ${action} reports ${errorName} and remains retryable`, async t => {
+            const indexedDB = new IDBFactory();
+            const photo = await seedUploadedLibraryPhoto(indexedDB);
+            if (action === 'Restore with editing data') {
+                const seed = await Store.createPhotoStore({ indexedDB });
+                await seed.putPhoto(Library.markDeleted(photo)); seed.close();
+            }
+            const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', confirmImpl: () => true });
+            t.after(() => page.dom.window.close());
+            if (action === 'Restore with editing data') {
+                page.doc.getElementById('library-filter').value = 'recently-deleted';
+                page.doc.getElementById('library-filter').dispatchEvent(new page.win.Event('change'));
+                await waitFor(page.dom, () => !!libraryButton(page, action));
+            }
+            if (action === 'Undo') {
+                libraryButton(page, 'Remove').click();
+                await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 0);
+            }
+            const before = await readPhotoStore(page.win, 'photos');
+            const control = action === 'Undo' ? page.doc.getElementById('toast-action') : libraryButton(page, action);
+            const fault = failNextPhotoTransaction(indexedDB, errorName, action === 'Download project' ? 'readonly' : 'readwrite');
+            t.after(fault.restore);
+            control.focus(); control.click();
+            await waitFor(page.dom, () => /could not/.test(page.doc.getElementById('toast-message').textContent)
+                && !control.hasAttribute('aria-busy'));
+            assert.equal(fault.attempted(), true);
+            assert.deepEqual(await readPhotoStore(page.win, 'photos'), before, 'a failed write must preserve the catalog');
+            assert.equal(page.doc.activeElement, control);
+            assert.equal(control.disabled, false);
+            assert.equal(control.hasAttribute('aria-disabled'), false);
+            assert.deepEqual(page.errors, []);
+            if (action === 'Undo') {
+                assert.equal(control.hidden, false);
+                assert.equal(control.textContent, 'Undo');
+                control.click();
+                await waitFor(page.dom, () => page.doc.querySelectorAll('.photo-card').length === 1);
+                assert.equal((await readPhotoStore(page.win, 'photos'))[0].deletedAt, null);
+            } else if (action !== 'Download project') {
+                control.click();
+                await waitFor(page.dom, () => !control.isConnected);
+                const after = (await readPhotoStore(page.win, 'photos'))[0];
+                assert.equal(!!after.deletedAt, action === 'Remove');
+            }
+        });
+    }
+}
+
+test('library bookkeeping failure preserves the successful report insertion outcome', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB);
+    let insertions = 0;
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', returnToReport: true,
+        runtimeHandler: async (message: StubMessage) => {
+            if (message.type === 'PHOTO_INSERT_COMMIT') {
+                insertions++;
+                return { ok: true, identity: { cid: 900001, aid: 1234567 } };
+            }
+            return { ok: true };
+        },
+    });
+    t.after(() => page.dom.window.close());
+    const fault = failNextPhotoTransaction(indexedDB, 'QuotaExceededError'); t.after(fault.restore);
+    const insert = libraryButton(page, 'Insert'); insert.focus(); insert.click();
+    await waitFor(page.dom, () => /was inserted, but its library record could not be saved/.test(
+        page.doc.getElementById('toast-message').textContent) && !insert.hasAttribute('aria-busy'));
+    assert.equal(insertions, 1);
+    assert.equal(page.doc.activeElement, insert);
+    assert.equal((await readPhotoStore(page.win, 'photos'))[0].references.length, 0);
+    assert.deepEqual(page.errors, []);
+});
+
+test('a pending library action keeps focus and rejects repeated activation', async t => {
+    const indexedDB = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
+    let confirmations = 0;
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library',
+        confirmImpl: () => { confirmations++; return true; },
+    }); t.after(() => page.dom.window.close());
+    const remove = libraryButton(page, 'Remove'); remove.focus(); remove.click(); remove.click();
+    assert.equal(confirmations, 0);
+    assert.equal(remove.getAttribute('aria-busy'), 'true');
+    assert.equal(remove.getAttribute('aria-disabled'), 'true');
+    assert.equal(page.doc.activeElement, remove);
+    await waitFor(page.dom, () => !remove.isConnected);
+    assert.deepEqual(page.errors, []);
+});
+
+const photoCard = (page: EditorPage, localId: string) => [...page.doc.querySelectorAll('.photo-card')]
+    .find(card => card.dataset.localId === localId)!;
+
+test('library redraw retains the same photo and action after reordering', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first' });
+    const second = await seedUploadedLibraryPhoto(indexedDB, { localId: 'second' });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const old = photoCard(page, 'first').querySelector('[data-action="download"]'); old.focus();
+    const other = await Store.createPhotoStore({ indexedDB });
+    await other.putPhoto({ ...second, updatedAt: new Date().toISOString() }); other.close();
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement, photoCard(page, 'first').querySelector('[data-action="download"]'));
+});
+
+test('library removal chooses a nearby action, empty state, and restored Undo target', async t => {
+    const indexedDB = new IDBFactory();
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'first' });
+    await seedUploadedLibraryPhoto(indexedDB, { localId: 'second' });
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library', confirmImpl: () => true });
+    t.after(() => page.dom.window.close());
+    const first = photoCard(page, 'first').querySelector('[data-action="remove"]'); first.focus(); first.click();
+    await waitFor(page.dom, () => !photoCard(page, 'first'));
+    const second = photoCard(page, 'second').querySelector('[data-action="remove"]');
+    assert.equal(page.doc.activeElement, second);
+    second.click();
+    await waitFor(page.dom, () => !photoCard(page, 'second'));
+    assert.equal(page.doc.activeElement, page.doc.getElementById('library-empty'));
+    const undo = page.doc.getElementById('toast-action'); undo.focus(); undo.click();
+    await waitFor(page.dom, () => !!photoCard(page, 'second'));
+    assert.equal(page.doc.activeElement, photoCard(page, 'second').querySelector('[data-action="remove"]'));
+});
+
+test('an asynchronous library redraw does not reclaim focus moved to Search', async t => {
+    const indexedDB = new IDBFactory(); await seedUploadedLibraryPhoto(indexedDB);
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const old = page.doc.querySelector('.photo-card [data-action="remove"]'); old.focus();
+    const database = fakeDatabase(indexedDB)!;
+    const transaction = database.transaction.bind(database);
+    let release!: (value?: unknown) => void; let started = false;
+    let armed = true;
+    database.transaction = (names: string | string[], mode?: IDBTransactionMode, options?: IDBTransactionOptions) => {
+        const pending = transaction(names, mode, options);
+        if (armed && mode === 'readonly' && Array.isArray(names) && names.includes('photos') && names.includes('metadata')) {
+            armed = false;
+            const released = new Promise(resolve => { release = resolve; });
+            let completion: ((event: Event) => void) | undefined;
+            Object.defineProperty(pending, 'oncomplete', {
+                configurable: true, get: () => completion,
+                set: (handler: (this: IDBTransaction, event: Event) => void) => { completion = (event: Event) => { started = true; void released.then(() => handler.call(pending, event)); }; },
+            });
+        }
+        return pending;
+    };
+    t.after(() => { database.transaction = transaction; release?.(); });
+    page.doc.getElementById('show-library').click();
+    await waitFor(page.dom, () => started);
+    const search = page.doc.getElementById('library-search'); search.focus(); release();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement, search);
+});
+
+test('expired-asset maintenance retains the focused restore action', async t => {
+    const indexedDB = new IDBFactory(); await seedDeletedLibraryPhotos(indexedDB, 1);
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    page.doc.getElementById('library-filter').value = 'recently-deleted';
+    page.doc.getElementById('library-filter').dispatchEvent(new page.win.Event('change'));
+    await waitFor(page.dom, () => page.doc.querySelector('[data-action="restore"]'));
+    const old = page.doc.querySelector('[data-action="restore"]'); old.focus();
+    await waitFor(page.dom, () => !old.isConnected);
+    assert.equal(page.doc.activeElement.dataset.action, 'restore');
+    assert.equal(page.doc.activeElement.closest('.photo-card')!.dataset.localId, 'expired-photo-000');
+});
+
+test('library pagination keeps a usable control when Next becomes disabled', async t => {
+    const indexedDB = new IDBFactory();
+    // Metadata-only entries keep this pagination fixture cheap and realistic.
+    const store = await Store.createPhotoStore({ indexedDB });
+    for (let index = 0; index < 49; index++) await store.putPhoto((Library.createDraft as unknown as CreateDraft)({
+        localId: `page-${index}`, title: `Topo ${index}`,
+        source: { fileName: 'photo.jpg', mime: 'image/jpeg', bytes: 6, width: 1600, height: 1200, sha256: index.toString(16).padStart(64, '0') },
+    }));
+    store.close();
+    const page = await loadEditor({ indexedDB, pickPhoto: false, startMode: 'library' });
+    t.after(() => page.dom.window.close());
+    const next = page.doc.getElementById('library-next'); next.focus(); next.click();
+    await waitFor(page.dom, () => /Page 2 of 2/.test(page.doc.getElementById('library-page-status').textContent));
+    assert.equal(page.doc.activeElement, page.doc.getElementById('library-previous'));
+    assert.equal(page.doc.activeElement.disabled, false);
+});
+
+for (const placement of ['photo', 'center']) {
+    test(`narrow ${placement} label editing reuses one field and preserves focus across resizing`, async t => {
+        const page = await loadEditor(); t.after(() => page.dom.window.close());
+        // Resize the page's own frame: the editor follows its media query and
+        // the browser's resize event, as on a phone or a resized window.
+        const resizeFrame = async (width: number) => {
+            const resized = new Promise(resolve => page.win.addEventListener('resize', resolve, { once: true }));
+            (page.win.frameElement as HTMLElement).style.width = `${width}px`;
+            await resized;
+        };
+        await resizeFrame(390);
+        const input = page.doc.getElementById('object-text');
+        const inspector = input.closest('#inspector')!;
+        const dock = page.doc.getElementById('photo-text-editor');
+        let wideAligned = 0;
+        input.scrollIntoView = (options?: ScrollIntoViewOptions | boolean) => { assert.equal((options as ScrollIntoViewOptions).block, 'nearest'); wideAligned++; };
+        let aligned = 0;
+        dock.scrollIntoView = (options?: ScrollIntoViewOptions | boolean) => { assert.equal((options as ScrollIntoViewOptions).block, 'end'); aligned++; };
+        page.tool('text');
+        if (placement === 'photo') { page.pointer('pointerdown', 100, 100); page.pointer('pointerup', 100, 100); }
+        else page.click(page.doc.getElementById('add-at-center'));
+        assert.equal(dock.hidden, false);
+        assert.equal(dock.contains(input), true);
+        assert.equal(page.doc.activeElement, input);
+        assert.equal(input.selectionEnd, input.value.length);
+        assert.equal(aligned, 1);
+        input.value = 'North ridge\nUpper gully'; page.emit(input, 'input');
+        input.setSelectionRange(3, 8, 'backward');
+        assert.equal(page.doc.querySelectorAll('#object-text').length, 1);
+        assert.equal(page.doc.activeElement, input);
+        await resizeFrame(1000);
+        assert.equal(inspector.contains(input), true);
+        assert.equal(dock.hidden, true);
+        assert.equal(wideAligned, 1);
+        assert.equal(page.doc.activeElement, input);
+        assert.deepEqual([input.selectionStart, input.selectionEnd, input.selectionDirection], [3, 8, 'backward']);
+        await resizeFrame(520);
+        assert.equal(dock.contains(input), true);
+        assert.equal(page.doc.activeElement, input);
+        assert.equal(input.value, 'North ridge\nUpper gully');
+        assert.equal(page.doc.getElementById('text-width').value, '', 'automatic width remains selected');
+        page.click(page.doc.getElementById('delete-object'));
+        assert.equal(dock.hidden, true);
+        assert.equal(inspector.contains(input), true);
+        page.click(page.doc.getElementById('undo'));
+        assert.equal(page.markCount(), 1);
+        page.doc.querySelector('[data-object-id]').click();
+        assert.equal(dock.hidden, false);
+        assert.equal(input.value, 'North ridge\nUpper gully');
+        assert.deepEqual(page.errors, []);
+    });
+}
+
+test('committing an empty text label removes it and Undo restores the last text', async t => {
+    const page = await loadEditor(); t.after(() => page.win.close());
+    page.tool('text'); page.click(page.doc.getElementById('add-at-center'));
+    const input = page.doc.getElementById('object-text');
+    input.value = 'North ridge'; page.emit(input, 'input');
+    input.value = ''; page.emit(input, 'input'); page.emit(input, 'change');
+    assert.equal(page.markCount(), 0);
+    page.click(page.doc.getElementById('undo'));
+    assert.equal(page.markCount(), 1); assert.equal(page.overlay.querySelector('text').textContent, 'North ridge');
+});
+test('report-photo editing keeps its accepted image and does not dirty an unchanged caption', async t => {
+    const indexedDB = new IDBFactory(), store = await Store.createPhotoStore({ indexedDB });
+    const localId = crypto.randomUUID(), sha256 = 'a'.repeat(64);
+    const source = { ...IMAGE, sha256, mime: 'image/jpeg', bytes: 6, fileName: 'report.jpg' };
+    const photo = (Library.createDraft as unknown as CreateDraft)({ localId, title: 'Report photo', caption: 'Existing caption', source });
+    await store.putDraft({ photo, project: Project.createProject({ localId, ...IMAGE, sourceSha256: sha256 }),
+        original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
+    const otherId = crypto.randomUUID();
+    await store.putDraft({ photo: (Library.createDraft as unknown as CreateDraft)({ localId: otherId, title: 'Other photo', source: { ...source, sha256: 'b'.repeat(64) } }),
+        project: Project.createProject({ localId: otherId, ...IMAGE, sourceSha256: 'b'.repeat(64) }),
+        original: new Blob(['pixels'], { type: 'image/jpeg' }), thumbnail: new Blob(['thumbnail'], { type: 'image/jpeg' }) });
+    store.close();
+    const page = await loadEditor({ indexedDB, nativeBlobs: true, pickPhoto: false, returnToReport: true,
+        localPhotoId: localId, imageCaption: 'Existing caption' }); t.after(() => page.win.close());
+    await waitFor(page.dom, () => page.doc.getElementById('editor-status').textContent.includes('Edits stay on this device'));
+    assert.equal(page.doc.getElementById('editor-workspace').hidden, false, page.doc.getElementById('toast').textContent);
+    assert.equal(page.doc.getElementById('save-status').textContent, 'Saved on this device');
+    assert.equal(page.doc.getElementById('photo-file').disabled, true);
+    const otherCard = page.doc.querySelector(`[data-local-id="${otherId}"]`);
+    assert.equal(otherCard.querySelector('[data-action=edit]'), null);
+    assert.equal(otherCard.querySelector('[data-action=insert]'), null);
+    page.doc.getElementById('show-library').click();
+    page.doc.querySelector(`[data-local-id="${localId}"] [data-action=edit]`).click();
+    await waitFor(page.dom, () => !page.doc.getElementById('editor-view').hidden && !page.doc.getElementById('upload-insert').disabled);
+    assert.match(page.doc.getElementById('editor-status').textContent, /Edits stay on this device/);
+});
+
+test('Remove all annotations asks nothing and offers Undo', async () => {
+    let confirmations = 0;
+    const page = await loadEditor({ confirmImpl: () => { confirmations++; return false; } });
+    const { doc } = page;
+    page.tool('bolt');
+    page.pointer('pointerdown', 100, 100);
+    page.pointer('pointerdown', 200, 200);
+    page.tool('select');
+    await page.settle();
+    assert.equal(page.markCount(), 2);
+    page.click(doc.getElementById('clear-annotations'));
+    await page.settle();
+    assert.equal(confirmations, 0, 'a reversible removal asks nothing');
+    assert.equal(page.markCount(), 0);
+    assert.equal(doc.getElementById('toast-message').textContent, '2 annotations removed.');
+    page.click(doc.getElementById('toast-action'));
+    await page.settle();
+    assert.equal(page.markCount(), 2, 'Undo restores every removed annotation');
+    assert.deepEqual(page.errors, []);
+    page.dom.window.close();
+});

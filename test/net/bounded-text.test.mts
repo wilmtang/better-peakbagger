@@ -1,0 +1,162 @@
+// Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+    assertBoundedStructure,
+    readBoundedBlobText,
+    readBoundedResponseText,
+} from '../../src/net/bounded-text.ts';
+
+const response = (chunks: string[], headers: HeadersInit = {}) => ({
+    headers: new Headers(headers),
+    body: new ReadableStream<Uint8Array>({
+        start(controller) {
+            chunks.forEach(chunk => controller.enqueue(new TextEncoder().encode(chunk)));
+            controller.close();
+        },
+    }),
+});
+
+test('bounded response text accepts the exact byte and character limits', async () => {
+    const result = await readBoundedResponseText(response(['1234', '5678'], { 'content-length': '8' }), {
+        maxBytes: 8,
+        maxChars: 8,
+    });
+    assert.equal(result, '12345678');
+});
+
+test('bounded response text rejects declared, streamed, and decoded limit plus one', async () => {
+    let cancelled = false;
+    const declared = {
+        headers: new Headers({ 'content-length': '9' }),
+        body: new ReadableStream<Uint8Array>({ cancel() { cancelled = true; } }),
+    };
+    await assert.rejects(readBoundedResponseText(declared, {
+        maxBytes: 8,
+    }), { code: 'response-too-large' });
+    assert.equal(cancelled, true, 'a rejected declared body releases its stream');
+
+    await assert.rejects(readBoundedResponseText(response(['1234', '56789']), {
+        maxBytes: 8,
+    }), { code: 'response-too-large' });
+
+    await assert.rejects(readBoundedResponseText(response(['123456789'], { 'content-length': '2' }), {
+        maxBytes: 8,
+    }), { code: 'response-too-large' },
+    'a compressed or dishonest Content-Length cannot hide the expanded stream');
+
+    await assert.rejects(readBoundedResponseText(response(['123456789']), {
+        maxBytes: 20,
+        maxChars: 8,
+    }), { code: 'response-too-large' });
+});
+
+test('bounded blob text preflights size and validates fallback text', async () => {
+    let read = false;
+    await assert.rejects(readBoundedBlobText({
+        size: 9,
+        text: async () => { read = true; return '123456789'; },
+    }, { maxBytes: 8 }), { code: 'response-too-large' });
+    assert.equal(read, false, 'an oversized local file is rejected before it is read');
+
+    await assert.rejects(readBoundedBlobText({
+        size: 1,
+        text: async () => '123456789',
+    }, { maxBytes: 8 }), { code: 'response-too-large' },
+    'fallback readers still validate the decoded result');
+});
+
+test('caller cancellation stops a streaming body immediately', async () => {
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+            controller.enqueue(new TextEncoder().encode('partial'));
+        },
+        cancel() { cancelled = true; },
+    });
+    const controller = new AbortController();
+    const reading = readBoundedResponseText({ headers: new Headers(), body }, {
+        maxBytes: 100,
+        signal: controller.signal,
+    });
+    controller.abort();
+    await assert.rejects(reading, { name: 'AbortError' });
+    assert.equal(cancelled, true);
+});
+
+test('parsed structure budgets bound depth, breadth, nodes, and strings', () => {
+    const limits = {
+        maxDepth: 2,
+        maxNodes: 6,
+        maxArrayItems: 2,
+        maxObjectKeys: 2,
+        maxStringChars: 4,
+    };
+    assert.deepEqual(assertBoundedStructure({ one: ['1234', 2] }, limits), { one: ['1234', 2] });
+    for (const value of [
+        { one: { two: { three: true } } },
+        { one: [1, 2, 3] },
+        { one: 1, two: 2, three: 3 },
+        { one: '12345' },
+        [1, 2, { three: 3 }],
+    ]) {
+        assert.throws(() => assertBoundedStructure(value, limits),
+            { code: 'response-too-large' });
+    }
+});
+
+for (const cleanup of ['resolve', 'reject', 'stall']) {
+    test(`invalid UTF-8 cancels an open tail without waiting for ${cleanup} cleanup`, { timeout: 5000 }, async () => {
+        let cancelled = 0;
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(new Uint8Array([0xff])); },
+            cancel() {
+                cancelled++;
+                if (cleanup === 'reject') throw new Error('CANCEL_SENTINEL');
+                if (cleanup === 'stall') return new Promise<never>(() => {});
+            },
+        });
+        await assert.rejects(readBoundedResponseText({ headers: new Headers(), body }, {
+            maxBytes: 100, fatalUtf8: true,
+        }), error => error instanceof Error && error.name === 'TypeError' && !/CANCEL_SENTINEL/.test(error.message));
+        assert.equal(cancelled, 1, 'early rejection must terminate the unfinished source');
+        assert.equal(body.locked, false, 'cleanup must release the reader even when cancellation stalls');
+    });
+}
+
+test('completed and truncated UTF-8 bodies release their locks after end-of-stream', async () => {
+    for (const bytes of [new TextEncoder().encode('Café'), new Uint8Array([0xc3])]) {
+        let cancelled = 0;
+        const body = new ReadableStream<Uint8Array>({
+            start(controller) { controller.enqueue(bytes); controller.close(); },
+            cancel() { cancelled++; },
+        });
+        const reading = readBoundedResponseText({ headers: new Headers(), body }, { maxBytes: 100, fatalUtf8: true });
+        if (bytes.length === 1) await assert.rejects(reading, TypeError);
+        else assert.equal(await reading, 'Café');
+        assert.equal(body.locked, false);
+        assert.equal(cancelled, 0, 'a fully consumed source needs no cancellation');
+    }
+});
+
+test('a rejected body read preserves its error while cancelling and releasing the reader', async () => {
+    const failure = new Error('BODY_READ_SENTINEL');
+    let cancelled = 0, released = 0;
+    const body = { getReader: () => ({ read: async () => { throw failure; },
+        cancel: async () => { cancelled++; }, releaseLock: () => { released++; } }) };
+    await assert.rejects(readBoundedResponseText({ headers: new Headers(), body }, { maxBytes: 100 }), error => error === failure);
+    assert.equal(cancelled, 1); assert.equal(released, 1);
+});
+
+test('an already-aborted read releases its acquired stream without a second cancel', async () => {
+    let cancelled = 0;
+    const body = new ReadableStream<Uint8Array>({ cancel() { cancelled++; } });
+    const controller = new AbortController(); controller.abort();
+    await assert.rejects(readBoundedResponseText({ headers: new Headers(), body }, {
+        maxBytes: 100, signal: controller.signal,
+    }), { name: 'AbortError' });
+    assert.equal(cancelled, 1); assert.equal(body.locked, false);
+});

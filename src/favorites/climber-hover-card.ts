@@ -1,20 +1,20 @@
 // Copyright (C) 2026 wilmtang <wilm.tang@outlook.com>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { dom as D } from '../ui/dom.js';
-import { createStableText } from '../ui/stable-text.js';
-import { settings as S } from '../settings/settings.js';
+import { dom as D } from '../ui/dom.ts';
+import { createStableText } from '../ui/stable-text.ts';
+import { settings as S } from '../settings/settings.ts';
 import { createPageLifecycle } from '../ui/page-lifecycle.ts';
-import { trustedAction } from '../ui/trusted-action.js';
-import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.js';
-import { peakbaggerError } from '../peakbagger/peakbagger-error.js';
-import { ownerClimberId } from '../profile/profile-backup-core.js';
-import { favoriteClimbers as F } from './favorite-climbers.js';
-import { observeClimberMembership } from './climber-membership.js';
-import { mutateIgnored } from './ignored-client.js';
-import { climberCardTarget, climberCardState, climberProfileLists, SAVED_BUDDY_ACCOUNT_MESSAGE } from './climber-card-state.js';
-import { changeBuddy, applyBuddyProfileState } from './buddy-client.js';
-import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.js';
+import { trustedAction } from '../ui/trusted-action.ts';
+import { fetchPeakbaggerDocument } from '../peakbagger/peakbagger-request.ts';
+import { peakbaggerError } from '../peakbagger/peakbagger-error.ts';
+import { ownerClimberId } from '../profile/profile-backup-core.ts';
+import { favoriteClimbers as F } from './favorite-climbers.ts';
+import { observeClimberMembership, type ClimberMembershipState } from './climber-membership.ts';
+import { mutateIgnored } from './ignored-client.ts';
+import { climberCardTarget, climberCardState, climberProfileLists, SAVED_BUDDY_ACCOUNT_MESSAGE, type ClimberCardStateOptions } from './climber-card-state.ts';
+import { changeBuddy, applyBuddyProfileState } from './buddy-client.ts';
+import { beginBuddyCacheRead, publishBuddyCache } from './buddy-cache.ts';
 
 const OPEN_DELAY = 1000, FOCUS_DELAY = 350, CLOSE_DELAY = 200;
 const EXCLUDED = 'nav, header, .mainmenu, .mainbanner, [contenteditable], textarea, [data-bpb-climber-ui], #bpb-report-editor';
@@ -31,7 +31,7 @@ const mount = () => {
     if (window !== window.top || document.getElementById('bpb-climber-card')) return;
     const records = new Map<Element, ClimberRecord>();
     const profileLists = new Map();
-    let current: ClimberRecord | null = null, membership: { error?: string; ignored?: unknown } | null = null, settings: unknown = null, settingsError = '';
+    let current: ClimberRecord | null = null, membership: ClimberMembershipState | null = null, settings: ClimberCardStateOptions['settings'] = null, settingsError = '';
     let observer: ReturnType<typeof observeClimberMembership> | null = null, unsubscribe: (() => void) | null = null, settingsGeneration = 0;
     let openTimer: ReturnType<typeof setTimeout> | undefined, closeTimer: ReturnType<typeof setTimeout> | undefined, positionFrame: number | null = null, mutationFrame: number | null = null;
     let hovered: ClimberRecord | null = null, suppressed: ClimberRecord | null = null, operation: CardOperation | null = null, readController: AbortController | null = null;
@@ -143,9 +143,9 @@ const mount = () => {
         if (!current || !active) return;
         const view = viewState();
         title.textContent = current.target.name;
-        profile.href = current.target.url;
+        profile.href = current.target.url ?? '';
         ascents.href = `${location.origin}/climber/ClimbListC.aspx?cid=${current.target.cid}&sort=ascentdated&j=-1&y=9999`;
-        buddyList.href = F.buddyListUrl(current.target.cid, location.origin);
+        buddyList.href = F.buddyListUrl(current.target.cid, location.origin) ?? '';
         reverseList.href = `${location.origin}/report/report.aspx?r=rb&cid=${current.target.cid}`;
         buddyList.hidden = current.lists?.buddy === false;
         reverseList.hidden = current.lists?.reverse === false;
@@ -167,7 +167,7 @@ const mount = () => {
         favorite.setAttribute('aria-busy', String(operation?.kind === 'favorite'));
         source.hidden = view.self || view.custom !== false;
         main.hidden = view.self;
-        ignore.parentElement.hidden = view.self;
+        if (ignore.parentElement) ignore.parentElement.hidden = view.self;
         ignoreText.set(operation?.kind === 'ignore' ? 'Saving…' : view.ignored ? 'Unignore climber' : 'Ignore climber');
         unavailable(ignore, view.ignoreDisabled, operation?.kind === 'ignore');
         ignore.setAttribute('aria-pressed', String(view.ignored));
@@ -192,7 +192,7 @@ const mount = () => {
         feedbackSizing.hidden = view.self;
         retry.hidden = !(error || settingsError || membership?.error || view.buddyIntent?.status === 'confirmed' || (operation && !retry.hidden));
         cacheRecovery.hidden = !view.cachedBuddyBlocked || !!failure;
-        if (view.savedBuddyOwnerCid) cacheRecovery.href = F.climberPageUrl(view.savedBuddyOwnerCid);
+        if (view.savedBuddyOwnerCid) cacheRecovery.href = F.climberPageUrl(view.savedBuddyOwnerCid) ?? '';
         recovery.hidden = retry.hidden && failureDetails.hidden && cacheRecovery.hidden;
         unavailable(retry, !!operation || !!view.buddyIntent && (view.buddyInFlight || view.buddyCheckBlocked),
             operation?.kind === 'check' || operation?.recovery);
@@ -288,7 +288,7 @@ const mount = () => {
         // Worst-case account copy must not reserve the only room in which an
         // enlarged keyboard action can fit. Keep recovery outside the scrolling
         // context and cap the same reservation used by both context surfaces.
-        const recoveryRoom = block(feedbackSizing.querySelector('.bpb-climber-card-recovery'));
+        const recoveryRoom = block(feedbackSizing.querySelector<HTMLElement>('.bpb-climber-card-recovery')!);
         const feedbackMargin = parseFloat(getComputedStyle(feedbackSizing).marginTop);
         card.style.setProperty('--bpb-card-context-space', `${Math.max(0,
             height - 24 - spacing - block(heading) - primaryRoom - recoveryRoom - feedbackMargin - 8)}px`);
@@ -341,7 +341,7 @@ const mount = () => {
             explicitOpen = true;
             suppressed = null;
             const first = [buddy, signIn, favorite, ignore, profile].find(control => !control.hidden
-                && !control.disabled && control.getAttribute('aria-disabled') !== 'true');
+                && !('disabled' in control && control.disabled) && control.getAttribute('aria-disabled') !== 'true');
             first?.focus({ preventScroll: true });
             if (first && main.contains(first)) {
                 const target = first.getBoundingClientRect(), body = main.getBoundingClientRect();
@@ -418,7 +418,7 @@ const mount = () => {
     };
     const subscribe = () => {
         observer = observeClimberMembership(chrome, (value: typeof membership) => { if (active) { membership = value; paint(); } });
-        unsubscribe = S.subscribe((value: unknown) => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
+        unsubscribe = S.subscribe((value: typeof S.DEFAULTS) => { settingsGeneration++; settings = value; settingsError = ''; paint(); });
         void refreshSettings();
     };
     const stopReads = () => {
@@ -593,7 +593,7 @@ const mount = () => {
                     if (target.cid !== record.target.cid && current === record) close({ restore: true, suppress: true });
                     record.target = target;
                     record.trigger.setAttribute('aria-label', `Climber actions for ${target.name}`);
-                    if (!isVisible(record.anchor) && focusedRecord === record) {
+                    if (!isVisible(record.anchor) && (focusedRecord === record || current === record)) {
                         const fallback = retireFocus(record);
                         if (current === record) close();
                         moveFocus(fallback);

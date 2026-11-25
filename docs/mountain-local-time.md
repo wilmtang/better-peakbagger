@@ -26,7 +26,7 @@ package ships CommonJS, so esbuild bundles it directly into the consumers that
 need mountain time: `dist/content/gpx-analyzer.js`,
 `dist/content/ascent-editor.js`, `dist/content/peak-map.js`,
 `dist/content/map-layers.js`, and `dist/terrain/terrain-frame.js`. The shared
-`src/time/mountain-time.js` module is the only authored owner of resolution,
+`src/time/mountain-time.ts` module is the only authored owner of resolution,
 formatting, local-day comparison, and editable civil-time conversion. There is
 no page-owned global for Peakbagger or another extension to replace.
 
@@ -141,10 +141,10 @@ UTC-minute bucket can never straddle the climb zone's local midnight.
 
 ## Testing
 
-`test/time/mountain-time.test.mjs` pins ordinary conversion, DST gaps and folds,
+`test/time/mountain-time.test.mts` pins ordinary conversion, DST gaps and folds,
 Apia's skipped civil date, unusual offsets, date-line dates, bounded formatter
 construction/work, formatter failure, and longitude fallback.
-`test/gpx/gpx-analyzer.test.mjs` uses an overnight fixture that crosses the
+`test/gpx/gpx-analyzer.browser.mts` uses an overnight fixture that crosses the
 *mountain's* local midnight but **not** UTC midnight, so its `Day 2` and
 camping assertions hold regardless of the timezone of the machine running the
 tests. One test asserts the IANA path (PDT hint), a second asserts the

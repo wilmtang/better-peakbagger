@@ -9,9 +9,9 @@
 
 import { readPeakNations } from '../avalanche/avalanche-location.ts';
 import { PEAK_COORDINATE_LABEL, readPeakDecimalCoordinate } from '../peakbagger/peak-page-fields.ts';
-import { resolveAvalancheLinks } from '../avalanche/avalanche-links.js';
-import { settings } from '../settings/settings.js';
-import { enablePeakLinkOrder } from './peak-link-order.js';
+import { resolveAvalancheLinks } from '../avalanche/avalanche-links.ts';
+import { settings } from '../settings/settings.ts';
+import { enablePeakLinkOrder } from './peak-link-order.ts';
 
 (() => {
     'use strict';
