@@ -6,11 +6,12 @@ import { PEAK_BEST_MATCH, PEAK_WEATHER_MODELS, eligiblePeakWeatherModels, resolv
 import { ARCHIVE_BEST_MATCH } from '../../src/weather/weather-models.ts';
 import { weatherRequestUrl, peakWeatherRequestUrl, validatePeakWeatherResponse, createPeakWeatherClient } from '../../src/weather/open-meteo-client.ts';
 import { weatherFixture, weatherModelFixture } from '../helpers/weather-fixture.mts';
+import { required } from '../helpers/required.mts';
 
 const summit = { latitude: 46.85, longitude: -121.76, elevation: 4391, nation: 'united states' };
-const window = weatherPeakWindow(mountainTime.resolve(summit.latitude, summit.longitude), Date.parse('2026-10-11T12:00:00Z'));
-const model = id => PEAK_WEATHER_MODELS.find(item => item.id === id);
-const fixture = ids => weatherModelFixture(weatherFixture({ ...summit, startDate: window.startDate,
+const window = weatherPeakWindow(required(mountainTime.resolve(summit.latitude, summit.longitude)), Date.parse('2026-10-11T12:00:00Z'));
+const model = (id: string) => required(PEAK_WEATHER_MODELS.find(item => item.id === id), `missing model ${id}`);
+const fixture = (ids: readonly string[]) => weatherModelFixture(weatherFixture({ ...summit, startDate: window.startDate,
     hours: (Date.parse(window.endDate) - Date.parse(window.startDate)) / 3600_000 + 24 }), ids);
 
 test('peak model selection requires eligible models and GFS covers the full forecast', () => {
@@ -36,7 +37,9 @@ test('peak Best Match is first in both periods and retains forecast rather than 
     const url = new URL(peakWeatherRequestUrl(summit, window, [PEAK_BEST_MATCH]));
     assert.equal(url.host, 'api.open-meteo.com'); assert.equal(url.searchParams.get('models'), 'best_match');
     assert.equal(url.searchParams.get('start_date'), window.startDate);
+    // @ts-expect-error Deliberately pass an archive model to test runtime rejection.
     assert.throws(() => peakWeatherRequestUrl(summit, window, [ARCHIVE_BEST_MATCH]), { code: 'invalid' });
+    // @ts-expect-error Deliberately pass a forecast model to test runtime rejection.
     assert.throws(() => weatherRequestUrl(summit, window, PEAK_BEST_MATCH), { code: 'invalid' });
 });
 
@@ -77,7 +80,7 @@ test('one bounded named-model request splits suffix columns without confusing hi
 
 test('Fuji negative ARPEGE precipitation is floored at zero and retains complete weather coverage', async () => {
     const fuji = { latitude: 35.360638, longitude: 138.727347, elevation: 3776 };
-    const range = weatherPeakWindow(mountainTime.resolve(fuji.latitude, fuji.longitude), Date.parse('2026-10-12T04:00:00Z'));
+    const range = weatherPeakWindow(required(mountainTime.resolve(fuji.latitude, fuji.longitude)), Date.parse('2026-10-12T04:00:00Z'));
     for (const ids of [['meteofrance_arpege_world'], ['gfs_global', 'meteofrance_arpege_world']]) {
         const body = weatherModelFixture(weatherFixture({ ...fuji, startDate: range.startDate, hours: 792 }), ids);
         const key = ids.length === 1 ? 'precipitation' : 'precipitation_meteofrance_arpege_world';
@@ -91,10 +94,10 @@ test('Fuji negative ARPEGE precipitation is floored at zero and retains complete
         const past = summarizeWeatherWeek(arpege, range.past), forecast = summarizeWeatherWeek(arpege, range.forecast);
         assert.equal(past.filter(day => day.useful).length, 16);
         assert.equal(forecast.filter(day => day.useful).length, 16);
-        const affected = past.find(day => day.window.date === '2026-09-27');
+        const affected = required(past.find(day => day.window.date === '2026-09-27'));
         assert.equal(affected.precipitation.complete, true);
         assert.equal(affected.partial, false);
-        assert.ok(affected.precipitation.total >= 0);
+        assert.ok(required(affected.precipitation.total) >= 0);
         assert.equal(affected.precipitationHours.filter(hour => hour.value === null).length, 0);
         if (result.models.gfs_global) assert.equal(result.models.gfs_global.samples[45].precipitation, body.hourly.precipitation_gfs_global[45]);
         assert.equal(body.hourly[key][45], -0.1);
@@ -103,10 +106,11 @@ test('Fuji negative ARPEGE precipitation is floored at zero and retains complete
 
 test('named-model cache keys separate selections while sharing the rate-limit cooldown', async () => {
     let calls = 0, limited = false;
-    const client = createPeakWeatherClient({ now: () => 1000, fetchFn: url => {
+    const client = createPeakWeatherClient({ now: () => 1000, fetchFn: async url => {
+        assert.ok(typeof url === 'string');
         calls++;
         return limited ? new Response('', { status: 429, headers: { 'retry-after': '120' } })
-            : new Response(JSON.stringify(fixture(new URL(url).searchParams.get('models').split(','))), { headers: { 'content-type': 'application/json' } });
+            : new Response(JSON.stringify(fixture(required(new URL(url).searchParams.get('models')).split(','))), { headers: { 'content-type': 'application/json' } });
     } });
     await client.request(summit, window, [model('gfs_global')]);
     await client.request(summit, window, [model('gfs_hrrr'), model('gfs_global')]);
@@ -121,10 +125,10 @@ test('named-model cache keys separate selections while sharing the rate-limit co
 test('peak-only fields are bounded, unit-checked and retain missing values', () => {
     const models = [model('gfs_global')];
     const url = new URL(peakWeatherRequestUrl(summit, window, models));
-    assert.match(url.searchParams.get('hourly'), /apparent_temperature,wind_direction_10m,is_day/);
+    assert.match(required(url.searchParams.get('hourly')), /apparent_temperature,wind_direction_10m,is_day/);
     const body = fixture(['gfs_global']); body.hourly.apparent_temperature[0] = null;
     assert.equal(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global.samples[0].apparent, null);
-    for (const [field, value] of [['apparent_temperature', 101], ['wind_direction_10m', -1], ['wind_direction_10m', 361], ['is_day', .5]]) {
+    for (const [field, value] of [['apparent_temperature', 101], ['wind_direction_10m', -1], ['wind_direction_10m', 361], ['is_day', .5]] as const) {
         const invalid = fixture(['gfs_global']); invalid.hourly[field][0] = value;
         assert.throws(() => validatePeakWeatherResponse(invalid, summit, window, models), { code: 'invalid-response' });
     }
@@ -140,10 +144,11 @@ test('cloud cover shares the bounded request and keeps model identity, zeroes an
     body.hourly.cloud_cover_ecmwf_ifs.fill(75);
     let calls = 0;
     const client = createPeakWeatherClient({ fetchFn: async url => {
+        assert.ok(typeof url === 'string');
         calls++;
         const params = new URL(url).searchParams;
         assert.equal(params.get('models'), ids.join(','));
-        assert.equal(params.get('hourly').split(',').filter(field => field === 'cloud_cover').length, 1);
+        assert.equal(required(params.get('hourly')).split(',').filter(field => field === 'cloud_cover').length, 1);
         const text = JSON.stringify(body);
         assert.ok(Buffer.byteLength(text) < 128 * 1024, '792 rows of two models including clouds fit the existing bound');
         return new Response(text, { headers: { 'content-type': 'application/json' } });
@@ -157,12 +162,13 @@ test('cloud cover shares the bounded request and keeps model identity, zeroes an
 
 test('unavailable or malformed cloud cover cannot discard otherwise usable weather', () => {
     const models = [model('gfs_global')];
-    for (const mutate of [
+    const mutations: ((body: ReturnType<typeof fixture>) => void)[] = [
         body => { delete body.hourly.cloud_cover; },
         body => { body.hourly.cloud_cover.pop(); },
         body => { body.hourly_units.cloud_cover = 'fraction'; },
         body => { body.hourly.cloud_cover.fill(null); },
-    ]) {
+    ];
+    for (const mutate of mutations) {
         const body = fixture(['gfs_global']); mutate(body);
         const data = validatePeakWeatherResponse(body, summit, window, models).models.gfs_global;
         assert.ok(data.samples.every(row => row.cloud === null));
@@ -170,14 +176,16 @@ test('unavailable or malformed cloud cover cannot discard otherwise usable weath
         assert.ok(summarizeWeatherWeek(data, window.past).every(day => day.useful && !day.partial));
     }
     const body = fixture(['gfs_global']);
-    body.hourly.cloud_cover.splice(0, 8, -1, 101, '50', {}, Infinity, 0, 100, 62.5);
+    // A provider can send strings or objects for individual readings.
+    const corruptCloudCover: unknown[] = body.hourly.cloud_cover;
+    corruptCloudCover.splice(0, 8, -1, 101, '50', {}, Infinity, 0, 100, 62.5);
     const values = validatePeakWeatherResponse(body, summit, window, models).models.gfs_global.samples.slice(0, 8).map(row => row.cloud);
     assert.deepEqual(values, [null, null, null, null, null, 0, 100, 62.5]);
 });
 
 test('freezing level arrives in the existing call with model identity and optional validation', () => {
     const ids = ['gfs_global', 'ecmwf_ifs'], models = ids.map(model), body = fixture(ids);
-    const fields = new URL(peakWeatherRequestUrl(summit, window, models)).searchParams.get('hourly').split(',');
+    const fields = required(new URL(peakWeatherRequestUrl(summit, window, models)).searchParams.get('hourly')).split(',');
     assert.equal(fields.includes('snowfall'), false, 'removed snowfall does not add request data');
     assert.equal(fields.filter(value => value === 'freezing_level_height').length, 1);
     body.hourly.freezing_level_height_gfs_global.splice(0, 3, 0, null, 3200);
@@ -186,11 +194,12 @@ test('freezing level arrives in the existing call with model identity and option
     assert.deepEqual(result.gfs_global.samples.slice(0, 3).map(row => row.freezing), [0, null, 3200]);
     assert.equal(result.ecmwf_ifs.samples[0].freezing, 2500);
     assert.ok(Buffer.byteLength(JSON.stringify(body)) < 128 * 1024);
-    for (const mutate of [
-        body => { delete body.hourly.freezing_level_height_gfs_global; },
-        body => { body.hourly_units.freezing_level_height_gfs_global = 'ft'; },
-        body => { body.hourly.freezing_level_height_gfs_global.fill(20001); },
-    ]) {
+    const mutations: ((body: ReturnType<typeof fixture>) => void)[] = [
+        payload => { delete payload.hourly.freezing_level_height_gfs_global; },
+        payload => { payload.hourly_units.freezing_level_height_gfs_global = 'ft'; },
+        payload => { payload.hourly.freezing_level_height_gfs_global.fill(20001); },
+    ];
+    for (const mutate of mutations) {
         const invalid = fixture(ids); mutate(invalid);
         const parsed = validatePeakWeatherResponse(invalid, summit, window, models).models.gfs_global;
         assert.ok(parsed.samples.every(row => row.freezing === null));

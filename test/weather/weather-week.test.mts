@@ -4,31 +4,33 @@ import { mountainTime } from '../../src/time/mountain-time.ts';
 import { weatherPeakWindow, summarizeWeatherWeek } from '../../src/weather/weather-week.ts';
 import { weatherDayWindow } from '../../src/weather/weather-day.ts';
 import { createPeakWeatherClient, peakWeatherRequestUrl,
-    validatePeakWeatherResponse, weatherRequestUrl, validateWeatherResponse } from '../../src/weather/open-meteo-client.ts';
+    validatePeakWeatherResponse, weatherRequestUrl, validateWeatherResponse, type WeatherDateWindow } from '../../src/weather/open-meteo-client.ts';
 import { PEAK_WEATHER_MODELS } from '../../src/weather/peak-weather-models.ts';
 import { WEATHER_MODELS } from '../../src/weather/weather-models.ts';
+import { required } from '../helpers/required.mts';
 
-const models = [PEAK_WEATHER_MODELS.find(model => model.id === 'gfs_global')];
+const models = [required(PEAK_WEATHER_MODELS.find(model => model.id === 'gfs_global'))];
 const summit = { latitude: 46.851731, longitude: -121.760395, elevation: 4391 };
-const zone = mountainTime.resolve(summit.latitude, summit.longitude);
+const zone = required(mountainTime.resolve(summit.latitude, summit.longitude));
 const window = weatherPeakWindow(zone, Date.parse('2024-03-12T12:00:00Z')).past;
-function responseBody(window) {
-    const start = Date.parse(window.startDate), end = Date.parse(window.endDate) + 86400_000;
+function responseBody(dateWindow: WeatherDateWindow) {
+    const start = Date.parse(dateWindow.startDate), end = Date.parse(dateWindow.endDate) + 86400_000;
     const time = Array.from({ length: (end - start) / 3600_000 }, (_, i) => (start + i * 3600_000) / 1000);
+    const readings = (value: number): (number | null)[] => time.map(() => value);
     return { ...summit, utc_offset_seconds: 0,
         hourly_units: { time: 'unixtime', temperature_2m: '°C', precipitation: 'mm', wind_speed_10m: 'km/h', wind_gusts_10m: 'km/h', weather_code: 'wmo code', apparent_temperature: '°C', wind_direction_10m: '°', is_day: '' },
-        hourly: { time, apparent_temperature: time.map(() => -2), wind_direction_10m: time.map(() => 225), is_day: time.map(() => 1), temperature_2m: time.map(() => 3), precipitation: time.map(() => 1), wind_speed_10m: time.map(() => 10), wind_gusts_10m: time.map(() => 20), weather_code: time.map(() => 0) } };
+        hourly: { time, apparent_temperature: time.map(() => -2), wind_direction_10m: time.map(() => 225), is_day: time.map(() => 1), temperature_2m: readings(3), precipitation: readings(1), wind_speed_10m: readings(10), wind_gusts_10m: readings(20), weather_code: readings(0) } };
 }
 
 test('past summaries include midnight accumulation and exclude yesterday’s gust from today', () => {
-    const body = responseBody(window), day = window.days.at(-1);
-    body.hourly.wind_gusts_10m[body.hourly.time.indexOf(day.start / 1000)] = 500;
-    body.hourly.wind_gusts_10m[body.hourly.time.indexOf(day.end / 1000)] = 100;
-    body.hourly.precipitation[body.hourly.time.indexOf(day.end / 1000)] = 5;
+    const body = responseBody(window), lastDay = required(window.days.at(-1));
+    body.hourly.wind_gusts_10m[body.hourly.time.indexOf(lastDay.start / 1000)] = 500;
+    body.hourly.wind_gusts_10m[body.hourly.time.indexOf(lastDay.end / 1000)] = 100;
+    body.hourly.precipitation[body.hourly.time.indexOf(lastDay.end / 1000)] = 5;
     const days = summarizeWeatherWeek(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global, window);
-    assert.equal(days.at(-1).gust.high, 100);
-    assert.equal(days.at(-1).precipitation.total, 28);
-    assert.equal(days.find(day => day.window.date === '2024-03-10').hourly.length, 23);
+    assert.equal(days.at(-1)?.gust.high, 100);
+    assert.equal(days.at(-1)?.precipitation.total, 28);
+    assert.equal(days.find(day => day.window.date === '2024-03-10')?.hourly.length, 23);
     assert.ok(days.every(day => day.coreComplete));
     body.hourly.precipitation.fill(null);
     const missing = summarizeWeatherWeek(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global, window);
@@ -37,26 +39,31 @@ test('past summaries include midnight accumulation and exclude yesterday’s gus
 
 test('precipitation-only days retain useful partial totals instead of disappearing', () => {
     const body = responseBody(window);
-    for (const field of ['temperature_2m', 'wind_speed_10m', 'wind_gusts_10m', 'weather_code']) body.hourly[field].fill(null);
+    for (const field of ['temperature_2m', 'wind_speed_10m', 'wind_gusts_10m', 'weather_code'] as const) body.hourly[field].fill(null);
     const days = summarizeWeatherWeek(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global, window);
     assert.ok(days.every(day => day.useful && day.partial && day.precipitation.complete));
     assert.ok(days.every(day => day.condition.label === 'Conditions unavailable' && day.temperature.high === null));
-    assert.equal(days.at(-1).precipitation.total, 24);
+    assert.equal(days.at(-1)?.precipitation.total, 24);
 });
 
 test('peak response validates fields, grid, timestamps and missing values', () => {
     const body = responseBody(window);
     assert.equal(validatePeakWeatherResponse(body, summit, window, models).models.gfs_global.samples.length, 408);
-    for (const corrupt of [
-        body => body.hourly.time.push(body.hourly.time.at(-1) + 3600),
-        body => { body.hourly.temperature_2m[0] = '2'; },
-        body => { body.hourly_units.precipitation = 'inch'; },
-        body => { body.hourly.wind_gusts_10m.pop(); },
-        body => { body.longitude = 0; },
-        body => { body.elevation = 0; },
-        body => { body.hourly.time[1] = body.hourly.time[0]; },
-        body => { body.hourly.time[0] -= 3600; },
-    ]) {
+    const corruptions: ((body: ReturnType<typeof responseBody>) => void)[] = [
+        payload => payload.hourly.time.push(required(payload.hourly.time.at(-1)) + 3600),
+        payload => {
+            // Deliberately corrupt a provider reading.
+            const temperatures: unknown[] = payload.hourly.temperature_2m;
+            temperatures[0] = '2';
+        },
+        payload => { payload.hourly_units.precipitation = 'inch'; },
+        payload => { payload.hourly.wind_gusts_10m.pop(); },
+        payload => { payload.longitude = 0; },
+        payload => { payload.elevation = 0; },
+        payload => { payload.hourly.time[1] = payload.hourly.time[0]; },
+        payload => { payload.hourly.time[0] -= 3600; },
+    ];
+    for (const corrupt of corruptions) {
         const changed = responseBody(window); corrupt(changed);
         assert.throws(() => validatePeakWeatherResponse(changed, summit, window, models), { code: 'invalid-response' });
     }
@@ -86,14 +93,15 @@ test('peak window covers sixteen completed and sixteen forecast days without exc
         [46.85, -121.76, '2024-07-12T01:30:00Z', '2024-07-11', '2024-07-26', 384, '2024-06-25', 384],
         [1.87, -157.43, '2024-07-12T12:30:00Z', '2024-07-13', '2024-07-28', 384, '2024-06-27', 384],
         [46.85, -121.76, '2025-01-05T12:00:00Z', '2025-01-05', '2025-01-20', 384, '2024-12-20', 384],
-    ]) {
-        const now = Date.parse(clock), zone = mountainTime.resolve(lat, lon), peak = weatherPeakWindow(zone, now);
+    ] as const) {
+        const now = Date.parse(clock), localZone = required(mountainTime.resolve(lat, lon)), peak = weatherPeakWindow(localZone, now);
         assert.equal(peak.forecast.days.length, 16); assert.equal(peak.past.days.length, 16);
         assert.equal(peak.past.days[0].date, pastFirst);
-        assert.equal((peak.past.days.at(-1).end - peak.past.days[0].start) / 3600_000, pastHours);
-        assert.equal(peak.today, first); assert.equal(peak.forecast.days.at(-1).date, last);
-        assert.equal(peak.past.days.at(-1).end, peak.forecast.days[0].start);
-        assert.equal((peak.forecast.days.at(-1).end - peak.forecast.days[0].start) / 3600_000, hours);
+        const lastPast = required(peak.past.days.at(-1)), lastForecast = required(peak.forecast.days.at(-1));
+        assert.equal((lastPast.end - peak.past.days[0].start) / 3600_000, pastHours);
+        assert.equal(peak.today, first); assert.equal(lastForecast.date, last);
+        assert.equal(lastPast.end, peak.forecast.days[0].start);
+        assert.equal((lastForecast.end - peak.forecast.days[0].start) / 3600_000, hours);
         assert.ok(peak.forecast.days.every(day => day.cutoff === day.end && !day.partial));
         assert.ok(peak.past.days.every(day => day.end <= now && !day.partial));
         assert.ok(Date.parse(peak.startDate) <= peak.past.days[0].start);
@@ -105,9 +113,9 @@ test('peak window covers sixteen completed and sixteen forecast days without exc
         assert.ok(summarizeWeatherWeek(data, peak.past).every(day => day.coreComplete && !day.partial));
         const summaries = summarizeWeatherWeek(data, peak.forecast);
         assert.ok(summaries.slice(0, -1).every(day => day.coreComplete));
-        assert.equal(summaries.at(-1).partial, peak.forecast.days.at(-1).end >= apiLastDate + 86400_000);
+        assert.equal(summaries.at(-1)?.partial, lastForecast.end >= apiLastDate + 86400_000);
         assert.equal(peak.partial, true);
-        assert.throws(() => weatherDayWindow(peak.forecast.days[1].date, zone, now), /future ascent/);
+        assert.throws(() => weatherDayWindow(peak.forecast.days[1].date, localZone, now), /future ascent/);
     }
 });
 
@@ -124,9 +132,9 @@ test('combined request validates padded future data without widening ascent boun
     const body = responseBody(peak), data = validatePeakWeatherResponse(body, summit, peak, models).models.gfs_global;
     const forecast = summarizeWeatherWeek(data, peak.forecast);
     assert.ok(forecast.slice(0, -1).every(day => day.coreComplete && day.precipitation.total === 24 && day.hourly.length === 24));
-    assert.equal(forecast.at(-1).hourly.length, 16);
-    assert.equal(forecast.at(-1).precipitation.total, 15);
-    assert.equal(forecast.at(-1).partial, true);
+    assert.equal(forecast.at(-1)?.hourly.length, 16);
+    assert.equal(forecast.at(-1)?.precipitation.total, 15);
+    assert.equal(forecast.at(-1)?.partial, true);
     assert.ok(forecast[0].hourly.some(row => row.time > Date.parse('2024-11-05T12:00:00Z')));
     assert.throws(() => weatherRequestUrl(summit, peak, WEATHER_MODELS[0]));
     assert.throws(() => validateWeatherResponse(body, summit, peak, WEATHER_MODELS[0]), { code: 'invalid-response' });
@@ -144,6 +152,7 @@ test('past and forecast share one private request with a five-minute cache and k
     const peak = weatherPeakWindow(zone, Date.parse('2024-11-05T12:00:00Z'));
     let calls = 0, now = Date.parse('2024-11-05T12:00:00Z'), limited = false;
     const client = createPeakWeatherClient({ now: () => now, fetchFn: async (url, init) => {
+        assert.ok(init); assert.ok(typeof url === 'string');
         calls++; assert.equal(init.credentials, 'omit'); assert.equal(init.referrerPolicy, 'no-referrer');
         assert.equal(init.redirect, 'error');
         assert.ok(!/[?&](?:pid|cid|name|gpx)=/.test(url));

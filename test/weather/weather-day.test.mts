@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mountainTime } from '../../src/time/mountain-time.ts';
-import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode } from '../../src/weather/weather-day.ts';
+import { weatherDayWindow, summarizeWeatherDay, hourlyWeatherCondition, knownWeatherCode, type WeatherDayWindow, type WeatherSample } from '../../src/weather/weather-day.ts';
+import { required } from '../helpers/required.mts';
 
 const now = Date.parse('2026-10-10T12:00:00Z');
 const zone = mountainTime.resolve(46.85, -121.76);
-const samplesFor = window => {
-    const samples = [];
+const samplesFor = (window: WeatherDayWindow) => {
+    const samples: WeatherSample[] = [];
     for (let time = Date.parse(`${window.startDate}T00:00:00Z`); time < Date.parse(`${window.endDate}T00:00:00Z`) + 86400_000; time += 3600_000) {
         samples.push({ time, temperature: 3, wind: 10, gust: 20, precipitation: 1, code: 0 });
     }
@@ -24,7 +25,7 @@ test('hourly conditions retain code intensity and missing values never become cl
         assert.deepEqual(hourlyWeatherCondition(code), { label: 'Unavailable', icon: 'unknown' });
     }
     const window = weatherDayWindow('2024-07-12', zone, now), data = samplesFor(window);
-    data.samples.find(row => row.time === window.start).code = 97;
+    required(data.samples.find(row => row.time === window.start)).code = 97;
     assert.equal(summarizeWeatherDay(data, window).condition.label, 'Thunderstorms');
 });
 
@@ -33,7 +34,7 @@ test('historical winter offset and 23/25-hour days use the summit civil day', ()
         ['2024-01-15', '2024-01-15T08:00:00Z', 24],
         ['2024-03-10', '2024-03-10T08:00:00Z', 23],
         ['2024-11-03', '2024-11-03T07:00:00Z', 25],
-    ]) {
+    ] as const) {
         const window = weatherDayWindow(date, zone, now);
         assert.equal(window.start, Date.parse(start));
         assert.equal(window.end - window.start, hours * 3600_000);
@@ -47,24 +48,24 @@ test('historical winter offset and 23/25-hour days use the summit civil day', ()
 test('precipitation excludes starting midnight and includes next midnight', () => {
     const window = weatherDayWindow('2024-07-12', zone, now);
     const data = samplesFor(window);
-    data.samples.find(row => row.time === window.start).precipitation = 900;
-    data.samples.find(row => row.time === window.end).precipitation = 5;
+    required(data.samples.find(row => row.time === window.start)).precipitation = 900;
+    required(data.samples.find(row => row.time === window.end)).precipitation = 5;
     assert.equal(summarizeWeatherDay(data, window).precipitation.total, 28);
 });
 
 test('gust timing follows the model contract across midnight, DST and fractional zones', () => {
     for (const [localZone, date] of [[zone, '2024-07-12'], [zone, '2024-03-10'], [zone, '2024-11-03'],
-        [mountainTime.resolve(27.7, 85.3), '2024-07-12']]) {
+        [mountainTime.resolve(27.7, 85.3), '2024-07-12']] as const) {
         const window = weatherDayWindow(date, localZone, now), data = samplesFor(window);
         const first = Math.ceil(window.start / 3600_000) * 3600_000;
         const last = Math.ceil(window.end / 3600_000) * 3600_000;
-        data.samples.find(row => row.time === first).gust = 100;
-        data.samples.find(row => row.time === last).gust = 200;
+        required(data.samples.find(row => row.time === first)).gust = 100;
+        required(data.samples.find(row => row.time === last)).gust = 200;
         const instant = summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust;
         const interval = summarizeWeatherDay({ ...data, gustTiming: 'preceding-hour' }, window).gust;
         assert.equal(instant.high, 100); assert.equal(instant.complete, true);
         assert.equal(interval.high, 200); assert.equal(interval.complete, true);
-        data.samples.find(row => row.time === first).gust = null;
+        required(data.samples.find(row => row.time === first)).gust = null;
         assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust.complete, false);
     }
 });
@@ -72,8 +73,8 @@ test('gust timing follows the model contract across midnight, DST and fractional
 test('current instantaneous gusts include returned samples but exclude the future', () => {
     const window = weatherDayWindow('2024-07-12', zone, Date.parse('2024-07-12T12:30:00Z'));
     const data = samplesFor(window);
-    data.samples.find(row => row.time === window.start).gust = 100;
-    data.samples.find(row => row.time === Date.parse('2024-07-12T13:00:00Z')).gust = 200;
+    required(data.samples.find(row => row.time === window.start)).gust = 100;
+    required(data.samples.find(row => row.time === Date.parse('2024-07-12T13:00:00Z'))).gust = 200;
     assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'instant' }, window).gust.high, 100);
     assert.equal(summarizeWeatherDay({ ...data, gustTiming: 'preceding-hour' }, window).gust.high, 20);
 });
@@ -85,12 +86,12 @@ test('fractional zones proportionally allocate both boundary accumulations', () 
         assert.equal(result.precipitation.total, 24);
         assert.equal(result.precipitation.complete, true);
         assert.equal(result.precipitation.allocationEstimated, true);
-        assert.equal(result.precipitationHours.reduce((sum, row) => sum + row.value, 0), result.precipitation.total);
+        assert.equal(result.precipitationHours.reduce((sum, row) => sum + required(row.value), 0), result.precipitation.total);
         assert.equal(result.precipitationHours[0].start, window.start);
-        assert.equal(result.precipitationHours.at(-1).time, window.end);
+        assert.equal(result.precipitationHours.at(-1)?.time, window.end);
         assert.equal(result.precipitationHours.length, 25);
         assert.equal(result.precipitationHours[0].partialInterval, true);
-        assert.equal(result.precipitationHours.at(-1).partialInterval, true);
+        assert.equal(result.precipitationHours.at(-1)?.partialInterval, true);
     }
 });
 
@@ -98,7 +99,7 @@ test('missing samples and unknown codes remain partial and never become zero', (
     const window = weatherDayWindow('2024-07-12', zone, now);
     const data = samplesFor(window);
     data.samples.forEach(row => { row.precipitation = null; row.gust = null; row.code = 100; });
-    data.samples.find(row => row.time === window.start + 3600_000).code = 61;
+    required(data.samples.find(row => row.time === window.start + 3600_000)).code = 61;
     const result = summarizeWeatherDay(data, window);
     assert.equal(result.precipitation.total, null);
     assert.equal(result.gust.high, null);
@@ -115,7 +116,7 @@ test('current day excludes future samples and unfinished precipitation intervals
     assert.equal(result.precipitation.total, 5);
     assert.equal(result.precipitation.complete, false);
     assert.ok(result.precipitationHours.every(row => row.sourceTime <= window.cutoff));
-    assert.equal(result.precipitationHours.reduce((sum, row) => sum + row.value, 0), 5);
+    assert.equal(result.precipitationHours.reduce((sum, row) => sum + required(row.value), 0), 5);
 });
 
 test('precipitation intervals retain unavailable slots instead of bridging missing timestamps', () => {
@@ -124,7 +125,7 @@ test('precipitation intervals retain unavailable slots instead of bridging missi
     const result = summarizeWeatherDay(data, window);
     assert.equal(result.precipitationHours.length, 24);
     assert.equal(result.precipitationHours[0].value, null);
-    assert.equal(result.precipitationHours.filter(row => row.value !== null).reduce((sum, row) => sum + row.value, 0), result.precipitation.total);
+    assert.equal(result.precipitationHours.map(row => row.value).filter(value => value !== null).reduce((sum, value) => sum + value, 0), result.precipitation.total);
 });
 
 test('sparse native series never pretend to cover the missing hourly intervals', () => {
@@ -137,7 +138,7 @@ test('sparse native series never pretend to cover the missing hourly intervals',
         assert.equal(result.partial, true);
         assert.equal(result.temperature.complete, false);
         assert.equal(result.precipitation.complete, false);
-        assert.ok(result.precipitation.total < 24);
+        assert.ok(required(result.precipitation.total) < 24);
         assert.equal(result.condition.label, 'Conditions unavailable');
         assert.equal(result.condition.icon, 'unknown');
     }
@@ -150,6 +151,6 @@ test('date-line days, skipped dates, future dates and estimated timezones', () =
     assert.equal(beforeSkip.end - beforeSkip.start, 86400_000);
     assert.throws(() => weatherDayWindow('2027-01-01', zone, now), /future/);
     const estimated = mountainTime.resolve(0, 170, { lookup: () => { throw new Error(); } });
-    assert.equal(estimated.estimated, true);
+    assert.equal(estimated?.estimated, true);
     assert.equal(weatherDayWindow('2024-07-12', estimated, now).start, Date.parse('2024-07-11T13:00:00Z'));
 });
