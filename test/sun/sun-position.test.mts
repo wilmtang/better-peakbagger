@@ -5,11 +5,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
-import { sunPosition as SunPosition } from '../../src/sun/sun-position.ts';
+import { sunPosition as SunPosition, type CalculateSunPositionInput } from '../../src/sun/sun-position.ts';
+import { required } from '../helpers/required.mts';
+
+const calculate = (input: CalculateSunPositionInput) => required(SunPosition.calculate(input));
 
 test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-valued', () => {
     const zone = MountainTime.resolve(50.5, 30.5);
-    const result = SunPosition.calculate({
+    const result = calculate({
         lat: 50.5,
         lon: 30.5,
         ms: Date.parse('2013-03-05T00:00:00Z'),
@@ -20,24 +23,24 @@ test('SunCalc 2 reference Sun and Moon vector stays north-based and degree-value
     assert.ok(Math.abs(result.elevationDeg - -39.4655) < 0.001);
     assert.equal(result.directionLabel, 'NE');
     assert.equal(result.isAboveHorizon, false);
-    assert.ok(Math.abs(result.sunriseMs - Date.parse('2013-03-05T04:33:31.186Z')) < 1000);
-    assert.ok(Math.abs(result.sunsetMs - Date.parse('2013-03-05T15:46:19.732Z')) < 1000);
+    assert.ok(Math.abs(required(result.sunriseMs) - Date.parse('2013-03-05T04:33:31.186Z')) < 1000);
+    assert.ok(Math.abs(required(result.sunsetMs) - Date.parse('2013-03-05T15:46:19.732Z')) < 1000);
     assert.ok(Number.isFinite(result.sunriseAzimuthDeg));
     assert.ok(Number.isFinite(result.solarNoonAzimuthDeg));
     assert.ok(Number.isFinite(result.sunsetAzimuthDeg));
     assert.equal(result.sunriseDayRelation, 'same-day');
     assert.equal(result.sunsetDayRelation, 'same-day');
-    assert.ok(Math.abs(result.moonIlluminationFraction - 0.4911928) < 0.000001);
-    assert.ok(Math.abs(result.moonPhase - 0.7528036) < 0.000001);
+    assert.ok(Math.abs(required(result.moonIlluminationFraction) - 0.4911928) < 0.000001);
+    assert.ok(Math.abs(required(result.moonPhase) - 0.7528036) < 0.000001);
     assert.equal(result.moonPhaseIndex, 6);
     assert.equal(result.moonPhaseLabel, 'Last Quarter');
-    assert.ok(Math.abs(result.moonAzimuthDeg - 124.6408) < 0.001);
-    assert.ok(Math.abs(result.moonElevationDeg - 0.4567) < 0.001);
+    assert.ok(Math.abs(required(result.moonAzimuthDeg) - 124.6408) < 0.001);
+    assert.ok(Math.abs(required(result.moonElevationDeg) - 0.4567) < 0.001);
     assert.equal(result.moonDirectionLabel, 'SE');
     assert.equal(result.moonIsAboveHorizon, true);
     assert.equal(result.moonVisibilityState, 'ordinary');
-    assert.ok(Math.abs(result.moonriseMs - Date.parse('2013-03-04T23:53:32.854Z')) < 1000);
-    assert.ok(Math.abs(result.moonsetMs - Date.parse('2013-03-05T08:37:04.315Z')) < 1000);
+    assert.ok(Math.abs(required(result.moonriseMs) - Date.parse('2013-03-04T23:53:32.854Z')) < 1000);
+    assert.ok(Math.abs(required(result.moonsetMs) - Date.parse('2013-03-05T08:37:04.315Z')) < 1000);
     assert.ok(Number.isFinite(result.moonriseAzimuthDeg));
     assert.ok(Number.isFinite(result.moonVisibleMidpointAzimuthDeg));
     assert.ok(Number.isFinite(result.moonsetAzimuthDeg));
@@ -50,12 +53,12 @@ test('16-point directions cover cardinal quadrants and screen bearing wraps acro
     assert.equal(SunPosition.normalizeDegrees(359 - 1), 358);
 
     const zone = MountainTime.resolve(0, 0);
-    const result = SunPosition.calculate({
+    const result = calculate({
         lat: 0, lon: 0, ms: Date.parse('2026-06-21T12:00:00Z'),
         date: '2026-06-21', zone, mapBearing: 359,
     });
     assert.ok(Math.abs(result.screenAzimuthDeg - 2.06095) < 0.001);
-    assert.ok(Math.abs(result.moonScreenAzimuthDeg - 90.95069) < 0.001);
+    assert.ok(Math.abs(required(result.moonScreenAzimuthDeg) - 90.95069) < 0.001);
     assert.equal(result.isAboveHorizon, true);
 });
 
@@ -73,11 +76,11 @@ test('Moon phases use the nearest eighth and reject values outside the package c
 
 test('polar day and night report absent events without inventing rise or set times', () => {
     const zone = MountainTime.resolve(78.2232, 15.6469);
-    const summer = SunPosition.calculate({
+    const summer = calculate({
         lat: 78.2232, lon: 15.6469, ms: Date.parse('2026-06-21T12:00:00Z'),
         date: '2026-06-21', zone,
     });
-    const winter = SunPosition.calculate({
+    const winter = calculate({
         lat: 78.2232, lon: 15.6469, ms: Date.parse('2026-12-21T12:00:00Z'),
         date: '2026-12-21', zone,
     });
@@ -92,11 +95,11 @@ test('daily events follow the requested local solar noon across zones and adjace
         ['Kiritimati', 1.8721, -157.4278, '2026-01-02', 6 * 60 + 32, 18 * 60 + 34, 'same-day'],
         ['Chatham', -43.95, -176.55, '2026-01-02', 5 * 60 + 52, 21 * 60 + 16, 'same-day'],
         ['Denver', 39.7392, -104.9903, '2026-07-10', 5 * 60 + 41, 20 * 60 + 29, 'same-day'],
-    ];
+    ] as const;
     for (const [name, lat, lon, date, sunriseMinute, sunsetMinute, sunsetRelation] of vectors) {
         const zone = MountainTime.resolve(lat, lon);
-        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
-        const result = SunPosition.calculate({ lat, lon, ms: instant.ms, date, zone });
+        const instant = required(MountainTime.civilToInstant(zone, date, 12 * 60));
+        const result = calculate({ lat, lon, ms: instant.ms, date, zone });
         assert.equal(MountainTime.localDate(zone, result.solarNoonMs), date, `${name} solar noon`);
         assert.equal(MountainTime.localMinute(zone, result.sunriseMs), sunriseMinute, `${name} sunrise`);
         assert.equal(MountainTime.localMinute(zone, result.sunsetMs), sunsetMinute, `${name} sunset`);
@@ -114,11 +117,11 @@ test('Moon visibility returns every rise-to-set interval that overlaps the mount
         ['Kyiv', 50.5, 30.5, '2013-03-05', 113, 637, 'same-day'],
         ['Denver', 39.7392, -104.9903, '2026-07-10', 93, 1023, 'same-day'],
         ['Denali', 63.0695, -151.0074, '2026-06-21', 863, 98, 'next-day'],
-    ];
+    ] as const;
     for (const [name, lat, lon, date, riseMinute, setMinute, setRelation] of vectors) {
         const zone = MountainTime.resolve(lat, lon);
-        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
-        const result = SunPosition.calculate({ lat, lon, ms: instant.ms, date, zone });
+        const instant = required(MountainTime.civilToInstant(zone, date, 12 * 60));
+        const result = calculate({ lat, lon, ms: instant.ms, date, zone });
         assert.equal(result.moonVisibilityState, 'ordinary', `${name} visibility state`);
         assert.ok(result.moonVisibilityIntervals.length >= 1, `${name} overlapping intervals`);
         assert.equal(MountainTime.localMinute(zone, result.moonriseMs), riseMinute,
@@ -135,9 +138,9 @@ test('a two-interval Denver date selects the active or upcoming Moon band withou
     const lon = -104.9903;
     const date = '2026-08-26';
     const zone = MountainTime.resolve(lat, lon);
-    const calculateAt = minute => {
-        const instant = MountainTime.civilToInstant(zone, date, minute);
-        return SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    const calculateAt = (minute: number) => {
+        const instant = required(MountainTime.civilToInstant(zone, date, minute));
+        return calculate({ lat, lon, date, zone, ms: instant.ms });
     };
     const early = calculateAt(2 * 60);
     const gap = calculateAt(12 * 60);
@@ -167,9 +170,9 @@ test('Moon visibility distinguishes polar always-up and always-down dates', () =
     const lat = 78.2232;
     const lon = 15.6469;
     const zone = MountainTime.resolve(lat, lon);
-    const stateFor = date => {
-        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
-        return SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+    const stateFor = (date: string) => {
+        const instant = required(MountainTime.civilToInstant(zone, date, 12 * 60));
+        return calculate({ lat, lon, date, zone, ms: instant.ms });
     };
     assert.deepEqual([
         stateFor('2026-01-01').moonVisibilityState,
@@ -181,11 +184,11 @@ test('Moon interval overlap survives the international date line', () => {
     for (const [name, lat, lon] of [
         ['Kiritimati', 1.8721, -157.4278],
         ['Chatham', -43.95, -176.55],
-    ]) {
+    ] as const) {
         const date = '2026-01-02';
         const zone = MountainTime.resolve(lat, lon);
-        const instant = MountainTime.civilToInstant(zone, date, 12 * 60);
-        const result = SunPosition.calculate({ lat, lon, date, zone, ms: instant.ms });
+        const instant = required(MountainTime.civilToInstant(zone, date, 12 * 60));
+        const result = calculate({ lat, lon, date, zone, ms: instant.ms });
         assert.equal(result.moonVisibilityState, 'ordinary', name);
         assert.equal(result.moonVisibilityIntervals.length, 2, name);
         assert.equal(result.moonriseDate, date, name);
@@ -201,7 +204,7 @@ test('solar calculation rejects malformed primary inputs but preserves position 
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: { getPosition: () => ({ azimuth: Number.NaN, altitude: 1 }), getTimes: () => ({}) },
     }), null);
-    const malformedEvents = SunPosition.calculate({
+    const malformedEvents = calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
@@ -218,7 +221,7 @@ test('solar calculation rejects malformed primary inputs but preserves position 
     assert.equal(malformedEvents.moonPhaseLabel, null);
     assert.equal(malformedEvents.moonVisibilityState, 'unavailable');
 
-    const malformedMoon = SunPosition.calculate({
+    const malformedMoon = calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
@@ -238,7 +241,7 @@ test('solar calculation rejects malformed primary inputs but preserves position 
     assert.equal(malformedMoon.moonPhaseLabel, null,
         'malformed illumination must not erase a finite Moon position');
 
-    const malformedMoonPosition = SunPosition.calculate({
+    const malformedMoonPosition = calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
@@ -260,7 +263,7 @@ test('solar calculation rejects malformed primary inputs but preserves position 
 test('event search is bounded and rejects cycles whose solar noon belongs to another date', () => {
     const zone = MountainTime.resolve(0, 0);
     let calls = 0;
-    const result = SunPosition.calculate({
+    const result = calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
@@ -282,7 +285,7 @@ test('event search is bounded and rejects cycles whose solar noon belongs to ano
 test('Moon event search is bounded and its failure does not erase valid Sun events', () => {
     const zone = MountainTime.resolve(0, 0);
     let calls = 0;
-    const result = SunPosition.calculate({
+    const result = calculate({
         lat: 0, lon: 0, ms: 0, date: '1970-01-01', zone,
         sunCalc: {
             getPosition: () => ({ azimuth: 90, altitude: -1 }),
@@ -307,7 +310,7 @@ test('Moon event search is bounded and its failure does not erase valid Sun even
 
 test('a multi-day Moon interval covering the whole civil day is always up', () => {
     const lat = 66, lon = 15, date = '2026-12-23', zone = MountainTime.resolve(lat, lon);
-    const result = SunPosition.calculate({ lat, lon, date, zone, ms: MountainTime.civilToInstant(zone, date, 720).ms });
+    const result = calculate({ lat, lon, date, zone, ms: required(MountainTime.civilToInstant(zone, date, 720)).ms });
     assert.equal(result.moonVisibilityState, 'always-up');
     assert.equal(result.moonriseMs, null);
     assert.equal(result.moonsetMs, null);
@@ -315,7 +318,7 @@ test('a multi-day Moon interval covering the whole civil day is always up', () =
 
 test('nonadjacent Moon crossings retain their distance from the selected date', () => {
     const lat = 63, lon = 15, date = '2026-12-24', zone = MountainTime.resolve(lat, lon);
-    const result = SunPosition.calculate({ lat, lon, date, zone, ms: MountainTime.civilToInstant(zone, date, 120).ms });
+    const result = calculate({ lat, lon, date, zone, ms: required(MountainTime.civilToInstant(zone, date, 120)).ms });
     assert.equal(result.moonVisibilityState, 'ordinary');
     assert.equal(result.moonriseDate, '2026-12-22');
     assert.equal(result.moonriseDayRelation, 'earlier-day');

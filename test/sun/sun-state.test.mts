@@ -5,9 +5,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
-import { sunState as SunState } from '../../src/sun/sun-state.ts';
+import { sunState as SunState, type SunCalculationInput, type SunResult } from '../../src/sun/sun-state.ts';
+import type { MoonVisibilityInterval } from '../../src/sun/sun-position.ts';
+import { required } from '../helpers/required.mts';
 
-const resultFor = ({ mapBearing = 0 } = {}) => Object.freeze({
+const resultFor = ({ mapBearing = 0 }: { mapBearing?: number } = {}): SunResult => Object.freeze({
     azimuthDeg: 1,
     directionLabel: 'N',
     elevationDeg: 20,
@@ -46,7 +48,7 @@ test('Peak state defaults in mountain time and date/time changes do not change i
 });
 
 test('timed, untimed, and partial route points follow strict point provenance', () => {
-    const calls = [];
+    const calls: SunCalculationInput[] = [];
     const state = SunState.create({ calculate: input => { calls.push(input); return resultFor(input); } });
     const zone = MountainTime.resolve(48.7, -121.8);
     const recordedMs = Date.parse('2026-07-10T12:34:00Z');
@@ -57,7 +59,7 @@ test('timed, untimed, and partial route points follow strict point provenance', 
     assert.deepEqual([state.get().dateSource, state.get().timeSource], [
         'GPX point', 'Recorded at selected GPX point',
     ]);
-    assert.equal(state.get().instant.ms, recordedMs);
+    assert.equal(state.get().instant?.ms, recordedMs);
 
     state.setPreviewMinute(9 * 60);
     state.selectRoutePoint({
@@ -74,7 +76,7 @@ test('timed, untimed, and partial route points follow strict point provenance', 
     assert.equal(state.get().unavailable, 'No track or ascent date is available.');
     assert.equal(state.get().result, null);
     assert.equal(state.get().availability, 'prompt');
-    assert.equal(calls.at(-1).lat, 48.71, 'an unavailable point must not run a stale calculation');
+    assert.equal(calls.at(-1)?.lat, 48.71, 'an unavailable point must not run a stale calculation');
 });
 
 test('valid Peak failures are recoverable while invalid subjects remain terminal', () => {
@@ -84,8 +86,8 @@ test('valid Peak failures are recoverable while invalid subjects remain terminal
         lat: 39.7392, lon: -104.9903, zone, nowMs: Date.parse('2026-07-10T18:30:00Z'),
     });
     assert.equal(failing.get().availability, 'recoverable');
-    assert.equal(failing.get().instant.ms, Date.parse('2026-07-10T18:30:00Z'));
-    assert.match(failing.get().unavailable, /date and time/);
+    assert.equal(failing.get().instant?.ms, Date.parse('2026-07-10T18:30:00Z'));
+    assert.match(required(failing.get().unavailable), /date and time/);
 
     const invalid = SunState.create({ calculate: resultFor });
     invalid.setPeakSubject({ lat: Number.NaN, lon: -104.9903, zone });
@@ -113,16 +115,15 @@ test('bearing changes only map-relative output and reset clears stale subject st
     const state = SunState.create({ calculate: input => { calculations++; return resultFor(input); } });
     const zone = MountainTime.resolve(0, 0);
     state.setPeakSubject({ lat: 0, lon: 0, zone, nowMs: Date.parse('2026-01-01T12:00:00Z') });
-    const absolute = state.get().result.azimuthDeg;
-    const moonAbsolute = state.get().result.moonAzimuthDeg;
-    const moonPhase = state.get().result.moonPhaseLabel;
+    const { azimuthDeg, moonAzimuthDeg, moonPhaseLabel } = required(state.get().result);
     state.setMapBearing(359);
     assert.equal(calculations, 1, 'bearing animation must not call the astronomy package');
-    assert.equal(state.get().result.azimuthDeg, absolute);
-    assert.equal(state.get().result.moonAzimuthDeg, moonAbsolute);
-    assert.equal(state.get().result.moonPhaseLabel, moonPhase);
-    assert.equal(state.get().result.screenAzimuthDeg, 2);
-    assert.equal(state.get().result.moonScreenAzimuthDeg, 272);
+    const result = required(state.get().result);
+    assert.equal(result.azimuthDeg, azimuthDeg);
+    assert.equal(result.moonAzimuthDeg, moonAzimuthDeg);
+    assert.equal(result.moonPhaseLabel, moonPhaseLabel);
+    assert.equal(result.screenAzimuthDeg, 2);
+    assert.equal(result.moonScreenAzimuthDeg, 272);
     state.resetSubject();
     assert.deepEqual([state.get().subject, state.get().date, state.get().result, state.get().mapBearing], [
         null, null, null, 0,
@@ -174,26 +175,26 @@ test('minute changes reselect a cached Moon interval without recalculating daily
     let events = 0;
     const zone = MountainTime.resolve(39.7392, -104.9903);
     const date = '2026-08-26';
-    const first = {
-        riseMs: MountainTime.civilToInstant(zone, '2026-08-25', 18 * 60 + 38).ms,
+    const first: MoonVisibilityInterval = {
+        riseMs: required(MountainTime.civilToInstant(zone, '2026-08-25', 18 * 60 + 38)).ms,
         riseAzimuthDeg: 90,
         riseDate: '2026-08-25',
         riseDayRelation: 'previous-day',
-        midpointMs: MountainTime.civilToInstant(zone, date, 23).ms,
+        midpointMs: required(MountainTime.civilToInstant(zone, date, 23)).ms,
         midpointAzimuthDeg: 180,
-        setMs: MountainTime.civilToInstant(zone, date, 4 * 60 + 40).ms,
+        setMs: required(MountainTime.civilToInstant(zone, date, 4 * 60 + 40)).ms,
         setAzimuthDeg: 270,
         setDate: date,
         setDayRelation: 'same-day',
     };
-    const second = {
-        riseMs: MountainTime.civilToInstant(zone, date, 19 * 60 + 5).ms,
+    const second: MoonVisibilityInterval = {
+        riseMs: required(MountainTime.civilToInstant(zone, date, 19 * 60 + 5)).ms,
         riseAzimuthDeg: 90,
         riseDate: date,
         riseDayRelation: 'same-day',
-        midpointMs: MountainTime.civilToInstant(zone, '2026-08-27', 24).ms,
+        midpointMs: required(MountainTime.civilToInstant(zone, '2026-08-27', 24)).ms,
         midpointAzimuthDeg: 180,
-        setMs: MountainTime.civilToInstant(zone, '2026-08-27', 5 * 60 + 45).ms,
+        setMs: required(MountainTime.civilToInstant(zone, '2026-08-27', 5 * 60 + 45)).ms,
         setAzimuthDeg: 270,
         setDate: '2026-08-27',
         setDayRelation: 'next-day',
@@ -211,21 +212,21 @@ test('minute changes reselect a cached Moon interval without recalculating daily
     });
     state.setPeakSubject({
         lat: 39.7392, lon: -104.9903, zone,
-        nowMs: MountainTime.civilToInstant(zone, date, 2 * 60).ms,
+        nowMs: required(MountainTime.civilToInstant(zone, date, 2 * 60)).ms,
     });
     assert.deepEqual([
-        state.get().result.moonVisibilityIntervalIndex,
-        state.get().result.moonVisibilitySelection,
+        state.get().result?.moonVisibilityIntervalIndex,
+        state.get().result?.moonVisibilitySelection,
     ], [0, 'active']);
     state.setPreviewMinute(12 * 60);
     assert.deepEqual([
-        state.get().result.moonVisibilityIntervalIndex,
-        state.get().result.moonVisibilitySelection,
+        state.get().result?.moonVisibilityIntervalIndex,
+        state.get().result?.moonVisibilitySelection,
     ], [1, 'upcoming']);
     state.setPreviewMinute(21 * 60);
     assert.deepEqual([
-        state.get().result.moonVisibilityIntervalIndex,
-        state.get().result.moonVisibilitySelection,
+        state.get().result?.moonVisibilityIntervalIndex,
+        state.get().result?.moonVisibilitySelection,
     ], [1, 'active']);
     assert.equal(events, 1);
 });
