@@ -4,6 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { photoLibrary as Library } from '../../src/photos/photo-library.ts';
+import { required } from '../helpers/required.mts';
 
 const TIME = '2026-07-27T18:00:00.000Z';
 const LATER = '2026-07-27T18:10:00.000Z';
@@ -35,22 +36,22 @@ const remote = {
     expiresAt: null,
 };
 
-const draft = () => Library.createDraft({
+const draft = () => required(Library.createDraft({
     localId: 'photo-1',
     title: 'North face topo',
     alt: 'North face with the Northeast Ridge marked in red',
     source,
     now: TIME,
-});
+}));
 
 test('latest versions group by source bytes, independent of titles and later report use', () => {
-    const older = Library.cleanPhoto({ ...draft(), updatedAt: '2026-08-01T00:00:00Z' });
-    const latest = Library.createDraft({ localId: 'photo-2', title: 'New title', source, now: LATER });
+    const older = required(Library.cleanPhoto({ ...draft(), updatedAt: '2026-08-01T00:00:00Z' }));
+    const latest = required(Library.createDraft({ localId: 'photo-2', title: 'New title', source, now: LATER }));
     const other = Library.createDraft({ localId: 'photo-3', title: latest.title,
         source: { ...source, sha256: 'c'.repeat(64) }, now: TIME });
-    const deleted = Library.markDeleted(Library.createDraft({
+    const deleted = required(Library.markDeleted(Library.createDraft({
         localId: 'photo-4', title: 'Deleted', source, now: TIME,
-    }));
+    })));
     assert.deepEqual(Library.latestPhotos([older, other, latest, deleted]).map(photo => photo.localId),
         ['photo-2', 'photo-3']);
     assert.deepEqual(Library.latestPhotos([latest, older])[0], latest);
@@ -67,12 +68,12 @@ test('removing the latest version does not reveal its superseded history', () =>
 test('captions are bounded metadata without turning legacy alt text into visible captions', () => {
     const legacy = draft();
     assert.equal(legacy.caption, undefined);
-    const photo = Library.cleanPhoto({ ...legacy, caption: '  North ridge  ' });
+    const photo = required(Library.cleanPhoto({ ...legacy, caption: '  North ridge  ' }));
     assert.equal(photo.caption, 'North ridge');
     assert.equal(photo.alt, legacy.alt);
     assert.equal(Library.search([photo], 'North ridge').length, 1);
-    assert.equal(Library.cleanPhoto({ ...photo, caption: 'x'.repeat(600) }).caption.length, Library.ALT_LIMIT);
-    assert.equal(Library.cleanPhoto({ ...photo, caption: '' }).caption, undefined);
+    assert.equal(required(required(Library.cleanPhoto({ ...photo, caption: 'x'.repeat(600) })).caption).length, Library.ALT_LIMIT);
+    assert.equal(required(Library.cleanPhoto({ ...photo, caption: '' })).caption, undefined);
 });
 
 test('creates and idempotently cleans a local draft record', () => {
@@ -86,19 +87,19 @@ test('creates and idempotently cleans a local draft record', () => {
 // Alt text is optional — an empty description is the decorative-image
 // convention — but a record still needs the title that names it in the library.
 test('keeps alt text optional and still normalizes what is supplied', () => {
-    assert.equal(Library.createDraft({
+    assert.equal(required(Library.createDraft({
         localId: 'photo-1', title: 'Topo', source, now: TIME,
-    }).alt, '');
-    assert.equal(Library.createDraft({
+    })).alt, '');
+    assert.equal(required(Library.createDraft({
         localId: 'photo-1', title: 'Topo', alt: '   ', source, now: TIME,
-    }).alt, '');
-    assert.equal(Library.cleanPhoto({ ...draft(), alt: '' }).alt, '');
-    assert.equal(Library.createDraft({
+    })).alt, '');
+    assert.equal(required(Library.cleanPhoto({ ...draft(), alt: '' })).alt, '');
+    assert.equal(required(Library.createDraft({
         localId: 'photo-1', title: 'Topo', alt: '  North   face ', source, now: TIME,
-    }).alt, 'North face');
-    assert.equal(Library.createDraft({
+    })).alt, 'North face');
+    assert.equal(required(Library.createDraft({
         localId: 'photo-1', title: 'Topo', alt: 'o'.repeat(Library.ALT_LIMIT + 10), source, now: TIME,
-    }).alt.length, Library.ALT_LIMIT);
+    })).alt.length, Library.ALT_LIMIT);
 });
 
 test('still requires a title on every record', () => {
@@ -110,53 +111,53 @@ test('still requires a title on every record', () => {
 
 test('moves through upload, ambiguous, completed, and observed-health states', () => {
     const photo = draft();
-    const uploading = Library.beginUpload(photo, exported, LATER);
+    const uploading = required(Library.beginUpload(photo, exported, LATER));
     assert.equal(uploading.remote.state, 'uploading');
     assert.equal(uploading.export, null, 'pending export belongs to the operation journal');
 
-    const unknown = Library.markOutcomeUnknown(uploading, LATER);
+    const unknown = required(Library.markOutcomeUnknown(uploading, LATER));
     assert.equal(unknown.remote.state, 'outcome-unknown');
-    assert.equal(Library.resetUpload(unknown, LATER).remote.state, 'draft');
+    assert.equal(required(Library.resetUpload(unknown, LATER)).remote.state, 'draft');
 
-    const complete = Library.completeUpload(unknown, exported, remote, LATER);
-    assert.equal(complete.remote.state, 'uploaded');
+    const complete = required(Library.completeUpload(unknown, exported, remote, LATER));
+    assert.ok(complete.remote.state === 'uploaded');
     assert.deepEqual(complete.export, exported);
     assert.equal(complete.remote.url, remote.url);
 
-    const unreachable = Library.markUnreachable(complete, true, LATER);
+    const unreachable = required(Library.markUnreachable(complete, true, LATER));
     assert.equal(unreachable.remote.state, 'unreachable');
-    assert.equal(Library.markUnreachable(unreachable, false, LATER).remote.state, 'uploaded');
+    assert.equal(required(Library.markUnreachable(unreachable, false, LATER)).remote.state, 'uploaded');
 });
 
 test('adds bounded references and separates local deletion from remote state', () => {
-    const complete = Library.completeUpload(draft(), exported, remote, LATER);
-    const referenced = Library.addReference(complete, {
+    const complete = required(Library.completeUpload(draft(), exported, remote, LATER));
+    const referenced = required(Library.addReference(complete, {
         kind: 'ascent-draft',
         cid: 22,
         aid: null,
         pid: 33,
         insertedAt: LATER,
-    }, LATER);
+    }, LATER));
     assert.equal(referenced.references.length, 1);
     assert.equal(referenced.remote.state, 'uploaded');
 
-    const deleted = Library.markDeleted(referenced, LATER);
+    const deleted = required(Library.markDeleted(referenced, LATER));
     assert.equal(deleted.deletedAt, LATER);
     assert.equal(deleted.remote.state, 'uploaded');
-    assert.equal(Library.restoreDeleted(deleted, LATER).deletedAt, null);
+    assert.equal(required(Library.restoreDeleted(deleted, LATER)).deletedAt, null);
 });
 
 test('recovery mutations invalidate a confirmed stamp while asset cleanup does not', () => {
     const uploaded = Library.completeUpload(draft(), exported, remote, LATER);
-    const current = Library.cleanPhoto({
-        ...uploaded,
+    const current = required(Library.cleanPhoto({
+        ...required(uploaded),
         backup: {
             state: 'current',
             signature: 'c'.repeat(64),
             backedUpAt: LATER,
             commitUrl: 'https://github.com/example/photos/commit/abc',
         },
-    });
+    }));
     const reference = {
         kind: 'ascent', cid: 1, aid: 2, pid: 3, insertedAt: LATER,
     };
@@ -167,17 +168,19 @@ test('recovery mutations invalidate a confirmed stamp while asset cleanup does n
         Library.markDeleted(current, LATER),
         Library.restoreDeleted(Library.markDeleted(current, LATER), LATER),
     ]) {
-        assert.deepEqual(changed.backup,
+        assert.deepEqual(required(changed).backup,
             { state: 'pending', signature: null, backedUpAt: null, commitUrl: null });
     }
 
-    const assets = Library.updateAssets(current, { thumbnailRetained: false }, LATER);
+    assert.equal(current.assets.thumbnailRetained, true);
+    const assets = required(Library.updateAssets(current, { thumbnailRetained: false }));
+    assert.equal(assets.assets.thumbnailRetained, false);
     assert.deepEqual(assets.backup, current.backup);
     assert.equal(assets.updatedAt, current.updatedAt);
 });
 
 test('treats the exact deleted-asset deadline as record-only recovery', () => {
-    const deleted = Library.markDeleted(draft(), TIME);
+    const deleted = required(Library.markDeleted(draft(), TIME));
     const expiresAt = new Date(Date.parse(TIME) + Library.DELETED_EDITING_RECOVERY_MS).toISOString();
 
     assert.deepEqual(Library.deletedRecovery(deleted, Date.parse(expiresAt) - 1), {
@@ -186,14 +189,14 @@ test('treats the exact deleted-asset deadline as record-only recovery', () => {
         editingDataRetained: true,
         editingDataRecoverable: true,
     });
-    assert.equal(Library.deletedRecovery(deleted, Date.parse(expiresAt)).editingDataRecoverable, false);
-    assert.equal(Library.deletedRecovery(deleted, Date.parse(expiresAt) + 1).editingDataRecoverable, false);
+    assert.equal(required(Library.deletedRecovery(deleted, Date.parse(expiresAt))).editingDataRecoverable, false);
+    assert.equal(required(Library.deletedRecovery(deleted, Date.parse(expiresAt) + 1)).editingDataRecoverable, false);
 
     const pruned = Library.updateAssets(deleted, {
         originalRetained: false,
         projectRetained: false,
         thumbnailRetained: false,
-    }, expiresAt);
+    });
     assert.deepEqual(Library.deletedRecovery(pruned, Date.parse(expiresAt) - 1), {
         deletedAt: TIME,
         expiresAt,
@@ -205,7 +208,7 @@ test('treats the exact deleted-asset deadline as record-only recovery', () => {
 });
 
 test('search and filters use catalog state without inferring provider contents', () => {
-    const complete = Library.completeUpload(draft(), exported, remote, LATER);
+    const complete = required(Library.completeUpload(draft(), exported, remote, LATER));
     const other = Library.createDraft({
         localId: 'photo-2',
         title: 'South face',

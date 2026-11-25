@@ -3,19 +3,26 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { photoProject as Project } from '../../src/photos/photo-project.ts';
+import { photoProject as Project, type PhotoProject, type PhotoProjectPoint } from '../../src/photos/photo-project.ts';
+import { required } from '../helpers/required.mts';
+
+const firstRoute = (project: PhotoProject) => {
+    const object = project.objects[0];
+    assert.ok(object?.type === 'route');
+    return object;
+};
 
 const HASH = 'a'.repeat(64);
 const TIME = '2026-07-27T18:00:00.000Z';
 const NEXT_TIME = '2026-07-27T18:01:00.000Z';
 
-const emptyProject = () => Project.createProject({
+const emptyProject = () => required(Project.createProject({
     localId: 'photo-1',
     width: 4000,
     height: 3000,
     sourceSha256: HASH,
     updatedAt: TIME,
-});
+}));
 
 const route = (overrides = {}) => ({
     id: 'route-1',
@@ -92,7 +99,7 @@ test('infers a saved project upload choice from its source and effective export'
 });
 
 test('cleans every supported topo object and normalizes z-order and colors', () => {
-    const project = Project.cleanProject({
+    const project = required(Project.cleanProject({
         ...emptyProject(),
         objects: [
             {
@@ -115,7 +122,7 @@ test('cleans every supported topo object and normalizes z-order and colors', () 
             },
             route({ z: 2 }),
         ],
-    });
+    }));
 
     assert.deepEqual(project.objects.map(object => [object.id, object.z]), [
         ['route-1', 0],
@@ -124,7 +131,9 @@ test('cleans every supported topo object and normalizes z-order and colors', () 
         ['text-1', 3],
     ]);
     assert.equal(project.objects[0].style.color, '#e53935');
-    assert.equal(project.objects[3].text, 'Northeast Ridge');
+    const label = project.objects[3];
+    assert.ok(label?.type === 'text');
+    assert.equal(label.text, 'Northeast Ridge');
     assert.deepEqual(Project.cleanProject(project), project, 'cleaning must be idempotent');
 });
 
@@ -171,13 +180,13 @@ test('bounds project and route complexity', () => {
 });
 
 test('bounds each decoded-image axis and the total pixel allocation', () => {
-    const exactPanorama = Project.createProject({
+    const exactPanorama = required(Project.createProject({
         localId: 'panorama',
         width: 16_000,
         height: 4_000,
         sourceSha256: HASH,
         updatedAt: TIME,
-    });
+    }));
     assert.deepEqual(exactPanorama.image, {
         width: 16_000,
         height: 4_000,
@@ -217,36 +226,36 @@ test('bounds each decoded-image axis and the total pixel allocation', () => {
 
 test('add, update, remove, and reorder preserve a clean immutable project', () => {
     const original = emptyProject();
-    const withRoute = Project.addObject(original, route(), NEXT_TIME);
+    const withRoute = required(Project.addObject(original, route(), NEXT_TIME));
     assert.equal(original.objects.length, 0);
     assert.equal(withRoute.objects.length, 1);
     assert.equal(withRoute.updatedAt, NEXT_TIME);
 
-    const withAnchor = Project.addObject(withRoute, {
+    const withAnchor = required(Project.addObject(withRoute, {
         id: 'anchor-1',
         type: 'anchor',
         geometry: { x: 200, y: 2400, rotation: 0 },
         style: { color: '#1e88e5', scale: 1 },
-    }, NEXT_TIME);
+    }, NEXT_TIME));
     assert.deepEqual(withAnchor.objects.map(object => object.id), ['route-1', 'anchor-1']);
 
-    const wider = Project.updateObject(withAnchor, 'route-1', {
+    const wider = required(Project.updateObject(withAnchor, 'route-1', {
         style: { ...withAnchor.objects[0].style, width: 18 },
-    }, NEXT_TIME);
-    assert.equal(wider.objects[0].style.width, 18);
-    assert.equal(withAnchor.objects[0].style.width, 12);
+    }, NEXT_TIME));
+    assert.equal(firstRoute(wider).style.width, 18);
+    assert.equal(firstRoute(withAnchor).style.width, 12);
 
-    const behind = Project.reorderObject(wider, 'anchor-1', 'back', NEXT_TIME);
+    const behind = required(Project.reorderObject(wider, 'anchor-1', 'back', NEXT_TIME));
     assert.deepEqual(behind.objects.map(object => object.id), ['anchor-1', 'route-1']);
     assert.deepEqual(behind.objects.map(object => object.z), [0, 1]);
 
-    const removed = Project.removeObjects(behind, ['anchor-1'], NEXT_TIME);
+    const removed = required(Project.removeObjects(behind, ['anchor-1'], NEXT_TIME));
     assert.deepEqual(removed.objects.map(object => object.id), ['route-1']);
     assert.deepEqual(Project.cleanProject(removed), removed);
 });
 
 test('every object carries a bounded opacity so a mark can stop hiding the beta', () => {
-    const project = Project.cleanProject({
+    const project = required(Project.cleanProject({
         ...emptyProject(),
         objects: [
             route({ style: { ...route().style, opacity: 0.4 } }),
@@ -258,16 +267,17 @@ test('every object carries a bounded opacity so a mark can stop hiding the beta'
                 style: { color: '#1e88e5', scale: 1, opacity: 0.55 },
             },
         ],
-    });
+    }));
     assert.equal(project.objects[0].style.opacity, 0.4);
     assert.equal(project.objects[1].style.opacity, 0.55);
     // A project written before the field existed stays fully opaque.
-    assert.equal(Project.cleanProject(emptyProject()) && Project.addObject(emptyProject(), {
+    assert.ok(Project.cleanProject(emptyProject()));
+    assert.equal(required(Project.addObject(emptyProject(), {
         id: 'anchor-1',
         type: 'anchor',
         geometry: { x: 10, y: 10, rotation: 0 },
         style: { color: '#43a047', scale: 1 },
-    }).objects[0].style.opacity, 1);
+    })).objects[0].style.opacity, 1);
     // Invisible is not translucent: an out-of-range opacity rejects the whole
     // document rather than leaving a mark the user cannot find again.
     for (const opacity of [0, 0.02, 1.4, '0.5', Number.NaN]) {
@@ -279,38 +289,39 @@ test('every object carries a bounded opacity so a mark can stop hiding the beta'
 });
 
 test('a smooth route re-derives its curve from its own points', () => {
+    const points: PhotoProjectPoint[] = [[200, 2500], [900, 1800], [1800, 900]];
     const straight = {
         ...route(),
-        geometry: { points: [[200, 2500], [900, 1800], [1800, 900]], controls: [] },
+        geometry: { points, controls: [] },
         style: { ...route().style, smooth: true },
     };
-    const smoothed = Project.cleanProject({ ...emptyProject(), objects: [straight] });
-    assert.equal(smoothed.objects[0].style.smooth, true);
-    assert.deepEqual(smoothed.objects[0].geometry.controls,
+    const smoothed = required(Project.cleanProject({ ...emptyProject(), objects: [straight] }));
+    assert.equal(firstRoute(smoothed).style.smooth, true);
+    assert.deepEqual(firstRoute(smoothed).geometry.controls,
         Project.smoothControls(straight.geometry.points));
 
     // Adding a point is exactly what used to silently straighten the route:
     // the editor hands back empty controls and the curve has to survive.
-    const extended = Project.updateObject(smoothed, 'route-1', {
+    const extended = required(Project.updateObject(smoothed, 'route-1', {
         geometry: { points: [...straight.geometry.points, [2400, 400]], controls: [] },
-    });
-    assert.equal(extended.objects[0].style.smooth, true);
-    assert.equal(extended.objects[0].geometry.controls.length, 4);
+    }));
+    assert.equal(firstRoute(extended).style.smooth, true);
+    assert.equal(firstRoute(extended).geometry.controls.length, 4);
 
     // Turning it off drops the curve, and a project predating the flag infers
     // its intent from the handles it already stored.
-    const flattened = Project.updateObject(extended, 'route-1', {
-        style: { ...extended.objects[0].style, smooth: false },
-    });
-    assert.deepEqual(flattened.objects[0].geometry.controls, []);
-    const legacy = Project.cleanProject({ ...emptyProject(), objects: [route()] });
-    assert.equal(legacy.objects[0].style.smooth, true);
-    assert.deepEqual(legacy.objects[0].geometry.controls, route().geometry.controls);
+    const flattened = required(Project.updateObject(extended, 'route-1', {
+        style: { ...firstRoute(extended).style, smooth: false },
+    }));
+    assert.deepEqual(firstRoute(flattened).geometry.controls, []);
+    const legacy = required(Project.cleanProject({ ...emptyProject(), objects: [route()] }));
+    assert.equal(firstRoute(legacy).style.smooth, true);
+    assert.deepEqual(firstRoute(legacy).geometry.controls, route().geometry.controls);
 });
 
 test('freehand strokes share route validation and survive project serialization', () => {
     const drawing = route({ type: 'drawing' });
-    const project = Project.addObject(emptyProject(), drawing);
+    const project = required(Project.addObject(emptyProject(), drawing));
     assert.ok(project);
     assert.deepEqual(Project.cleanProject(JSON.parse(JSON.stringify(project))), project);
     assert.equal(Project.addObject(emptyProject(), {
@@ -327,12 +338,16 @@ test('text widths are optional, bounded source-image geometry and survive cleani
         geometry: { x: 40, y: 80, rotation: 30 },
         style: { color: '#ffffff', scale: 1, align: 'left', background: true },
     };
-    const legacy = Project.addObject(emptyProject(), label, TIME);
-    assert.deepEqual(legacy.objects[0].geometry, label.geometry);
-    assert.equal(legacy.objects[0].text, label.text);
+    const legacy = required(Project.addObject(emptyProject(), label, TIME));
+    const legacyLabel = legacy.objects[0];
+    assert.ok(legacyLabel?.type === 'text');
+    assert.deepEqual(legacyLabel.geometry, label.geometry);
+    assert.equal(legacyLabel.text, label.text);
     for (const width of [1, 300.5, Project.MAX_DIMENSION]) {
-        const next = Project.updateObject(legacy, 'label', { geometry: { ...label.geometry, width } }, TIME);
-        assert.equal(next.objects[0].geometry.width, width);
+        const next = required(Project.updateObject(legacy, 'label', { geometry: { ...label.geometry, width } }, TIME));
+        const nextLabel = next.objects[0];
+        assert.ok(nextLabel?.type === 'text');
+        assert.equal(nextLabel.geometry.width, width);
         assert.deepEqual(Project.cleanProject(JSON.parse(JSON.stringify(next))), next);
         const auto = Project.updateObject(next, 'label', { geometry: { ...label.geometry, width: null } }, TIME);
         assert.deepEqual(auto, legacy);
