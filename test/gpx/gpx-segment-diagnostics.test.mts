@@ -3,10 +3,11 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { gpxMetrics as M } from '../../src/gpx/gpx-metrics.ts';
+import { gpxMetrics as M, type GeoPoint } from '../../src/gpx/gpx-metrics.ts';
 import { MAX_GPX_TRACK_POINTS, MAX_GPX_TRACK_SEGMENTS } from '../../src/capture/capture-resource-limits.ts';
 import { diagnoseGpxSegments as diagnose, diagnosticMetricInputs } from '../../src/gpx/gpx-segment-diagnostics.ts';
 import { suspectSegments, metricInputs } from '../helpers/suspect-gpx.mts';
+import { required } from '../helpers/required.mts';
 
 test('synthetic contamination independently doubles distance and extends elapsed time', () => {
     const source = suspectSegments();
@@ -30,13 +31,13 @@ test('exact degenerate duplicate is excluded with stable identities and immutabl
     assert.equal(result.sourcePointCount, 113);
     assert.equal(result.inventory[2].reason, 'degenerate-duplicate');
     assert.equal(result.inventory[2].donorSegmentId, 1);
-    assert.equal(diagnosticMetricInputs(result).at(-1).sourcePointId, '1:55');
-    assert.equal(diagnosticMetricInputs(result, true).at(-1).sourcePointId, '2:55');
+    assert.equal(diagnosticMetricInputs(result).at(-1)?.sourcePointId, '1:55');
+    assert.equal(diagnosticMetricInputs(result, true).at(-1)?.sourcePointId, '2:55');
     assert.deepEqual(source, snapshot);
     assert.deepEqual(diagnose(source), result);
 });
 
-for (const [name, alter] of [
+const variations: [string, (source: ReturnType<typeof suspectSegments>) => unknown][] = [
     ['progressing lap', s => s[2].forEach((p, i) => { p.time += (i + 1) * 60_000; p.ele = s[1][i].ele; })],
     ['reversed geometry', s => s[2].reverse()],
     ['near matching geometry', s => { s[2][20].lat += 1e-9; }],
@@ -52,11 +53,12 @@ for (const [name, alter] of [
     ['too few points', s => { s[1].length = s[2].length = 7; }],
     ['stationary points', s => s.slice(1).forEach(seg => seg.forEach(p => { p.lat = 46; p.lon = -120; }))],
     ['tiny geometry', s => s.slice(1).forEach(seg => seg.forEach(p => { p.lat = 46 + (p.lat - 46) / 1000; p.lon = -120; }))],
-]) {
+];
+for (const [name, alter] of variations) {
     test(`preserves ${name}`, () => {
         const source = suspectSegments();
         alter(source);
-        assert.notEqual(diagnose(source).inventory.at(-1).reason, 'degenerate-duplicate');
+        assert.notEqual(required(diagnose(source).inventory.at(-1)).reason, 'degenerate-duplicate');
     });
 }
 
@@ -86,7 +88,7 @@ test('isolated point is independent of duplicate detection and uses 24h / 50km f
     assert.equal(diagnose(source).excludedSegmentCount, 0);
     source[0][0].time--;
     assert.equal(diagnose(source).excludedSegmentCount, 1);
-    source[0][0].time = source[1].at(-1).time + 24 * 60 * 60_000;
+    source[0][0].time = required(source[1].at(-1)).time + 24 * 60 * 60_000;
     assert.equal(diagnose(source).excludedSegmentCount, 1);
     source[0][0].lat = source[1][0].lat;
     source[0][0].lon = source[1][0].lon;
@@ -117,7 +119,7 @@ test('a singleton near a sparse edge interior is retained despite remote vertice
 });
 
 test('point-to-path distance handles sparse arcs, endpoints, poles, and antimeridian', () => {
-    const distance = (p, a, b) => M.distanceToPathM(p, [a, b]);
+    const distance = (p: GeoPoint, a: GeoPoint, b: GeoPoint) => M.distanceToPathM(p, [a, b]);
     assert.ok(distance({ lat: 0, lon: 0 }, { lat: 0, lon: -2 }, { lat: 0, lon: 2 }) < 1e-6);
     assert.ok(distance({ lat: 0, lon: 180 }, { lat: 0, lon: 179 }, { lat: 0, lon: -179 }) < 1e-6);
     assert.ok(distance({ lat: 90, lon: 0 }, { lat: 89, lon: 0 }, { lat: 89, lon: 180 }) < 1e-6);
