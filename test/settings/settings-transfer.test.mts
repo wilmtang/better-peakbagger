@@ -6,28 +6,35 @@ import assert from 'node:assert/strict';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { readCustomSource } from '../../src/maps/custom-overlay-schema.ts';
+import { required } from '../helpers/required.mts';
+
+const parsePayload = (payload: unknown) => {
+    const result = Transfer.parse(Transfer.serialize(payload));
+    assert.ok(result.ok);
+    return result;
+};
 
 test('display opt-outs survive settings files and affect backup signatures; older files keep sections visible', () => {
     const payload = Transfer.buildPayload({ showSunMoon: false, showWeather: false });
-    const restored = Transfer.parse(Transfer.serialize(payload)).settings;
+    const restored = parsePayload(payload).settings;
     assert.equal(restored.showSunMoon, false);
     assert.equal(restored.showWeather, false);
     assert.notEqual(Transfer.signature({}), Transfer.signature({ showSunMoon: false }));
     assert.notEqual(Transfer.signature({}), Transfer.signature({ showWeather: false }));
     delete payload.settings.showSunMoon; delete payload.settings.showWeather;
-    const legacy = Transfer.parse(Transfer.serialize(payload)).settings;
+    const legacy = parsePayload(payload).settings;
     assert.equal(legacy.showSunMoon, true); assert.equal(legacy.showWeather, true);
 });
 
 test('SNOTEL transfers independently and legacy backups retain weather opt-outs', () => {
     const payload = Transfer.buildPayload({ showWeather: true, showSnotel: false });
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, false);
+    assert.equal(parsePayload(payload).settings.showSnotel, false);
     assert.notEqual(Transfer.signature({}), Transfer.signature({ showSnotel: false }));
     delete payload.settings.showSnotel;
     payload.settings.showWeather = false;
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, false);
+    assert.equal(parsePayload(payload).settings.showSnotel, false);
     payload.settings.showWeather = true;
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.showSnotel, true);
+    assert.equal(parsePayload(payload).settings.showSnotel, true);
 });
 
 test('mixed unit preferences survive settings transfer and legacy files inherit their default', () => {
@@ -37,7 +44,7 @@ test('mixed unit preferences survive settings transfer and legacy files inherit 
     assert.equal(parsed.ok, true);
     for (const [key, value] of Object.entries(mixed)) assert.equal(parsed.settings[key], value);
     for (const key of Object.values(Schema.UNIT_KEYS)) delete payload.settings[key];
-    const legacy = Transfer.parse(Transfer.serialize(payload));
+    const legacy = parsePayload(payload);
     assert.equal(legacy.settings.units, 'imperial');
     for (const key of Object.values(Schema.UNIT_KEYS)) assert.equal(legacy.settings[key], 'default');
     assert.notEqual(Transfer.signature(mixed), Transfer.signature({ units: 'imperial' }));
@@ -74,18 +81,21 @@ test('custom layer definitions and opacity round-trip without live state or loca
     assert.ok(readCustomSource(source));
     const customLayers = { schemaVersion: 1, sources: [source], preferences: { [source.id]: 35 }, enabled: true, cached: 'never export' };
     const payload = Transfer.buildPayload({}, { customLayers });
-    const parsed = Transfer.parse(Transfer.serialize(payload)); assert.equal(parsed.ok, true);
-    assert.equal(parsed.customLayers.sources[0].revision, 1); assert.equal(parsed.customLayers.preferences[source.id], 35);
-    assert.equal(parsed.customLayers.enabled, undefined); assert.equal(parsed.customLayers.cached, undefined);
+    const restoredLayers = required(parsePayload(payload).customLayers);
+    assert.equal(restoredLayers.sources[0].revision, 1); assert.equal(restoredLayers.preferences[source.id], 35);
+    assert.equal(Object.hasOwn(restoredLayers, 'enabled'), false);
+    assert.equal(Object.hasOwn(restoredLayers, 'cached'), false);
     assert.notEqual(Transfer.signature({}), Transfer.signature({}, customLayers));
     const changed = structuredClone(customLayers); changed.preferences[source.id] = 70;
     assert.notEqual(Transfer.signature({}, customLayers), Transfer.signature({}, changed));
     changed.sources[0].revision++; assert.equal(Transfer.signature({}, changed), Transfer.signature({}, { ...changed, sources: [{ ...changed.sources[0], revision: 1 }] }));
     assert.equal(Transfer.signature({}, { schemaVersion: 1, sources: [], preferences: {} }), Transfer.signature({}), 'empty-library upgrade preserves backup identity');
     const legacy = { ...payload, schemaVersion: 5 }; delete legacy.customLayers;
-    assert.equal(Object.hasOwn(Transfer.parse(Transfer.serialize(legacy)), 'customLayers'), false, 'legacy imports preserve destination library');
-    payload.customLayers.sources[0].source.tiles = ['http://unsafe.example.com/{z}/{x}/{y}'];
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).reason, 'invalid-custom-layers');
+    assert.equal(Object.hasOwn(parsePayload(legacy), 'customLayers'), false, 'legacy imports preserve destination library');
+    const exportedSource = required(payload.customLayers).sources[0];
+    assert.ok(exportedSource.kind === 'raster');
+    exportedSource.source.tiles = ['http://unsafe.example.com/{z}/{x}/{y}'];
+    assert.deepEqual(Transfer.parse(Transfer.serialize(payload)), { ok: false, reason: 'invalid-custom-layers' });
 });
 
 test('manual settings transfer round-trips every supported API key state', () => {
@@ -95,7 +105,7 @@ test('manual settings transfer round-trips every supported API key state', () =>
         apiKeys: { imgbb: 'secret-imgbb-key' },
     });
     assert.deepEqual(
-        Transfer.parse(Transfer.serialize(configured)).apiKeys,
+        parsePayload(configured).apiKeys,
         { imgbb: 'secret-imgbb-key' }
     );
 
@@ -105,7 +115,7 @@ test('manual settings transfer round-trips every supported API key state', () =>
         apiKeys: { imgbb: null },
     });
     assert.deepEqual(
-        Transfer.parse(Transfer.serialize(unconfigured)).apiKeys,
+        parsePayload(unconfigured).apiKeys,
         { imgbb: null },
         'an explicit empty key lets import clear a key the destination already has'
     );
@@ -135,7 +145,7 @@ test('manual settings transfer includes a cleaned GitHub connection only when re
         token: 'ghu_private_token',
         repository: { owner: 'ada', name: 'peaks', id: 123 },
     });
-    assert.deepEqual(Transfer.parse(Transfer.serialize(withConnection)).githubConnection,
+    assert.deepEqual(parsePayload(withConnection).githubConnection,
         withConnection.githubConnection);
 });
 
@@ -226,12 +236,12 @@ test('settings transfer rejects invalid and unsupported payloads', () => {
     })), { ok: false, reason: 'no-settings' });
 });
 
-const settingsFileAtBytes = target => {
+const settingsFileAtBytes = (target: number) => {
     const payload = {
         kind: Transfer.KIND,
         schemaVersion: Transfer.SCHEMA_VERSION,
         settings: { theme: 'dark' },
-        ignoredPadding: [],
+        ignoredPadding: Array<string>(),
     };
     while (true) {
         const withEmpty = JSON.stringify({
@@ -266,12 +276,13 @@ test('settings import size is counted as UTF-8 before JSON parsing', () => {
 });
 
 test('valid-size settings imports reject excessive parsed structure', () => {
-    const payload = {
+    interface NestedIgnored { ignored?: NestedIgnored }
+    const payload: { kind: string; schemaVersion: number; settings: object } & NestedIgnored = {
         kind: Transfer.KIND,
         schemaVersion: Transfer.SCHEMA_VERSION,
         settings: {},
     };
-    let cursor = payload;
+    let cursor: NestedIgnored = payload;
     for (let depth = 0; depth <= Transfer.IMPORT_STRUCTURE_LIMITS.maxDepth; depth += 1) {
         cursor.ignored = {};
         cursor = cursor.ignored;
@@ -320,10 +331,10 @@ test('provider visibility and both filter orders survive settings transfer', () 
 
 test('GPX timestamp privacy survives export/import and changes the GitHub settings signature', () => {
     const payload = Transfer.buildPayload({ removeGpxTimestamps: true, includeTimestampsOnce: true });
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.removeGpxTimestamps, true);
+    assert.equal(parsePayload(payload).settings.removeGpxTimestamps, true);
     assert.equal('includeTimestampsOnce' in payload.settings, false);
     assert.notEqual(Transfer.signature({}), Transfer.signature({ removeGpxTimestamps: true }));
     delete payload.settings.removeGpxTimestamps;
-    assert.equal(Transfer.parse(Transfer.serialize(payload)).settings.removeGpxTimestamps, false);
+    assert.equal(parsePayload(payload).settings.removeGpxTimestamps, false);
     for (const invalid of ['true', 1, null]) assert.equal(Schema.clean({ removeGpxTimestamps: invalid }).removeGpxTimestamps, false);
 });
