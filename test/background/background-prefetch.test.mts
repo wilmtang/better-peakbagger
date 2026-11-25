@@ -7,38 +7,46 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { webcrypto } from 'node:crypto';
 
-import { createTerrainPrefetch } from '../../src/background/terrain-prefetch.ts';
+import { createTerrainPrefetch, type TerrainPrefetchResult, type TerrainPrefetchSettings } from '../../src/background/terrain-prefetch.ts';
+import type { Fields } from '../helpers/result-fields.mts';
+import { required } from '../helpers/required.mts';
 
 // The worker ships as one bundle; Unit 7 folds terrain-tiles + terrain-cache in
 // so the DEM prefetch runs entirely inside the extension-origin worker. Boot the
 // built bundle in a worker-like vm context, exactly as the service worker runs.
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
-const event = () => {
-    const listeners = [];
-    return { listeners, addListener: listener => listeners.push(listener) };
+type WorkerSender = { tab?: { id: number }; url?: string };
+type WorkerReply = Fields<TerrainPrefetchResult> & { token?: string };
+type WorkerListener = (
+    message: Record<string, unknown>, sender: WorkerSender, reply: (value: WorkerReply) => void,
+) => boolean;
+
+const event = <Listener,>() => {
+    const listeners: Listener[] = [];
+    return { listeners, addListener: (listener: Listener) => listeners.push(listener) };
 };
 
 // A minimal in-memory CacheStorage/Cache, mirroring the terrain-cache tests.
 class MemoryCache {
-    constructor() { this.entries = new Map(); }
-    url(value) { return typeof value === 'string' ? value : value.url; }
+    entries = new Map<string, Response>();
+    url(value: string | { url: string }) { return typeof value === 'string' ? value : value.url; }
     async keys() { return Array.from(this.entries.keys(), url => ({ url })); }
-    async match(value) {
+    async match(value: string | { url: string }) {
         const response = this.entries.get(this.url(value));
         return response ? response.clone() : undefined;
     }
-    async put(value, response) { this.entries.set(this.url(value), response.clone()); }
-    async delete(value) { return this.entries.delete(this.url(value)); }
+    async put(value: string | { url: string }, response: Response) { this.entries.set(this.url(value), response.clone()); }
+    async delete(value: string | { url: string }) { return this.entries.delete(this.url(value)); }
 }
 class MemoryCacheStorage {
-    constructor() { this.named = new Map(); }
+    named = new Map<string, MemoryCache>();
     async keys() { return Array.from(this.named.keys()); }
-    async open(name) {
+    async open(name: string) {
         if (!this.named.has(name)) this.named.set(name, new MemoryCache());
         return this.named.get(name);
     }
-    async delete(name) { return this.named.delete(name); }
+    async delete(name: string) { return this.named.delete(name); }
 }
 
 const makeWebp = () => {
@@ -57,19 +65,19 @@ const createHarness = ({
     // The status the tile host answers each request with, so a region the
     // provider does not cover can be replayed.
     tileStatus = () => 200
-} = {}) => {
+} : { settings?: TerrainPrefetchSettings; tileStatus?: (url: string) => number } = {}) => {
     const syncValues = { bpbSettings: structuredClone(settings) };
     const localValues = {};
     const sessionValues = {};
-    const runtimeMessage = event();
+    const runtimeMessage = event<WorkerListener>();
     const tabRemoved = event();
     const alarmEvent = event();
-    const fetchCalls = [];
+    const fetchCalls: string[] = [];
 
-    const area = values => ({
-        get: async key => ({ [key]: structuredClone(values[key]) }),
-        set: async patch => Object.assign(values, structuredClone(patch)),
-        remove: async key => { delete values[key]; }
+    const area = (values: Record<string, unknown>) => ({
+        get: async (key: string) => ({ [key]: structuredClone(values[key]) }),
+        set: async (patch: Record<string, unknown>) => Object.assign(values, structuredClone(patch)),
+        remove: async (key: string) => { delete values[key]; }
     });
 
     const browser = {
@@ -81,13 +89,13 @@ const createHarness = ({
         },
         runtime: {
             onMessage: runtimeMessage,
-            getURL: path => `chrome-extension://test-id/${path}`,
+            getURL: (path: string) => `chrome-extension://test-id/${path}`,
         },
         tabs: { onRemoved: tabRemoved },
         alarms: { create: () => {}, onAlarm: alarmEvent }
     };
 
-    const fetch = async url => {
+    const fetch = async (url: string | URL) => {
         const value = String(url);
         fetchCalls.push(value);
         const status = tileStatus(value);
@@ -98,7 +106,7 @@ const createHarness = ({
 
     // scheduleSave arms a 1 s timer inside terrain-cache; unref so a pending
     // save never keeps the test process alive.
-    const wrapTimeout = (fn, ms, ...args) => {
+    const wrapTimeout = (fn: (...args: unknown[]) => void, ms: number, ...args: unknown[]) => {
         const handle = setTimeout(fn, ms, ...args);
         if (handle && typeof handle.unref === 'function') handle.unref();
         return handle;
@@ -116,13 +124,13 @@ const createHarness = ({
     const listener = runtimeMessage.listeners[0];
     // Replies are created inside the vm realm, so their prototype differs from
     // the test realm's; copy the plain fields out before asserting on them.
-    const send = (message, sender = {}) => new Promise(resolve => {
+    const send = (message: Record<string, unknown>, sender: WorkerSender = {}) => new Promise<WorkerReply>(resolve => {
         assert.equal(listener(message, sender, reply => resolve({ ...reply })), true);
     });
     const peakbaggerSender = (id = 5) => ({
         tab: { id }, url: 'https://www.peakbagger.com/climber/ascent.aspx?aid=1'
     });
-    const prefetch = async (message, sender) => {
+    const prefetch = async (message: Record<string, unknown>, sender: WorkerSender) => {
         const issued = await send({ type: 'TERRAIN_ACTIVATION_ISSUE', action: 'prefetch' }, sender);
         return send({ ...message, ...(issued.ok ? { activation: issued.token } : {}) }, sender);
     };
@@ -177,7 +185,8 @@ test('DEM prefetch warms a bounded set of Mapterhorn tiles for a route view', as
     const harness = createHarness();
     const reply = await harness.prefetch(ROUTE, harness.peakbaggerSender());
     assert.equal(reply.ok, true);
-    assert.ok(reply.tiles > 0 && reply.tiles <= 32, `expected 1..32 tiles, got ${reply.tiles}`);
+    const warmedTiles = required(reply.tiles);
+    assert.ok(warmedTiles > 0 && warmedTiles <= 32, `expected 1..32 tiles, got ${reply.tiles}`);
     // Every request goes to Mapterhorn as a DEM webp tile; count matches the
     // reported tiles (each fresh tile is fetched exactly once on a cold cache).
     assert.equal(harness.fetchCalls.length, reply.tiles);
@@ -191,7 +200,8 @@ test('DEM prefetch warms a peak center+zoom view', async () => {
         { type: 'TERRAIN_PREFETCH', center: [48.83115, -121.60214], zoom: 13, viewport: { width: 1000, height: 425 } },
         harness.peakbaggerSender());
     assert.equal(reply.ok, true);
-    assert.ok(reply.tiles > 0 && reply.tiles <= 32);
+    const warmedTiles = required(reply.tiles);
+    assert.ok(warmedTiles > 0 && warmedTiles <= 32);
     assert.equal(harness.fetchCalls.length, reply.tiles);
     assert.ok(harness.fetchCalls.every(url => url.startsWith('https://tiles.mapterhorn.com/')));
 });
@@ -241,10 +251,10 @@ test('DEM prefetch stops re-asking for tiles the provider says do not exist', as
 
 test('DEM prefetch retires the previous cache owner before changing its budget', async () => {
     let currentSettings = { enable3dMap: true, terrainCacheLimitMb: 512 };
-    const events = [];
+    const events: string[] = [];
     const owners = [];
     const prefetch = createTerrainPrefetch({
-        isPeakbaggerSender: sender => sender?.trusted === true,
+        isPeakbaggerSender: sender => 'trusted' in sender && sender.trusted === true,
         consumeActivation: () => true,
         mapWithConcurrency: async (items, _limit, operation) => Promise.all(items.map(operation)),
         now: () => 100,
@@ -260,8 +270,15 @@ test('DEM prefetch retires the previous cache owner before changing its budget',
             return owner;
         }
     });
-    const sender = id => ({ trusted: true, tab: { id } });
-    const view = (center, zoom) => ({
+    const sender = (id: number) => ({
+        trusted: true,
+        tab: {
+            id, index: 0, windowId: 1, groupId: -1, lastAccessed: 0,
+            active: true, highlighted: true, selected: true, pinned: false,
+            frozen: false, incognito: false, discarded: false, autoDiscardable: true,
+        },
+    });
+    const view = (center: [number, number], zoom: number) => ({
         type: 'TERRAIN_PREFETCH', center, zoom,
         viewport: { width: 1000, height: 700 }, activation: 'accepted'
     });
