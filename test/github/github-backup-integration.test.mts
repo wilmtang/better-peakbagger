@@ -13,7 +13,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
-import { createGarminStore } from '../../src/garmin/garmin-store.ts';
+import { createGarminStore, type GarminConnection } from '../../src/garmin/garmin-store.ts';
+import type { GithubFetchResponse } from '../../src/github/github-api.ts';
+import type { GithubRepoRecord } from '../../src/github/github-auth.ts';
+import type { AscentBackupSnapshot } from '../../src/github/github-client.ts';
+import type { SettingsData } from '../../src/settings/settings.ts';
+import { deferred } from '../helpers/deferred.mts';
+import { required } from '../helpers/required.mts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 import { favoriteClimbers as Favorites } from '../../src/favorites/favorite-climbers.ts';
@@ -24,24 +30,102 @@ import { SYNC_KEY as IGNORED_SYNC_KEY, IGNORED_KEY, serializeBackup as serialize
 
 const workerBundle = await fs.readFile(process.env.BPB_GITHUB_WORKER_BUNDLE || new URL('../../dist/background.js', import.meta.url), 'utf8');
 
-const event = () => { const listeners = []; return { listeners, addListener: l => listeners.push(l) }; };
-const respond = (status, body) => ({
+type Values = Record<string, unknown>;
+type Sender = Values & { tab?: { id: number }; url?: string };
+type Message = Values & { type: string };
+type Account = { login: string; id?: number | null };
+type AuthRecord = Values & {
+    token?: string;
+    account?: Account | null;
+    repo?: GithubRepoRecord | null;
+    installationId?: number | null;
+};
+type AutoBackupState = { signature?: string; scope?: string; syncedAt?: string; attempts?: number; needsReview?: boolean };
+interface LocalValues extends Values {
+    bpbGithubAuth?: AuthRecord | null;
+    bpbGithubAuthEpoch?: number;
+    bpbImgbbAuth?: { key: string; savedAt?: string | null } | null;
+    bpbCustomMapOverlayPreferencesV1?: Record<string, number>;
+    [IGNORED_SYNC_KEY]?: ReturnType<typeof readIgnoredSyncState>;
+    bpbSettingsBackupState?: AutoBackupState;
+    bpbFavoritesBackupState?: AutoBackupState;
+}
+interface SessionValues extends Values {
+    bpbGithubSnapshots?: Record<string, { generation: string; savedAt: number; snapshot: ReturnType<typeof editSnapshot>['snapshot'] }>;
+    bpbGithubAscentDeleteIntents?: Record<string, { state: string }>;
+    bpbGithubAuthPending?: { deviceCode: string; nextPollAt: number };
+}
+interface WriteResult {
+    commitUrl?: string | null;
+    folder?: string;
+    isUpdate?: boolean;
+    count?: number;
+    message?: string;
+    items?: unknown[];
+    path?: string;
+    repo?: string;
+    signature?: string;
+    sha?: string;
+    superseded?: boolean;
+    removedFileCount?: number;
+}
+// The VM only exposes wire data. These are the fields this suite inspects across routes.
+interface Reply extends Values {
+    ok?: boolean;
+    error?: string | { code?: string; message?: string; retryAfterSeconds?: number };
+    result?: WriteResult;
+    token?: string;
+    grantToken?: string;
+    repo?: GithubRepoRecord | null;
+    account?: Account | null;
+    content?: string | null;
+    inspection?: { kind?: string };
+    folders?: string[];
+}
+const errorCode = (reply: Reply) => typeof reply.error === 'object' ? reply.error?.code : undefined;
+
+type MessageListener = (message: Message, sender: Sender, reply: (result: Reply) => void) => unknown;
+type StorageChangeListener = (changes: Values, areaName: string) => unknown;
+type AlarmListener = (alarm: { name: string }) => unknown;
+type StorageGetHook = (keys: string | string[], values: LocalValues) => unknown;
+type StorageSetHook = (patch: LocalValues, values: LocalValues) => unknown;
+type GithubEndpoint = (method: string, path: string, body?: unknown) =>
+    GithubFetchResponse | null | undefined | Promise<GithubFetchResponse | null | undefined>;
+interface WorkerOptions {
+    settings?: Partial<SettingsData> & Values;
+    auth?: AuthRecord | null;
+    github?: GithubEndpoint;
+    session?: SessionValues | null;
+    local?: LocalValues | null;
+    failLocalGetAfterClear?: boolean;
+    localGetHook?: StorageGetHook | null;
+    localSetHook?: StorageSetHook | null;
+    syncReadFailures?: (Error | null)[];
+    ignoredSync?: boolean | null;
+    fastAscentOperationTimeout?: boolean;
+    clockNow?: number | null;
+    garminDB?: IDBFactory | null;
+    peakbaggerLoginHtml?: string;
+}
+interface GitTreeEntry { path: string; type?: string; mode?: string; content?: string; sha?: string | null }
+interface GitTreeWrite { tree: GitTreeEntry[]; base_tree?: string }
+
+const event = <Listener,>() => {
+    const listeners: Listener[] = [];
+    return { listeners, addListener: (listener: Listener) => listeners.push(listener) };
+};
+const respond = (status: number, body?: unknown): GithubFetchResponse => ({
     ok: status >= 200 && status < 300,
     status,
     headers: { get: () => null },
     text: async () => (typeof body === 'string' ? body : JSON.stringify(body ?? {})),
 });
-const waitFor = async (predicate, ms = 2000) => {
+const waitFor = async (predicate: () => unknown, ms = 2000) => {
     const started = Date.now();
     while (!predicate()) {
         if (Date.now() - started > ms) throw new Error('waitFor timed out');
         await new Promise(resolve => setTimeout(resolve, 0));
     }
-};
-const deferred = () => {
-    let resolve;
-    const promise = new Promise(next => { resolve = next; });
-    return { promise, resolve };
 };
 // Asserting that nothing happened has no postcondition to wait for, so the wait
 // has to outlast every stage the work would pass through — including the window
@@ -53,34 +137,36 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     local: sharedLocal = null, failLocalGetAfterClear = false, localGetHook = null,
     localSetHook = null, syncReadFailures = [], ignoredSync = false,
     fastAscentOperationTimeout = false, clockNow = null, garminDB = null,
-    peakbaggerLoginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=900001">My Home Page</a></div>' } = {}) => {
-    const session = sharedSession || {};
+    peakbaggerLoginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=900001">My Home Page</a></div>' }: WorkerOptions = {}) => {
+    const session: SessionValues = sharedSession || {};
     const sync = { bpbSettings: structuredClone(settings) };
-    const local = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
+    const local: LocalValues = sharedLocal || (auth ? { bpbGithubAuth: structuredClone(auth) } : {});
     // These worker fixtures isolate ascent/favorites/settings transactions.
     // Model an existing ignored-list opt-out unless a test requests defaults.
     if (ignoredSync === false && local[IGNORED_SYNC_KEY] === undefined) {
-        local[IGNORED_SYNC_KEY] = { ...readIgnoredSyncState(undefined), enabled: false };
+        local[IGNORED_SYNC_KEY] = { ...required(readIgnoredSyncState(undefined)), enabled: false };
     }
-    const area = (values, { failGetAfterClear = false, getHook = null, setHook = null } = {}) => {
+    const area = (values: Values, { failGetAfterClear = false, getHook = null, setHook = null }: {
+        failGetAfterClear?: boolean; getHook?: StorageGetHook | null; setHook?: StorageSetHook | null;
+    } = {}) => {
         let cleared = false;
         return {
-            get: async keys => {
+            get: async (keys: string | string[]) => {
                 if (failGetAfterClear && cleared) throw new Error('local read failed after clear');
                 if (getHook) await getHook(keys, values);
                 const requested = Array.isArray(keys) ? keys : [keys];
                 return Object.fromEntries(requested.map(key => [key, structuredClone(values[key])]));
             },
-            set: async patch => {
+            set: async (patch: Values) => {
                 if (setHook) await setHook(structuredClone(patch), values);
                 Object.assign(values, structuredClone(patch));
                 if (Object.hasOwn(patch, 'bpbGithubAuth') && patch.bpbGithubAuth === null) cleared = true;
             },
-            remove: async key => { delete values[key]; },
+            remove: async (key: string) => { delete values[key]; },
         };
     };
-    const runtimeMessage = event();
-    const storageChanged = event();
+    const runtimeMessage = event<MessageListener>();
+    const storageChanged = event<StorageChangeListener>();
     const syncArea = area(sync);
     const readSync = syncArea.get;
     let syncReadCount = 0;
@@ -90,10 +176,10 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
         return readSync(key);
     };
     const alarms = {
-        created: [],
-        create(name, info) { this.created.push({ name, info: info || null }); },
+        created: [] as { name: string; info: { delayInMinutes?: number; periodInMinutes?: number } | null }[],
+        create(name: string, info?: { delayInMinutes?: number; periodInMinutes?: number }) { this.created.push({ name, info: info || null }); },
         clear: async () => true,
-        onAlarm: event(),
+        onAlarm: event<AlarmListener>(),
     };
     const browser = {
         storage: {
@@ -110,22 +196,23 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
             id: 'test',
             onMessage: runtimeMessage,
             getManifest: () => ({ version: '2.2.0' }),
-            getURL: p => `chrome-extension://test/${p || ''}`,
+            getURL: (p: string) => `chrome-extension://test/${p || ''}`,
         },
         tabs: { onRemoved: event() },
         alarms,
     };
-    const githubCalls = [];
-    const fetch = async (url, init = {}) => {
+    const githubCalls: { method: string; url: string; body: unknown }[] = [];
+    const fetch = async (url: string | URL, init: { method?: string; body?: string } = {}) => {
         const method = init.method || 'GET';
         if (String(url) === 'https://www.peakbagger.com/Default.aspx') {
             return respond(200, peakbaggerLoginHtml);
         }
-        let body = init.body;
-        if (body) {
+        let body: unknown = init.body;
+        if (typeof body === 'string' && body) {
             try { body = JSON.parse(body); } catch { /* OAuth device flow is form-encoded. */ }
         }
         githubCalls.push({ method, url: String(url), body });
+        assert.ok(github, 'fixture must route its GitHub requests');
         const reply = github(method, String(url).replace('https://api.github.com', '').split('?')[0], body);
         if (!reply) throw new Error(`unrouted ${method} ${url}`);
         return reply;
@@ -139,9 +226,9 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     // immediately and its requested delays are recorded instead. The schedule
     // is still asserted, so shortening the test cannot quietly change the
     // shipped contract.
-    const transientBackoffs = [];
+    const transientBackoffs: number[] = [];
     const TRANSIENT_DELAYS = new Set([400, 1200]);
-    const workerSetTimeout = (callback, delay = 0, ...args) => {
+    const workerSetTimeout = (callback: (...args: unknown[]) => void, delay = 0, ...args: unknown[]) => {
         if (fastAscentOperationTimeout && delay === 120_000) {
             return setTimeout(callback, 0, ...args);
         }
@@ -161,10 +248,10 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
-    const listener = runtimeMessage.listeners[0];
-    const rawSend = (message, sender = {}) => new Promise(resolve => { listener(message, { id: 'test', ...(sender.tab ? { frameId: 0 } : {}), ...sender }, resolve); });
+    const listener = required(runtimeMessage.listeners[0]);
+    const rawSend = (message: Message, sender: Sender = {}) => new Promise<Reply>(resolve => { listener(message, { id: 'test', ...(sender.tab ? { frameId: 0 } : {}), ...sender }, resolve); });
     let trustedActionSequence = 0;
-    const send = async (message, sender = {}) => {
+    const send = async (message: Message, sender: Sender = {}) => {
         const action = message?.type === 'GITHUB_BACKUP_ASCENT' && !message.auto
             ? 'ascent-backup'
             : message?.type === 'GITHUB_BACKUP_PROFILE_BATCH'
@@ -192,23 +279,36 @@ const createWorker = ({ settings = { enableGithubBackup: true }, auth = null, gi
     return {
         send, rawSend, session, local, sync, alarms, githubCalls, transientBackoffs,
         syncReadCount: () => syncReadCount,
-        fireStorageChange: (changes, areaName) => storageChanged.listeners.forEach(l => l(changes, areaName)),
-        fireAlarm: name => alarms.onAlarm.listeners.forEach(l => l({ name })),
+        fireStorageChange: (changes: Values, areaName: string) => storageChanged.listeners.forEach(l => l(changes, areaName)),
+        fireAlarm: (name: string) => alarms.onAlarm.listeners.forEach(l => l({ name })),
     };
 };
 
 // A scripted GitHub Git Data backend that records the tree it is asked to write.
 const gitDataBackend = () => {
-    const state = { blobs: {}, contents: {}, tree: null, n: 0, commits: 0 };
-    const handler = (method, path, body) => {
+    const state: {
+        blobs: Record<string, string>;
+        contents: Record<string, string>;
+        tree: GitTreeWrite | null;
+        n: number;
+        commits: number;
+    } = { blobs: {}, contents: {}, tree: null, n: 0, commits: 0 };
+    const handler: GithubEndpoint = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') return respond(200, { object: { sha: 'C0' } });
         if (method === 'GET' && path === '/repos/me/backup/git/commits/C0') return respond(200, { sha: 'C0', tree: { sha: 'T0' } });
         if (method === 'GET' && path === '/repos/me/backup/git/trees/T0') return respond(200, { tree: [] });
-        if (method === 'POST' && path === '/repos/me/backup/git/blobs') { const sha = `blob${++state.n}`; state.blobs[sha] = body.content; return respond(201, { sha }); }
+        if (method === 'POST' && path === '/repos/me/backup/git/blobs') {
+            assert.ok(body && typeof body === 'object' && 'content' in body && typeof body.content === 'string');
+            const sha = `blob${++state.n}`;
+            state.blobs[sha] = body.content;
+            return respond(201, { sha });
+        }
         if (method === 'POST' && path === '/repos/me/backup/git/trees') {
-            state.tree = body;
-            for (const entry of body.tree) {
+            assert.ok(body && typeof body === 'object' && 'tree' in body && Array.isArray(body.tree));
+            const tree = body as GitTreeWrite;
+            state.tree = tree;
+            for (const entry of tree.tree) {
                 if (typeof entry.content === 'string') state.contents[entry.path] = entry.content;
                 else if (entry.sha && state.blobs[entry.sha]) state.contents[entry.path] = state.blobs[entry.sha];
             }
@@ -228,7 +328,7 @@ const gitDataBackend = () => {
 // later read sees previous commits and out-of-band changes from another device.
 const rootDataBackend = () => {
     const backend = gitDataBackend();
-    return { state: backend.state, handler(method, path, body) {
+    return { state: backend.state, handler(method: string, path: string, body?: unknown) {
         if (method === 'GET' && path.endsWith('/git/trees/T0')) return respond(200, { tree:
             Object.entries(backend.state.contents).map(([name, content]) => ({
                 path: name, type: 'blob', sha: encodeURIComponent(name), size: Buffer.byteLength(content),
@@ -253,12 +353,13 @@ const LIST_SENDER = { tab: { id: 6 }, url: 'https://www.peakbagger.com/climber/C
 const EXTENSION_SENDER = { url: 'chrome-extension://test/options/options.html' };
 
 const SUBMITTED_REPORT = '[b]Great climb[/b] under blue skies.';
+type SnapshotAscent = NonNullable<AscentBackupSnapshot['ascent']> & { id: number | null };
 const editSnapshot = () => ({
     attemptId: 'save-attempt-1',
     key: '900001|2296|2026-07-12',
-    identity: { climberId: 900001, ascentId: null, peakId: 2296, date: '2026-07-12' },
+    identity: { climberId: 900001, ascentId: null as number | null, peakId: 2296, date: '2026-07-12' },
     snapshot: {
-        ascent: { id: null, date: '2026-07-12', suffix: '', gainFt: '9000', route: 'Disappointment Cleaver', gear: ['Ice Axe'] },
+        ascent: { id: null, date: '2026-07-12', suffix: '', gainFt: '9000', route: 'Disappointment Cleaver', gear: ['Ice Axe'] } as SnapshotAscent,
         peak: { id: 2296, name: 'Mount Rainier' },
         report: { submitted: SUBMITTED_REPORT, markdown: '**Great climb** under blue skies.' },
         backup: { extensionVersion: '2.2.0', syncedAt: null },
@@ -279,7 +380,7 @@ test('the worker rejects manual backup mutations without consumed trusted-action
     }, PEAK_SENDER);
 
     assert.equal(result.ok, false);
-    assert.equal(result.error.code, 'activation-required');
+    assert.equal(errorCode(result), 'activation-required');
     assert.equal(worker.githubCalls.length, 0);
 
     const profile = await worker.rawSend({
@@ -294,7 +395,7 @@ test('the worker rejects manual backup mutations without consumed trusted-action
         }],
     }, LIST_SENDER);
     assert.equal(profile.ok, false);
-    assert.equal(profile.error.code, 'activation-required');
+    assert.equal(errorCode(profile), 'activation-required');
     assert.equal(worker.githubCalls.length, 0);
 });
 
@@ -305,13 +406,13 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     // 1. The edit page stores the save-time snapshot.
     const stored = await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
     assert.equal(stored.ok, true);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey()]);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()]);
 
     // 2. The saved ascent page checks status.
     const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, PEAK_SENDER);
     assert.equal(status.enabled, true);
     assert.equal(status.connected, true);
-    assert.equal(status.repo.fullName, 'me/backup');
+    assert.equal(required(status.repo).fullName, 'me/backup');
     assert.equal('token' in status, false, 'status must never expose the token');
 
     // 3. The saved ascent page pushes the backup. The new aid (7654321) and the
@@ -336,12 +437,12 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     }, PEAK_SENDER);
 
     assert.equal(result.ok, true);
-    assert.equal(result.result.commitUrl, 'https://github.com/me/backup/commit/C1');
-    assert.equal(result.result.isUpdate, false);
-    assert.equal(result.result.folder, '2026-07-12-mount-rainier-a7654321');
+    assert.equal(required(result.result).commitUrl, 'https://github.com/me/backup/commit/C1');
+    assert.equal(required(result.result).isUpdate, false);
+    assert.equal(required(result.result).folder, '2026-07-12-mount-rainier-a7654321');
 
     // The one tree carries the repository marker and all three ascent files.
-    const paths = backend.state.tree.tree.map(e => e.path).sort();
+    const paths = required(backend.state.tree).tree.map(e => e.path).sort();
     assert.deepEqual(paths, [
         '.better-peakbagger.json',
         '2026-07-12-mount-rainier-a7654321/ascent.json',
@@ -350,8 +451,7 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     ]);
 
     // ascent.json merges page peak metadata with the snapshot's entered fields.
-    const jsonBlob = Object.entries(backend.state.contents)
-        .find(([path]) => path.endsWith('/ascent.json'))[1];
+    const jsonBlob = required(required(Object.entries(backend.state.contents).find(([path]) => path.endsWith('/ascent.json'))))[1];
     const json = JSON.parse(jsonBlob);
     assert.equal(json.ascent.id, 7654321);
     assert.equal(json.ascent.gainFt, 9000);
@@ -361,12 +461,11 @@ test('a saved ascent is backed up: snapshot + page merge, one commit, snapshot c
     assert.ok(json.backup.syncedAt, 'syncedAt is stamped at push time');
 
     // report.md carries the snapshot's resolved Markdown body.
-    const mdBlob = Object.entries(backend.state.contents)
-        .find(([path]) => path.endsWith('/report.md'))[1];
+    const mdBlob = required(required(Object.entries(backend.state.contents).find(([path]) => path.endsWith('/report.md'))))[1];
     assert.match(mdBlob, /\*\*Great climb\*\* under blue skies\./);
 
     // The snapshot has served its purpose and is dropped.
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()], undefined);
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()], undefined);
 });
 
 test('the worker compares a complete owner page with GitHub without writing', async () => {
@@ -389,7 +488,7 @@ test('the worker compares a complete owner page with GitHub without writing', as
     }, PEAK_SENDER);
     assert.equal(pushed.ok, true);
 
-    const folder = pushed.result.folder;
+    const folder = required(required(pushed.result).folder);
     const owned = Object.entries(backend.state.contents)
         .filter(([filePath]) => filePath.startsWith(`${folder}/`));
     let writes = 0;
@@ -443,13 +542,13 @@ test('the worker compares a complete owner page with GitHub without writing', as
     } });
 
     await reader.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
-    assert.ok(reader.session.bpbGithubSnapshots[storedSnapshotKey()]);
+    assert.ok(required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()]);
 
     const current = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx,
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(current), { ok: true, current: true });
-    assert.ok(reader.session.bpbGithubSnapshots[storedSnapshotKey()],
+    assert.ok(required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()],
         'an ordinary passive comparison must preserve the exact Markdown snapshot');
 
     const renamedAccount = await reader.send({
@@ -464,20 +563,20 @@ test('the worker compares a complete owner page with GitHub without writing', as
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,
     }, PEAK_SENDER);
     await waitFor(() => comparisonHeld);
-    const previousGeneration = reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation;
+    const previousGeneration = required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()].generation;
     await reader.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
-    const replacementGeneration = reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation;
+    const replacementGeneration = required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()].generation;
     assert.notEqual(replacementGeneration, previousGeneration);
     releaseComparison.resolve();
     assert.equal((await olderComparison).current, true);
-    assert.equal(reader.session.bpbGithubSnapshots[storedSnapshotKey()].generation, replacementGeneration,
+    assert.equal(required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()].generation, replacementGeneration,
         'a comparison must not consume a snapshot captured while its read was pending');
 
     const reconciled = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx, reconcile: true,
     }, PEAK_SENDER);
     assert.deepEqual(structuredClone(reconciled), { ok: true, current: true });
-    assert.equal(reader.session.bpbGithubSnapshots[storedSnapshotKey()], undefined,
+    assert.equal(required(reader.session.bpbGithubSnapshots)[storedSnapshotKey()], undefined,
         'outcome reconciliation consumes a snapshot only after the complete remote payload matches');
 
     const changedPage = structuredClone(page);
@@ -491,7 +590,7 @@ test('the worker compares a complete owner page with GitHub without writing', as
     const forbidden = await reader.send({
         type: 'GITHUB_CHECK_ASCENT_BACKUP', pageComplete: true, page, gpx,
     }, { tab: { id: 1 }, url: 'https://evil.example/ascent.aspx' });
-    assert.equal(forbidden.error.code, 'forbidden');
+    assert.equal(errorCode(forbidden), 'forbidden');
 });
 
 test('profile preflight lists repository folders without exposing the token', async () => {
@@ -499,7 +598,7 @@ test('profile preflight lists repository folders without exposing the token', as
     const worker = createWorker({ auth: AUTH, github: backend.handler });
     const status = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_STATUS' }, LIST_SENDER);
     assert.equal(status.ok, true);
-    assert.deepEqual(Array.from(status.folders), []);
+    assert.deepEqual(Array.from(required(status.folders)), []);
     assert.equal('token' in status, false);
 
 });
@@ -510,7 +609,7 @@ test('options summary reports only the marker-validated ascent count', async () 
         type: 'better-peakbagger-backup',
         layout: 'repository-root',
     }, null, 2)}\n`;
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') {
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         }
@@ -560,11 +659,11 @@ test('profile backfill validates and commits multiple ascents as one batch', asy
     const result = await worker.send({ type: 'GITHUB_BACKUP_PROFILE_BATCH', entries }, LIST_SENDER);
 
     assert.equal(result.ok, true);
-    assert.equal(result.result.count, 2);
-    assert.equal(result.result.message, 'Back up 2 ascents and TRs');
-    assert.equal(result.result.items.length, 2);
-    assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/ascent.json')).length, 2);
-    assert.equal(backend.state.tree.tree.filter(entry => entry.path.endsWith('/report.md')).length, 2);
+    assert.equal(required(result.result).count, 2);
+    assert.equal(required(result.result).message, 'Back up 2 ascents and TRs');
+    assert.equal(required(required(result.result).items).length, 2);
+    assert.equal(required(backend.state.tree).tree.filter(entry => entry.path.endsWith('/ascent.json')).length, 2);
+    assert.equal(required(backend.state.tree).tree.filter(entry => entry.path.endsWith('/report.md')).length, 2);
 });
 
 test('profile batches reject duplicate identities and more than ten entries before writing', async () => {
@@ -578,7 +677,7 @@ test('profile batches reject duplicate identities and more than ten entries befo
         type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [structuredClone(entry), structuredClone(entry)],
     }, LIST_SENDER);
     assert.equal(duplicate.ok, false);
-    assert.equal(duplicate.error.code, 'no-data');
+    assert.equal(errorCode(duplicate), 'no-data');
 
     const oversized = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH',
@@ -588,37 +687,36 @@ test('profile batches reject duplicate identities and more than ten entries befo
         })),
     }, LIST_SENDER);
     assert.equal(oversized.ok, false);
-    assert.equal(oversized.error.code, 'no-data');
+    assert.equal(errorCode(oversized), 'no-data');
     assert.equal(backend.state.tree, null);
 });
 
 test('the worker serializes competing profile batches before either reads the branch', async () => {
     let currentCommit = 'C0';
-    let repoReads = 0;
+    let authReads = 0;
+    const repoHeads: string[] = [];
     let treeNumber = 0;
     let commitNumber = 0;
-    let releaseFirstTree;
-    let markFirstTreeStarted;
-    const firstTreeStarted = new Promise(resolve => { markFirstTreeStarted = resolve; });
-    const firstTreeGate = new Promise(resolve => { releaseFirstTree = resolve; });
-    const github = (method, path) => {
+    const firstTreeStarted = deferred<void>();
+    const firstTreeGate = deferred<void>();
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') {
-            repoReads += 1;
+            repoHeads.push(currentCommit);
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         }
         if (method === 'GET' && path === '/repos/me/backup/git/ref/heads/main') {
             return respond(200, { object: { sha: currentCommit } });
         }
         if (method === 'GET' && path.startsWith('/repos/me/backup/git/commits/C')) {
-            const sha = path.split('/').at(-1);
+            const sha = required(path.split('/').at(-1));
             return respond(200, { sha, tree: { sha: `T${sha.slice(1)}` } });
         }
         if (method === 'GET' && path.startsWith('/repos/me/backup/git/trees/T')) return respond(200, { tree: [] });
         if (method === 'POST' && path === '/repos/me/backup/git/trees') {
             treeNumber += 1;
             if (treeNumber === 1) {
-                markFirstTreeStarted();
-                return firstTreeGate.then(() => respond(201, { sha: 'T1' }));
+                firstTreeStarted.resolve();
+                return firstTreeGate.promise.then(() => respond(201, { sha: 'T1' }));
             }
             return respond(201, { sha: `T${treeNumber}` });
         }
@@ -632,8 +730,10 @@ test('the worker serializes competing profile batches before either reads the br
         }
         return null;
     };
-    const worker = createWorker({ auth: AUTH, github });
-    const message = aid => ({
+    const worker = createWorker({ auth: AUTH, github,
+        localGetHook: keys => { if ([keys].flat().includes('bpbGithubAuth')) authReads++; },
+    });
+    const message = (aid: number) => ({
         type: 'GITHUB_BACKUP_PROFILE_BATCH',
         entries: [{
             aid,
@@ -642,23 +742,27 @@ test('the worker serializes competing profile batches before either reads the br
     });
 
     const first = worker.send(message(1), LIST_SENDER);
-    await firstTreeStarted;
+    await firstTreeStarted.promise;
+    const readsBeforeSecond = authReads;
     const second = worker.send(message(2), LIST_SENDER);
-    await Promise.resolve();
-    assert.equal(repoReads, 1, 'the second writer must wait before resolving the repository or reading its head');
-    releaseFirstTree();
+    try {
+        await waitFor(() => authReads > readsBeforeSecond);
+        assert.deepEqual(repoHeads, ['C0'], 'the authorized second writer must wait to resolve the repository');
+    } finally {
+        firstTreeGate.resolve();
+    }
     const [firstResult, secondResult] = await Promise.all([first, second]);
 
     assert.equal(firstResult.ok, true);
     assert.equal(secondResult.ok, true);
-    assert.equal(repoReads, 2);
+    assert.deepEqual(repoHeads, ['C0', 'C1']);
     assert.equal(currentCommit, 'C2');
 });
 
 test('favorites backup and restore stay extension-only, ignore the ascent gate, and keep the token in the worker', async () => {
     const backend = gitDataBackend();
     const restoreContent = '{"schemaVersion":1,"exportedAt":"2026-07-21T12:00:00.000Z","entries":[]}\n';
-    const github = (method, path, body) => {
+    const github: GithubEndpoint = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup/contents/favorite-climbers.json') {
             return respond(200, {
                 type: 'file', encoding: 'base64', content: Buffer.from(restoreContent).toString('base64'),
@@ -669,7 +773,7 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
     const entries = [{
         cid: 900002, name: 'Favorite Climber', addedAt: 10, source: 'manual',
     }];
-    const local = {
+    const local: LocalValues = {
         bpbGithubAuth: structuredClone(AUTH),
         [Favorites.FAVORITES_KEY]: { schemaVersion: Favorites.SCHEMA_VERSION, entries },
     };
@@ -682,14 +786,14 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
 
     const backup = await worker.send({ type: 'GITHUB_FAVORITES_BACKUP' }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
-    assert.equal(backup.result.path, 'favorite-climbers.json');
-    assert.equal(backup.result.repo, 'me/backup');
-    assert.equal(backup.result.signature, Favorites.backupSignature(local[Favorites.FAVORITES_KEY]));
+    assert.equal(required(backup.result).path, 'favorite-climbers.json');
+    assert.equal(required(backup.result).repo, 'me/backup');
+    assert.equal(required(backup.result).signature, Favorites.backupSignature(local[Favorites.FAVORITES_KEY]));
     const exported = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
     assert.equal(exported.ok, true);
     assert.deepEqual(structuredClone(exported.favorites.entries), entries);
-    assert.equal(worker.local.bpbFavoritesBackupState.signature, JSON.stringify(entries));
-    assert.equal(backend.state.tree.tree.find(entry => entry.path === 'favorite-climbers.json').type, 'blob');
+    assert.equal(required(worker.local.bpbFavoritesBackupState).signature, JSON.stringify(entries));
+    assert.equal(required(required(backend.state.tree).tree.find(entry => entry.path === 'favorite-climbers.json')).type, 'blob');
     assert.equal('token' in backup, false);
 
     worker.fireAlarm('bpb-favorites-backup');
@@ -707,10 +811,10 @@ test('favorites backup and restore stay extension-only, ignore the ascent gate, 
 
 test('explicit local ignored sync and legacy favorites backup work without the ascent backup gate', async () => {
     const backend = gitDataBackend();
-    const ignored = cid => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
+    const ignored = (cid: number) => ({ cid, name: `Climber ${cid}`, addedAt: 1 });
     const favorites = [{ cid: 3, name: 'Buddy', addedAt: 1, source: 'buddy' }];
     const worker = createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, ignoredSync: null,
-        local: { bpbGithubAuth: structuredClone(AUTH), [IGNORED_SYNC_KEY]: { ...readIgnoredSyncState(undefined), enabled: true },
+        local: { bpbGithubAuth: structuredClone(AUTH), [IGNORED_SYNC_KEY]: { ...required(readIgnoredSyncState(undefined)), enabled: true },
             [IGNORED_KEY]: { schemaVersion: 1, revision: 1, entries: [ignored(1)] },
             [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries: favorites } },
         github: (method, path, body) => {
@@ -721,13 +825,15 @@ test('explicit local ignored sync and legacy favorites backup work without the a
             return backend.handler(method, path, body);
         } });
     await waitFor(() => worker.local[IGNORED_SYNC_KEY]?.phase === 'synced');
-    assert.equal(worker.local[IGNORED_SYNC_KEY].enabled, true);
-    assert.deepEqual(new Set(parseIgnoredBackup(backend.state.contents['ignored-climbers.json']).map(e => e.cid)), new Set([1,2]));
+    assert.equal(required(worker.local[IGNORED_SYNC_KEY]).enabled, true);
+    assert.deepEqual(new Set(required(parseIgnoredBackup(backend.state.contents['ignored-climbers.json'])).map(e => e.cid)), new Set([1,2]));
     worker.fireStorageChange({ bpbGithubAuth: { newValue: structuredClone(AUTH) } }, 'local');
     await waitFor(() => worker.alarms.created.some(alarm => alarm.name === 'bpb-favorites-backup'));
     worker.fireAlarm('bpb-favorites-backup');
     await waitFor(() => worker.local.bpbFavoritesBackupState?.syncedAt);
-    assert.deepEqual(Favorites.parseBackup(backend.state.contents['favorite-climbers.json']).favorites.entries, favorites);
+    const remoteFavorites = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
+    assert.ok(remoteFavorites.ok);
+    assert.deepEqual(remoteFavorites.favorites.entries, favorites);
 });
 
 test('favorites default-on backup fails closed on an unreadable settings gate and retries safely', async () => {
@@ -756,8 +862,8 @@ test('an empty favorite list is a valid worker-built backup', async () => {
 
 test('enabling or changing favorites schedules one automatic backup and restore does not push', async () => {
     const backend = gitDataBackend();
-    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual' }];
-    const local = {
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
+    const local: LocalValues = {
         bpbGithubAuth: structuredClone(AUTH),
         [Favorites.FAVORITES_KEY]: { schemaVersion: 1, entries },
     };
@@ -802,7 +908,7 @@ test('enabling or changing favorites schedules one automatic backup and restore 
 
 test('favorites auto backup stays inert while off and retries failures only twice', async () => {
     const favorite = { schemaVersion: 1, entries: [{
-        cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual',
+        cid: 7, name: 'Seven', addedAt: 10, source: 'manual',
     }] };
     const off = createWorker({
         settings: { autoFavoritesBackup: false },
@@ -815,7 +921,7 @@ test('favorites auto backup stays inert while off and retries failures only twic
     await settleQuietly();
     assert.equal(off.local.bpbFavoritesBackupState, undefined, 'a saved opt-out prevents watchdog writes');
 
-    const failing = (method, path) => {
+    const failing: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
         return null;
     };
@@ -842,7 +948,7 @@ test('favorites auto backup stays inert while off and retries failures only twic
 });
 
 test('favorites restore reports an absent file and ignores the ascent-backup feature gate', async () => {
-    const missing = (method, path) => {
+    const missing: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') {
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         }
@@ -864,15 +970,15 @@ test('favorites restore reports an absent file and ignores the ascent-backup fea
     assert.equal(independent.content, null);
 
     const disconnected = createWorker({ auth: null, github: missing });
-    assert.equal((await disconnected.send({
+    assert.equal(errorCode(await disconnected.send({
         type: 'GITHUB_FAVORITES_RESTORE',
-    }, EXTENSION_SENDER)).error.code, 'not-connected');
+    }, EXTENSION_SENDER)), 'not-connected');
 });
 
 test('the built worker keeps credentials out of manual settings files unless explicitly included', async () => {
     const garminDB = new IDBFactory();
     const garmin = createGarminStore(garminDB);
-    await garmin.mutate(state => { state.connection = { key: 'fictional-personal-key-for-export', enabled: false }; });
+    await garmin.mutate(state => { state.connection = { key: 'fictional-personal-key-for-export', enabled: false } as GarminConnection; });
     await garmin.close();
     const worker = createWorker({
         garminDB,
@@ -887,6 +993,7 @@ test('the built worker keeps credentials out of manual settings files unless exp
     const exported = await worker.send({ type: 'SETTINGS_FILE_EXPORT' }, EXTENSION_SENDER);
     assert.equal(exported.ok, true);
     const parsed = Transfer.parse(exported.content);
+    assert.ok(parsed.ok);
     assert.equal(parsed.settings.theme, 'dark');
     // One opt-in covers all device-local credentials; without it the built
     // worker emits neither.
@@ -897,10 +1004,12 @@ test('the built worker keeps credentials out of manual settings files unless exp
         type: 'SETTINGS_FILE_EXPORT', includeCredentials: true,
     }, EXTENSION_SENDER);
     assert.equal(sensitive.ok, true);
-    assert.deepEqual(Transfer.parse(sensitive.content).apiKeys, {
+    const withCredentials = Transfer.parse(sensitive.content);
+    assert.ok(withCredentials.ok);
+    assert.deepEqual(withCredentials.apiKeys, {
         imgbb: 'old-imgbb-key', garmin: 'fictional-personal-key-for-export',
     });
-    assert.deepEqual(Transfer.parse(sensitive.content).githubConnection, {
+    assert.deepEqual(withCredentials.githubConnection, {
         token: 'gho_secret',
         repository: { owner: 'me', name: 'backup' },
     });
@@ -917,16 +1026,16 @@ test('the built worker keeps credentials out of manual settings files unless exp
     assert.equal(imported.ok, true);
     assert.equal(worker.sync.bpbSettings.theme, 'light');
     assert.equal(worker.sync.bpbSettings.units, 'metric');
-    assert.equal(worker.local.bpbImgbbAuth.key, 'new-imgbb-key');
+    assert.equal(required(worker.local.bpbImgbbAuth).key, 'new-imgbb-key');
 
     const forbidden = await worker.send({ type: 'SETTINGS_FILE_EXPORT' }, PEAK_SENDER);
-    assert.equal(forbidden.error.code, 'forbidden');
+    assert.equal(errorCode(forbidden), 'forbidden');
     assert.equal('content' in forbidden, false);
 });
 
 test('the built worker validates an imported GitHub token and repository before replacing local state', async () => {
     const backend = gitDataBackend();
-    const github = (method, path, body) => {
+    const github: GithubEndpoint = (method, path, body) => {
         if (method === 'GET' && path === '/user') return respond(200, { login: 'me', id: 9 });
         if (method === 'GET' && path === '/user/installations') {
             return respond(200, {
@@ -971,12 +1080,12 @@ test('the built worker validates an imported GitHub token and repository before 
     assert.equal(imported.ok, true);
     assert.equal(imported.githubConnectionImported, true);
     assert.equal(worker.sync.bpbSettings.theme, 'light');
-    assert.equal(worker.local.bpbGithubAuth.token, 'ghu_imported_token');
-    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth.account), { login: 'me', id: 9 });
-    assert.deepEqual(structuredClone(worker.local.bpbGithubAuth.repo), {
+    assert.equal(required(worker.local.bpbGithubAuth).token, 'ghu_imported_token');
+    assert.deepEqual(structuredClone(required(worker.local.bpbGithubAuth).account), { login: 'me', id: 9 });
+    assert.deepEqual(structuredClone(required(worker.local.bpbGithubAuth).repo), {
         owner: 'me', name: 'backup', branch: 'main', id: 123, fullName: 'me/backup',
     });
-    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+    assert.equal(required(worker.local.bpbGithubAuth).installationId, 7);
     assert.ok(worker.githubCalls.some(call => call.url === 'https://api.github.com/user'));
     assert.ok(worker.githubCalls.some(call => call.url.includes('/user/installations')));
     assert.ok(worker.githubCalls.some(call => call.url === 'https://api.github.com/repos/me/backup'));
@@ -989,7 +1098,7 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
         exportedAt: '2026-07-21T12:00:00.000Z',
     });
     const restoreContent = Transfer.serialize(restorePayload);
-    const github = (method, path, body) => {
+    const github: GithubEndpoint = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup/contents/settings.json') {
             return respond(200, {
                 type: 'file', encoding: 'base64', content: Buffer.from(restoreContent).toString('base64'),
@@ -1008,9 +1117,9 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
 
     const backup = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
     assert.equal(backup.ok, true);
-    assert.equal(backup.result.path, 'settings.json');
-    assert.equal(backup.result.repo, 'me/backup');
-    assert.equal(backup.result.signature, Transfer.signature(worker.sync.bpbSettings));
+    assert.equal(required(backup.result).path, 'settings.json');
+    assert.equal(required(backup.result).repo, 'me/backup');
+    assert.equal(required(backup.result).signature, Transfer.signature(worker.sync.bpbSettings));
     const committed = JSON.parse(backend.state.contents['settings.json']);
     assert.equal(committed.kind, Transfer.KIND);
     assert.equal(committed.extensionVersion, '2.2.0');
@@ -1022,15 +1131,17 @@ test('settings backup and restore stay extension-only and ignore the ascent-back
         'GitHub settings backup must remain credential-free even when a local API key exists');
     assert.equal('githubConnection' in committed, false,
         'GitHub settings backup must never write its own bearer token into the repository');
-    assert.equal(worker.local.bpbSettingsBackupState.signature,
+    assert.equal(required(worker.local.bpbSettingsBackupState).signature,
         Transfer.signature(Schema.clean({ enableGithubBackup: false, theme: 'dark', showSunMoon: false, showWeather: false })));
     assert.equal('token' in backup, false);
 
     const restore = await worker.send({ type: 'GITHUB_SETTINGS_RESTORE' }, EXTENSION_SENDER);
     assert.equal(restore.ok, true);
     assert.equal(restore.content, restoreContent);
-    assert.equal(Transfer.parse(restore.content).settings.showSunMoon, false);
-    assert.equal(Transfer.parse(restore.content).settings.showWeather, false);
+    const restored = Transfer.parse(restore.content);
+    assert.ok(restored.ok);
+    assert.equal(restored.settings.showSunMoon, false);
+    assert.equal(restored.settings.showWeather, false);
     assert.equal('token' in restore, false);
 
     const forbidden = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, PEAK_SENDER);
@@ -1048,16 +1159,16 @@ test('custom source and opacity edits trigger settings backups and remote layer 
     const payload = JSON.parse(backend.state.contents['settings.json']);
     assert.equal(payload.customLayers.sources[0].source.tiles[0], source.source.tiles[0]);
     assert.equal(payload.customLayers.preferences[source.id], 35);
-    const signature = worker.local.bpbSettingsBackupState.signature, previousAlarms = worker.alarms.created.length;
-    worker.local.bpbCustomMapOverlayPreferencesV1[source.id] = 70;
+    const signature = required(worker.local.bpbSettingsBackupState).signature, previousAlarms = worker.alarms.created.length;
+    required(worker.local.bpbCustomMapOverlayPreferencesV1)[source.id] = 70;
     worker.fireStorageChange({ bpbCustomMapOverlayPreferencesV1: { newValue: { [source.id]: 70 } } }, 'local');
     await waitFor(() => worker.alarms.created.slice(previousAlarms).some(alarm => alarm.name === 'bpb-settings-backup'));
-    worker.fireAlarm('bpb-settings-backup'); await waitFor(() => worker.local.bpbSettingsBackupState.signature !== signature);
+    worker.fireAlarm('bpb-settings-backup'); await waitFor(() => required(worker.local.bpbSettingsBackupState).signature !== signature);
     assert.equal(JSON.parse(backend.state.contents['settings.json']).customLayers.preferences[source.id], 70);
     const different = JSON.parse(backend.state.contents['settings.json']); different.customLayers.sources[0].name = 'Remote replacement';
     backend.state.contents['settings.json'] = JSON.stringify(different);
     const result = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
-    assert.equal(result.error.code, 'backup-review'); assert.equal(JSON.parse(backend.state.contents['settings.json']).customLayers.sources[0].name, 'Remote replacement');
+    assert.equal(errorCode(result), 'backup-review'); assert.equal(JSON.parse(backend.state.contents['settings.json']).customLayers.sources[0].name, 'Remote replacement');
 });
 
 test('manual settings backup preserves the remote file on read failure and retries authoritative settings', async () => {
@@ -1186,7 +1297,7 @@ test('settings auto backup debounces changes, commits once, and skips an equal s
 // read/commit/update-ref round trips and two commits seconds apart.
 test('settings and favorites automatic backups fired together commit once', async () => {
     const backend = gitDataBackend();
-    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual', source: 'manual' }];
+    const entries = [{ cid: 7, name: 'Seven', addedAt: 10, source: 'manual' }];
     const worker = createWorker({
         settings: { autoSettingsBackup: true, autoFavoritesBackup: true, theme: 'dark' },
         auth: AUTH,
@@ -1207,13 +1318,13 @@ test('settings and favorites automatic backups fired together commit once', asyn
     const favorites = Favorites.parseBackup(backend.state.contents['favorite-climbers.json']);
     assert.equal(favorites.ok, true);
     assert.deepEqual(structuredClone(favorites.favorites.entries), entries);
-    assert.deepEqual(backend.state.tree.tree.map(entry => entry.path).sort(),
+    assert.deepEqual(required(backend.state.tree).tree.map(entry => entry.path).sort(),
         ['.better-peakbagger.json', 'favorite-climbers.json', 'settings.json']);
 
     // Each writer still records only its own signature as synced.
-    assert.equal(worker.local.bpbSettingsBackupState.signature,
+    assert.equal(required(worker.local.bpbSettingsBackupState).signature,
         Transfer.signature(Schema.clean(structuredClone(worker.sync.bpbSettings))));
-    assert.equal(worker.local.bpbFavoritesBackupState.signature, JSON.stringify(entries));
+    assert.equal(required(worker.local.bpbFavoritesBackupState).signature, JSON.stringify(entries));
 
     worker.fireAlarm('bpb-settings-backup');
     worker.fireAlarm('bpb-favorites-backup');
@@ -1236,13 +1347,13 @@ test('a manual backup that overtakes a queued one still reports the repository s
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
     assert.equal(backend.state.commits, 1, 'a repeated write to one path squashes into one commit');
-    assert.equal(first.result.sha, second.result.sha);
-    assert.equal(first.result.superseded, true);
-    assert.equal(second.result.superseded, false);
-    assert.equal(second.result.signature, Transfer.signature(worker.sync.bpbSettings));
-    assert.equal(first.result.path, 'settings.json');
+    assert.equal(required(first.result).sha, required(second.result).sha);
+    assert.equal(required(first.result).superseded, true);
+    assert.equal(required(second.result).superseded, false);
+    assert.equal(required(second.result).signature, Transfer.signature(worker.sync.bpbSettings));
+    assert.equal(required(first.result).path, 'settings.json');
     assert.equal(JSON.parse(backend.state.contents['settings.json']).settings.theme, 'dark');
-    assert.equal(worker.local.bpbSettingsBackupState.signature,
+    assert.equal(required(worker.local.bpbSettingsBackupState).signature,
         Transfer.signature(Schema.clean(structuredClone(worker.sync.bpbSettings))));
 });
 
@@ -1256,7 +1367,7 @@ test('settings auto backup stays inert while off and retries failures only twice
     await settleQuietly();
     assert.equal(off.local.bpbSettingsBackupState, undefined, 'a saved opt-out prevents watchdog writes');
 
-    const failing = (method, path) => {
+    const failing: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(500, { message: 'Nope' });
         return null;
     };
@@ -1275,14 +1386,14 @@ test('settings auto backup stays inert while off and retries failures only twice
 test('settings backup reports disconnected and missing-repository states', async () => {
     const github = gitDataBackend().handler;
     const disconnected = createWorker({ auth: null, github });
-    assert.equal((await disconnected.send({
+    assert.equal(errorCode(await disconnected.send({
         type: 'GITHUB_SETTINGS_BACKUP',
-    }, EXTENSION_SENDER)).error.code, 'not-connected');
+    }, EXTENSION_SENDER)), 'not-connected');
 
     const missingRepo = createWorker({ auth: { token: 'gho_secret' }, github });
-    assert.equal((await missingRepo.send({
+    assert.equal(errorCode(await missingRepo.send({
         type: 'GITHUB_SETTINGS_RESTORE',
-    }, EXTENSION_SENDER)).error.code, 'no-repo');
+    }, EXTENSION_SENDER)), 'no-repo');
 });
 
 test('profile messages require ClimbListC and matching ascent identity', async () => {
@@ -1292,43 +1403,43 @@ test('profile messages require ClimbListC and matching ascent identity', async (
     const wrongSurface = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [{ aid: 7, snapshot }],
     }, PEAK_SENDER);
-    assert.equal(wrongSurface.error.code, 'forbidden');
+    assert.equal(errorCode(wrongSurface), 'forbidden');
     const mismatched = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH', entries: [{ aid: 9, snapshot }],
     }, LIST_SENDER);
-    assert.equal(mismatched.error.code, 'no-data');
+    assert.equal(errorCode(mismatched), 'no-data');
 });
 
 test('My Ascents is extension-only and unavailable browser verification never falls back to worker cookies', async () => {
     const worker = createWorker({ auth: AUTH, github: gitDataBackend().handler });
     const result = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, EXTENSION_SENDER);
     assert.equal(result.ok, false, 'this transaction harness deliberately has no page-session browser APIs');
-    assert.equal(result.error.code, 'peakbagger-tab-access-failed');
+    assert.equal(errorCode(result), 'peakbagger-tab-access-failed');
     const forbidden = await worker.send({ type: 'PEAKBAGGER_MY_ASCENTS' }, PEAK_SENDER);
     assert.equal(forbidden.error, 'forbidden');
 });
 
 test('backup fails closed when the feature is off, disconnected, or the sender is not Peakbagger', async () => {
     const backend = gitDataBackend();
-    const push = sender => createWorker({ auth: AUTH, github: backend.handler }).send({
+    const push = (sender: Sender) => createWorker({ auth: AUTH, github: backend.handler }).send({
         type: 'GITHUB_BACKUP_ASCENT',
         page: { ascent: { id: 1 }, peak: { id: 2, name: 'X' } },
     }, sender);
 
     // A non-Peakbagger sender is refused.
-    assert.equal((await push({ tab: { id: 1 }, url: 'https://evil.example/' })).error.code, 'forbidden');
+    assert.equal(errorCode(await push({ tab: { id: 1 }, url: 'https://evil.example/' })), 'forbidden');
 
     // Disconnected (no token).
     const noAuth = await createWorker({ auth: null, github: backend.handler }).send({
         type: 'GITHUB_BACKUP_ASCENT', page: { ascent: { id: 1 }, peak: { id: 2, name: 'X' } },
     }, PEAK_SENDER);
-    assert.equal(noAuth.error.code, 'disabled');
+    assert.equal(errorCode(noAuth), 'disabled');
 
     // Feature disabled.
     const off = await createWorker({ settings: { enableGithubBackup: false }, auth: AUTH, github: backend.handler }).send({
         type: 'GITHUB_BACKUP_ASCENT', page: { ascent: { id: 1 }, peak: { id: 2, name: 'X' } },
     }, PEAK_SENDER);
-    assert.equal(off.error.code, 'disabled');
+    assert.equal(errorCode(off), 'disabled');
 });
 
 test('ascent deletion requires intent plus authenticated complete-list absence before removing owned GitHub files', async () => {
@@ -1340,9 +1451,8 @@ test('ascent deletion requires intent plus authenticated complete-list absence b
         type: 'better-peakbagger-backup',
         layout: 'repository-root',
     }, null, 2)}\n`;
-    let writtenTree = null;
-    let refPatch = null;
-    const github = (method, path, body) => {
+    const writes: { tree?: GitTreeWrite; ref?: unknown } = {};
+    const github: GithubEndpoint = (method, path, body) => {
         if (method === 'GET' && path === '/repos/me/backup') {
             return respond(200, { default_branch: 'main', archived: false, permissions: { push: true } });
         }
@@ -1371,14 +1481,15 @@ test('ascent deletion requires intent plus authenticated complete-list absence b
             ] });
         }
         if (method === 'POST' && path === '/repos/me/backup/git/trees') {
-            writtenTree = body;
+            assert.ok(body && typeof body === 'object' && 'tree' in body && Array.isArray(body.tree));
+            writes.tree = body as GitTreeWrite;
             return respond(201, { sha: 'T1' });
         }
         if (method === 'POST' && path === '/repos/me/backup/git/commits') {
             return respond(201, { sha: 'D1', html_url: 'https://github.com/me/backup/commit/D1' });
         }
         if (method === 'PATCH' && path === '/repos/me/backup/git/refs/heads/main') {
-            refPatch = body;
+            writes.ref = body;
             return respond(200, { object: { sha: 'D1' } });
         }
         return null;
@@ -1415,17 +1526,17 @@ test('ascent deletion requires intent plus authenticated complete-list absence b
 
     assert.equal(deleted.ok, true);
     assert.equal(deleted.confirmed, true);
-    assert.equal(deleted.result.removedFileCount, 3);
-    assert.equal(deleted.result.commitUrl, 'https://github.com/me/backup/commit/D1');
-    assert.deepEqual(writtenTree.tree, [
+    assert.equal(required(deleted.result).removedFileCount, 3);
+    assert.equal(required(deleted.result).commitUrl, 'https://github.com/me/backup/commit/D1');
+    assert.deepEqual(required(writes.tree).tree, [
         { path: `${folder}/report.md`, mode: '100644', type: 'blob', sha: null },
         { path: `${folder}/ascent.json`, mode: '100644', type: 'blob', sha: null },
         { path: `${folder}/track.gpx`, mode: '100644', type: 'blob', sha: null },
     ]);
-    assert.ok(!writtenTree.tree.some(entry => /notes\.md|README\.md/.test(entry.path)),
+    assert.ok(!required(writes.tree).tree.some(entry => /notes\.md|README\.md/.test(entry.path)),
         'user-added folder and root files must survive');
-    assert.deepEqual(refPatch, { sha: 'D1', force: false });
-    assert.equal(worker.session.bpbGithubAscentDeleteIntents[String(aid)].state, 'completed');
+    assert.deepEqual(writes.ref, { sha: 'D1', force: false });
+    assert.equal(required(worker.session.bpbGithubAscentDeleteIntents)[String(aid)].state, 'completed');
     assert.deepEqual(structuredClone(await worker.send({
         type: 'GITHUB_ASCENT_DELETE_PENDING',
     }, listSender)), { ok: true, aids: [] });
@@ -1451,12 +1562,12 @@ test('deletion intent is strict, same-tab scoped, and cancelled when the ascent 
         tab: { id: 71 },
         url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
     });
-    assert.equal(wrongPath.error.code, 'forbidden');
+    assert.equal(errorCode(wrongPath), 'forbidden');
     const mismatched = await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, {
         tab: { id: 71 },
         url: 'https://www.peakbagger.com/climber/ascentedit.aspx?aid=7654322',
     });
-    assert.equal(mismatched.error.code, 'forbidden');
+    assert.equal(errorCode(mismatched), 'forbidden');
 
     await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, editSender);
     assert.deepEqual(structuredClone(await worker.send({
@@ -1471,7 +1582,7 @@ test('deletion intent is strict, same-tab scoped, and cancelled when the ascent 
         pageComplete: true,
     }, listSender));
     assert.deepEqual(retained, { ok: true, confirmed: false, reason: 'still-present' });
-    assert.equal(worker.session.bpbGithubAscentDeleteIntents[String(aid)], undefined);
+    assert.equal(required(worker.session.bpbGithubAscentDeleteIntents)[String(aid)], undefined);
     assert.equal(worker.githubCalls.length, 0);
 });
 
@@ -1509,7 +1620,7 @@ test('every deletion phase preserves intent when authoritative settings are unre
     const intentFailure = structuredClone(await intentWorker.send({
         type: 'GITHUB_ASCENT_DELETE_INTENT', aid,
     }, editSender));
-    assert.equal(intentFailure.error.code, 'settings-unavailable');
+    assert.equal(errorCode(intentFailure), 'settings-unavailable');
     assert.equal(intentWorker.session.bpbGithubAscentDeleteIntents, undefined,
         'an unreadable gate must not fabricate a deletion intent');
 
@@ -1523,8 +1634,8 @@ test('every deletion phase preserves intent when authoritative settings are unre
     const pendingFailure = structuredClone(await pendingWorker.send({
         type: 'GITHUB_ASCENT_DELETE_PENDING',
     }, listSender));
-    assert.equal(pendingFailure.error.code, 'settings-unavailable');
-    assert.equal(pendingWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+    assert.equal(errorCode(pendingFailure), 'settings-unavailable');
+    assert.equal(required(pendingWorker.session.bpbGithubAscentDeleteIntents)[aid].state, 'pending');
 
     const confirmWorker = createWorker({
         settings,
@@ -1540,8 +1651,8 @@ test('every deletion phase preserves intent when authoritative settings are unre
         allAscentIds: [],
         pageComplete: true,
     }, listSender));
-    assert.equal(confirmFailure.error.code, 'settings-unavailable');
-    assert.equal(confirmWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+    assert.equal(errorCode(confirmFailure), 'settings-unavailable');
+    assert.equal(required(confirmWorker.session.bpbGithubAscentDeleteIntents)[aid].state, 'pending');
 
     const queuedWorker = createWorker({
         settings,
@@ -1557,8 +1668,8 @@ test('every deletion phase preserves intent when authoritative settings are unre
         allAscentIds: [],
         pageComplete: true,
     }, listSender));
-    assert.equal(queuedFailure.error.code, 'settings-unavailable');
-    assert.equal(queuedWorker.session.bpbGithubAscentDeleteIntents[aid].state, 'pending');
+    assert.equal(errorCode(queuedFailure), 'settings-unavailable');
+    assert.equal(required(queuedWorker.session.bpbGithubAscentDeleteIntents)[aid].state, 'pending');
     assert.equal(queuedWorker.githubCalls.length, 0);
 });
 
@@ -1582,10 +1693,10 @@ test('a deletion tombstone clears pending save data and prevents backup resurrec
         url: `https://www.peakbagger.com/climber/ascentedit.aspx?aid=${aid}&cid=900001`,
     };
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, editSender);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending, editSender)]);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(pending, editSender)]);
 
     await worker.send({ type: 'GITHUB_ASCENT_DELETE_INTENT', aid }, editSender);
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending, editSender)], undefined);
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(pending, editSender)], undefined);
 
     const blocked = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT',
@@ -1596,13 +1707,13 @@ test('a deletion tombstone clears pending save data and prevents backup resurrec
         tab: { id: tabId },
         url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
     });
-    assert.equal(blocked.error.code, 'ascent-delete-pending');
+    assert.equal(errorCode(blocked), 'ascent-delete-pending');
 
     const batch = await worker.send({
         type: 'GITHUB_BACKUP_PROFILE_BATCH',
         entries: [{ aid, snapshot: pending.snapshot, gpx: null }],
     }, LIST_SENDER);
-    assert.equal(batch.error.code, 'ascent-delete-pending');
+    assert.equal(errorCode(batch), 'ascent-delete-pending');
     assert.equal(worker.githubCalls.length, 0);
 });
 
@@ -1623,7 +1734,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.deepEqual(structuredClone(revisitStatus), { ok: true, fresh: false });
     const revisit = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
     assert.equal(revisit.ok, false);
-    assert.equal(revisit.error.code, 'no-fresh-save');
+    assert.equal(errorCode(revisit), 'no-fresh-save');
 
     // After a save-time snapshot, the same auto push commits.
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...editSnapshot() }, EDIT_SENDER);
@@ -1633,7 +1744,7 @@ test('automatic backup declines on a revisit with no fresh snapshot, but pushes 
     assert.deepEqual(structuredClone(freshStatus), { ok: true, fresh: true });
     const pushed = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
     assert.equal(pushed.ok, true);
-    assert.equal(pushed.result.commitUrl, 'https://github.com/me/backup/commit/C1');
+    assert.equal(required(pushed.result).commitUrl, 'https://github.com/me/backup/commit/C1');
 
     // The status query reports the auto preference to the surface.
     const status = await worker.send({ type: 'GITHUB_BACKUP_STATUS' }, EDIT_SENDER);
@@ -1663,20 +1774,20 @@ test('an individual ascent and TR backup has an overall deadline and retains its
     }, PEAK_SENDER);
 
     assert.equal(result.ok, false);
-    assert.equal(result.error.code, 'timeout');
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)],
+    assert.equal(errorCode(result), 'timeout');
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(pending)],
         'an outcome-unknown timeout must retain the save-time snapshot for reconciliation');
 });
 
 test('a queued ascent write is superseded by repository replacement before it starts', async () => {
     const backend = gitDataBackend();
-    const held = deferred();
-    let heldRequest = null;
+    const held = deferred<GithubFetchResponse | null | undefined>();
+    const firstRequest: { value?: { method: string; normalized: string; body: unknown } } = {};
     let authReads = 0;
-    const github = (method, path, body) => {
+    const github: GithubEndpoint = (method, path, body) => {
         const normalized = path.replace('/repos/me/replacement', '/repos/me/backup');
-        if (!heldRequest) {
-            heldRequest = { method, normalized, body };
+        if (!firstRequest.value) {
+            firstRequest.value = { method, normalized, body };
             return held.promise;
         }
         return backend.handler(method, normalized, body);
@@ -1692,7 +1803,7 @@ test('a queued ascent write is superseded by repository replacement before it st
     });
 
     const blocker = worker.send({ type: 'GITHUB_SETTINGS_BACKUP' }, EXTENSION_SENDER);
-    await waitFor(() => heldRequest != null);
+    await waitFor(() => firstRequest.value != null);
     const readsBeforeQueuedAction = authReads;
     const queued = worker.send({
         type: 'GITHUB_BACKUP_ASCENT',
@@ -1715,12 +1826,13 @@ test('a queued ascent write is superseded by repository replacement before it st
         },
     };
     worker.local.bpbGithubAuthEpoch = 1;
-    held.resolve(backend.handler(heldRequest.method, heldRequest.normalized, heldRequest.body));
-    assert.equal((await blocker).error.code, 'superseded', 'root writes also recheck connection before committing');
+    const request = required(firstRequest.value);
+    held.resolve(backend.handler(request.method, request.normalized, request.body));
+    assert.equal(errorCode(await blocker), 'superseded', 'root writes also recheck connection before committing');
 
     const stale = await queued;
     assert.equal(stale.ok, false);
-    assert.equal(stale.error.code, 'superseded');
+    assert.equal(errorCode(stale), 'superseded');
     assert.equal(worker.githubCalls.some(call => call.url.includes('/repos/me/replacement')), false,
         'the delayed action must not switch repositories behind the user');
 
@@ -1776,12 +1888,11 @@ test('an edited ascent matches its save snapshot by aid after peak and date chan
     }, PEAK_SENDER);
 
     assert.equal(result.ok, true);
-    assert.equal(result.result.folder, '2026-07-13-mount-garibaldi-a7654321');
-    const report = Object.entries(backend.state.contents)
-        .find(([path]) => path.endsWith('/report.md'))[1];
+    assert.equal(required(result.result).folder, '2026-07-13-mount-garibaldi-a7654321');
+    const report = required(required(Object.entries(backend.state.contents).find(([path]) => path.endsWith('/report.md'))))[1];
     assert.match(report, /Exact \*\*edited\*\* Markdown\./,
         'the aid match preserves the save-time exact Markdown sidecar');
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)], undefined,
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(pending)], undefined,
         'the edited-ascent snapshot is consumed after the push');
 });
 
@@ -1799,15 +1910,15 @@ test('identical new ascents in separate tabs retain and consume their own save s
 
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...first }, firstSender);
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...second }, secondSender);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)]);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)]);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(first, firstSender)]);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(second, secondSender)]);
 
-    const page = aid => ({
+    const page = (aid: number) => ({
         ascent: { id: aid, date: '2026-07-12' },
         peak: { id: 2296, name: 'Mount Rainier' },
         report: { submitted: SUBMITTED_REPORT, markdown: 'Persisted fallback.' },
     });
-    const savedSender = (tabId, aid) => ({
+    const savedSender = (tabId: number, aid: number) => ({
         tab: { id: tabId },
         url: `https://www.peakbagger.com/climber/ascent.aspx?aid=${aid}`,
     });
@@ -1819,9 +1930,9 @@ test('identical new ascents in separate tabs retain and consume their own save s
         auto: true,
     }, savedSender(43, 7000003));
     assert.equal(unrelated.ok, false);
-    assert.equal(unrelated.error.code, 'no-fresh-save');
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)]);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)],
+    assert.equal(errorCode(unrelated), 'no-fresh-save');
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(first, firstSender)]);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(second, secondSender)],
         'an unrelated tab must consume neither pre-id snapshot');
 
     const firstPush = await worker.send({
@@ -1831,11 +1942,10 @@ test('identical new ascents in separate tabs retain and consume their own save s
         auto: true,
     }, savedSender(41, 7000001));
     assert.equal(firstPush.ok, true);
-    let report = Object.entries(backend.state.contents)
-        .find(([path]) => path.includes('a7000001/') && path.endsWith('/report.md'))[1];
+    let report = required(required(Object.entries(backend.state.contents).find(([path]) => path.includes('a7000001/') && path.endsWith('/report.md'))))[1];
     assert.match(report, /First tab report/);
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(first, firstSender)], undefined);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)],
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(first, firstSender)], undefined);
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(second, secondSender)],
         'consuming the first tab must leave the second tab pending');
 
     const secondPush = await worker.send({
@@ -1845,10 +1955,9 @@ test('identical new ascents in separate tabs retain and consume their own save s
         auto: true,
     }, savedSender(42, 7000002));
     assert.equal(secondPush.ok, true);
-    report = Object.entries(backend.state.contents)
-        .find(([path]) => path.includes('a7000002/') && path.endsWith('/report.md'))[1];
+    report = required(required(Object.entries(backend.state.contents).find(([path]) => path.includes('a7000002/') && path.endsWith('/report.md'))))[1];
     assert.match(report, /Second tab report/);
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey(second, secondSender)], undefined);
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(second, secondSender)], undefined);
 });
 
 test('cross-tab snapshot lookup requires one unique positive ascent id', async () => {
@@ -1874,8 +1983,7 @@ test('cross-tab snapshot lookup requires one unique positive ascent id', async (
         type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true,
     }, crossTabSender);
     assert.equal(unique.ok, true);
-    assert.match(Object.entries(backend.state.contents)
-        .find(([path]) => path.endsWith('/report.md'))[1], /Unique id report/);
+    assert.match(required(required(Object.entries(backend.state.contents).find(([path]) => path.endsWith('/report.md'))))[1], /Unique id report/);
 
     const secondWorker = createWorker({
         settings: { enableGithubBackup: true, autoGithubBackup: true },
@@ -1889,8 +1997,8 @@ test('cross-tab snapshot lookup requires one unique positive ascent id', async (
         type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true,
     }, crossTabSender);
     assert.equal(ambiguous.ok, false);
-    assert.equal(ambiguous.error.code, 'no-fresh-save');
-    assert.equal(Object.keys(secondWorker.session.bpbGithubSnapshots).length, 2);
+    assert.equal(errorCode(ambiguous), 'no-fresh-save');
+    assert.equal(Object.keys(required(secondWorker.session.bpbGithubSnapshots)).length, 2);
 });
 
 test('individual backup never uses a different same-peak snapshot or accepts a sparse fallback', async () => {
@@ -1907,14 +2015,14 @@ test('individual backup never uses a different same-peak snapshot or accepts a s
         type: 'GITHUB_BACKUP_ASCENT', page: pageWithoutDate, auto: true,
     }, PEAK_SENDER);
     assert.equal(automatic.ok, false);
-    assert.equal(automatic.error.code, 'no-fresh-save',
+    assert.equal(errorCode(automatic), 'no-fresh-save',
         'auto mode must not merge a different same-peak ascent when the page date is unavailable');
 
     const sparseManual = await worker.send({
         type: 'GITHUB_BACKUP_ASCENT', page: pageWithoutDate,
     }, PEAK_SENDER);
     assert.equal(sparseManual.ok, false);
-    assert.equal(sparseManual.error.code, 'no-data');
+    assert.equal(errorCode(sparseManual), 'no-data');
 
     const persistedPage = {
         ascent: {
@@ -1933,20 +2041,20 @@ test('individual backup never uses a different same-peak snapshot or accepts a s
         type: 'GITHUB_BACKUP_ASCENT', page: persistedPage, pageComplete: true,
     }, PEAK_SENDER);
     assert.equal(manual.ok, true);
-    assert.equal(manual.result.folder, '2022-06-04-mount-rainier-a7654321');
-    const jsonBlob = Object.entries(backend.state.contents).find(([path]) => path.endsWith('/ascent.json'))[1];
+    assert.equal(required(manual.result).folder, '2022-06-04-mount-rainier-a7654321');
+    const jsonBlob = required(Object.entries(backend.state.contents).find(([path]) => path.endsWith('/ascent.json')))[1];
     const json = JSON.parse(jsonBlob);
     assert.equal(json.ascent.date, '2022-06-04');
     assert.equal(json.ascent.type, 'Successful Ascent (stood on the summit)');
     assert.equal(json.ascent.nightsOut, 0);
     assert.equal(json.ascent.pointFt, 4425);
     assert.equal(json.ascent.quality, 0);
-    assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey()],
+    assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()],
         'the unrelated same-peak snapshot was not consumed');
 });
 
 test('a GitHub failure surfaces its typed code without throwing', async () => {
-    const failing = (method, path) => {
+    const failing: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(401, { message: 'Bad credentials' });
         return null;
     };
@@ -1957,7 +2065,7 @@ test('a GitHub failure surfaces its typed code without throwing', async () => {
         page: { ascent: { id: 7654321 }, peak: { id: 2296, name: 'Mount Rainier' } },
     }, PEAK_SENDER);
     assert.equal(result.ok, false);
-    assert.equal(result.error.code, 'auth');
+    assert.equal(errorCode(result), 'auth');
 });
 
 test('the snapshot store rejects a non-Peakbagger sender', async () => {
@@ -1987,19 +2095,17 @@ test('disconnect returns a known cleared state without a fallible credential re-
 
 test('disconnect invalidates an authorized device poll before it can restore credentials', async t => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
-    let releaseToken;
-    let tokenRequested;
-    const tokenRequest = new Promise(resolve => { tokenRequested = resolve; });
-    const tokenResponse = new Promise(resolve => { releaseToken = resolve; });
-    t.after(() => releaseToken(respond(200, { error: 'access_denied' })));
-    const github = (method, path) => {
+    const tokenRequest = deferred<void>();
+    const tokenResponse = deferred<GithubFetchResponse>();
+    t.after(() => tokenResponse.resolve(respond(200, { error: 'access_denied' })));
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
             device_code: 'DC', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device',
             expires_in: 900, interval: 5,
         });
         if (method === 'POST' && path === 'https://github.com/login/oauth/access_token') {
-            tokenRequested();
-            return tokenResponse;
+            tokenRequest.resolve();
+            return tokenResponse.promise;
         }
         if (method === 'GET' && path === '/user') return respond(200, { login: 'ada', id: 7 });
         if (method === 'GET' && path === '/user/installations') return respond(200, { installations: [] });
@@ -2009,13 +2115,13 @@ test('disconnect invalidates an authorized device poll before it can restore cre
 
     const began = await worker.send({ type: 'GITHUB_AUTH_BEGIN' }, extensionSender);
     assert.equal(began.phase, 'polling');
-    worker.session.bpbGithubAuthPending.nextPollAt = 0;
+    required(worker.session.bpbGithubAuthPending).nextPollAt = 0;
     const polling = worker.send({ type: 'GITHUB_AUTH_STATE' }, extensionSender);
-    await tokenRequest;
+    await tokenRequest.promise;
 
     const disconnected = await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, extensionSender);
     assert.equal(disconnected.connected, false);
-    releaseToken(respond(200, { access_token: 'gho_too_late', token_type: 'bearer', scope: '' }));
+    tokenResponse.resolve(respond(200, { access_token: 'gho_too_late', token_type: 'bearer', scope: '' }));
     const result = await polling;
 
     assert.equal(result.phase, 'idle');
@@ -2027,7 +2133,7 @@ test('disconnect invalidates an authorized device poll before it can restore cre
 test('repository selection inspects populated content before storing the choice', async () => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main', installationId: 7 };
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/project') return respond(200, {
             default_branch: 'main', archived: false, size: 1, permissions: { push: true },
         });
@@ -2042,8 +2148,8 @@ test('repository selection inspects populated content before storing the choice'
 
     const first = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
     assert.equal(first.needsConfirmation, true);
-    assert.equal(first.inspection.kind, 'existing');
-    assert.equal(worker.local.bpbGithubAuth.repo, undefined, 'inspection must not persist an unconfirmed repository');
+    assert.equal(first.inspection?.kind, 'existing');
+    assert.equal(required(worker.local.bpbGithubAuth).repo, undefined, 'inspection must not persist an unconfirmed repository');
 
     const confirmed = await worker.send({
         type: 'GITHUB_AUTH_SELECT_REPO',
@@ -2052,14 +2158,14 @@ test('repository selection inspects populated content before storing the choice'
         authorizationEpoch: first.authorizationEpoch,
     }, extensionSender);
     assert.equal(confirmed.connected, true);
-    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/project');
-    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+    assert.equal(required(required(worker.local.bpbGithubAuth).repo).fullName, 'me/project');
+    assert.equal(required(worker.local.bpbGithubAuth).installationId, 7);
 });
 
 test('an existing-repository confirmation is generation-bound and survives worker restart', async () => {
     const repo = { owner: 'me', name: 'project', fullName: 'me/project', installationId: 7 };
-    const local = { bpbGithubAuth: { token: 'gho_secret', account: { login: 'me' } } };
-    const github = (method, path) => {
+    const local: LocalValues = { bpbGithubAuth: { token: 'gho_secret', account: { login: 'me' } } };
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/project') return respond(200, {
             default_branch: 'main', archived: false, size: 1, permissions: { push: true },
         });
@@ -2088,7 +2194,7 @@ test('an existing-repository confirmation is generation-bound and survives worke
     }, EXTENSION_SENDER);
 
     assert.equal(confirmed.connected, true);
-    assert.equal(local.bpbGithubAuth.repo.fullName, 'me/project');
+    assert.equal(required(required(local.bpbGithubAuth).repo).fullName, 'me/project');
     assert.equal(local.bpbGithubAuthEpoch, 1);
     assert.doesNotMatch(JSON.stringify(reviewed), /gho_secret/);
     assert.doesNotMatch(JSON.stringify(confirmed), /gho_secret/);
@@ -2096,7 +2202,7 @@ test('an existing-repository confirmation is generation-bound and survives worke
 
 test('an existing-repository confirmation becomes superseded after disconnect', async () => {
     const repo = { owner: 'me', name: 'project', fullName: 'me/project' };
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/project') return respond(200, {
             default_branch: 'main', archived: false, size: 1, permissions: { push: true },
         });
@@ -2131,7 +2237,7 @@ test('an existing-repository confirmation becomes superseded after disconnect', 
 test('repository selection accepts GitHub\'s 409 response for an empty repository', async () => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const repo = { owner: 'me', name: 'backup', fullName: 'me/backup', defaultBranch: 'main', installationId: 7 };
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/backup') return respond(200, {
             default_branch: 'main', archived: false, size: 0, permissions: { push: true },
         });
@@ -2144,16 +2250,16 @@ test('repository selection accepts GitHub\'s 409 response for an empty repositor
 
     const result = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
     assert.equal(result.connected, true);
-    assert.equal(result.inspection.kind, 'empty');
-    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'me/backup');
-    assert.equal(worker.local.bpbGithubAuth.installationId, 7);
+    assert.equal(result.inspection?.kind, 'empty');
+    assert.equal(required(required(worker.local.bpbGithubAuth).repo).fullName, 'me/backup');
+    assert.equal(required(worker.local.bpbGithubAuth).installationId, 7);
 });
 
 test('a delayed repository selection is superseded by disconnect', async t => {
     const started = deferred();
-    const release = deferred();
+    const release = deferred<GithubFetchResponse | null | undefined>();
     t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/ada/stale') {
             started.resolve();
             return release.promise;
@@ -2190,10 +2296,10 @@ test('a delayed repository selection is superseded by disconnect', async t => {
 for (const account of ['ada', 'grace']) {
     test(`a delayed selection cannot cross disconnect and reconnect to ${account === 'ada' ? 'the same' : 'another'} account`, async t => {
         const started = deferred();
-        const release = deferred();
+        const release = deferred<GithubFetchResponse | null | undefined>();
         t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
         const newToken = `gho_${account}_new_secret`;
-        const github = (method, path) => {
+        const github: GithubEndpoint = (method, path) => {
             if (method === 'GET' && path === '/repos/ada/stale') {
                 started.resolve();
                 return release.promise;
@@ -2225,7 +2331,7 @@ for (const account of ['ada', 'grace']) {
         await started.promise;
         await worker.send({ type: 'GITHUB_AUTH_DISCONNECT' }, EXTENSION_SENDER);
         await worker.send({ type: 'GITHUB_AUTH_BEGIN' }, EXTENSION_SENDER);
-        worker.session.bpbGithubAuthPending.nextPollAt = 0;
+        required(worker.session.bpbGithubAuthPending).nextPollAt = 0;
         const authorized = await worker.send({ type: 'GITHUB_AUTH_STATE' }, EXTENSION_SENDER);
 
         release.resolve(respond(200, {
@@ -2235,9 +2341,9 @@ for (const account of ['ada', 'grace']) {
 
         assert.equal(authorized.phase, 'authorized');
         assert.equal(stale.code, 'superseded');
-        assert.equal(worker.local.bpbGithubAuth.token, newToken);
-        assert.equal(worker.local.bpbGithubAuth.account.login, account);
-        assert.equal(worker.local.bpbGithubAuth.repo, null);
+        assert.equal(required(worker.local.bpbGithubAuth).token, newToken);
+        assert.equal(required(required(worker.local.bpbGithubAuth).account).login, account);
+        assert.equal(required(worker.local.bpbGithubAuth).repo, null);
         assert.equal(worker.local.bpbGithubAuthEpoch, 2);
         assert.doesNotMatch(JSON.stringify(authorized), new RegExp(newToken));
         assert.doesNotMatch(JSON.stringify(stale), /gho_old_secret/);
@@ -2246,9 +2352,9 @@ for (const account of ['ada', 'grace']) {
 
 test('a verified credential import supersedes an older repository inspection', async t => {
     const started = deferred();
-    const release = deferred();
+    const release = deferred<GithubFetchResponse | null | undefined>();
     t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/ada/stale') {
             started.resolve();
             return release.promise;
@@ -2301,8 +2407,8 @@ test('a verified credential import supersedes an older repository inspection', a
 
     assert.equal(imported.ok, true);
     assert.equal(stale.code, 'superseded');
-    assert.equal(worker.local.bpbGithubAuth.token, 'ghu_imported_secret');
-    assert.equal(worker.local.bpbGithubAuth.repo.fullName, 'grace/backup');
+    assert.equal(required(worker.local.bpbGithubAuth).token, 'ghu_imported_secret');
+    assert.equal(required(required(worker.local.bpbGithubAuth).repo).fullName, 'grace/backup');
     assert.equal(worker.local.bpbGithubAuthEpoch, 1);
     assert.doesNotMatch(JSON.stringify(imported), /ghu_imported_secret/);
     assert.doesNotMatch(JSON.stringify(stale), /gho_old_secret/);
@@ -2310,9 +2416,9 @@ test('a verified credential import supersedes an older repository inspection', a
 
 test('the second repository selection supersedes the first delayed inspection', async t => {
     const started = deferred();
-    const release = deferred();
+    const release = deferred<GithubFetchResponse | null | undefined>();
     t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/ada/first') {
             started.resolve();
             return release.promise;
@@ -2342,16 +2448,16 @@ test('the second repository selection supersedes the first delayed inspection', 
 
     assert.equal(second.connected, true);
     assert.equal(stale.code, 'superseded');
-    assert.equal(worker.local.bpbGithubAuth.repo.name, 'second');
+    assert.equal(required(required(worker.local.bpbGithubAuth).repo).name, 'second');
     assert.equal(worker.local.bpbGithubAuthEpoch, 1);
     assert.doesNotMatch(JSON.stringify(second), /gho_secret/);
 });
 
 test('repository discovery cannot reconcile a selection after disconnect', async t => {
     const started = deferred();
-    const release = deferred();
+    const release = deferred<GithubFetchResponse | null | undefined>();
     t.after(() => release.resolve(respond(503, { message: 'test teardown' })));
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/user/installations') {
             started.resolve();
             return release.promise;
@@ -2462,7 +2568,7 @@ test('disconnect storage failure keeps the complete connected authorization', as
 test('repository selection rejects ambiguous root backup folders', async () => {
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
     const repo = { owner: 'me', name: 'project', fullName: 'me/project', defaultBranch: 'main' };
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'GET' && path === '/repos/me/project') return respond(200, {
             default_branch: 'main', archived: false, size: 1, permissions: { push: true },
         });
@@ -2476,19 +2582,19 @@ test('repository selection rejects ambiguous root backup folders', async () => {
     const worker = createWorker({ auth: { token: 'gho_secret', account: { login: 'me' } }, github });
     const result = await worker.send({ type: 'GITHUB_AUTH_SELECT_REPO', repo }, extensionSender);
     assert.equal(result.connected, false);
-    assert.equal(result.error.code, 'repo-conflict');
-    assert.equal(worker.local.bpbGithubAuth.repo, undefined);
+    assert.equal(errorCode(result), 'repo-conflict');
+    assert.equal(required(worker.local.bpbGithubAuth).repo, undefined);
 });
 
 test('a restarted worker resumes a pending device flow from session storage', async () => {
-    const session = {};
-    const local = { bpbGithubAuth: {
+    const session: SessionValues = {};
+    const local: LocalValues = { bpbGithubAuth: {
         token: 'gho_old',
         repo: { owner: 'old-account', name: 'old-repo', branch: 'main' },
         installationId: 99,
     } };
     const extensionSender = { url: 'chrome-extension://test/options/options.html' };
-    const github = (method, path) => {
+    const github: GithubEndpoint = (method, path) => {
         if (method === 'POST' && path === 'https://github.com/login/device/code') return respond(200, {
             device_code: 'DC', user_code: 'ABCD-1234', verification_uri: 'https://github.com/login/device',
             expires_in: 900, interval: 5,
@@ -2504,17 +2610,17 @@ test('a restarted worker resumes a pending device flow from session storage', as
     const firstWorker = createWorker({ github, session, local });
     const began = await firstWorker.send({ type: 'GITHUB_AUTH_BEGIN' }, extensionSender);
     assert.equal(began.phase, 'polling');
-    assert.equal(session.bpbGithubAuthPending.deviceCode, 'DC');
+    assert.equal(required(session.bpbGithubAuthPending).deviceCode, 'DC');
 
     // Simulate the service worker being torn down and later woken by the next
     // options-page status message after the server interval has elapsed.
-    session.bpbGithubAuthPending.nextPollAt = 0;
+    required(session.bpbGithubAuthPending).nextPollAt = 0;
     const restartedWorker = createWorker({ github, session, local });
     const resumed = await restartedWorker.send({ type: 'GITHUB_AUTH_STATE' }, extensionSender);
     assert.equal(resumed.phase, 'authorized');
-    assert.equal(local.bpbGithubAuth.token, 'gho_resumed');
-    assert.equal(local.bpbGithubAuth.repo, null, 'a new authorization must require a fresh inspected repository choice');
-    assert.equal(local.bpbGithubAuth.installationId, null);
+    assert.equal(required(local.bpbGithubAuth).token, 'gho_resumed');
+    assert.equal(required(local.bpbGithubAuth).repo, null, 'a new authorization must require a fresh inspected repository choice');
+    assert.equal(required(local.bpbGithubAuth).installationId, null);
     assert.equal(session.bpbGithubAuthPending, undefined);
 });
 
@@ -2532,18 +2638,18 @@ test('rejected saves and changed or cleared persisted reports never publish an u
         const preflight = await worker.send({ type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page, pageComplete: true }, PEAK_SENDER);
         assert.equal(preflight.fresh, false);
         const automatic = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
-        assert.equal(automatic.error.code, 'no-fresh-save');
+        assert.equal(errorCode(automatic), 'no-fresh-save');
         assert.equal(worker.githubCalls.length, 0);
         const manual = await worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true }, PEAK_SENDER);
         assert.equal(manual.ok, true);
         assert.doesNotMatch(JSON.stringify(backend.state.contents), /UNSAVED attempted report/);
-        assert.ok(worker.session.bpbGithubSnapshots[storedSnapshotKey(pending)], 'unconfirmed attempt remains recoverable');
+        assert.ok(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey(pending)], 'unconfirmed attempt remains recoverable');
     }
 });
 
 test('legacy snapshots without submission proof are not fresh saves', async () => {
     const worker = createWorker({ auth: AUTH, github: () => { throw new Error('must not write'); } });
-    const pending = editSnapshot();
+    const pending: Omit<ReturnType<typeof editSnapshot>, 'attemptId'> & { attemptId?: string } = editSnapshot();
     delete pending.attemptId;
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
     const result = await worker.send({ type: 'GITHUB_ASCENT_BACKUP_PREFLIGHT', page: {
@@ -2555,7 +2661,7 @@ test('legacy snapshots without submission proof are not fresh saves', async () =
 
 test('an older successful write preserves a same-key replacement made in the same clock tick', async () => {
     const backend = gitDataBackend();
-    const release = deferred();
+    const release = deferred<GithubFetchResponse | null | undefined>();
     let writing = false;
     const worker = createWorker({ auth: AUTH, clockNow: Date.now(), github: (method, path, body) => {
         if (method === 'PATCH') { writing = true; return release.promise; }
@@ -2563,20 +2669,20 @@ test('an older successful write preserves a same-key replacement made in the sam
     } });
     const pending = editSnapshot();
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...pending }, EDIT_SENDER);
-    const original = structuredClone(worker.session.bpbGithubSnapshots[storedSnapshotKey()]);
+    const original = structuredClone(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()]);
     const page = { ...pending.snapshot, ascent: { ...pending.snapshot.ascent, id: 7654321 } };
     const write = worker.send({ type: 'GITHUB_BACKUP_ASCENT', page, pageComplete: true, auto: true }, PEAK_SENDER);
     await waitFor(() => writing);
     const newer = editSnapshot();
     newer.snapshot.report = { markdown: 'NEWER SAVE', submitted: 'NEWER SAVE' };
     await worker.send({ type: 'GITHUB_BACKUP_SNAPSHOT', ...newer }, EDIT_SENDER);
-    const replacement = worker.session.bpbGithubSnapshots[storedSnapshotKey()];
+    const replacement = required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()];
     assert.equal(replacement.savedAt, original.savedAt);
     assert.notEqual(replacement.generation, original.generation);
     release.resolve(respond(200, { object: { sha: 'C1' } }));
     assert.equal((await write).ok, true);
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].generation, replacement.generation);
-    assert.equal(worker.session.bpbGithubSnapshots[storedSnapshotKey()].snapshot.report.markdown, 'NEWER SAVE');
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()].generation, replacement.generation);
+    assert.equal(required(worker.session.bpbGithubSnapshots)[storedSnapshotKey()].snapshot.report.markdown, 'NEWER SAVE');
 });
 
 
@@ -2592,35 +2698,35 @@ for (const type of ['GITHUB_SETTINGS_BACKUP', 'GITHUB_FAVORITES_BACKUP']) {
         worker.local.bpbGithubAuthEpoch = 1;
         const result = await pending;
         assert.equal(result.ok, false);
-        assert.equal(result.error.code, 'superseded');
+        assert.equal(errorCode(result), 'superseded');
         assert.equal(worker.githubCalls.length, 0, 'no root-file write may be rebound to the new connection');
     });
 }
 
 
-for (const kind of ['Settings', 'Favorites']) {
+for (const kind of ['Settings', 'Favorites'] as const) {
     test(`${kind} success signatures are scoped to the repository and authorization lifetime`, async () => {
         const alarm = `bpb-${kind.toLowerCase()}-backup`;
-        const stateKey = `bpb${kind}BackupState`;
+        const stateKey = `bpb${kind}BackupState` as const;
         const backend = gitDataBackend();
         const settings = { [`auto${kind}Backup`]: true };
         const worker = createWorker({ settings, auth: AUTH, github: (method, path, body) =>
             backend.handler(method, path.replace('/repos/me/replacement', '/repos/me/backup'), body) });
         worker.fireAlarm(alarm);
         await waitFor(() => worker.local[stateKey]?.scope);
-        const firstScope = worker.local[stateKey].scope;
+        const firstScope = required(worker.local[stateKey]?.scope);
         assert.equal(backend.state.commits, 1);
         worker.local.bpbGithubAuth = { ...AUTH, repo: { ...AUTH.repo, name: 'replacement' } };
         worker.local.bpbGithubAuthEpoch = 1;
         worker.fireStorageChange({ bpbGithubAuth: { newValue: worker.local.bpbGithubAuth } }, 'local');
         await waitFor(() => worker.alarms.created.some(entry => entry.name === alarm));
         worker.fireAlarm(alarm);
-        await waitFor(() => worker.local[stateKey]?.scope !== firstScope);
+        await waitFor(() => worker.local[stateKey]?.scope && worker.local[stateKey]?.scope !== firstScope);
         assert.equal(backend.state.commits, 2, 'unchanged content must reach a newly selected repository');
-        const replacementScope = worker.local[stateKey].scope;
+        const replacementScope = required(worker.local[stateKey]?.scope);
         worker.local.bpbGithubAuthEpoch = 2;
         worker.fireAlarm(alarm);
-        await waitFor(() => worker.local[stateKey]?.scope !== replacementScope);
+        await waitFor(() => worker.local[stateKey]?.scope && worker.local[stateKey]?.scope !== replacementScope);
         assert.equal(backend.state.commits, 3, 'reconnecting creates a new authorization lifetime');
         worker.fireAlarm(alarm);
         await settleQuietly();
@@ -2630,7 +2736,7 @@ for (const kind of ['Settings', 'Favorites']) {
 
 test('an old in-flight root backup cannot stamp success for a replacement connection', async () => {
     const backend = gitDataBackend();
-    const held = deferred();
+    const held = deferred<GithubFetchResponse | null | undefined>();
     let patchStarted = false;
     const worker = createWorker({ settings: { autoSettingsBackup: true }, auth: AUTH,
         github: (method, path, body) => {
@@ -2656,7 +2762,7 @@ test('a fresh profile cannot replace an existing settings or favorites backup wi
         const worker = createWorker({ auth: AUTH, github: backend.handler });
         const result = await worker.send({ type }, EXTENSION_SENDER);
         assert.equal(result.ok, false, 'an existing remote snapshot must not be replaced before review');
-        assert.equal(result.error.code, 'backup-review');
+        assert.equal(errorCode(result), 'backup-review');
         assert.equal(backend.state.contents[path], original);
         assert.equal(backend.state.commits, 0);
         const confirmed = await worker.send({ type, review: result.review }, EXTENSION_SENDER);
@@ -2677,7 +2783,7 @@ test('automatic backup preserves another device and stale replacement reviews ca
     const newer = Transfer.serialize(Transfer.buildPayload({ theme: 'light', units: 'metric' }));
     backend.state.contents['settings.json'] = newer;
     const stale = await worker.send({ type: 'GITHUB_SETTINGS_BACKUP', review: review.review }, EXTENSION_SENDER);
-    assert.equal(stale.error.code, 'backup-review');
+    assert.equal(errorCode(stale), 'backup-review');
     assert.equal(backend.state.contents['settings.json'], newer);
     assert.equal(backend.state.commits, 0);
     assert.equal((await worker.send({ type: 'GITHUB_SETTINGS_BACKUP', review: stale.review }, EXTENSION_SENDER)).ok, true);

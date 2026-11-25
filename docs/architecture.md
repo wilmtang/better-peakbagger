@@ -1734,7 +1734,7 @@ The focused automated evidence is deliberately split by boundary:
 - `test/scale/favorites/favorite-climbers.scale.browser.mts` renders the full 1,500-entry options
   list, searches it, and serializes all entries through the explicit GitHub
   backup action.
-- `test/github/github-client.test.mts` and `test/github/github-backup-integration.test.mjs`
+- `test/github/github-client.test.mts` and `test/github/github-backup-integration.test.mts`
   cover fixed-root-file Git mechanics, conflicts, feature gates, extension-only
   messaging, missing restore files, and token confinement.
 - `test/settings/settings-schema.test.mts`, `test/project/manifest-capture.test.mts`, and the
