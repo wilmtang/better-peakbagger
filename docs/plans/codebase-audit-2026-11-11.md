@@ -139,9 +139,9 @@ discovery, picks the same item (line 265) and repeats.
 the cap, each pass performs one Garmin identity call, one recording download
 and one `prepare` (Peakbagger corridor lookups) with no progress, and the alarm
 is always re-set at +60 s. It needs a signed-in Peakbagger tab; without one the
-pass pauses at binding instead. The existing test
-(`test/garmin/garmin-imports.test.mjs` line 260) covers only the 200-item count
-cap. I confirmed the control flow by reading.
+pass pauses at binding instead. The capacity test in
+`test/garmin/garmin-imports.test.mts` covers only the 200-item count cap.
+I confirmed the control flow by reading.
 
 **Impact.** For a user at the storage cap, the worker wakes every minute and
 sends Garmin and Peakbagger requests that cannot succeed, until they remove an
