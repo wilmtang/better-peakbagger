@@ -114,6 +114,8 @@ export function createGarminStore<State extends GarminState = GarminState>(index
             let result!: T;
             request.onsuccess = () => {
                 try {
+                    // empty() supplies every required GarminState field, so an owner's
+                    // State may add fields only as optional ones.
                     const state = (request.result as State | undefined) || empty() as State;
                     result = mutate(state);
                     if (write) {
