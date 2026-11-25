@@ -602,7 +602,7 @@ and `npm run verify -- chrome` passed.
   ascent-editor flow. F10 and F11 are unit-tested only.
 - F9, F15 and F17 have no worker-level regression through the real capture
   flow, and the two-tab refusal and F17's tab filter no automated test: the
-  worker harness lives in the legacy 4,500-line `background-capture.test.mjs`.
+  worker harness lives in the legacy 4,500-line `background-capture.test.mts`.
 - F6a, F7 and F8 have jsdom evidence only; F7 changed visible inbox text
   ("92% confidence" now reads "92%") without a rendered inspection.
 - F5 step 1 (photo editor) was not checked in a real browser.

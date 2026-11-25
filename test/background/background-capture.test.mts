@@ -7,26 +7,151 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
-import { createCaptureWriteFaults } from '../helpers/capture-write-faults.mts';
+import type { createGarminImports } from '../../src/garmin/garmin-imports.ts';
+import { createCaptureWriteFaults, type CaptureWriteFaults } from '../helpers/capture-write-faults.mts';
+import type { CaptureJob as CaptureJobFields, DraftTab as DraftTabFields, WorkerReply as CaptureReplyFields } from '../helpers/gpx-process-harness.mts';
+import { deferred } from '../helpers/deferred.mts';
+import { required } from '../helpers/required.mts';
 
 // The worker ships as one bundle (gpx-metrics + capture-core + settings-schema
 // + settings + background). Boot the built bundle in a worker-like vm context,
 // exactly as the service worker runs it.
 const workerBundle = await fs.readFile(new URL('../../dist/background.js', import.meta.url), 'utf8');
 
-const event = () => {
-    const listeners = [];
+type Values = Record<string, unknown>;
+type Message = Values & { type: string };
+type Sender = Values & { url?: string; tab?: { id: number; windowId?: number } };
+type Tab = { id: number; url?: string; pendingUrl?: string; windowId?: number; active?: boolean; status?: string };
+type TabCreation = { url: string; windowId?: number; active?: boolean };
+type TabPatch = Partial<Tab>;
+type Badge = { tabId?: number; text?: string; color?: string | number[] };
+type TabUpdateListener = (id: number, patch: TabPatch, tab?: Tab) => unknown;
+type TabRemoveListener = (id: number, info?: { windowId?: number; isWindowClosing?: boolean }) => unknown;
+type TabActivateListener = (info: { tabId: number; windowId?: number }) => unknown;
+type AlarmListener = (alarm: { name: string }) => unknown;
+type ScriptInjection = { injectImmediately?: boolean; target: { tabId: number }; files?: string[]; args?: unknown[]; world?: string; func?: unknown };
+type ScriptCall = Pick<ScriptInjection, 'files' | 'args' | 'world'>;
+type ScriptHook = (call: { phase: string; number: number; tabId: number; details: ScriptInjection }) => unknown;
+type PeakbaggerCall = {
+    requestId: string; url: string; kind: string; number: number; options: { signal: AbortSignal };
+};
+type ProviderCall = {
+    number: number; options: Values; generation: string; timeoutMs: number; diagnostics: boolean;
+};
+type RequestHook = (call: { options: { signal?: AbortSignal }; number: number }) => unknown;
+type PeakbaggerFixture = Values | ((call: PeakbaggerCall) => Values);
+type WorkerTimer = (callback: (...args: unknown[]) => void, delay: number, ...args: unknown[]) => unknown;
+type PayloadKey = `bpbCapturePayload:${string}`;
+type CaptureError = { code: string; message: string; recoveryTabId?: number; retryAt?: number; retrySafety?: string };
+type TripInfo = { id?: string; name: string; sequence?: number };
+type DayStat = { date: string };
+type DraftFields = CaptureReplyFields['fields'] & { tripInfo?: TripInfo; time?: string; comment?: string; dayStats: DayStat[] };
+type Match = Omit<CaptureReplyFields['matches'][number], 'draftFields' | 'time'> & {
+    name: string; confidence: number; time: string | null | undefined; draftFields: DraftFields; closestApproachM?: number;
+};
+interface CaptureJob extends CaptureJobFields {
+    matches: Match[];
+    activityId?: string;
+    openedDraftTabIds: number[];
+    trackSummary: { originalPointCount: number; retainedPointCount: number; retainedWaypointCount: number; breakCounts: { missingElevation: number; missingTime: number } };
+    payloadKey: PayloadKey;
+    selectedIds: number[];
+    error: CaptureError;
+    progress?: { completed: number; total: number } | null;
+    capturePreferences?: Values;
+}
+interface DraftTab extends DraftTabFields {
+    tripInfo: TripInfo;
+    applyLease?: { token: string; expiresAt: number; documentKey?: string } | null;
+    complete?: boolean;
+    waitForSave?: boolean;
+}
+// Projection of the storage and message properties read by these cases. Seeds
+// stay raw so legacy or malformed records still go through worker validation.
+interface SessionValues extends Values {
+    bpbCaptureJobs: Record<string, CaptureJob>;
+    bpbDraftTabs: Record<string, DraftTab>;
+    bpbPeakbaggerHelperLeases?: Record<string, { generation: string; tabId: number; expiresAt: number }>;
+    bpbPeakbaggerCooldown?: { retryAt: number };
+    bpbBetaSettingsTabs?: Record<string, unknown>;
+    [key: PayloadKey]: { jobId: string; gpx: string; gpxWithoutTimestamps?: string };
+}
+interface LocalValues extends Values {
+    bpbFavoriteClimbers?: { entries: { cid: number }[] };
+    bpbIgnoredClimbers?: { entries: { cid: number }[]; revision: number };
+    bpbPeakReportFilter?: { favoritesOnly: boolean };
+}
+interface Reply extends CaptureReplyFields {
+    error: CaptureError;
+    fields: DraftFields;
+    matches: Match[];
+    selectedIds: number[];
+    activityId?: string;
+    job: CaptureJob;
+    tabId: number;
+    url: string;
+    token: string;
+    message: string;
+    dayStats: DayStat[];
+}
+type MessageListener = (message: Message, sender: Sender, reply: (value: Reply) => void) => boolean;
+interface Faults extends CaptureWriteFaults {
+    sessionGet?: string; syncGet?: string; payloadRemove?: string; cooldownSet?: string;
+    scripting?: string; peakbaggerScripting?: string; tabCreate?: string; tabUpdate?: string;
+    tabCreateAt?: number | null; tabCreateAtMessage?: string;
+    tabNavigateAt?: number | null; tabNavigateAtMessage?: string;
+}
+interface HarnessOptions {
+    peakXml?: string | null;
+    captureResult?: Values | ((call: ProviderCall) => Values) | null;
+    ownershipResult?: Values | null;
+    settings?: Values;
+    beforePeakFetch?: RequestHook | null;
+    beforePeakbaggerLogin?: ((call?: Parameters<RequestHook>[0]) => unknown) | null;
+    beforePeakbaggerAccountEvidence?: ((call: { number: number; tabId: number }) => unknown) | null;
+    beforePeakbaggerScript?: ScriptHook | null;
+    afterPeakbaggerScript?: ScriptHook | null;
+    beforeProviderScript?: ScriptHook | null;
+    afterProviderScript?: ScriptHook | null;
+    beforeProviderCapture?: ((call: ProviderCall) => unknown) | null;
+    beforeBadgeText?: ((call: { number: number; details: Badge }) => unknown) | null;
+    beforeTabGet?: ((call: { number: number; tabId: number; tabs: Map<number, Tab> }) => unknown) | null;
+    beforeTabCreate?: ((call: { number: number; details: TabCreation; tabs: Map<number, Tab> }) => unknown) | null;
+    afterSessionSet?: ((patch: Partial<SessionValues>) => unknown) | null;
+    clock?: { now: number } | null;
+    groupError?: string | null;
+    faults?: Faults;
+    sessionValues?: Values | null;
+    browserTabs?: Map<number, Tab> | null;
+    timerDelayCap?: number | null;
+    workerTimer?: WorkerTimer | null;
+    peakbaggerPageLoginResult?: PeakbaggerFixture | null;
+    peakbaggerPagePeakResult?: PeakbaggerFixture | null;
+    peakbaggerDocumentState?: Values | null;
+    peakbaggerAccountEvidence?: Values | ((state: { tab?: Tab }) => Values | null) | null;
+    dropPeakbaggerHelperBeforeKind?: string | null;
+    peakbaggerPageRequestError?: string | null;
+    captureDiagnostics?: boolean;
+    garminDatabase?: IDBFactory;
+    loginHtml?: string;
+}
+type Harness = ReturnType<typeof createHarness>;
+type GarminStore = NonNullable<Parameters<typeof createGarminImports>[0]['store']>;
+type GarminItem = Awaited<ReturnType<GarminStore['read']>>['items'][string];
+
+const event = <Listener,>() => {
+    const listeners: Listener[] = [];
     return {
         listeners,
-        addListener: listener => listeners.push(listener),
-        removeListener: listener => {
+        addListener: (listener: Listener) => listeners.push(listener),
+        removeListener: (listener: Listener) => {
             const index = listeners.indexOf(listener);
             if (index !== -1) listeners.splice(index, 1);
         },
     };
 };
 
-const waitForCondition = async (predicate, timeoutMs = 2000) => {
+const waitForCondition = async (predicate: () => unknown, timeoutMs = 2000) => {
     const deadline = Date.now() + timeoutMs;
     while (!predicate()) {
         if (Date.now() >= deadline) throw new Error('condition not reached');
@@ -46,15 +171,15 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     peakbaggerAccountEvidence = null, dropPeakbaggerHelperBeforeKind = null,
     peakbaggerPageRequestError = null,
     captureDiagnostics = false, garminDatabase = undefined,
-    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>' } = {}) => {
-    const values = sessionValues || {};
-    const localValues = {};
+    loginHtml = '<div>Logged in: Test Climber | <a href="climber/climber.aspx?cid=77">My Home Page</a></div>' }: HarnessOptions = {}) => {
+    const values = (sessionValues || {}) as SessionValues;
+    const localValues: LocalValues = {};
     let sessionGetCalls = 0;
     let payloadSetCalls = 0;
     let payloadRemoveCalls = 0;
-    const sessionSetPatches = [];
-    const syncValues = { bpbSettings: structuredClone(settings) };
-    const tabs = browserTabs || new Map([[1, {
+    const sessionSetPatches: Partial<SessionValues>[] = [];
+    const syncValues: Values & { bpbSettings: Values } = { bpbSettings: structuredClone(settings) };
+    const tabs = browserTabs || new Map<number, Tab>([[1, {
         id: 1,
         windowId: 9,
         url: 'https://www.strava.com/activities/123',
@@ -68,26 +193,26 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         status: 'complete',
     }]]);
     let nextTabId = Math.max(100, ...[...tabs.keys()].map(tabId => tabId + 1));
-    const runtimeMessage = event();
-    const tabRemoved = event();
-    const tabUpdated = event();
-    const tabActivated = event();
-    const alarmEvent = event();
-    const grouped = [];
-    const groupUpdates = [];
-    const badgeCalls = [];
-    const scriptCalls = [];
-    const providerCaptureCalls = [];
-    const providerCancelCalls = [];
-    const peakbaggerPageCalls = [];
-    const peakbaggerPageCancelCalls = [];
-    const peakbaggerPageRequests = new Map();
-    const peakbaggerPageInjected = new Set();
-    const droppedPeakbaggerHelpers = new Set();
-    const tabMessages = [];
-    const removedTabs = [];
-    const windowCreates = [];
-    const windowUpdates = [];
+    const runtimeMessage = event<MessageListener>();
+    const tabRemoved = event<TabRemoveListener>();
+    const tabUpdated = event<TabUpdateListener>();
+    const tabActivated = event<TabActivateListener>();
+    const alarmEvent = event<AlarmListener>();
+    const grouped: ({ tabIds: number[] })[] = [];
+    const groupUpdates: ([number, Values])[] = [];
+    const badgeCalls: ([string, Badge])[] = [];
+    const scriptCalls: (ScriptCall)[] = [];
+    const providerCaptureCalls: (ProviderCall)[] = [];
+    const providerCancelCalls: (unknown)[] = [];
+    const peakbaggerPageCalls: (PeakbaggerCall)[] = [];
+    const peakbaggerPageCancelCalls: (unknown)[] = [];
+    const peakbaggerPageRequests = new Map<string, AbortController>();
+    const peakbaggerPageInjected = new Set<number>();
+    const droppedPeakbaggerHelpers = new Set<string>();
+    const tabMessages: ({ tabId: number; message: Message })[] = [];
+    const removedTabs: (number)[] = [];
+    const windowCreates: ({ url?: string; tabId?: number; focused?: boolean })[] = [];
+    const windowUpdates: ([number, Values])[] = [];
     let nextWindowId = 20;
     let tabCreateCalls = 0;
     let tabNavigationCalls = 0;
@@ -96,16 +221,16 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     let tabGetCalls = 0;
     let peakbaggerPageProbeCalls = 0;
     let peakbaggerAccountEvidenceCalls = 0;
-    const peakbaggerScriptPhaseCalls = new Map();
-    const providerScriptPhaseCalls = new Map();
-    const loggedErrors = [];
-    const runPeakbaggerScriptHook = async (hook, phase, details, advance = false) => {
+    const peakbaggerScriptPhaseCalls = new Map<string, number>();
+    const providerScriptPhaseCalls = new Map<string, number>();
+    const loggedErrors: (unknown[])[] = [];
+    const runPeakbaggerScriptHook = async (hook: ScriptHook | null, phase: string, details: ScriptInjection, advance = false) => {
         const number = (peakbaggerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
         if (advance) peakbaggerScriptPhaseCalls.set(phase, number);
         if (!hook) return;
         await hook({ phase, number, tabId: details.target.tabId, details });
     };
-    const runProviderScriptHook = async (hook, phase, details, advance = false) => {
+    const runProviderScriptHook = async (hook: ScriptHook | null, phase: string, details: ScriptInjection, advance = false) => {
         const number = (providerScriptPhaseCalls.get(phase) || 0) + (advance ? 1 : 0);
         if (advance) providerScriptPhaseCalls.set(phase, number);
         if (!hook) return;
@@ -126,7 +251,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     const browser = {
         storage: {
             session: {
-                get: async key => {
+                get: async (key: string | string[] | null) => {
                     if (faults.sessionGet) throw new Error(faults.sessionGet);
                     sessionGetCalls++;
                     if (key === null) return structuredClone(values);
@@ -135,7 +260,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     }
                     return { [key]: structuredClone(values[key]) };
                 },
-                set: async patch => {
+                set: async (patch: Partial<SessionValues>) => {
                     if (patch.bpbPeakbaggerCooldown && faults.cooldownSet) {
                         throw new Error(faults.cooldownSet);
                     }
@@ -145,7 +270,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     Object.assign(values, structuredClone(patch));
                     if (afterSessionSet) await afterSessionSet(structuredClone(patch));
                 },
-                remove: async keys => {
+                remove: async (keys: string | string[]) => {
                     payloadRemoveCalls++;
                     if (faults.payloadRemove) {
                         const message = faults.payloadRemove;
@@ -156,27 +281,27 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 },
             },
             sync: {
-                get: async key => {
+                get: async (key: string) => {
                     if (faults.syncGet) throw new Error(faults.syncGet);
                     return { [key]: structuredClone(syncValues[key]) };
                 },
-                set: async patch => Object.assign(syncValues, structuredClone(patch))
+                set: async (patch: Values) => Object.assign(syncValues, structuredClone(patch))
             },
             local: {
-                get: async key => key === null ? structuredClone(localValues)
+                get: async (key: string | string[] | null) => key === null ? structuredClone(localValues)
                     : Array.isArray(key) ? Object.fromEntries(key.map(item => [item, structuredClone(localValues[item])]))
                         : { [key]: structuredClone(localValues[key]) },
-                set: async patch => Object.assign(localValues, structuredClone(patch))
+                set: async (patch: Values) => Object.assign(localValues, structuredClone(patch))
             },
             onChanged: event()
         },
         runtime: {
             id: 'test-extension',
             onMessage: runtimeMessage,
-            getURL: path => `chrome-extension://test-extension/${path}`
+            getURL: (path: string) => `chrome-extension://test-extension/${path}`
         },
         scripting: {
-            executeScript: async details => {
+            executeScript: async (details: ScriptInjection) => {
                 if (faults.scripting) throw new Error(faults.scripting);
                 if (faults.peakbaggerScripting && details.target.tabId !== 1) {
                     throw new Error(faults.peakbaggerScripting);
@@ -249,7 +374,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     return [{ result: peakbaggerPageInjected.has(details.target.tabId) }];
                 }
                 if (isPeakbaggerPageCancel) {
-                    const requestId = details.args?.[0];
+                    const requestId = details.args?.[0] as string;
                     peakbaggerPageCancelCalls.push(requestId);
                     const controller = peakbaggerPageRequests.get(requestId);
                     controller?.abort();
@@ -257,7 +382,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 }
                 if (isPeakbaggerPageRequest) {
                     await runPeakbaggerScriptHook(beforePeakbaggerScript, 'request', details, true);
-                    const [, requestId, url, kind] = details.args;
+                    const [, requestId, url, kind] = details.args as [unknown, string, string, string];
                     if (dropPeakbaggerHelperBeforeKind === kind
                         && !droppedPeakbaggerHelpers.has(kind)) {
                         droppedPeakbaggerHelpers.add(kind);
@@ -281,7 +406,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                     if (callbackResult) {
                         await Promise.race([
                             callbackResult,
-                            new Promise(resolve => controller.signal.addEventListener('abort', resolve, { once: true })),
+                            new Promise<Event>(resolve => controller.signal.addEventListener('abort', resolve, { once: true })),
                         ]);
                     }
                     peakbaggerPageRequests.delete(requestId);
@@ -321,17 +446,17 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 }
                 if (isProviderCapture) {
                     await runProviderScriptHook(beforeProviderScript, 'capture', details, true);
-                    const call = {
+                    const call: ProviderCall = {
                         number: providerCaptureCalls.length + 1,
-                        options: structuredClone(details.args?.[0]),
-                        generation: details.args?.[1],
-                        timeoutMs: details.args?.[2],
+                        options: structuredClone(details.args?.[0]) as Values,
+                        generation: details.args?.[1] as string,
+                        timeoutMs: details.args?.[2] as number,
                         diagnostics: details.args?.[4] === true,
                     };
                     providerCaptureCalls.push(call);
                     if (beforeProviderCapture) await beforeProviderCapture(call);
                     const result = typeof captureResult === 'function'
-                        ? captureResult(providerCaptureCalls.at(-1))
+                        ? captureResult(call)
                         : capture;
                     await runProviderScriptHook(afterProviderScript, 'capture', details);
                     return [{ result: structuredClone(result) }];
@@ -340,20 +465,20 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             }
         },
         action: {
-            setBadgeBackgroundColor: async details => badgeCalls.push(['color', details]),
-            setBadgeText: async details => {
+            setBadgeBackgroundColor: async (details: Badge) => badgeCalls.push(['color', details]),
+            setBadgeText: async (details: Badge) => {
                 badgeCalls.push(['text', details]);
                 badgeTextCalls++;
                 if (beforeBadgeText) await beforeBadgeText({ number: badgeTextCalls, details });
             }
         },
         tabs: {
-            get: async tabId => {
+            get: async (tabId: number) => {
                 tabGetCalls++;
                 if (beforeTabGet) await beforeTabGet({ number: tabGetCalls, tabId, tabs });
                 return structuredClone(tabs.get(tabId));
             },
-            create: async details => {
+            create: async (details: TabCreation) => {
                 if (faults.tabCreate) throw new Error(faults.tabCreate);
                 tabCreateCalls++;
                 if (beforeTabCreate) await beforeTabCreate({ number: tabCreateCalls, details, tabs });
@@ -369,15 +494,15 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 tabs.set(tab.id, tab);
                 return structuredClone(tab);
             },
-            query: async details => [...tabs.values()]
+            query: async (details: { url?: string | string[]; windowId?: number }) => [...tabs.values()]
                 .filter(tab => details.windowId == null || tab.windowId === details.windowId)
-                .filter(tab => !details.url || tab.url.startsWith(String(details.url).replace(/\*$/, '')))
+                .filter(tab => !details.url || tab.url?.startsWith(String(details.url).replace(/\*$/, '')))
                 .map(tab => structuredClone(tab)),
-            remove: async tabId => {
+            remove: async (tabId: number) => {
                 removedTabs.push(tabId);
                 tabs.delete(tabId);
             },
-            update: async (tabId, patch) => {
+            update: async (tabId: number, patch: TabPatch) => {
                 if (faults.tabUpdate) throw new Error(faults.tabUpdate);
                 if (patch.url) {
                     tabNavigationCalls++;
@@ -387,14 +512,14 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                         throw new Error(message);
                     }
                 }
-                Object.assign(tabs.get(tabId), patch);
+                Object.assign(required(tabs.get(tabId)), patch);
                 return structuredClone(tabs.get(tabId));
             },
-            sendMessage: async (tabId, message) => {
+            sendMessage: async (tabId: number, message: Message) => {
                 tabMessages.push({ tabId, message: structuredClone(message) });
                 return true;
             },
-            group: async details => {
+            group: async (details: { tabIds: number[] }) => {
                 grouped.push(structuredClone(details));
                 if (groupError) throw new Error(groupError);
                 return 3;
@@ -403,13 +528,13 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
             onUpdated: tabUpdated,
             onActivated: tabActivated,
         },
-        tabGroups: { update: async (groupId, patch) => groupUpdates.push([groupId, structuredClone(patch)]) },
+        tabGroups: { update: async (groupId: number, patch: Values) => groupUpdates.push([groupId, structuredClone(patch)]) },
         windows: {
-            create: async details => {
+            create: async (details: { url?: string; tabId?: number; focused?: boolean }) => {
                 const windowId = nextWindowId++;
                 windowCreates.push(structuredClone(details));
                 let tab;
-                if (Number.isInteger(details.tabId)) {
+                if (typeof details.tabId === 'number' && Number.isInteger(details.tabId)) {
                     tab = tabs.get(details.tabId);
                     if (tab) Object.assign(tab, { windowId, active: true });
                 } else if (details.url) {
@@ -421,7 +546,7 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
                 }
                 return { id: windowId, focused: details.focused, tabs: tab ? [structuredClone(tab)] : [] };
             },
-            update: async (windowId, patch) => {
+            update: async (windowId: number, patch: Values) => {
                 windowUpdates.push([windowId, structuredClone(patch)]);
                 return { id: windowId, ...structuredClone(patch) };
             },
@@ -430,8 +555,8 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         alarms: { create: () => {}, clear: async () => {}, onAlarm: alarmEvent }
     };
 
-    const fetchCalls = [];
-    const fetch = async (url, options = {}) => {
+    const fetchCalls: (string)[] = [];
+    const fetch = async (url: string | URL, options: { signal?: AbortSignal } = {}) => {
         const value = String(url);
         fetchCalls.push(value);
         if (value.includes('/Default.aspx')) {
@@ -449,9 +574,9 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     };
 
     const workerConsole = Object.create(console);
-    workerConsole.error = (...args) => { loggedErrors.push(args); };
-    const loggedDiagnostics = [];
-    workerConsole.debug = (...args) => { loggedDiagnostics.push(args); };
+    workerConsole.error = (...args: unknown[]) => { loggedErrors.push(args); };
+    const loggedDiagnostics: (unknown[])[] = [];
+    workerConsole.debug = (...args: unknown[]) => { loggedDiagnostics.push(args); };
     const WorkerDate = clock ? class extends Date { static now() { return clock.now; } } : Date;
     const context = vm.createContext({
         browser,
@@ -470,15 +595,16 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
         crypto: globalThis.crypto,
         setTimeout: workerTimer || (timerDelayCap === null
             ? setTimeout
-            : (callback, delay, ...args) => setTimeout(callback, Math.min(delay, timerDelayCap), ...args)),
+            : (callback: (...args: unknown[]) => void, delay: number, ...args: unknown[]) =>
+                setTimeout(callback, Math.min(delay, timerDelayCap), ...args)),
         clearTimeout,
         BPB_CAPTURE_DIAGNOSTICS: captureDiagnostics,
     });
     context.globalThis = context;
     context.self = context;
     vm.runInContext(workerBundle, context, { filename: 'dist/background.js' });
-    const listener = runtimeMessage.listeners[0];
-    const send = (message, sender = { url: 'chrome-extension://test-extension/popup/popup.html' }) => new Promise(resolve => {
+    const listener = required(runtimeMessage.listeners[0]);
+    const send = (message: Message, sender: Sender = { url: 'chrome-extension://test-extension/popup/popup.html' }) => new Promise<Reply>(resolve => {
         // Supply browser-owned sender metadata for terse existing fixtures.
         // Explicit undefined values remain available to test missing identity.
         const actual = {
@@ -507,12 +633,12 @@ const createHarness = ({ peakXml = null, captureResult = null, ownershipResult =
     };
 };
 
-const storedCaptureGpx = (harness, tabId = 1) => {
+const storedCaptureGpx = (harness: Harness, tabId = 1) => {
     const job = harness.values.bpbCaptureJobs?.[String(tabId)];
     return job?.payloadKey ? harness.values[job.payloadKey]?.gpx : undefined;
 };
 
-const completeSingleDraft = async harness => {
+const completeSingleDraft = async (harness: Harness) => {
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     const draftTabId = opened.tabIds[0];
@@ -533,7 +659,7 @@ const completeSingleDraft = async harness => {
 };
 
 let betaSettingsGeneration = 0;
-const openBetaSettings = async (harness, sender, disposition = 'foreground-tab') => {
+const openBetaSettings = async (harness: Harness, sender: Sender, disposition = 'foreground-tab') => {
     const generation = `test-beta-${++betaSettingsGeneration}`;
     const activation = await harness.send({
         type: 'TRUSTED_ACTION_ISSUE',
@@ -550,7 +676,7 @@ const openBetaSettings = async (harness, sender, disposition = 'foreground-tab')
 };
 
 let draftManagerGeneration = 0;
-const openDraftsManager = async (harness, sender) => {
+const openDraftsManager = async (harness: Harness, sender: Sender) => {
     const generation = `test-drafts-${++draftManagerGeneration}`;
     const activation = await harness.send({
         type: 'TRUSTED_ACTION_ISSUE',
@@ -570,15 +696,16 @@ test('draft navigation waits for the newly created staging document to finish', 
     const harness = createHarness({
         beforeTabGet: ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            assert.match(tabs.get(tabId).url, /^chrome-extension:\/\/[^/]+\/capture\/draft-tab\.html$/);
-            tabs.get(tabId).status = ++reads < 3 ? 'loading' : 'complete';
+            const tab = required(tabs.get(tabId));
+            assert.match(required(tab.url), /^chrome-extension:\/\/[^/]+\/capture\/draft-tab\.html$/);
+            tab.status = ++reads < 3 ? 'loading' : 'complete';
         },
     });
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const opened = await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     assert.deepEqual([...opened.tabIds], [100]);
     assert.equal(reads, 3);
-    assert.match(harness.tabs.get(100).url, /ascentedit/);
+    assert.match(required(required(harness.tabs.get(100)).url), /ascentedit/);
 });
 
 test('a stalled staging draft times out and rolls back without orphaning its tab', async () => {
@@ -587,7 +714,7 @@ test('a stalled staging draft times out and rolls back without orphaning its tab
         clock,
         beforeTabGet: ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            tabs.get(tabId).status = 'loading';
+            required(tabs.get(tabId)).status = 'loading';
             clock.now += 6000;
         },
     });
@@ -601,19 +728,18 @@ test('a stalled staging draft times out and rolls back without orphaning its tab
 });
 
 test('draft completion wakes readiness even when the polling timer is delayed', async () => {
-    let pollScheduled;
-    let releasePoll;
-    const polling = new Promise(resolve => { pollScheduled = resolve; });
+    const delayedPoll: { release?: () => void } = {};
+    const { promise: polling, resolve: pollScheduled } = deferred<void>();
     const clock = { now: Date.now() };
     const harness = createHarness({
         clock,
         beforeTabGet: ({ tabId, tabs }) => {
-            if (tabId === 100) tabs.get(tabId).status = 'loading';
+            if (tabId === 100) required(tabs.get(tabId)).status = 'loading';
         },
         workerTimer: (callback, delay, ...args) => {
             if (delay !== 50) return setTimeout(callback, delay, ...args);
             const timer = setTimeout(callback, 60_000, ...args).unref();
-            releasePoll = () => { clearTimeout(timer); callback(...args); };
+            delayedPoll.release = () => { clearTimeout(timer); callback(...args); };
             pollScheduled();
             return timer;
         },
@@ -622,17 +748,17 @@ test('draft completion wakes readiness even when the polling timer is delayed', 
     const opening = harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
     try {
         await polling;
-        const tab = { ...harness.tabs.get(100), status: 'complete' };
+        const tab = { ...required(harness.tabs.get(100)), status: 'complete' };
         harness.tabUpdated.listeners.slice().forEach(listener => listener(100, { status: 'complete' }, tab));
-        const opened = await Promise.race([opening, new Promise((_, reject) => {
+        const opened = await Promise.race([opening, new Promise<never>((_, reject) => {
             setTimeout(() => reject(new Error('completion remained blocked on the polling timer')), 500).unref();
         })]);
         assert.deepEqual([...opened.tabIds], [100]);
-        assert.match(harness.tabs.get(100).url, /ascentedit/);
+        assert.match(required(required(harness.tabs.get(100)).url), /ascentedit/);
         assert.equal(harness.tabUpdated.listeners.length, 1, 'the readiness listener is removed after completion');
     } finally {
         clock.now += 20_000;
-        releasePoll?.();
+        delayedPoll.release?.();
         await opening;
     }
 });
@@ -643,7 +769,7 @@ test('a draft completion returned after its deadline still rolls back', async ()
         clock,
         beforeTabGet: ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            tabs.get(tabId).status = 'complete';
+            required(tabs.get(tabId)).status = 'complete';
             clock.now += 10_001;
         },
     });
@@ -656,14 +782,12 @@ test('a draft completion returned after its deadline still rolls back', async ()
 });
 
 test('clearing capture while a staging draft loads cancels its opening transaction', async () => {
-    let reached;
-    let release;
-    const waiting = new Promise(resolve => { reached = resolve; });
-    const gate = new Promise(resolve => { release = resolve; });
+    const { promise: waiting, resolve: reached } = deferred<void>();
+    const { promise: gate, resolve: release } = deferred<void>();
     const harness = createHarness({
         beforeTabGet: async ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            tabs.get(tabId).status = 'loading';
+            required(tabs.get(tabId)).status = 'loading';
             reached();
             await gate;
         },
@@ -704,9 +828,9 @@ test('background capture persists a private job, opens grouped drafts, and previ
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
     assert.equal(storedJob.uploadGpx, undefined, 'job metadata must not embed the immutable GPX');
-    assert.match(storedCaptureGpx(harness),
+    assert.match(required(storedCaptureGpx(harness)),
         /<trkpt lat="0" lon="-0.001"><ele>100<\/ele><time>2026-07-01T15:00:00Z<\/time><\/trkpt>/);
-    assert.doesNotMatch(storedCaptureGpx(harness), /<extensions(?:\s|>)/i);
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /<extensions(?:\s|>)/i);
     assert.equal(JSON.stringify(storedJob).includes('heart'), false);
     assert.deepEqual(harness.providerCaptureCalls[0].options, {
         retainWaypoints: true,
@@ -717,7 +841,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.deepEqual([...opened.tabIds], [100]);
     assert.deepEqual(harness.grouped, [{ tabIds: [100], createProperties: { windowId: 9 } }]);
     assert.deepEqual(harness.groupUpdates, [[3, { title: 'Peak Drafts', color: 'green', collapsed: false }]]);
-    assert.equal(harness.tabs.get(100).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(required(harness.tabs.get(100)).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
 
     const apply = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 100 } });
     assert.equal(apply.action, 'apply');
@@ -746,7 +870,7 @@ test('background capture persists a private job, opens grouped drafts, and previ
     assert.deepEqual([...reopened.tabIds], [100]);
     assert.equal(reopened.reused, true,
         'a previewed job must still refocus its draft for the user to review and save');
-    assert.equal(harness.tabs.get(100).active, true);
+    assert.equal(required(harness.tabs.get(100)).active, true);
 
     const duplicate = await harness.send({
         type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId, pid: 7, cid: 77,
@@ -851,10 +975,8 @@ test('selection writes bounded metadata while multiple near-limit capture payloa
 });
 
 test('capture lifecycle writes do not wait behind an unrelated session-map queue', async () => {
-    let releaseOptionsWrite;
-    const optionsWriteGate = new Promise(resolve => { releaseOptionsWrite = resolve; });
-    let announceOptionsWrite;
-    const optionsWriteStarted = new Promise(resolve => { announceOptionsWrite = resolve; });
+    const { promise: optionsWriteGate, resolve: releaseOptionsWrite } = deferred<void>();
+    const { promise: optionsWriteStarted, resolve: announceOptionsWrite } = deferred<void>();
     const harness = createHarness({
         afterSessionSet: patch => {
             if (!patch.bpbBetaSettingsTabs) return undefined;
@@ -1047,7 +1169,7 @@ test('toolbar capture and local GPX create identical new sibling draft records',
     const uploadSibling = Object.values(harness.values.bpbDraftTabs)
         .find(draft => draft.sourceTabId === 5 && draft.pid === 8);
 
-    const comparable = draft => {
+    const comparable = (draft: DraftTab) => {
         const copy = structuredClone(draft);
         for (const key of ['tabId', 'jobId', 'sourceTabId', 'expiresAt']) delete copy[key];
         return copy;
@@ -1071,7 +1193,7 @@ test('only a Peakbagger tab can open the report drafts manager', async () => {
     assert.deepEqual(JSON.parse(JSON.stringify(allowed)), { ok: true, tabId: 100 });
     // The manager is its own page; the worker opens it directly rather than
     // deep-linking into a Settings section that now only points at it.
-    assert.equal(harness.tabs.get(100).url,
+    assert.equal(required(harness.tabs.get(100)).url,
         'chrome-extension://test-extension/options/drafts.html');
 
     const before = harness.tabs.size;
@@ -1132,14 +1254,14 @@ test('only a Peakbagger tab can open the Has beta settings section', async () =>
     assert.deepEqual(harness.windowCreates.at(-1), { tabId: 100, focused: true });
     assert.equal(harness.tabs.size, 3, 'moving the existing tab does not duplicate it');
 
-    harness.tabs.get(100).url = 'https://example.com/user-owned';
+    required(harness.tabs.get(100)).url = 'https://example.com/user-owned';
     harness.tabUpdated.listeners.forEach(listener => listener(100, {
         url: 'https://example.com/user-owned',
     }, structuredClone(harness.tabs.get(100))));
     await waitForCondition(() => !harness.values.bpbBetaSettingsTabs?.['100']);
     const afterNavigation = await openBetaSettings(harness, sender, 'background-tab');
     assert.deepEqual(JSON.parse(JSON.stringify(afterNavigation)), { ok: true, tabId: 101, reused: false });
-    assert.equal(harness.tabs.get(100).url, 'https://example.com/user-owned',
+    assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/user-owned',
         'a tab navigated away from Settings is never reclaimed');
 
     const before = harness.tabs.size;
@@ -1165,7 +1287,7 @@ test('map-layer Settings navigation requires its own trusted activation and a fi
     const generation = 'custom-layers-1';
     const activation = await harness.send({ type: 'TRUSTED_ACTION_ISSUE', action: 'custom-layer-settings', generation }, sender);
     const reply = await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab', section: 'evil' }, sender);
-    assert.equal(reply.ok, true); assert.equal(harness.tabs.get(reply.tabId).url, 'chrome-extension://test-extension/options/options.html#custom-map-layers');
+    assert.equal(reply.ok, true); assert.equal(required(harness.tabs.get(reply.tabId)).url, 'chrome-extension://test-extension/options/options.html#custom-map-layers');
     assert.equal((await harness.send({ type: 'OPEN_CUSTOM_LAYER_SETTINGS', generation, activationToken: activation.token, disposition: 'foreground-tab' }, sender)).error.code, 'activation-required');
 });
 
@@ -1196,11 +1318,11 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
             message: 'Better Peakbagger could not complete this action. Reload and try again.',
         },
     };
-    const logText = harness => harness.loggedErrors
+    const logText = (harness: Harness) => harness.loggedErrors
         .flatMap(args => args)
         .map(value => value instanceof Error ? value.message : String(value))
         .join('\n');
-    const assertPrivate = (harness, response) => {
+    const assertPrivate = (harness: Harness, response: unknown) => {
         assert.doesNotMatch(JSON.stringify(response), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
         assert.doesNotMatch(JSON.stringify(harness.values), /RAW_BROWSER_SENTINEL|chrome\.runtime/);
         assert.match(logText(harness), /RAW_BROWSER_SENTINEL: chrome\.runtime\.lastError/);
@@ -1276,7 +1398,7 @@ test('browser, storage, and page-world exceptions stay behind the public worker 
 });
 
 test('draft opening rolls back every partial toolbar attempt and remains retryable', async t => {
-    const cases = [
+    const cases: [string, Faults][] = [
         ['first tab creation', { tabCreateAt: 1 }],
         ['second tab creation', { tabCreateAt: 2 }],
         ['first draft write', { draftSetAt: 1 }],
@@ -1348,7 +1470,7 @@ test('a stale recorded draft is pruned and replaced instead of falsely reused', 
     assert.deepEqual([...reopened.tabIds], [101]);
     assert.equal(harness.values.bpbDraftTabs['100'], undefined);
     assert.equal(harness.values.bpbDraftTabs['101'].pid, 7);
-    assert.equal(harness.tabs.get(101).url,
+    assert.equal(required(harness.tabs.get(101)).url,
         'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
 });
 
@@ -1360,7 +1482,7 @@ test('replacing a draft whose tab navigated away never closes the user-controlle
         tabId: 1,
         selectedIds: [7],
     });
-    harness.tabs.get(100).url = 'https://www.peakbagger.com/peak.aspx?pid=7';
+    required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/peak.aspx?pid=7';
 
     const reopened = await harness.send({
         type: 'CAPTURE_OPEN_DRAFTS',
@@ -1370,7 +1492,7 @@ test('replacing a draft whose tab navigated away never closes the user-controlle
 
     assert.equal(reopened.reused, false);
     assert.deepEqual([...reopened.tabIds], [101]);
-    assert.equal(harness.tabs.get(100).url, 'https://www.peakbagger.com/peak.aspx?pid=7',
+    assert.equal(required(harness.tabs.get(100)).url, 'https://www.peakbagger.com/peak.aspx?pid=7',
         'a tab no longer owned by the draft transaction belongs to the user');
     assert.equal(harness.removedTabs.includes(100), false);
     assert.equal(harness.values.bpbDraftTabs['100'], undefined);
@@ -1408,15 +1530,15 @@ test('reviewing drafts after saved-ascent navigation never recreates the saved s
         type: 'DRAFT_SAVE_CONFIRMED', aid: '800', jobId: apply.jobId,
         pid: 7, cid: 77, tripId: '44', gpxVerified: true,
     }, sender)).ok, true);
-    harness.tabs.get(100).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+    required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
     const restarted = createHarness({ sessionValues: harness.values, browserTabs: harness.tabs });
     const reviewed = await restarted.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
     assert.deepEqual([...reviewed.tabIds], [101], 'a saved summit must not receive another new-ascent form');
     assert.equal(restarted.tabs.size, 4, 'review must preserve the saved display page without creating tabs');
     const next = await restarted.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: 101 } });
     assert.equal(next.fields.suffix, 'b');
-    assert.equal(next.fields.tripInfo.sequence, 2);
-    assert.equal(next.fields.tripInfo.id, '44');
+    assert.equal(required(next.fields.tripInfo).sequence, 2);
+    assert.equal(required(next.fields.tripInfo).id, '44');
 });
 
 test('closing every draft after a partial save preserves selection, suffixes, and the shared trip on reopening', async () => {
@@ -1439,15 +1561,15 @@ test('closing every draft after a partial save preserves selection, suffixes, an
     const next = await harness.send({ type: 'DRAFT_READY', pid: 8, cid: 77 }, { tab: { id: reopened.tabIds[0] } });
     assert.equal(next.action, 'apply');
     assert.equal(next.fields.suffix, 'b');
-    assert.equal(next.fields.tripInfo.sequence, 2);
-    assert.equal(next.fields.tripInfo.id, '44');
+    assert.equal(required(next.fields.tripInfo).sequence, 2);
+    assert.equal(required(next.fields.tripInfo).id, '44');
 });
 
 for (const complete of [false, true]) for (const departure of ['navigation', 'closure']) {
     test(`review refuses to replay an unverified ${complete ? 'previewed' : 'previewing'} summit after ${departure}`, async () => {
         const { harness } = await prepareMultiSummitRecovery(complete);
         if (departure === 'navigation') {
-            harness.tabs.get(100).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
+            required(harness.tabs.get(100)).url = 'https://www.peakbagger.com/climber/ascent.aspx?aid=800';
         } else {
             harness.tabs.delete(100);
             harness.tabRemoved.listeners[0](100);
@@ -1466,7 +1588,7 @@ for (const complete of [false, true]) for (const departure of ['navigation', 'cl
 
 test('favorites mutations serialize in the worker and reject unrelated senders', async () => {
     const harness = createHarness();
-    const mutation = cid => ({
+    const mutation = (cid: number) => ({
         type: 'FAVORITES_MUTATE',
         mutation: {
             kind: 'add',
@@ -1492,7 +1614,7 @@ test('favorites mutations serialize in the worker and reject unrelated senders',
     assert.equal(fromPeakbagger.ok, true);
     assert.equal(forbidden.ok, false);
     assert.equal(forbidden.error.code, 'forbidden');
-    assert.deepEqual(harness.localValues.bpbFavoriteClimbers.entries.map(entry => entry.cid), [82, 81]);
+    assert.deepEqual(required(harness.localValues.bpbFavoriteClimbers).entries.map(entry => entry.cid), [82, 81]);
 });
 
 test('ignored mutations and device report preferences reject unrelated senders', async () => {
@@ -1502,11 +1624,11 @@ test('ignored mutations and device report preferences reject unrelated senders',
         cid: 82, name: 'Example', addedAt: 1,
     } } };
     assert.equal((await harness.send(message, sender)).ok, true);
-    assert.equal(harness.localValues.bpbIgnoredClimbers.revision, 1);
+    assert.equal(required(harness.localValues.bpbIgnoredClimbers).revision, 1);
     const foreign = { tab: { id: 8 }, url: 'https://evil.example/peak.aspx' };
     assert.equal((await harness.send(message, foreign)).error.code, 'forbidden');
     assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: true }, sender)).ok, true);
-    assert.equal(harness.localValues.bpbPeakReportFilter.favoritesOnly, true);
+    assert.equal(required(harness.localValues.bpbPeakReportFilter).favoritesOnly, true);
     assert.equal((await harness.send({ type: 'PEAK_REPORT_PREFERENCE', favoritesOnly: false }, foreign)).ok, false);
 });
 
@@ -1531,7 +1653,7 @@ test('Buddy cache publication is worker-owned and rejects stale snapshots and un
 
 test('worker settings patches serialize and reject unrelated senders', async () => {
     const harness = createHarness({ settings: { enable3dMap: false, units: 'imperial' } });
-    const patch = value => ({ type: 'SETTINGS_PATCH', patch: value });
+    const patch = (value: Values) => ({ type: 'SETTINGS_PATCH', patch: value });
 
     const [fromOptions, fromPeakbagger] = await Promise.all([
         harness.send(patch({ units: 'metric' }), {
@@ -1658,16 +1780,16 @@ test('a challenged helper is adopted and focused only while it remains Peakbagge
     const sender = { url: 'chrome-extension://test-extension/popup/popup.html' };
     const focused = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
     assert.deepEqual(JSON.parse(JSON.stringify(focused)), { ok: true, tabId: 100 });
-    assert.equal(harness.tabs.get(100).active, true);
+    assert.equal(required(harness.tabs.get(100)).active, true);
     assert.deepEqual(harness.windowUpdates.at(-1), [9, { focused: true }]);
 
-    harness.tabs.get(100).active = false;
-    harness.tabs.get(100).url = 'https://example.com/reused-id';
+    required(harness.tabs.get(100)).active = false;
+    required(harness.tabs.get(100)).url = 'https://example.com/reused-id';
     const updatesBefore = harness.windowUpdates.length;
     const rejected = await harness.send({ type: 'CAPTURE_FOCUS_RECOVERY', tabId: 1 }, sender);
     assert.equal(rejected.ok, false);
     assert.equal(rejected.error.code, 'not-found');
-    assert.equal(harness.tabs.get(100).active, false, 'an ID-reused tab is never focused');
+    assert.equal(required(harness.tabs.get(100)).active, false, 'an ID-reused tab is never focused');
     assert.equal(harness.windowUpdates.length, updatesBefore);
 
     const forbidden = await harness.send(
@@ -1689,7 +1811,7 @@ test('activity capture creates and removes an inactive Peakbagger request tab wh
     assert.equal(harness.peakbaggerAccountEvidenceCalls(), 1);
     assert.deepEqual(harness.removedTabs, [100]);
     assert.equal(harness.tabs.has(100), false);
-    assert.equal(harness.tabs.get(1).active, true,
+    assert.equal(required(harness.tabs.get(1)).active, true,
         'the provider tab remains active while the helper works in the background');
 });
 
@@ -1708,7 +1830,7 @@ test('capture skips sleeping Peakbagger tabs without waking or changing them', a
                             'all page operations must use the live tab or the owned helper');
                     },
                 });
-                Object.assign(harness.tabs.get(5), state);
+                Object.assign(required(harness.tabs.get(5)), state);
                 const sleepingTab = structuredClone(harness.tabs.get(5));
                 if (liveTab) harness.tabs.set(6, {
                     id: 6, windowId: 9, active: false, status: 'complete',
@@ -1720,7 +1842,7 @@ test('capture skips sleeping Peakbagger tabs without waking or changing them', a
                 assert.equal(ready.phase, 'ready');
                 assert.equal(harness.providerCaptureCalls.length, 1);
                 assert.deepEqual(harness.tabs.get(5), sleepingTab);
-                assert.equal(harness.tabs.get(1).active, true);
+                assert.equal(required(harness.tabs.get(1)).active, true);
                 assert.deepEqual(harness.windowUpdates, []);
                 assert.deepEqual(harness.removedTabs, liveTab ? [] : [100]);
             });
@@ -1736,7 +1858,7 @@ test('a new Peakbagger helper waits for its first committed URL before injection
                 timerDelayCap: 100,
                 beforeTabGet: ({ tabId, tabs }) => {
                     if (tabId !== 100) return;
-                    const tab = tabs.get(tabId);
+                    const tab = required(tabs.get(tabId));
                     if (++reads <= 2) {
                         tab.url = url;
                         tab.status = reads === 1 ? 'complete' : 'loading';
@@ -1763,8 +1885,8 @@ test('an uncommitted helper remains bounded and never authorizes GPS export', as
         clock, timerDelayCap: 100,
         beforeTabGet: ({ tabId, tabs }) => {
             if (tabId !== 100) return;
-            tabs.get(tabId).url = undefined;
-            tabs.get(tabId).status = 'loading';
+            required(tabs.get(tabId)).url = undefined;
+            required(tabs.get(tabId)).status = 'loading';
             clock.now += 10_000;
         },
         beforePeakbaggerScript: () => assert.fail('an uncommitted helper must not run page scripts'),
@@ -1781,7 +1903,7 @@ test('a helper navigating to a foreign origin is rejected before script injectio
             const harness = createHarness({
                 beforeTabGet: ({ tabId, tabs }) => {
                     if (tabId !== 100) return;
-                    Object.assign(tabs.get(tabId), { url, pendingUrl: 'https://example.com/', status: 'loading' });
+                    Object.assign(required(tabs.get(tabId)), { url, pendingUrl: 'https://example.com/', status: 'loading' });
                 },
                 beforePeakbaggerScript: () => assert.fail('foreign pending navigation must not run scripts'),
             });
@@ -1801,7 +1923,7 @@ test('a transient Peakbagger readiness injection failure retries the still-open 
             if (phase === 'readiness' && ++probes === 1) throw new Error('Frame not ready');
         },
     });
-    harness.tabs.get(5).status = 'loading';
+    required(harness.tabs.get(5)).status = 'loading';
     const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(job.phase, 'ready');
     assert.equal(probes, 2);
@@ -1819,7 +1941,7 @@ test('a persistent readiness injection failure reports connection failure, not t
             throw new Error('Cannot access this page');
         },
     });
-    harness.tabs.get(5).status = 'loading';
+    required(harness.tabs.get(5)).status = 'loading';
     const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(job.error.code, 'peakbagger-page-connect-failed');
     assert.equal(harness.providerCaptureCalls.length, 0);
@@ -1838,11 +1960,11 @@ test('waiting for a helper document still rejects closure or navigation away', a
                 },
                 beforeTabGet: ({ tabId, tabs }) => {
                     if (tabId !== 5 || !changed) return;
-                    if (destination) tabs.get(5).url = destination;
+                    if (destination) required(tabs.get(5)).url = destination;
                     else tabs.delete(5);
                 },
             });
-            harness.tabs.get(5).status = 'loading';
+            required(harness.tabs.get(5)).status = 'loading';
             const job = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
             assert.equal(job.error.code, 'peakbagger-tab-changed');
             assert.equal(harness.providerCaptureCalls.length, 0);
@@ -1857,12 +1979,12 @@ test('an interactive Peakbagger document can verify login while unrelated resour
                 'page-helper calls must not wait for the pending window load event');
         },
     });
-    harness.tabs.get(5).status = 'loading';
+    required(harness.tabs.get(5)).status = 'loading';
 
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
 
     assert.equal(ready.phase, 'ready');
-    assert.equal(harness.tabs.get(5).status, 'loading');
+    assert.equal(required(harness.tabs.get(5)).status, 'loading');
     assert.deepEqual(harness.peakbaggerPageCalls.map(call => call.kind), ['html', 'peaks'],
         'an incompletely loaded tab must still make a live login request');
     assert.equal(harness.providerCaptureCalls.length, 1);
@@ -1870,7 +1992,7 @@ test('an interactive Peakbagger document can verify login while unrelated resour
 
 test('an interactive Peakbagger document cannot bypass a signed-out live login response', async () => {
     const harness = createHarness({ loginHtml: '<html><body>Sign in</body></html>' });
-    harness.tabs.get(5).status = 'loading';
+    required(harness.tabs.get(5)).status = 'loading';
 
     const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
 
@@ -1894,7 +2016,7 @@ test('Peakbagger document readiness requires a parsed document at the expected U
                 peakbaggerDocumentState: documentState,
                 beforeTabGet: ({ tabId }) => { if (tabId === 5) clock.now += 10_000; },
             });
-            harness.tabs.get(5).status = 'loading';
+            required(harness.tabs.get(5)).status = 'loading';
 
             const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
 
@@ -1906,8 +2028,7 @@ test('Peakbagger document readiness requires a parsed document at the expected U
 });
 
 test('cancelling a stalled Peakbagger document-readiness probe settles capture immediately', { timeout: 1000 }, async () => {
-    let reached;
-    const readinessReached = new Promise(resolve => { reached = resolve; });
+    const { promise: readinessReached, resolve: reached } = deferred<void>();
     const harness = createHarness({
         beforePeakbaggerScript: ({ phase }) => {
             if (phase !== 'readiness') return;
@@ -1915,7 +2036,7 @@ test('cancelling a stalled Peakbagger document-readiness probe settles capture i
             return new Promise(() => {});
         },
     });
-    harness.tabs.get(5).status = 'loading';
+    required(harness.tabs.get(5)).status = 'loading';
     const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await readinessReached;
 
@@ -1930,8 +2051,8 @@ test('cancelling a stalled Peakbagger document-readiness probe settles capture i
 test('selecting a temporary Peakbagger request tab transfers cleanup ownership to the user', async () => {
     const harness = createHarness({
         beforePeakbaggerAccountEvidence: () => {
-            harness.tabs.get(1).active = false;
-            harness.tabs.get(100).active = true;
+            required(harness.tabs.get(1)).active = false;
+            required(harness.tabs.get(100)).active = true;
         },
     });
     harness.tabs.delete(5);
@@ -1946,11 +2067,11 @@ test('selecting a temporary Peakbagger request tab transfers cleanup ownership t
 test('a temporary Peakbagger tab stays user-owned after it is selected and then left', async () => {
     const harness = createHarness({
         beforePeakbaggerAccountEvidence: () => {
-            harness.tabs.get(1).active = false;
-            harness.tabs.get(100).active = true;
+            required(harness.tabs.get(1)).active = false;
+            required(harness.tabs.get(100)).active = true;
             harness.tabActivated.listeners[0]({ tabId: 100, windowId: 9 });
-            harness.tabs.get(100).active = false;
-            harness.tabs.get(1).active = true;
+            required(harness.tabs.get(100)).active = false;
+            required(harness.tabs.get(1)).active = true;
         },
     });
     harness.tabs.delete(5);
@@ -1969,13 +2090,13 @@ test('navigation, closure, and tab-ID reuse all fail open during helper cleanup'
         const harness = createHarness({
             beforePeakFetch: () => {
                 const url = 'https://example.com/user-destination';
-                harness.tabs.get(100).url = url;
+                required(harness.tabs.get(100)).url = url;
                 harness.tabUpdated.listeners[0](100, { url }, harness.tabs.get(100));
             },
         });
         harness.tabs.delete(5);
         assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
-        assert.equal(harness.tabs.get(100).url, 'https://example.com/user-destination');
+        assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/user-destination');
         assert.deepEqual(harness.removedTabs, []);
     });
 
@@ -2006,7 +2127,7 @@ test('navigation, closure, and tab-ID reuse all fail open during helper cleanup'
         });
         harness.tabs.delete(5);
         assert.equal((await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false })).phase, 'ready');
-        assert.equal(harness.tabs.get(100).url, 'https://example.com/reused-id');
+        assert.equal(required(harness.tabs.get(100)).url, 'https://example.com/reused-id');
         assert.deepEqual(harness.removedTabs, []);
     });
 });
@@ -2058,7 +2179,7 @@ test('worker restart cleans only expired, unadopted, exact-match helper leases',
         const harness = await boot({ expired: false });
         assert.deepEqual(harness.removedTabs, []);
         assert.equal(harness.tabs.has(100), true);
-        assert.ok(harness.values.bpbPeakbaggerHelperLeases['100']);
+        assert.ok(required(harness.values.bpbPeakbaggerHelperLeases)['100']);
     });
 });
 
@@ -2182,7 +2303,7 @@ test('Peakbagger page connection failures distinguish an open tab from a changed
     const changed = createHarness({
         peakbaggerPageRequestError: 'page realm unavailable',
         beforeTabGet: ({ tabId, tabs }) => {
-            if (tabId === 5) tabs.get(5).url = 'https://example.com/';
+            if (tabId === 5) required(tabs.get(5)).url = 'https://example.com/';
         },
     });
     const changedFailure = await changed.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -2215,8 +2336,8 @@ test('coordinate-only provider GPX still produces a valid Peakbagger draft', asy
     assert.equal(ready.hasCachedGpx, true);
 
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.equal((storedCaptureGpx(harness).match(/<trkpt /g) || []).length, 3);
-    assert.doesNotMatch(storedCaptureGpx(harness), /<(?:ele|time)>/);
+    assert.equal((required(storedCaptureGpx(harness)).match(/<trkpt /g) || []).length, 3);
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /<(?:ele|time)>/);
     assert.equal(storedJob.trackSummary.breakCounts.missingElevation, 3);
     assert.equal(storedJob.trackSummary.breakCounts.missingTime, 3);
     assert.equal(storedJob.matches[0].draftFields.date, '2026-07-01');
@@ -2251,7 +2372,7 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     assert.equal(failure.action, 'preview-error');
     assert.match(failure.message, /Invalid GPX file/);
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
-    assert.match(storedCaptureGpx(harness), /<gpx/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
     assert.equal(harness.values.bpbDraftTabs['100'].previewStarted, false);
     assert.equal(harness.values.bpbDraftTabs['100'].complete, false);
 
@@ -2268,7 +2389,7 @@ test('a failed Peakbagger Preview keeps the GPX and permits an explicit retry', 
     }, { tab: { id: 100 } });
     assert.equal(unconfirmed.action, 'preview-error');
     assert.match(unconfirmed.message, /did not confirm/);
-    assert.match(storedCaptureGpx(harness), /<gpx/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
 });
 
 test('discarding a cached capture removes its GPX and draft identities before recapture', async () => {
@@ -2276,12 +2397,13 @@ test('discarding a cached capture removes its GPX and draft identities before re
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     const firstJobId = harness.values.bpbCaptureJobs['1'].id;
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7] });
-    assert.match(storedCaptureGpx(harness), /<gpx/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
     assert.equal(harness.values.bpbDraftTabs['100'].jobId, firstJobId);
 
     const cleared = await harness.send({ type: 'CAPTURE_CLEAR', tabId: 1 });
     assert.deepEqual({ ...cleared }, { ok: true, removedGpx: true, removedDraftCount: 1 });
-    assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
+    const clearedJob = harness.values.bpbCaptureJobs['1'];
+    assert.equal(clearedJob, undefined);
     assert.equal(harness.values.bpbDraftTabs['100'], undefined);
     assert.deepEqual(harness.tabMessages, [{ tabId: 100, message: { type: 'DRAFT_CLEARED' } }]);
     assert.equal(await harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }), null);
@@ -2300,7 +2422,7 @@ test('completed single drafts detach silently when their capture is discarded', 
 
     assert.equal(cleared.removedDraftCount, 1);
     assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
-    assert.deepEqual(harness.tabMessages, [],
+    assert.equal(harness.tabMessages.length, 0,
         'cache disposal must not replace a completed draft success banner with a disconnect error');
 });
 
@@ -2312,7 +2434,7 @@ test('completed single drafts detach silently when a newer capture replaces them
 
     assert.notEqual(replacement.id, jobId);
     assert.equal(harness.values.bpbDraftTabs[String(draftTabId)], undefined);
-    assert.deepEqual(harness.tabMessages, [],
+    assert.equal(harness.tabMessages.length, 0,
         'replacement must not report a settled draft as disconnected');
 });
 
@@ -2325,7 +2447,7 @@ test('completed single drafts detach silently when their cache expires', async (
     harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
     await waitForCondition(() => !harness.values.bpbDraftTabs?.[String(draftTabId)]);
 
-    assert.deepEqual(harness.tabMessages, [],
+    assert.equal(harness.tabMessages.length, 0,
         'routine expiry must not replace a completed draft success banner with a disconnect error');
 });
 
@@ -2372,7 +2494,7 @@ test('status reads hide expired jobs without running global cleanup', async () =
 
 test('detached tab and alarm cleanup failures are contained and reported independently', async () => {
     const harness = createHarness({ faults: { sessionGet: 'session unavailable' } });
-    const waitForError = async expected => {
+    const waitForError = async (expected: string) => {
         const deadline = Date.now() + 2000;
         while (!harness.loggedErrors.some(args => String(args[0]).includes(expected))) {
             if (Date.now() > deadline) throw new Error('cleanup errors were not reported');
@@ -2397,10 +2519,9 @@ test('detached tab and alarm cleanup failures are contained and reported indepen
 });
 
 test('a capture that finishes for a different activity is not reused after navigation', async () => {
-    let releasePeakFetch;
-    const peakFetchGate = new Promise(resolve => { releasePeakFetch = resolve; });
+    const { promise: peakFetchGate, resolve: releasePeakFetch } = deferred<void>();
     const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
-    const until = async predicate => {
+    const until = async (predicate: () => unknown) => {
         const deadline = Date.now() + 2000;
         while (!predicate()) {
             if (Date.now() > deadline) throw new Error('condition not reached');
@@ -2415,7 +2536,7 @@ test('a capture that finishes for a different activity is not reused after navig
     // guarded) same-activity fast path instead of the in-flight one.
     const first = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await until(() => harness.peakbaggerPageCalls.some(call => call.kind === 'peaks'));
-    harness.tabs.get(1).url = 'https://www.strava.com/activities/456';
+    required(harness.tabs.get(1)).url = 'https://www.strava.com/activities/456';
     const second = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await new Promise(resolve => setTimeout(resolve, 50));
     releasePeakFetch();
@@ -2454,10 +2575,10 @@ test('capture follows canonical provider identity across Garmin redirects and UR
             ownershipResult: owned,
             captureResult: exported,
             beforeTabGet: ({ number, tabs }) => {
-                if (number === 2) tabs.get(1).url = redirectedUrl;
+                if (number === 2) required(tabs.get(1)).url = redirectedUrl;
             },
         });
-        harness.tabs.get(1).url = clickedUrl;
+        required(harness.tabs.get(1)).url = clickedUrl;
 
         const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
         assert.equal(result.phase, 'ready', `${clickedUrl} -> ${redirectedUrl}`);
@@ -2475,7 +2596,7 @@ test('capture rejects a different activity or unsupported origin at the first wo
     ]) {
         const harness = createHarness({
             beforeTabGet: ({ number, tabs }) => {
-                if (number === 2) tabs.get(1).url = nextUrl;
+                if (number === 2) required(tabs.get(1)).url = nextUrl;
             },
         });
         const result = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
@@ -2506,10 +2627,8 @@ test('capture rejects a provider-reported SPA navigation after the GPX read', as
 });
 
 test('capture does not follow a same-tab activity navigation after ownership approval', async () => {
-    let releaseLogin;
-    let loginReached;
-    const loginGate = new Promise(resolve => { releaseLogin = resolve; });
-    const reached = new Promise(resolve => { loginReached = resolve; });
+    const { promise: loginGate, resolve: releaseLogin } = deferred<void>();
+    const { promise: reached, resolve: loginReached } = deferred<void>();
     const harness = createHarness({
         beforePeakbaggerLogin: async () => {
             loginReached();
@@ -2519,7 +2638,7 @@ test('capture does not follow a same-tab activity navigation after ownership app
 
     const capture = harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     await reached;
-    harness.tabs.get(1).url = 'https://www.strava.com/activities/456';
+    required(harness.tabs.get(1)).url = 'https://www.strava.com/activities/456';
     releaseLogin();
     const result = await capture;
 
@@ -2532,8 +2651,7 @@ test('capture does not follow a same-tab activity navigation after ownership app
 });
 
 test('overlapping starts serialize admission before either capture process is registered', async () => {
-    let releaseAdmissions;
-    const admissionGate = new Promise(resolve => { releaseAdmissions = resolve; });
+    const { promise: admissionGate, resolve: releaseAdmissions } = deferred<void>();
     const harness = createHarness({
         beforeBadgeText: async call => {
             if (call.number <= 2) await admissionGate;
@@ -2553,10 +2671,8 @@ test('overlapping starts serialize admission before either capture process is re
 });
 
 test('cancel during capture admission prevents provider access and reports success', async () => {
-    let releaseAdmission;
-    let admissionReached;
-    const admissionGate = new Promise(resolve => { releaseAdmission = resolve; });
-    const reached = new Promise(resolve => { admissionReached = resolve; });
+    const { promise: admissionGate, resolve: releaseAdmission } = deferred<void>();
+    const { promise: reached, resolve: admissionReached } = deferred<void>();
     const harness = createHarness({
         beforeBadgeText: async call => {
             if (call.number !== 1) return;
@@ -2584,9 +2700,8 @@ test('cancellation promptly abandons every page-helper executeScript phase', asy
     for (const phase of ['probe', 'injection', 'account-evidence', 'request']) {
         for (const stage of ['before', 'after']) {
             await t.test(`${stage} ${phase} dispatch`, async () => {
-                let reached;
-                const phaseReached = new Promise(resolve => { reached = resolve; });
-                const stall = call => {
+                const { promise: phaseReached, resolve: reached } = deferred<void>();
+                const stall: ScriptHook = call => {
                     if (call.phase !== phase || call.number !== 1) return undefined;
                     reached();
                     return new Promise(() => {});
@@ -2606,7 +2721,7 @@ test('cancellation promptly abandons every page-helper executeScript phase', asy
                 ]);
                 const [started, cancelled] = await Promise.race([
                     settled,
-                    new Promise((_, reject) => setTimeout(
+                    new Promise<never>((_, reject) => setTimeout(
                         () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
                         500,
                     )),
@@ -2625,16 +2740,14 @@ test('cancellation promptly abandons every page-helper executeScript phase', asy
 test('cancellation promptly abandons every provider executeScript phase', async t => {
     for (const phase of ['injection', 'ownership', 'capture']) {
         for (const stage of ['before', 'after']) {
-            await t.test(`${stage} ${phase} dispatch`, async t => {
-                let reached;
-                let rejectLate;
-                const phaseReached = new Promise(resolve => { reached = resolve; });
-                const lateGate = new Promise((_, reject) => { rejectLate = reject; });
-                const unhandled = [];
-                const onUnhandled = reason => { unhandled.push(reason); };
+            await t.test(`${stage} ${phase} dispatch`, async subtest => {
+                const { promise: phaseReached, resolve: reached } = deferred<void>();
+                const { promise: lateGate, reject: rejectLate } = deferred<never>();
+                const unhandled: unknown[] = [];
+                const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
                 process.on('unhandledRejection', onUnhandled);
-                t.after(() => process.off('unhandledRejection', onUnhandled));
-                const stall = call => {
+                subtest.after(() => process.off('unhandledRejection', onUnhandled));
+                const stall: ScriptHook = call => {
                     if (call.phase !== phase || call.number !== 1) return undefined;
                     reached();
                     return lateGate;
@@ -2653,7 +2766,7 @@ test('cancellation promptly abandons every provider executeScript phase', async 
                 ]);
                 const [started, cancelled] = await Promise.race([
                     settled,
-                    new Promise((_, reject) => setTimeout(
+                    new Promise<never>((_, reject) => setTimeout(
                         () => reject(new Error(`cancel did not settle stalled ${stage} ${phase}`)),
                         500,
                     )),
@@ -2677,9 +2790,8 @@ test('cancellation promptly abandons every provider executeScript phase', async 
 test('provider cancellation dispatch is best-effort and never delays Cancel', async t => {
     for (const stage of ['before', 'after']) {
         await t.test(`${stage} cancel dispatch`, async () => {
-            let cancelReached;
-            const reached = new Promise(resolve => { cancelReached = resolve; });
-            const stallCancel = call => {
+            const { promise: reached, resolve: cancelReached } = deferred<void>();
+            const stallCancel: ScriptHook = call => {
                 if (call.phase !== 'cancel' || call.number !== 1) return undefined;
                 cancelReached();
                 return new Promise(() => {});
@@ -2696,7 +2808,7 @@ test('provider cancellation dispatch is best-effort and never delays Cancel', as
             const cancellation = harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 });
             const [cancelled] = await Promise.race([
                 Promise.all([cancellation, reached]),
-                new Promise((_, reject) => setTimeout(
+                new Promise<never>((_, reject) => setTimeout(
                     () => reject(new Error(`Cancel awaited the stalled ${stage} cleanup dispatch`)),
                     500,
                 )),
@@ -2731,8 +2843,7 @@ test('every stalled provider operation returns one typed public deadline failure
 });
 
 test('source closure abandons a stalled provider ownership read', async () => {
-    let reached;
-    const ownershipReached = new Promise(resolve => { reached = resolve; });
+    const { promise: ownershipReached, resolve: reached } = deferred<void>();
     const harness = createHarness({
         beforeProviderScript: call => {
             if (call.phase !== 'ownership') return undefined;
@@ -2749,7 +2860,7 @@ test('source closure abandons a stalled provider ownership read', async () => {
 
     assert.equal(await Promise.race([
         capture,
-        new Promise((_, reject) => setTimeout(
+        new Promise<never>((_, reject) => setTimeout(
             () => reject(new Error('source closure did not settle provider ownership')), 500,
         )),
     ]), null);
@@ -2758,8 +2869,7 @@ test('source closure abandons a stalled provider ownership read', async () => {
 });
 
 test('expiry abandons a stalled provider capture without retaining its generation', async () => {
-    let reached;
-    const captureReached = new Promise(resolve => { reached = resolve; });
+    const { promise: captureReached, resolve: reached } = deferred<void>();
     const clock = { now: Date.now() };
     const harness = createHarness({
         clock,
@@ -2778,7 +2888,7 @@ test('expiry abandons a stalled provider capture without retaining its generatio
 
     assert.equal(await Promise.race([
         capture,
-        new Promise((_, reject) => setTimeout(
+        new Promise<never>((_, reject) => setTimeout(
             () => reject(new Error('expiry did not settle provider capture')), 500,
         )),
     ]), null);
@@ -2787,8 +2897,7 @@ test('expiry abandons a stalled provider capture without retaining its generatio
 });
 
 test('closing the source tab abandons stalled helper setup and releases its lease', async () => {
-    let reached;
-    const evidenceReached = new Promise(resolve => { reached = resolve; });
+    const { promise: evidenceReached, resolve: reached } = deferred<void>();
     const harness = createHarness({
         beforePeakbaggerScript: call => {
             if (call.phase !== 'account-evidence') return undefined;
@@ -2804,7 +2913,7 @@ test('closing the source tab abandons stalled helper setup and releases its leas
     harness.tabRemoved.listeners[0](1, { windowId: 9, isWindowClosing: false });
     const result = await Promise.race([
         capture,
-        new Promise((_, reject) => setTimeout(
+        new Promise<never>((_, reject) => setTimeout(
             () => reject(new Error('source-tab closure did not settle stalled helper setup')),
             500,
         )),
@@ -2836,10 +2945,8 @@ test('a stalled page-helper operation returns one typed public deadline failure'
 });
 
 test('a tab created after its caller deadline is leased and removed without resurrecting capture', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const harness = createHarness({
         timerDelayCap: 5,
         beforeTabCreate: async () => {
@@ -2864,10 +2971,9 @@ test('a tab created after its caller deadline is leased and removed without resu
 });
 
 test('cancelling an in-progress capture discards its job and ignores later results', async () => {
-    let releasePeakFetch;
-    const peakFetchGate = new Promise(resolve => { releasePeakFetch = resolve; });
+    const { promise: peakFetchGate, resolve: releasePeakFetch } = deferred<void>();
     const harness = createHarness({ beforePeakFetch: () => peakFetchGate });
-    const until = async predicate => {
+    const until = async (predicate: () => unknown) => {
         const deadline = Date.now() + 2000;
         while (!predicate()) {
             if (Date.now() > deadline) throw new Error('condition not reached');
@@ -2888,12 +2994,11 @@ test('cancelling an in-progress capture discards its job and ignores later resul
 });
 
 test('cancelling during corridor lookup aborts the background request owner immediately', async () => {
-    let peakSignal;
-    let reached;
-    const peakReached = new Promise(resolve => { reached = resolve; });
+    const peakRequest: { signal?: AbortSignal } = {};
+    const { promise: peakReached, resolve: reached } = deferred<void>();
     const harness = createHarness({
         beforePeakFetch: ({ options }) => {
-            peakSignal = options.signal;
+            peakRequest.signal = options.signal;
             reached();
             return new Promise(() => {});
         },
@@ -2906,12 +3011,12 @@ test('cancelling during corridor lookup aborts the background request owner imme
 
     assert.equal(cancelled.cancelled, true);
     assert.equal(await capture, null);
-    assert.equal(peakSignal.aborted, true, 'the background Peakbagger socket owner is aborted');
+    assert.equal(required(peakRequest.signal).aborted, true, 'the background Peakbagger socket owner is aborted');
     assert.equal(harness.values.bpbCaptureJobs['1'], undefined);
     assert.deepEqual(harness.providerCancelCalls, [generation],
         'the page-owned provider request is cancelled independently too');
     assert.deepEqual(harness.peakbaggerPageCancelCalls,
-        [harness.peakbaggerPageCalls.find(call => call.kind === 'peaks').requestId],
+        [required(harness.peakbaggerPageCalls.find(call => call.kind === 'peaks')).requestId],
         'the page-owned Peakbagger request is also aborted');
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 1,
         'cancellation cannot start the retry attempt');
@@ -2932,7 +3037,7 @@ test('Peakbagger corridor concurrency is capped across activity tabs', async () 
         active: false,
         status: 'complete',
     });
-    const releases = [];
+    const releases: (() => void)[] = [];
     let inFlight = 0;
     let maximum = 0;
     const harness = createHarness({
@@ -2940,7 +3045,7 @@ test('Peakbagger corridor concurrency is capped across activity tabs', async () 
         beforePeakFetch: () => {
             inFlight++;
             maximum = Math.max(maximum, inFlight);
-            return new Promise(resolve => releases.push(() => {
+            return new Promise<void>(resolve => releases.push(() => {
                 inFlight--;
                 resolve();
             }));
@@ -2951,11 +3056,11 @@ test('Peakbagger corridor concurrency is capped across activity tabs', async () 
 
     await waitForCondition(() => releases.length === 4);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 4);
-    releases.shift()();
+    required(releases.shift())();
     await waitForCondition(() => releases.length === 4);
-    while (releases.length) releases.shift()();
+    while (releases.length) required(releases.shift())();
     await waitForCondition(() => harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length === 6);
-    while (releases.length) releases.shift()();
+    while (releases.length) required(releases.shift())();
 
     const results = await Promise.all(captures);
     assert.ok(results.every(result => result.phase === 'ready'));
@@ -3009,7 +3114,7 @@ test('Peakbagger cooldown blocks ordinary and forced capture across tabs and res
         ['out of range', start + 86_400_001, start + 300_000],
         ['short provider deadline', start + 30_000, start + 30_000],
         ['long provider deadline', start + 600_000, start + 600_000],
-    ]) await t.test(name, async () => {
+    ] as const) await t.test(name, async () => {
         const clock = { now: start };
         let responses = 0;
         const tabs = new Map([[1, {
@@ -3019,7 +3124,7 @@ test('Peakbagger cooldown blocks ordinary and forced capture across tabs and res
         }], [50, {
             id: 50, windowId: 9, url: 'https://www.peakbagger.com/Default.aspx', active: false, status: 'complete',
         }]]);
-        const options = {
+        const options: HarnessOptions = {
             browserTabs: tabs, clock,
             peakbaggerPagePeakResult: call => ++responses === 1 ? {
                 kind: 'transient', requestedUrl: call.url, url: call.url, status: 429, redirected: false,
@@ -3068,8 +3173,8 @@ test('a failed cooldown write retains the active worker deadline', async () => {
 
 test('concurrent Peakbagger refusals retain the longest deadline', async () => {
     const clock = { now: Date.now() };
-    let release, refusals = 0;
-    const gate = new Promise(resolve => { release = resolve; });
+    let refusals = 0;
+    const { promise: gate, resolve: release } = deferred<void>();
     const harness = createHarness({
         clock,
         browserTabs: new Map([[1, { id: 1, windowId: 9, url: 'https://www.strava.com/activities/123', status: 'complete' }],
@@ -3090,7 +3195,7 @@ test('concurrent Peakbagger refusals retain the longest deadline', async () => {
     release();
     await Promise.all(jobs);
     assert.equal(refusals, 2, 'both already-in-flight responses reached the worker');
-    assert.equal(harness.values.bpbPeakbaggerCooldown.retryAt, clock.now + 600_000);
+    assert.equal(required(harness.values.bpbPeakbaggerCooldown).retryAt, clock.now + 600_000);
     const blocked = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: true });
     assert.equal(blocked.error.retryAt, clock.now + 600_000);
     assert.equal(harness.peakbaggerPageCalls.filter(call => call.kind === 'peaks').length, 2);
@@ -3112,7 +3217,7 @@ test('Peakbagger transport failures use capture recovery codes at login and summ
         for (const [code, kind, expected, status] of cases) {
             await t.test(`${resource}: ${code}`, async () => {
                 const harness = createHarness({
-                    [resource === 'html' ? 'peakbaggerPageLoginResult' : 'peakbaggerPagePeakResult']: call => ({
+                    [resource === 'html' ? 'peakbaggerPageLoginResult' : 'peakbaggerPagePeakResult']: (call: PeakbaggerCall) => ({
                         kind, requestedUrl: call.url, url: call.url, status, redirected: false,
                         error: { source: 'peakbagger', code, resource, status },
                     }),
@@ -3154,14 +3259,13 @@ test('summit lookup retries only network and server failures once', async () => 
 });
 
 test('expiry during corridor lookup aborts work and removes the expired generation', async () => {
-    let peakSignal;
-    let reached;
-    const peakReached = new Promise(resolve => { reached = resolve; });
+    const peakRequest: { signal?: AbortSignal } = {};
+    const { promise: peakReached, resolve: reached } = deferred<void>();
     const clock = { now: Date.now() };
     const harness = createHarness({
         clock,
         beforePeakFetch: ({ options }) => {
-            peakSignal = options.signal;
+            peakRequest.signal = options.signal;
             reached();
             return new Promise(() => {});
         },
@@ -3173,17 +3277,16 @@ test('expiry during corridor lookup aborts work and removes the expired generati
     harness.alarmEvent.listeners[0]({ name: 'bpb-capture-cleanup' });
 
     assert.equal(await capture, null);
-    assert.equal(peakSignal.aborted, true);
+    assert.equal(required(peakRequest.signal).aborted, true);
     await waitForCondition(() => !harness.values.bpbCaptureJobs?.['1']);
 });
 
 test('cancel followed immediately by retry starts a new provider generation', async () => {
-    let releaseFirstCapture;
-    const firstCaptureGate = new Promise(resolve => { releaseFirstCapture = resolve; });
+    const { promise: firstCaptureGate, resolve: releaseFirstCapture } = deferred<void>();
     const harness = createHarness({
         beforeProviderCapture: call => call.number === 1 ? firstCaptureGate : undefined,
     });
-    const until = async predicate => {
+    const until = async (predicate: () => unknown) => {
         const deadline = Date.now() + 2000;
         while (!predicate()) {
             if (Date.now() > deadline) {
@@ -3251,10 +3354,8 @@ test('an opened job refuses selection writes and hands the popup its locked stat
 });
 
 test('selection cannot change after a draft opening generation starts', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const harness = createHarness({
         peakXml: '<p><t i="7" n="First Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/><t i="8" n="Second Peak" a="0" o="0" e="426.51" r="100" l="Test Range"/></p>',
         beforeTabCreate: async ({ number }) => {
@@ -3279,10 +3380,8 @@ test('selection cannot change after a draft opening generation starts', async ()
 });
 
 test('clearing during draft opening cancels the generation and leaves no orphan state or tab', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const harness = createHarness({
         beforeTabCreate: async ({ number }) => {
             if (number !== 1) return;
@@ -3308,10 +3407,8 @@ test('clearing during draft opening cancels the generation and leaves no orphan 
 });
 
 test('source-tab closure during draft opening cancels and cleans the generation idempotently', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const harness = createHarness({
         beforeTabCreate: async ({ number }) => {
             if (number !== 1) return;
@@ -3345,10 +3442,8 @@ test('source-tab closure during draft opening cancels and cleans the generation 
 });
 
 test('expiry during draft opening cancels the generation and removes all expired state', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const clock = { now: Date.now() };
     const harness = createHarness({
         clock,
@@ -3381,10 +3476,8 @@ test('expiry during draft opening cancels the generation and removes all expired
 });
 
 test('draft opening cannot restore or mutate a replacement job generation', async () => {
-    let releaseCreate;
-    let createReached;
-    const createGate = new Promise(resolve => { releaseCreate = resolve; });
-    const reached = new Promise(resolve => { createReached = resolve; });
+    const { promise: createGate, resolve: releaseCreate } = deferred<void>();
+    const { promise: reached, resolve: createReached } = deferred<void>();
     const harness = createHarness({
         beforeTabCreate: async ({ number }) => {
             if (number !== 1) return;
@@ -3431,7 +3524,7 @@ test('installing a replacement job removes records owned by the prior generation
     assert.equal(harness.values.bpbCaptureJobs['1'].id, replacement.id);
     assert.equal(harness.values[firstPayloadKey], undefined,
         'installing the replacement metadata must remove the prior generation payload');
-    assert.match(storedCaptureGpx(harness), /<gpx/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
     assert.deepEqual(harness.values.bpbDraftTabs, {},
         'completed draft tabs may remain open for review, but no stale record may join the replacement lifecycle');
     assert.equal(harness.tabs.has(opened.tabIds[0]), true,
@@ -3442,11 +3535,9 @@ test('installing a replacement job removes records owned by the prior generation
 });
 
 test('an old Preview completion cannot clear a replacement job GPX', async () => {
-    let releaseCompletion;
-    let completionReached;
     let held = false;
-    const completionGate = new Promise(resolve => { releaseCompletion = resolve; });
-    const reached = new Promise(resolve => { completionReached = resolve; });
+    const { promise: completionGate, resolve: releaseCompletion } = deferred<void>();
+    const { promise: reached, resolve: completionReached } = deferred<void>();
     const harness = createHarness({
         afterSessionSet: async patch => {
             if (held || !Object.values(patch.bpbDraftTabs || {}).some(draft => draft.complete)) return;
@@ -3468,7 +3559,7 @@ test('an old Preview completion cannot clear a replacement job GPX', async () =>
         previewResult: { state: 'success', message: 'GPX file successfully uploaded.' },
     }, { tab: { id: 100 } });
     await reached;
-    const replacement = {
+    const replacement: CaptureJob = {
         ...structuredClone(harness.values.bpbCaptureJobs['1']),
         id: 'replacement-job',
         phase: 'ready',
@@ -3528,13 +3619,13 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     const ready = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(ready.matches.length, 2);
     const storedJob = harness.values.bpbCaptureJobs['1'];
-    assert.match(storedCaptureGpx(harness), /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
+    assert.match(required(storedCaptureGpx(harness)), /<wpt lat="0\.01" lon="0\.02"><name>Camp &amp; Water<\/name><\/wpt>/);
     assert.equal(storedJob.trackSummary.retainedPointCount + storedJob.trackSummary.retainedWaypointCount <= 3000, true);
-    assert.doesNotMatch(storedCaptureGpx(harness), /999|private/);
-    storedJob.matches.find(match => match.id === 7).confidence = 80;
-    storedJob.matches.find(match => match.id === 7).draftFields.upDistanceM = 300;
-    storedJob.matches.find(match => match.id === 8).confidence = 95;
-    storedJob.matches.find(match => match.id === 8).draftFields.upDistanceM = 100;
+    assert.doesNotMatch(required(storedCaptureGpx(harness)), /999|private/);
+    required(storedJob.matches.find(match => match.id === 7)).confidence = 80;
+    required(storedJob.matches.find(match => match.id === 7)).draftFields.upDistanceM = 300;
+    required(storedJob.matches.find(match => match.id === 8)).confidence = 95;
+    required(storedJob.matches.find(match => match.id === 8)).draftFields.upDistanceM = 100;
 
     await harness.send({ type: 'CAPTURE_OPEN_DRAFTS', tabId: 1, selectedIds: [7, 8] });
     const first = await harness.send({ type: 'DRAFT_READY', pid: '8', cid: '77' }, { tab: { id: 100 } });
@@ -3567,7 +3658,7 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
         type: 'DRAFT_DAY_STATS_APPLIED', jobId: first.jobId, pid: 8, cid: 77
     }, { tab: { id: 100 } }).then(value => value.ok), true);
     assert.equal(harness.values.bpbDraftTabs['100'].dayStatsPending, false);
-    assert.deepEqual(harness.tabMessages, [], 'Preview must not release the next summit before Save');
+    assert.equal(harness.tabMessages.length, 0, 'Preview must not release the next summit before Save');
     const firstSender = { tab: { id: 100 }, url: 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=8&cid=77' };
     const saveContext = await harness.send({ type: 'DRAFT_SAVE_CONTEXT', aid: '800' }, firstSender);
     assert.equal(saveContext.action, 'verify');
@@ -3577,10 +3668,10 @@ test('retained waypoints share the 3,000-point budget and multi-peak drafts rece
     assert.equal((await harness.send({ ...saveMessage, gpxVerified: false }, firstSender)).ok, false);
     assert.equal((await harness.send({ ...saveMessage, jobId: 'replacement' }, firstSender)).ok, false);
     assert.equal((await harness.send(saveMessage, firstSender)).ok, true);
-    assert.equal(harness.tabs.get(101).active, true);
-    assert.equal(harness.tabs.get(101).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
+    assert.equal(required(harness.tabs.get(101)).active, true);
+    assert.equal(required(harness.tabs.get(101)).url, 'https://www.peakbagger.com/climber/ascentedit.aspx?pid=7&cid=77');
     assert.equal(harness.values.bpbCaptureJobs['1'].phase, 'opened');
-    assert.match(storedCaptureGpx(harness), /<gpx/);
+    assert.match(required(storedCaptureGpx(harness)), /<gpx/);
 
     const second = await harness.send({ type: 'DRAFT_READY', pid: '7', cid: '77' }, { tab: { id: 101 } });
     assert.deepEqual({ ...second.fields.tripInfo }, { sequence: 2, name: '2026-07-01', nightsOut: 2, id: '44' });
@@ -3681,7 +3772,7 @@ test('changing capture settings invalidates a reusable job for the same activity
 
     await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.notEqual(harness.values.bpbCaptureJobs['1'].id, firstId);
-    assert.deepEqual(harness.providerCaptureCalls.at(-1).options, {
+    assert.deepEqual(required(harness.providerCaptureCalls.at(-1)).options, {
         retainWaypoints: false,
         includeTripName: true
     });
@@ -3824,7 +3915,7 @@ test('production-point analysis yields to status and cancellation messages', { t
     }));
     const peakXml = `<p>${Array.from({ length: 5_000 }, (_, index) =>
         `<t i="${index + 1}" n="Peak ${index + 1}" a="0" o="${-0.3 + index * 0.6 / 4_999}" e="4265.1" r="100"/>`).join('')}</p>`;
-    const analysisYield = Promise.withResolvers();
+    const analysisYield = deferred<void>();
     let analysisYielded = false;
     const harness = createHarness({
         captureResult: {
@@ -3864,7 +3955,7 @@ test('production-point analysis yields to status and cancellation messages', { t
                     `capture finished before an analysis task yield: ${state()}; result=${JSON.stringify(result)}`,
                 );
             }),
-            new Promise((_, reject) => {
+            new Promise<never>((_, reject) => {
                 timer = setTimeout(() => reject(new Error(`analysis setup timed out: ${state()}`)), 10_000);
             }),
         ]);
@@ -3875,7 +3966,7 @@ test('production-point analysis yields to status and cancellation messages', { t
                 harness.send({ type: 'CAPTURE_STATUS', tabId: 1 }),
                 harness.send({ type: 'CAPTURE_CANCEL', tabId: 1 }),
             ]),
-            new Promise((_, reject) => {
+            new Promise<never>((_, reject) => {
                 timer = setTimeout(() => reject(new Error(
                     `analysis did not yield to status and cancellation: ${state()}`,
                 )), 500);
@@ -3942,7 +4033,7 @@ test('an uninitialized Garmin session stops before Peakbagger requests and GPS e
     const harness = createHarness({
         ownershipResult: { ok: false, provider: 'garmin', activityId: '123', code: 'provider-session-not-ready' },
     });
-    harness.tabs.get(1).url = 'https://connect.garmin.com/app/activity/123';
+    required(harness.tabs.get(1)).url = 'https://connect.garmin.com/app/activity/123';
     const failed = await harness.send({ type: 'CAPTURE_START', tabId: 1, force: false });
     assert.equal(failed.error.code, 'provider-session-not-ready');
     assert.equal(harness.providerCaptureCalls.length, 0);
@@ -3950,7 +4041,7 @@ test('an uninitialized Garmin session stops before Peakbagger requests and GPS e
 });
 
 test('activity capture publishes truthful monotonic phases and throttled summit progress', async () => {
-    const completionOrder = [];
+    const completionOrder: number[] = [];
     const segment = Array.from({ length: 11 }, (_, index) => ({
         lat: 0,
         lon: index * 0.085,
@@ -3988,7 +4079,7 @@ test('activity capture publishes truthful monotonic phases and throttled summit 
 
     const snapshots = harness.sessionSetPatches
         .map(patch => patch.bpbCaptureJobs?.['1'])
-        .filter(job => job?.id === ready.id);
+        .filter((job): job is CaptureJob => job !== undefined && job.id === ready.id);
     const phases = snapshots.map(job => job.phase)
         .filter((phase, index, all) => index === 0 || phase !== all[index - 1]);
     assert.deepEqual(phases, [
@@ -4004,8 +4095,9 @@ test('activity capture publishes truthful monotonic phases and throttled summit 
     ]);
 
     const progressWrites = snapshots
-        .filter(job => job.phase === 'searching-summits' && job.progress)
-        .map(job => job.progress);
+        .filter(job => job.phase === 'searching-summits')
+        .map(job => job.progress)
+        .filter(progress => progress != null);
     assert.deepEqual(progressWrites[0], { completed: 0, total: completionOrder.length });
     assert.deepEqual(progressWrites.at(-1), {
         completed: completionOrder.length,
@@ -4233,7 +4325,7 @@ test('a new draft document replaces an abandoned lease and rejects the old ackno
     const replacement = await h.send(ready, newPage);
     assert.equal(replacement.action, 'apply', 'reload must not wait for the old document lease');
     assert.notEqual(replacement.applyLeaseToken, oldApply.applyLeaseToken);
-    const ack = apply => ({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
+    const ack = (apply: Reply) => ({ type: 'DRAFT_PREVIEW_STARTED', jobId: apply.jobId,
         pid: '7', cid: '77', applyLeaseToken: apply.applyLeaseToken });
     assert.equal((await h.send(ack(oldApply), oldPage)).ok, false);
     assert.equal((await h.send(ack(replacement), oldPage)).ok, false, 'a token cannot cross documents');
@@ -4262,17 +4354,18 @@ test('draft document nonces recover reloads when the browser omits documentId', 
 
 test('payload reconciliation validates the delivery variant and removes failed legacy migrations', async () => {
     const clock = Date.now();
-    const jobs = {};
-    const sessionValues = { bpbCaptureJobs: jobs,
+    const jobs: Record<number, Partial<CaptureJob>> = {};
+    const sessionValues: Values = { bpbCaptureJobs: jobs,
         'bpbCapturePayload:reconciliation-orphan': { jobId: 'reconciliation-orphan', gpx: '<gpx/>' } };
-    const add = (tabId, preferences, record, extra = {}) => {
+    const add = (tabId: number, preferences: Values, record: { gpx: string; gpxWithoutTimestamps?: string } | null, extra: Values = {}) => {
         const id = `variant-generation-${tabId}`;
         jobs[tabId] = { id, sourceTabId: tabId, provider: 'strava', activityId: String(tabId),
             phase: 'ready', matches: [], selectedIds: [], createdAt: clock, updatedAt: clock,
             expiresAt: clock + 1800000, capturePreferences: preferences, ...extra };
         if (record) {
-            jobs[tabId].payloadKey = `bpbCapturePayload:${id}`;
-            sessionValues[jobs[tabId].payloadKey] = { jobId: id, ...record };
+            const key = `bpbCapturePayload:${id}` as const;
+            jobs[tabId].payloadKey = key;
+            sessionValues[key] = { jobId: id, ...record };
         }
     };
     add(1, { removeGpxTimestamps: true }, { gpx: '<gpx>with-time</gpx>' });
@@ -4338,7 +4431,7 @@ test('My Ascents keeps missing identity, confirmed sign-out and challenges disti
 test('My Ascents owns and releases only its inactive helper, including account failure', async () => {
     const sender = { url: 'chrome-extension://test-extension/options/options.html' };
     for (const failure of [false, true]) {
-        const created = [];
+        const created: TabCreation[] = [];
         const h = createHarness({ beforeTabCreate: ({ details }) => created.push(details), loginHtml: failure ? '<p>Unverified account</p>' : undefined,
             ...(failure ? { peakbaggerAccountEvidence: { pageUrl: 'https://www.peakbagger.com/Default.aspx', links: [] } } : {}) });
         h.tabs.delete(5);
@@ -4359,7 +4452,7 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
     const derived = harness.values.bpbCaptureJobs[1];
     assert.equal(derived.phase, 'ready');
     harness.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
-    const store = createGarminStore(database);
+    const store = createGarminStore(database) as unknown as GarminStore;
     await store.mutate(state => {
         state.connection = { owner: '1234', cid: '77', key: null, enabled: false, connectedDate: '2026-10-23' };
         state.items['123'] = { id: '123', owner: '1234', cid: '77', phase: 'ready', saved: [],
@@ -4375,7 +4468,7 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
     assert.equal(first.ok, true, JSON.stringify(first)); assert.equal(first.tabIds.length, 1);
     const draft = harness.values.bpbDraftTabs[first.tabIds[0]];
     assert.equal(draft.waitForSave, true, 'Even single-summit inbox drafts require verified Save');
-    assert.equal((await store.read()).items['123'].analysis.route.length, 1);
+    assert.equal(required((await store.read()).items['123'].analysis?.route).length, 1);
     const repeated = await harness.send(message, sender);
     assert.equal(repeated.reused, true); assert.deepEqual(repeated.tabIds, first.tabIds);
     harness.values.bpbCaptureJobs[9].expiresAt = 0;
@@ -4388,11 +4481,11 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
 test('a completed active Peakbagger visit wakes the durable Garmin queue without opening a tab', async () => {
     const database = new IDBFactory();
     const h = createHarness({ garminDatabase: database });
-    const store = createGarminStore(database);
+    const store = createGarminStore(database) as unknown as GarminStore;
     await store.mutate(state => {
         state.connection = { owner: '1234', cid: '77', key: 'fictional-key-for-queue-test', enabled: true };
         state.peakbaggerBlocked = { code: 'cloudflare', retryAt: 0 };
-        state.items['123'] = { id: '123', phase: 'waiting', summary: { type: 'hiking' } };
+        state.items['123'] = { id: '123', phase: 'waiting', summary: { type: 'hiking' } } as GarminItem;
     });
     const tab = { id: 42, active: false, status: 'complete', url: 'https://www.peakbagger.com/Default.aspx' };
     h.tabs.set(tab.id, tab);
@@ -4411,14 +4504,15 @@ test('a completed active Peakbagger visit wakes the durable Garmin queue without
 const garminInboxHarness = async () => {
     const database = new IDBFactory(), h = createHarness({ garminDatabase: database });
     await h.send({ type: 'CAPTURE_START', tabId: 1 });
-    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore(database);
+    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore(database) as unknown as GarminStore;
     h.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
     await store.mutate(state => {
+        // This retained activity predates the current summary field.
         state.items['123'] = { id: '123', cid: '77', owner: '1234', saved: [], phase: 'ready',
             analysis: { matches: derived.matches, trackSummary: derived.trackSummary,
-                route: [[{ lat: 0, lon: 0, ele: 100, time: 1 }, { lat: 0, lon: 0.001, ele: 110, time: 2 }]], waypoints: [] } };
+                route: [[{ lat: 0, lon: 0, ele: 100, time: 1 }, { lat: 0, lon: 0.001, ele: 110, time: 2 }]], waypoints: [] } } as unknown as GarminItem;
     });
-    return { ...h, database, store, sender: { tab: { id: 9 }, url: h.tabs.get(9).url },
+    return { ...h, database, store, sender: { tab: { id: 9 }, url: required(h.tabs.get(9)).url },
         message: { type: 'GARMIN_OPEN_DRAFTS', id: '123', tabId: 9, selectedIds: [7] } };
 };
 test('failed Garmin payload installation releases only its pre-opening durable intent', async () => {
@@ -4439,7 +4533,7 @@ test('an interrupted pre-opening Garmin intent is recoverable without erasing op
         const restarted = createHarness({ garminDatabase: h.database, sessionValues: h.values, browserTabs: h.tabs });
         const result = await restarted.send(h.message, h.sender);
         assert.equal(result.ok, true, JSON.stringify(result));
-        assert.equal((await h.store.read()).items['123'].handoff.phase, 'opening');
+        assert.equal(required((await h.store.read()).items['123'].handoff).phase, 'opening');
         const again = await restarted.send(h.message, h.sender);
         assert.equal(again.reused, true); assert.deepEqual(again.tabIds, result.tabIds);
     } finally { await h.store.close(); }

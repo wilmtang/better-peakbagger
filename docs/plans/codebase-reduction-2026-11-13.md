@@ -285,7 +285,7 @@ Checks: `node --test "test/project/*.test.m[jt]s"`, `npm run lint`.
   `background.ts` into `src/background/options-tab-routes.ts` (4,358 → 4,205
   lines). The worker source list, its pin, and the Save-control source guard in
   `manifest-capture.test.mts` include the new file. The bundled-worker tests in
-  `background-capture.test.mjs` exercise these routes. Checks: build, the
+  `background-capture.test.mts` exercise these routes. Checks: build, the
   background, settings and project tests (1,102 pass), typecheck, lint, and
   `npm run verify -- chrome` after the bridge and worker changes (hidden,
   Chromium 156, 1000×760, teardown passed).
