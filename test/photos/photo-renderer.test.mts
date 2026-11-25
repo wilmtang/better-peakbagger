@@ -5,12 +5,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { webcrypto } from 'node:crypto';
 import { photoProject as Project } from '../../src/photos/photo-project.ts';
-import { photoRenderer as Renderer } from '../../src/photos/photo-renderer.ts';
+import type { PhotoProjectMarkerType, PhotoProjectRouteStyle } from '../../src/photos/photo-project.ts';
+import {
+    photoRenderer as Renderer,
+    type EstimateProjectOptions,
+    type PhotoRendererCanvas,
+    type PhotoRendererImageLike,
+} from '../../src/photos/photo-renderer.ts';
+import { required } from '../helpers/required.mts';
 
 const HASH = 'a'.repeat(64);
 const TIME = '2026-07-27T18:00:00.000Z';
 
-const projectWithObjects = () => Project.cleanProject({
+const projectWithObjects = () => required(Project.cleanProject({
     schemaVersion: 1,
     localId: 'photo-1',
     image: { width: 1600, height: 1200, sourceSha256: HASH },
@@ -53,7 +60,7 @@ const projectWithObjects = () => Project.cleanProject({
     ],
     export: { mime: 'image/jpeg', quality: 0.92 },
     updatedAt: TIME,
-});
+}));
 
 test('renders cleaned route geometry, symbols, pitch labels, and escaped text as SVG', () => {
     const svg = Renderer.renderOverlaySvg(projectWithObjects());
@@ -72,13 +79,13 @@ test('renders cleaned route geometry, symbols, pitch labels, and escaped text as
 
 test('label background follows measured glyph width rather than character count', () => {
     const original = projectWithObjects();
-    const text = original.objects.find(object => object.id === 'text-1');
+    const text = required(original.objects.find(object => object.id === 'text-1'));
     const project = Project.updateObject(original, text.id, {
         text: 'i i', style: { ...text.style, background: true },
     });
-    const fonts = [];
+    const fonts: string[] = [];
     const measureContext = {
-        set font(value) { fonts.push(value); },
+        set font(value: string) { fonts.push(value); },
         measureText() { return { width: 24 }; },
     };
     const svg = Renderer.renderOverlaySvg(project, {
@@ -92,7 +99,7 @@ test('label background follows measured glyph width rather than character count'
 });
 
 test('the interactive overlay gives every annotation a geometry-sized hit target', () => {
-    const marker = (type, index) => ({
+    const marker = (type: PhotoProjectMarkerType, index: number) => ({
         id: `${type}-1`,
         type,
         z: index,
@@ -140,7 +147,7 @@ test('the interactive overlay gives every annotation a geometry-sized hit target
 });
 
 test('every arrowed route keeps its own arrowhead color', () => {
-    const arrowRoute = (id, color, end) => ({
+    const arrowRoute = (id: string, color: string, end: PhotoProjectRouteStyle['end']) => ({
         id,
         type: 'route',
         z: 0,
@@ -208,43 +215,49 @@ test('hashes exported bytes with SHA-256', async () => {
         '4d79c63e02c6a66d127fee87c91aa70d86bde9aada8cd271c412b079b22e538b');
 });
 
+class OverlayImage implements PhotoRendererImageLike {
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+
+    set src(_value: string) {
+        queueMicrotask(() => required(this.onload)());
+    }
+}
+
+// Node fixtures implement the drawing calls the renderer uses without browser pixel storage.
+const imageDependencies = {
+    ImageCtor: OverlayImage as unknown as new () => CanvasImageSource & PhotoRendererImageLike,
+    URLImpl: {
+        createObjectURL: () => 'blob:overlay',
+        revokeObjectURL: () => {},
+    },
+    BlobCtor: Blob,
+};
+
 test('estimates from the same full-resolution encoding used for export', async () => {
-    const encodes = [];
-    const draws = [];
-    const canvas = {
+    const encodes: { mime?: string; quality?: number; width: number; height: number }[] = [];
+    const draws: CanvasImageSource[] = [];
+    const canvas: PhotoRendererCanvas = {
         width: 0,
         height: 0,
         getContext: () => ({
-            drawImage: (...args) => draws.push(args),
-        }),
+            drawImage: (image: CanvasImageSource) => { draws.push(image); },
+        }) as unknown as CanvasRenderingContext2D,
         toBlob(callback, mime, quality) {
             encodes.push({ mime, quality, width: this.width, height: this.height });
             callback(new Blob([`${mime}:${quality}`], { type: mime }));
         },
     };
-    class ImageCtor {
-        set src(value) {
-            this.value = value;
-            queueMicrotask(() => this.onload());
-        }
-    }
-    const dependencies = {
-        ImageCtor,
-        URLImpl: {
-            createObjectURL: () => 'blob:overlay',
-            revokeObjectURL: () => {},
-        },
-        BlobCtor: Blob,
-    };
     const project = Project.cleanProject({
         ...projectWithObjects(),
         export: { mime: 'image/jpeg', quality: 0.67 },
     });
-    const options = {
+    const source = { fixture: 'source-bitmap', width: 1600, height: 1200 };
+    const options: EstimateProjectOptions = {
         project,
-        source: { fixture: 'source-bitmap', width: 1600, height: 1200 },
+        source: source as unknown as CanvasImageSource,
         document: { createElement: () => canvas },
-        imageDependencies: dependencies,
+        imageDependencies,
     };
 
     const estimated = await Renderer.estimateProject(options);
@@ -267,6 +280,8 @@ test('estimates from the same full-resolution encoding used for export', async (
         height: 1200,
     });
     assert.equal(draws.length, 2, 'source pixels and the rendered overlay are both flattened');
+    assert.equal(draws[0], source);
+    assert.ok(draws[1] instanceof OverlayImage);
 
     const exported = await Renderer.exportProject({ ...options, crypto: webcrypto });
     assert.equal(exported.bytes, estimated.bytes);
@@ -374,7 +389,7 @@ test('the climbing symbols reuse Mountain Project shapes and retain the addition
 
 test('editor pixel sizes come from the same dimensions the renderer paints', () => {
     const image = { width: 1600, height: 1200 };
-    const rendered = value => Math.round(value * 1000) / 1000;
+    const rendered = (value: number) => Math.round(value * 1000) / 1000;
     assert.equal(rendered(Renderer.objectSizePixels('bolt', image, 1)), 32.4);
     assert.equal(rendered(Renderer.objectSizePixels('anchor', image, 2)), 64.8);
     assert.equal(rendered(Renderer.objectSizePixels('pitch', image, 1)), 42);
@@ -389,7 +404,7 @@ test('checks source dimensions before allocating the export canvas', async () =>
     let allocated = false;
     await assert.rejects(Renderer.exportProject({
         project: projectWithObjects(),
-        source: { width: 1200, height: 1600 },
+        source: { width: 1200, height: 1600 } as CanvasImageSource,
         document: {
             createElement() {
                 allocated = true;
@@ -401,35 +416,25 @@ test('checks source dimensions before allocating the export canvas', async () =>
 });
 
 test('exports a legitimate panorama at the exact pixel budget', async () => {
-    const project = Project.createProject({
+    const project = required(Project.createProject({
         localId: 'panorama',
         width: 16_000,
         height: 4_000,
         sourceSha256: HASH,
         updatedAt: TIME,
-    });
-    const canvas = {
+    }));
+    const canvas: PhotoRendererCanvas = {
         width: 0,
         height: 0,
-        getContext: () => ({ drawImage() {} }),
+        getContext: () => ({ drawImage() {} }) as unknown as CanvasRenderingContext2D,
         toBlob: callback => callback(new Blob(['panorama'], { type: 'image/jpeg' })),
     };
-    class TestImage {
-        set src(_value) { queueMicrotask(() => this.onload?.()); }
-    }
     const exported = await Renderer.exportProject({
         project,
-        source: { width: project.image.width, height: project.image.height },
+        source: { width: project.image.width, height: project.image.height } as CanvasImageSource,
         document: { createElement: () => canvas },
         crypto: webcrypto,
-        imageDependencies: {
-            ImageCtor: TestImage,
-            URLImpl: {
-                createObjectURL: () => 'blob:overlay',
-                revokeObjectURL() {},
-            },
-            BlobCtor: Blob,
-        },
+        imageDependencies,
     });
     assert.equal(canvas.width * canvas.height, Project.MAX_PIXELS);
     assert.deepEqual(
@@ -440,19 +445,21 @@ test('exports a legitimate panorama at the exact pixel budget', async () => {
 
 test('freehand strokes use the same visible geometry in the editor and export', () => {
     const project = projectWithObjects();
-    project.objects = [{ ...project.objects[0], type: 'drawing' }];
+    const route = required(project.objects[0]);
+    assert.ok(route.type === 'route');
+    project.objects = [{ ...route, type: 'drawing' }];
     const svg = Renderer.renderOverlaySvg(project);
     const editor = Renderer.renderOverlaySvg(project, { interactive: true });
     assert.match(svg, /marker-end=/);
     assert.match(svg, /stroke-dasharray=/);
     assert.match(editor, /data-bpb-hit-target/);
-    assert.equal(svg.match(/<path d="([^"]+)"/)[1], editor.match(/<path d="([^"]+)"/)[1]);
+    assert.equal(required(svg.match(/<path d="([^"]+)"/))[1], required(editor.match(/<path d="([^"]+)"/))[1]);
 });
 
 test('text layout wraps words, keeps explicit empty lines, and preserves grapheme clusters', () => {
     const project = projectWithObjects();
-    const original = project.objects.find(object => object.type === 'text');
-    const layout = (text, width) => Renderer.labelLayout({ ...original, text,
+    const original = required(project.objects.find(object => object.type === 'text'));
+    const layout = (text: string, width?: number) => Renderer.labelLayout({ ...original, text,
         geometry: { ...original.geometry, width } }, project.image, value => Array.from(value).length * 10);
     assert.deepEqual(layout('North ridge traverse', 110).lines, ['North ridge', 'traverse']);
     assert.deepEqual(layout('North\n\nridge', 110).lines, ['North', '', 'ridge']);
@@ -467,7 +474,7 @@ test('text layout wraps words, keeps explicit empty lines, and preserves graphem
 
 test('multiline SVG uses identical line layout and plate bounds in editor and export', () => {
     const original = projectWithObjects();
-    const label = original.objects.find(object => object.type === 'text');
+    const label = required(original.objects.find(object => object.type === 'text'));
     for (const [align, anchor, x] of [['left', 'start', 0], ['center', 'middle', -55], ['right', 'end', -110]]) {
         const project = Project.updateObject(original, label.id, {
             text: 'North ridge\n\n<roof>',
@@ -475,11 +482,12 @@ test('multiline SVG uses identical line layout and plate bounds in editor and ex
             style: { ...label.style, align, background: true },
         });
         const document = { createElement: () => ({ getContext: () => ({
-            measureText: text => ({ width: text.length * 10 }),
+            font: '',
+            measureText: (text: string) => ({ width: text.length * 10 }),
         }) }) };
         const exported = Renderer.renderOverlaySvg(project, { document });
         const editor = Renderer.renderOverlaySvg(project, { document, interactive: true });
-        const group = svg => svg.match(/<g data-bpb-object="text-1"[\s\S]*?<\/g>/)[0];
+        const group = (svg: string) => required(svg.match(/<g data-bpb-object="text-1"[\s\S]*?<\/g>/))[0];
         const output = group(exported);
         const live = group(editor);
         assert.equal(live.slice(0, live.indexOf('<rect data-bpb-hit-target')), output.replace('</g>', ''));
