@@ -1219,7 +1219,7 @@ consumes its own snapshot.
 | `test/ascent/ascent-backup-source.browser.mts` | Shared fetch options, body classification, form completeness/identity, GPX URL | Signed-in network behavior |
 | `test/ascent/ascent-backup.browser.mts` | Compact action, persisted form + actual GPX, manual/auto message shape, fail-closed UI | Real Save transition or GitHub service |
 | `test/ascent/ascent-saved.browser.mts` | Add/Edit success variants, aid extraction, UpdatePanel observation, auto routing | Peakbagger changing its success markup |
-| `test/profile/profile-backup.browser.mts`, `test/profile/profile-backup-core.browser.mts`, `test/profile/profile-backup-runner.test.mjs` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
+| `test/profile/profile-backup.browser.mts`, `test/profile/profile-backup-core.browser.mts`, `test/profile/profile-backup-runner.test.mts` | Owner gates, all-years diff, pipeline bounds, retry/pause/backpressure | A multi-hour live profile sweep |
 | `test/github/github-backup-integration.test.mjs` | Built worker gates, merge precedence, tab correlation, atomic batch/root-file calls, whole-operation timeout and reconciliation cleanup | Real extension worker eviction timing |
 | `test/github/github-api.test.mjs` | Shared authenticated request policy, origin gate, response parsing, and status taxonomy | GitHub service-side policy changes |
 | `test/github/github-client.test.mts` | Git tree/root-file construction, owned deletion, root-file decode, and conflicts | GitHub service-side policy changes |
