@@ -1,9 +1,8 @@
 # Modern stack adoption with legacy compatibility
 
-Last updated November 13, 2026 against `0444ff28`. This update audited the plan
-against the tree: counts, statuses and stale references were corrected, M4 was
-re-aimed at the route the pilot really uses, and the owner settled three
-choices the same day, recorded under [Owner decisions](#owner-decisions).
+The November 13, 2026 audit at `0444ff28` corrected counts, statuses and stale
+references and aligned M4 with the route the pilot uses. The owner settled
+three choices the same day, recorded under [Owner decisions](#owner-decisions).
 
 ## Goal
 
@@ -61,8 +60,8 @@ evidence.
 
 **M7 remains open.** The Units settings panel and Summit Cloud controls ship
 through checked TypeScript and Svelte. The production runtime and root Node
-tooling have moved to TypeScript, and jsdom is retired (M7.5). Test and
-evidence tooling conversion remains open.
+tooling have moved to TypeScript, and jsdom is retired (M7.5). The remaining
+authored JavaScript is in Node tests.
 
 | Milestone | Status | Where it stands |
 | --- | --- | --- |
@@ -74,7 +73,7 @@ evidence tooling conversion remains open.
 | M4.5 | Done | `@types/jsdom` 30 types every TypeScript jsdom test (JavaScript jsdom tests stay unchecked until M7 converts them); [typecheck-node.mts](../../scripts/typecheck-node.mts) checks jsdom/DOM-driving files with the DOM library and the rest without it. The browser DOM tier ([dom-tier.mts](../../scripts/dom-tier.mts), `npm run verify -- dom`) runs `test/dom/*.dom.mts` in hidden Chromium and Firefox and gates the required `chrome-required` aggregate through the `dom-tier` CI job. |
 | M5 | Done | Svelte 5.57.3, svelte-check 4.7.8 and eslint-plugin-svelte 3.24.1 are pinned. The original esbuild integration passed byte-identical pre-M6 output checks. The Vite builder uses the shared settings in [svelte-build.mts](../../scripts/svelte-build.mts). [svelte-island.ts](../../src/ui/svelte-island.ts) is the typed mount adapter. |
 | M6 | Done | Complete on November 18, 2026 (`83541e1f`, `c81c7cee`, `0aa1c6ef`). `options/UnitSettingsPanel.svelte` ships inside `dist/options/options.js` (+62,159 raw / +22,900 gzip minified; legacy bundles untouched) with 0 new `web-ext lint` warnings (`fragments: 'tree'`, `discloseVersion: false`) and full release/package/metadata guards. |
-| M7 | In progress | Runtime and root Node tooling are converted. At `7f20e5f6`, 208 authored JavaScript files remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
+| M7 | In progress | At `6ec95603`, 12 authored JavaScript test suites remain. The repository-wide policy and removal of `allowJs` are exit tasks. |
 | M7.5 | Done | Complete on November 22, 2026. No file imports jsdom, and `jsdom` and `@types/jsdom` are gone. DOM tests run as in-page browser tests in hidden Chromium and Firefox; the production-scale ones run on the `--scale` lane of `npm run test:scale`. See [M7.5](#m75--retire-jsdom). |
 | M8 | Done locally | Vite builds development and release generations ([vite-build.mts](../../scripts/vite-build.mts)); WXT (`133384ab`) was removed after it proved to be only a scheduler. Paired publication and native development reload passed (`4286ede2`). Exact packages passed on current and floor browsers. Same-profile settings migration and compiler rollback were rehearsed locally. See [M8 evidence](#m8--cut-over-production-to-vite). |
 
@@ -94,6 +93,13 @@ and two ESM frames.
 Recompute the runtime counts with
 [`runtimeSourceFiles`](../../test/helpers/runtime-sources.mts), and the others
 with `git ls-files` filtered by extension, when starting a batch.
+
+On November 25, 2026, the migration converted 41 Node test suites between
+`d3cff3f5` and `6ec95603`. At that checkpoint, three worker suites remained
+for capture and photos, one for Garmin imports, three for GitHub, and five for
+photo tooling. The full Node suite passed 2,178 tests on Node `24.22.0`, along
+with typecheck, lint (10 existing `web-ext` warnings), and the staged TypeScript
+policy.
 
 Local verification at `dc985cc9` passed on Node 24.22.3. It covered 4,213
 Node tests, 14 scale tests, typecheck, lint, the full branch TypeScript diff,
