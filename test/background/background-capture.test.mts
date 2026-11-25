@@ -7,7 +7,7 @@ import fs from 'node:fs/promises';
 import vm from 'node:vm';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
-import type { createGarminImports } from '../../src/garmin/garmin-imports.ts';
+import type { createGarminImports, GarminImportState } from '../../src/garmin/garmin-imports.ts';
 import { createCaptureWriteFaults, type CaptureWriteFaults } from '../helpers/capture-write-faults.mts';
 import type { CaptureJob as CaptureJobFields, DraftTab as DraftTabFields, WorkerReply as CaptureReplyFields } from '../helpers/gpx-process-harness.mts';
 import { deferred } from '../helpers/deferred.mts';
@@ -4452,7 +4452,7 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
     const derived = harness.values.bpbCaptureJobs[1];
     assert.equal(derived.phase, 'ready');
     harness.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
-    const store = createGarminStore(database) as unknown as GarminStore;
+    const store = createGarminStore<GarminImportState>(database);
     await store.mutate(state => {
         state.connection = { owner: '1234', cid: '77', key: null, enabled: false, connectedDate: '2026-10-23' };
         state.items['123'] = { id: '123', owner: '1234', cid: '77', phase: 'ready', saved: [],
@@ -4481,7 +4481,7 @@ test('Garmin inbox recreates a private handoff and reuses it without duplicating
 test('a completed active Peakbagger visit wakes the durable Garmin queue without opening a tab', async () => {
     const database = new IDBFactory();
     const h = createHarness({ garminDatabase: database });
-    const store = createGarminStore(database) as unknown as GarminStore;
+    const store = createGarminStore<GarminImportState>(database);
     await store.mutate(state => {
         state.connection = { owner: '1234', cid: '77', key: 'fictional-key-for-queue-test', enabled: true };
         state.peakbaggerBlocked = { code: 'cloudflare', retryAt: 0 };
@@ -4504,7 +4504,7 @@ test('a completed active Peakbagger visit wakes the durable Garmin queue without
 const garminInboxHarness = async () => {
     const database = new IDBFactory(), h = createHarness({ garminDatabase: database });
     await h.send({ type: 'CAPTURE_START', tabId: 1 });
-    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore(database) as unknown as GarminStore;
+    const derived = h.values.bpbCaptureJobs[1], store = createGarminStore<GarminImportState>(database);
     h.tabs.set(9, { id: 9, windowId: 9, status: 'complete', url: 'chrome-extension://test-extension/options/inbox.html' });
     await store.mutate(state => {
         // This retained activity predates the current summary field.

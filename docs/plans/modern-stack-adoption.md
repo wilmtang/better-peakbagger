@@ -649,8 +649,14 @@ exit, and Svelte conversion remains a per-surface decision.
   `--committed`. A disposable repository proved both scans reject an unchanged
   tracked JavaScript file accepted by the old diff check. On Node `24.22.0`,
   2,177 Node tests, typecheck, lint and both policy modes passed. Lint rebuilt
-  67 bundles and reported the 10 owned `web-ext` warnings. A subagent reviewed
-  every conversion and the policy change.
+  67 bundles and reported the 10 owned `web-ext` warnings. A later audit
+  compared each of the 53 suites with its JavaScript original: no test was
+  dropped or skipped and assertions rose overall. The one suite with fewer
+  assertions, `gaia-routes`, moved its two permission checks into the shared
+  map-import harness and replaced a string search with an identity check of
+  the injected function. The audit also removed the Garmin store's
+  `as unknown as` cast by typing the store by its owner's state. The browser
+  tier and scale lane passed on that tree.
 - **Intentionally not changed.** Generated bundle filenames and manifest load
   order follow the existing distribution contract. The policy keeps explicit
   exclusions for generated output and upstream code. The M7 verification

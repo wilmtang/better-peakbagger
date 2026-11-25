@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { createGarminStore } from '../../src/garmin/garmin-store.ts';
-import { createGarminImports, importRange } from '../../src/garmin/garmin-imports.ts';
+import { createGarminImports, importRange, type GarminImportState } from '../../src/garmin/garmin-imports.ts';
 import { GarminError } from '../../src/garmin/garmin-api.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { deferred } from '../helpers/deferred.mts';
@@ -39,7 +39,7 @@ async function send(imports: Imports, message: Partial<Message> & Pick<Message, 
 const match = { id: 987, name: 'Summit', classification: 'strong' };
 
 async function setup(overrides: Overrides = {}) {
-    const store = createGarminStore(new IDBFactory()) as unknown as Imports['store'];
+    const store = createGarminStore<GarminImportState>(new IDBFactory());
     const alarms = new Map<string, chrome.alarms.AlarmCreateInfo>();
     const prefs = { ...Schema.DEFAULTS, garminHistoryStart: '2026-01-01', ...overrides.prefs };
     const row = { id: '12', owner: '123', date: '2026-10-23', localStart: '2026-10-23 08:00:00', type: 'hiking' };

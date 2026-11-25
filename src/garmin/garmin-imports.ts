@@ -43,6 +43,8 @@ interface GarminState {
     peakbaggerBlocked?: { code: string; retryAt: number } | null;
 }
 type GarminSummary = ReturnType<typeof garminPublicSummary>;
+// The stored state as this owner reads it, for callers that open the store directly.
+export type GarminImportState = GarminState;
 interface GarminStore {
     read(): Promise<GarminState>; summary(): Promise<GarminSummary>;
     mutate<Result>(mutate: (state: GarminState) => Result): Promise<Result>; close(): Promise<void>;
@@ -80,7 +82,7 @@ export function importRange(settings: GarminPreferences, connectionDate: string 
     const catchup = lastCheck ? new Date(lastCheck - DAY).toISOString().slice(0, 10) : lookback;
     return { from: full ? scope : [scope, [lookback, catchup].sort()[0]].sort().at(-1) as string, to: date };
 }
-export function createGarminImports({ ext, settings, store: durableStore = createGarminStore() as unknown as GarminStore,
+export function createGarminImports({ ext, settings, store: durableStore = createGarminStore<GarminState>(),
     clientFactory = createGarminClient as unknown as NonNullable<GarminImportDependencies['clientFactory']>,
     decode = decodeGarminRecording as unknown as NonNullable<GarminImportDependencies['decode']>,
     prepare, binding, openDrafts, clock = Date.now, date = today }: GarminImportDependencies) {

@@ -95,7 +95,9 @@ export const garminPublicSummary = (state: GarminState): GarminPublicSummary => 
     lastCheck: state.lastCheck, lastFull: state.lastFull, retryAt: state.retryAt, error: state.error, historyIncomplete: !!state.scan,
     undoDue: Math.min(...Object.values(state.items).filter(item => item.phase === 'dismissed').map(item => item.undoUntil as number), Infinity) });
 
-export function createGarminStore(indexedDB: GarminIndexedDbFactory = globalThis.indexedDB) {
+// State is the owner's view of the stored record (garmin-imports.ts keeps a
+// richer one); stored records are read back unvalidated, as before.
+export function createGarminStore<State extends GarminState = GarminState>(indexedDB: GarminIndexedDbFactory = globalThis.indexedDB) {
     let opening: Promise<IDBDatabase | GarminDatabaseLike> | null | undefined;
     const db = (): Promise<IDBDatabase | GarminDatabaseLike> => (opening ||= new Promise<IDBDatabase | GarminDatabaseLike>((resolve, reject) => {
         const request = indexedDB.open(GARMIN_DB, 1);
@@ -103,7 +105,7 @@ export function createGarminStore(indexedDB: GarminIndexedDbFactory = globalThis
         request.onsuccess = () => resolve(request.result);
         request.onerror = () => { opening = null; reject(new Error('Garmin storage is unavailable.')); };
     }));
-    const transaction = async <T>(write: boolean, mutate: (state: GarminState) => T): Promise<T> => {
+    const transaction = async <T>(write: boolean, mutate: (state: State) => T): Promise<T> => {
         const database = await db();
         return new Promise<T>((resolve, reject) => {
             const tx = database.transaction('state', write ? 'readwrite' : 'readonly');
@@ -112,7 +114,7 @@ export function createGarminStore(indexedDB: GarminIndexedDbFactory = globalThis
             let result!: T;
             request.onsuccess = () => {
                 try {
-                    const state = (request.result as GarminState | undefined) || empty();
+                    const state = (request.result as State | undefined) || empty() as State;
                     result = mutate(state);
                     if (write) {
                         state.revision = (state.revision || 0) + 1;
@@ -128,7 +130,7 @@ export function createGarminStore(indexedDB: GarminIndexedDbFactory = globalThis
             tx.onerror = tx.onabort = () => reject(new Error('Garmin storage could not be updated.'));
         });
     };
-    const read = (): Promise<GarminState> => transaction(false, state => state);
+    const read = (): Promise<State> => transaction(false, state => state);
     const summary = async (): Promise<GarminPublicSummary> => {
         const database = await db();
         const result = await new Promise<Partial<GarminPublicSummary> | undefined>((resolve, reject) => {
@@ -145,9 +147,9 @@ export function createGarminStore(indexedDB: GarminIndexedDbFactory = globalThis
     return {
         read,
         summary,
-        mutate: <T>(mutate: (state: GarminState) => T): Promise<T> => transaction(true, mutate),
+        mutate: <T>(mutate: (state: State) => T): Promise<T> => transaction(true, mutate),
         async close(): Promise<void> { if (opening) (await opening).close(); opening = null; }
     };
 }
 
-export type GarminStore = ReturnType<typeof createGarminStore>;
+export type GarminStore<State extends GarminState = GarminState> = ReturnType<typeof createGarminStore<State>>;
