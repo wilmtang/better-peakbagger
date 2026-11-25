@@ -141,7 +141,7 @@ UTC-minute bucket can never straddle the climb zone's local midnight.
 
 ## Testing
 
-`test/time/mountain-time.test.mjs` pins ordinary conversion, DST gaps and folds,
+`test/time/mountain-time.test.mts` pins ordinary conversion, DST gaps and folds,
 Apia's skipped civil date, unusual offsets, date-line dates, bounded formatter
 construction/work, formatter failure, and longitude fallback.
 `test/gpx/gpx-analyzer.browser.mts` uses an overnight fixture that crosses the

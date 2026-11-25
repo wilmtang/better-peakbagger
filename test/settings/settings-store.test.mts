@@ -3,19 +3,23 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createSettingsStore, STORAGE_KEY } from '../../src/settings/settings.ts';
+import { createSettingsStore, STORAGE_KEY, type SettingsStorageArea } from '../../src/settings/settings.ts';
 import { settingsSchema as Schema } from '../../src/settings/settings-schema.ts';
 import { settingsTransfer as Transfer } from '../../src/settings/settings-transfer.ts';
 
-const makeArea = (initial = {}) => {
-    const data = { ...initial };
-    return {
+type Values = Record<string, unknown>;
+const makeArea = (initial: Values = {}) => {
+    const data: Values = { ...initial };
+    const area: SettingsStorageArea & { data: Values } = {
         data,
-        get: async keys => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map(key => [key, data[key]])),
-        remove: async key => { delete data[key]; },
+        get: async keys => Object.fromEntries((Array.isArray(keys) ? keys : [keys]).map(key => [key, data[String(key)]])),
+        remove: async keys => { for (const key of Array.isArray(keys) ? keys : [keys]) delete data[key]; },
         set: async values => { Object.assign(data, values); },
     };
+    return area;
 };
+// A stored record, read as the fields these cases assert.
+const record = (area: { data: Values }, key: string) => area.data[key] as Values | undefined;
 
 test('migrated SNOTEL opt-outs persist independently through later weather changes', async () => {
     const area = makeArea({ [STORAGE_KEY]: { showWeather: false } });
@@ -32,6 +36,7 @@ test('a settings mutation fails closed when the authoritative read fails', async
         area: {
             get: async () => { throw new Error('sync read failed'); },
             set: async () => { writes++; },
+            remove: async () => {},
         },
         sendMessage: null,
     });
@@ -47,7 +52,7 @@ test('a settings mutation propagates storage write failure and its queue recover
     const area = makeArea({ [STORAGE_KEY]: { theme: 'light', units: 'imperial' } });
     const nativeSet = area.set;
     let fail = true;
-    area.set = async values => {
+    area.set = async (values: Values) => {
         if (fail) {
             fail = false;
             throw new Error('sync write failed');
@@ -74,19 +79,20 @@ test('a client mutation fails when the worker-owned settings route is absent', a
 
 test('worker-owned settings patches preserve concurrent writes from separate contexts', async () => {
     const area = makeArea({ [STORAGE_KEY]: { theme: 'light', units: 'imperial' } });
-    let releaseFirstRead;
+    let releaseFirstRead!: () => void;
     let readCount = 0;
     const nativeGet = area.get;
-    area.get = async key => {
+    area.get = async (key?: string | string[] | null) => {
         readCount++;
-        if (readCount === 1) await new Promise(resolve => { releaseFirstRead = resolve; });
+        if (readCount === 1) await new Promise<void>(resolve => { releaseFirstRead = resolve; });
         return nativeGet(key);
     };
 
     const workerStore = createSettingsStore({ localArea: makeArea(), area, sendMessage: null });
-    const route = async message => ({
+    // The worker's SETTINGS_PATCH route, as the page clients message it.
+    const route = async (message: unknown) => ({
         ok: true,
-        settings: await workerStore.applyPatch(message.patch),
+        settings: await workerStore.applyPatch((message as { patch: Values }).patch),
     });
     const firstContext = createSettingsStore({ localArea: makeArea(), area, sendMessage: route });
     const secondContext = createSettingsStore({ localArea: makeArea(), area, sendMessage: route });
@@ -97,8 +103,8 @@ test('worker-owned settings patches preserve concurrent writes from separate con
     releaseFirstRead();
     await Promise.all([themeWrite, unitsWrite]);
 
-    assert.equal(area.data[STORAGE_KEY].theme, 'dark');
-    assert.equal(area.data[STORAGE_KEY].units, 'metric');
+    assert.equal(record(area, STORAGE_KEY)?.theme, 'dark');
+    assert.equal(record(area, STORAGE_KEY)?.units, 'metric');
 });
 
 test('conditional settings restore yields to a newer queued patch', async () => {
@@ -115,8 +121,8 @@ test('conditional settings restore yields to a newer queued patch', async () => 
         replaced: false,
         current: await store.requireCurrent(),
     });
-    assert.equal(area.data[STORAGE_KEY].theme, 'dark');
-    assert.equal(area.data[STORAGE_KEY].units, 'metric');
+    assert.equal(record(area, STORAGE_KEY)?.theme, 'dark');
+    assert.equal(record(area, STORAGE_KEY)?.units, 'metric');
 });
 
 test('legacy order migration fills missing lists without overwriting a newer choice', async () => {
@@ -127,8 +133,8 @@ test('legacy order migration fills missing lists without overwriting a newer cho
         store.applyPatch({ betaPeakFilterOrder: selected }),
         store.applyPatch({ betaPeakFilterOrder: ['fav', 'gps', 'tr', 'link', 'beta'], betaPersonalFilterOrder: ['beta', 'link', 'tr', 'gps'] }, { onlyIfUnset: true }),
     ]);
-    assert.deepEqual(area.data[STORAGE_KEY].betaPeakFilterOrder, selected);
-    assert.deepEqual(area.data[STORAGE_KEY].betaPersonalFilterOrder, ['beta', 'link', 'tr', 'gps']);
+    assert.deepEqual(record(area, STORAGE_KEY)?.betaPeakFilterOrder, selected);
+    assert.deepEqual(record(area, STORAGE_KEY)?.betaPersonalFilterOrder, ['beta', 'link', 'tr', 'gps']);
 });
 
 test('two devices share personal preferences while keeping geometry and transfer consent local', async () => {
@@ -147,14 +153,16 @@ test('two devices share personal preferences while keeping geometry and transfer
     assert.equal((await first.requireCurrent()).theme, 'light');
     assert.equal((await second.requireCurrent()).mapViewportWidth, 500);
     assert.equal((await second.requireCurrent()).bpbPeakWeatherModelPast, 'gfs_global');
-    assert.equal((await second.requireCurrent())['bpbPhotoTool:anchor'].rotation, 45);
-    for (const key of Schema.DEVICE_KEYS) assert.equal(Object.hasOwn(area.data.bpbSettings, key), false);
+    assert.equal(((await second.requireCurrent() as Values)['bpbPhotoTool:anchor'] as { rotation?: number } | undefined)?.rotation, 45);
+    for (const key of Schema.DEVICE_KEYS) assert.equal(Object.hasOwn(record(area, 'bpbSettings')!, key), false);
     const file = Transfer.buildPayload(await first.requireCurrent());
-    for (const key of Schema.DEVICE_KEYS) file.settings[key] = true; // even legacy imports cannot transfer consent
-    await second.applyPatch(Transfer.parse(Transfer.serialize(file)).settings);
+    for (const key of Schema.DEVICE_KEYS) (file.settings as Values)[key] = true; // even legacy imports cannot transfer consent
+    const parsed = Transfer.parse(Transfer.serialize(file));
+    assert.ok(parsed.ok);
+    await second.applyPatch(parsed.settings);
     assert.equal((await second.requireCurrent()).autoSettingsBackup, false);
     assert.equal((await second.requireCurrent()).mapViewportWidth, 500);
-    assert.equal((await second.requireCurrent()).bpbMapOverlayOpacityV1.land, 80);
+    assert.equal(((await second.requireCurrent()).bpbMapOverlayOpacityV1 as { land?: number } | null)?.land, 80);
 });
 
 test('explicit synced values win over legacy local preferences and migration is idempotent', async () => {
@@ -166,7 +174,7 @@ test('explicit synced values win over legacy local preferences and migration is 
     assert.deepEqual(area.data, snapshot);
     assert.equal((await store.requireCurrent()).bpbAscentWeatherModel, 'era5');
     assert.equal((await store.requireCurrent()).bpbPhotoSharedStyle, null);
-    assert.ok(Buffer.byteLength('bpbSettings' + JSON.stringify(area.data.bpbSettings)) < 8192);
+    assert.ok(Buffer.byteLength('bpbSettings' + JSON.stringify(record(area, 'bpbSettings'))) < 8192);
 });
 
 test('device settings fail closed and a failed synced write rolls back its local half', async () => {
@@ -186,7 +194,7 @@ test('a fresh installation freezes local consent without publishing defaults to 
     const store = createSettingsStore({ area, localArea });
     await store.migrate();
     assert.equal(area.data.bpbSettings, undefined);
-    assert.equal(localArea.data.bpbDeviceSettings.settings.autoSettingsBackup, false);
+    assert.equal((record(localArea, 'bpbDeviceSettings')?.settings as Values | undefined)?.autoSettingsBackup, false);
     area.data.bpbSettings = { theme: 'dark', autoSettingsBackup: true };
     assert.equal((await store.requireCurrent()).theme, 'dark');
     assert.equal((await store.requireCurrent()).autoSettingsBackup, false);

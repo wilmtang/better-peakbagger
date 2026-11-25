@@ -8,6 +8,7 @@ import { mountainTime as MountainTime } from '../../src/time/mountain-time.ts';
 
 test('mountain time resolves ordinary and unusual political offsets offline', () => {
     const denver = MountainTime.resolve(39.7392, -104.9903);
+    assert.ok(denver);
     const kathmandu = MountainTime.resolve(27.7172, 85.3240);
     const chatham = MountainTime.resolve(-43.95, -176.55);
 
@@ -19,13 +20,17 @@ test('mountain time resolves ordinary and unusual political offsets offline', ()
 
 test('civil conversion observes DST gaps and chooses the earlier repeated hour', () => {
     const denver = MountainTime.resolve(39.7392, -104.9903);
+    assert.ok(denver);
     const gap = MountainTime.civilToInstant(denver, '2026-03-08', 2 * 60 + 30);
+    assert.ok(gap);
     assert.deepEqual({ date: gap.date, minute: gap.minute, adjusted: gap.adjusted }, {
         date: '2026-03-08', minute: 3 * 60, adjusted: true,
     });
     assert.equal(gap.ms, Date.parse('2026-03-08T09:00:00Z'));
 
     const overlap = MountainTime.civilToInstant(denver, '2026-11-01', 1 * 60 + 30);
+
+    assert.ok(overlap);
     assert.equal(overlap.ambiguous, true);
     assert.equal(overlap.ms, Date.parse('2026-11-01T07:30:00Z'));
     assert.equal(MountainTime.civilToInstant(denver, '2026-03-08', 2 * 60 + 30, {
@@ -37,12 +42,12 @@ test('skipped dates snap to the first valid civil minute with bounded formatter 
     let constructions = 0;
     let partsCalls = 0;
     class CountingDateTimeFormat extends Intl.DateTimeFormat {
-        constructor(locales, options) {
+        constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
             super(locales, options);
             constructions++;
         }
 
-        formatToParts(value) {
+        override formatToParts(value?: Date | number) {
             partsCalls++;
             return super.formatToParts(value);
         }
@@ -51,6 +56,7 @@ test('skipped dates snap to the first valid civil minute with bounded formatter 
     const skipped = MountainTime.civilToInstant(apia, '2011-12-30', 12 * 60, {
         DateTimeFormat: CountingDateTimeFormat,
     });
+    assert.ok(skipped);
     assert.deepEqual({ date: skipped.date, minute: skipped.minute, adjusted: skipped.adjusted }, {
         date: '2011-12-31', minute: 0, adjusted: true,
     });
@@ -62,7 +68,7 @@ test('skipped dates snap to the first valid civil minute with bounded formatter 
 test('formatter instances are reused by zone and options', () => {
     let constructions = 0;
     class CountingDateTimeFormat extends Intl.DateTimeFormat {
-        constructor(locales, options) {
+        constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
             super(locales, options);
             constructions++;
         }
@@ -91,6 +97,7 @@ test('formatter instances are reused by zone and options', () => {
 test('civil dates and local-day comparisons survive the international date line', () => {
     const kiritimati = MountainTime.resolve(1.8721, -157.4278);
     const instant = MountainTime.civilToInstant(kiritimati, '2026-01-02', 15);
+    assert.ok(instant);
     assert.equal(instant.ms, Date.parse('2026-01-01T10:15:00Z'));
     assert.equal(MountainTime.localDate(kiritimati, instant.ms), '2026-01-02');
     assert.equal(MountainTime.localDayNumber(kiritimati, Date.parse('2026-01-01T10:00:00Z')),
@@ -101,7 +108,7 @@ test('civil dates and local-day comparisons survive the international date line'
 
 test('unknown ICU zones and lookup failures use the labelled longitude fallback', () => {
     class RejectingDateTimeFormat extends Intl.DateTimeFormat {
-        constructor(locales, options) {
+        constructor(locales?: Intl.LocalesArgument, options?: Intl.DateTimeFormatOptions) {
             if (options?.timeZone === 'Etc/Unknown') throw new RangeError('unknown');
             super(locales, options);
         }
@@ -112,6 +119,7 @@ test('unknown ICU zones and lookup failures use the labelled longitude fallback'
     });
     const failed = MountainTime.resolve(40, -121.8, { lookup: () => { throw new Error('bad raster'); } });
     for (const zone of [unknown, failed]) {
+        assert.ok(zone);
         assert.equal(zone.timeZone, null);
         assert.equal(zone.offsetMs, -8 * 3_600_000);
         assert.equal(MountainTime.zoneLabel(zone, 0), 'UTC−8, estimated from longitude');

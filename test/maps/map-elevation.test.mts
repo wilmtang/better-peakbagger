@@ -3,9 +3,9 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createElevationClient, elevationTile, sampleElevation } from '../../src/maps/map-elevation.ts';
+import { createElevationClient, elevationTile, sampleElevation, type ElevationClientOptions } from '../../src/maps/map-elevation.ts';
 
-const pixelsAt = meters => {
+const pixelsAt = (meters: number) => {
     const pixels = new Uint8ClampedArray(512 * 512 * 4), value = meters + 32768;
     for (let i = 0; i < pixels.length; i += 4) {
         pixels[i] = Math.floor(value / 256); pixels[i + 1] = Math.floor(value % 256);
@@ -15,12 +15,13 @@ const pixelsAt = meters => {
 };
 const webp = () => {
     const bytes = new Uint8Array(24), view = new DataView(bytes.buffer);
-    for (const [offset, text] of [[0, 'RIFF'], [8, 'WEBP'], [12, 'VP8L']]) [...text].forEach((char, i) => { bytes[offset + i] = char.charCodeAt(0); });
+    for (const [offset, text] of [[0, 'RIFF'], [8, 'WEBP'], [12, 'VP8L']] as const) [...text].forEach((char, i) => { bytes[offset + i] = char.charCodeAt(0); });
     view.setUint32(4, 16, true); view.setUint32(16, 4, true);
     return new Response(bytes, { headers: { 'content-type': 'image/webp' } });
 };
 const point = { latitude: 46.8, longitude: -121.7 };
-const client = options => createElevationClient({ document: {}, decode: async () => pixelsAt(1957.5), ...options });
+// Decoding is stubbed, so no document is needed to draw the tile.
+const client = (options: ElevationClientOptions) => createElevationClient({ document: {} as Document, decode: async () => pixelsAt(1957.5), ...options });
 
 test('slippy tile coordinates wrap the antimeridian and reject polar or invalid data', () => {
     assert.deepEqual(elevationTile(0, 0, 14), { z: 14, x: 8192, y: 8192, pixelX: 0, pixelY: 0 });
@@ -28,6 +29,7 @@ test('slippy tile coordinates wrap the antimeridian and reject polar or invalid 
     assert.equal(elevationTile(86, 0, 14), null); assert.equal(elevationTile(NaN, 0, 14), null);
     assert.equal(elevationTile(0, 181, 14), null); assert.equal(elevationTile(0, 0, 19), null);
     const south = elevationTile(-85.0511287798066, 179.99, 14);
+    assert.ok(south);
     assert.ok(south.y < 16384 && south.pixelY < 512);
 });
 
@@ -39,13 +41,13 @@ test('Terrarium heights retain fractions, negative ground and genuine sea level;
 });
 
 test('one fixed level falls back only on 404, with bounded tab-memory reuse and credential-free requests', async () => {
-    const calls = [], lookup = client({ fetchImpl: async (url, init) => {
+    const calls: { url: string; init?: RequestInit }[] = [], lookup = client({ fetchImpl: async (url, init) => {
         calls.push({ url, init }); return url.includes('/14/') ? new Response('', { status: 404 }) : webp();
     } });
     assert.equal(await lookup.lookup(point), 1957.5); assert.equal(calls.length, 2);
-    assert.match(calls[0].url, /^https:\/\/tiles\.mapterhorn\.com\/14\/\d+\/\d+\.webp$/);
-    assert.match(calls[1].url, /\/13\//);
-    assert.equal(calls[0].init.credentials, 'omit'); assert.equal(calls[0].init.referrerPolicy, 'no-referrer');
+    assert.match(calls[0]!.url, /^https:\/\/tiles\.mapterhorn\.com\/14\/\d+\/\d+\.webp$/);
+    assert.match(calls[1]!.url, /\/13\//);
+    assert.equal(calls[0]?.init?.credentials, 'omit'); assert.equal(calls[0]?.init?.referrerPolicy, 'no-referrer');
     assert.equal(await lookup.lookup(point), 1957.5); assert.equal(calls.length, 2);
     lookup.clear(); await lookup.lookup(point); assert.equal(calls.length, 4);
 });
@@ -66,26 +68,26 @@ test('known limits gate retries until Retry-After without retaining the clicked 
     let count = 0, now = 1000;
     const lookup = client({ now: () => now, fetchImpl: async () => ++count === 1
         ? new Response('', { status: 429, headers: { 'retry-after': '120' } }) : webp() });
-    await assert.rejects(lookup.lookup(point), error => error.code === 'rate-limit');
-    await assert.rejects(lookup.lookup(point), error => error.code === 'rate-limit'); assert.equal(count, 1);
+    await assert.rejects(lookup.lookup(point), (error: { code?: string }) => error.code === 'rate-limit');
+    await assert.rejects(lookup.lookup(point), (error: { code?: string }) => error.code === 'rate-limit'); assert.equal(count, 1);
     now += 121000; assert.equal(await lookup.lookup(point), 1957.5); assert.equal(count, 2);
 });
 
 test('deadlines cover stalled bodies and cancellation reaches the actual transport', async () => {
-    let signal;
+    let signal: AbortSignal | null | undefined;
     const stalled = client({ timeoutMs: 20, fetchImpl: async (_, init) => {
-        signal = init.signal;
+        signal = init?.signal;
         return new Response(new ReadableStream({ start() {}, cancel() {} }), { headers: { 'content-type': 'image/webp' } });
     } });
-    await assert.rejects(stalled.lookup(point), error => error.name === 'TimeoutError'); assert.equal(signal.aborted, true);
+    await assert.rejects(stalled.lookup(point), (error: Error) => error.name === 'TimeoutError'); assert.equal(signal?.aborted, true);
     const controller = new AbortController();
-    const aborted = client({ fetchImpl: async (_, init) => new Promise((_, reject) => {
-        signal = init.signal;
-        init.signal.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })));
+    const aborted = client({ fetchImpl: async (_url, init) => new Promise((_, reject) => {
+        signal = init?.signal;
+        init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })));
         controller.abort();
     }) });
-    await assert.rejects(aborted.lookup(point, { signal: controller.signal }), error => error.name === 'AbortError');
-    assert.equal(signal.aborted, true);
+    await assert.rejects(aborted.lookup(point, { signal: controller.signal }), (error: Error) => error.name === 'AbortError');
+    assert.equal(signal?.aborted, true);
 });
 
 test('decoded tiles have a four-tile bound and rejected or aborted decodes are never cached', async () => {
@@ -97,6 +99,6 @@ test('decoded tiles have a four-tile bound and rejected or aborted decodes are n
     const interrupted = client({ fetchImpl: async () => webp(), decode: async () => {
         decodeCount++; if (decodeCount === 1) controller.abort(); return pixelsAt(0);
     } });
-    await assert.rejects(interrupted.lookup(point, { signal: controller.signal }), error => error.name === 'AbortError');
+    await assert.rejects(interrupted.lookup(point, { signal: controller.signal }), (error: Error) => error.name === 'AbortError');
     assert.equal(await interrupted.lookup(point), 0); assert.equal(decodeCount, 2);
 });

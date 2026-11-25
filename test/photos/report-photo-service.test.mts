@@ -12,7 +12,16 @@ const image = { width: 2, height: 1, dataUrl: 'data:image/png;base64,aW1hZ2U=', 
 const remote = { providerId: 'abc', displayUrl: 'https://i.ibb.co/abc/photo.png', thumbnailUrl: 'https://i.ibb.co/abc/thumb.png', url: 'https://i.ibb.co/abc/photo.png', viewerUrl: 'https://ibb.co/abc',
     thumbUrl: null, mediumUrl: null, uploadedAt: '2026-09-08T12:00:00.000Z', expiresAt: null };
 const owner = 'bpbReportDraft:1:p2';
-const harness = async (upload, onChanged = async () => {}) => {
+type PhotoStore = Awaited<ReturnType<typeof Store.createPhotoStore>>;
+type Upload = NonNullable<NonNullable<Parameters<typeof createReportPhotoService>[0]>['upload']>;
+// A stored bundle these cases expect to exist, with its photo.
+const bundleOf = async (store: PhotoStore, localId: string) => {
+    const bundle = await store.getBundle(localId);
+    assert.ok(bundle?.photo, `photo ${localId} is stored`);
+    return { ...bundle, photo: bundle.photo };
+};
+const photoOf = async (store: PhotoStore, localId: string) => (await bundleOf(store, localId)).photo;
+const harness = async (upload: Upload, onChanged = async () => {}) => {
     const indexedDB = new IDBFactory();
     const openStore = () => Store.createPhotoStore({ indexedDB });
     const store = await openStore();
@@ -51,7 +60,7 @@ test('pasted pixels remain local, report ownership is enforced, confirmed upload
     assert.equal((await service.uploadOne(owner, created.localPhotoId)).url, remote.url);
     assert.equal((await service.uploadOne(owner, created.localPhotoId)).url, remote.url);
     assert.equal(uploads, 1);
-    assert.equal((await store.getBundle(created.localPhotoId)).deleteUrl, 'https://ibb.co/abc/delete');
+    assert.equal((await bundleOf(store, created.localPhotoId)).deleteUrl, 'https://ibb.co/abc/delete');
     await store.removeLocalAssets(created.localPhotoId, new Date().toISOString());
     assert.equal(await store.getReportImage(created.localPhotoId), null);
     store.close();
@@ -80,7 +89,7 @@ test('a definite provider refusal preserves a draft that can be corrected and re
     });
     const created = await service.create(owner, image);
     await assert.rejects(service.uploadOne(owner, created.localPhotoId), /Invalid key/);
-    assert.equal((await store.getBundle(created.localPhotoId)).photo.remote.state, 'draft');
+    assert.equal((await photoOf(store, created.localPhotoId)).remote.state, 'draft');
     assert.equal((await store.getOperations()).length, 0);
     assert.equal((await service.uploadOne(owner, created.localPhotoId)).url, remote.url);
     assert.equal(uploads, 2);
@@ -95,15 +104,16 @@ test('a durable ImgBB response is committed after interruption without another u
         operation: { localId: photo.localId, operationId: 'interrupted', state: 'request-started', export: snapshot.exported } });
     await store.putOperation({ ...started.operation, state: 'response-received', remote, deleteUrl: 'https://ibb.co/abc/delete' });
     assert.equal((await service.uploadOne(owner, created.localPhotoId)).url, remote.url);
-    assert.equal((await store.getBundle(photo.localId)).photo.remote.state, 'uploaded');
+    assert.equal((await photoOf(store, photo.localId)).remote.state, 'uploaded');
     store.close();
 });
 
 test('saving an edited copy is local and cannot change the accepted image before return', async () => {
     let uploads = 0;
-    const { service, store } = await harness(async () => { uploads++; });
+    // Saving an edit must never upload; a call is counted and fails.
+    const { service, store } = await harness(async () => { uploads++; throw new Error('must not upload'); });
     const original = await service.create(owner, image);
-    const bundle = await store.getBundle(original.localPhotoId);
+    const bundle = await bundleOf(store, original.localPhotoId);
     const localId = crypto.randomUUID();
     await store.putDraft({ ...bundle,
         photo: Library.createDraft({ localId, title: 'Edited', source: bundle.photo.source, parentLocalId: bundle.photo.localId }),
@@ -131,13 +141,13 @@ test('upload alone is not insertion; exact report acknowledgements add one bound
         const { localPhotoId } = await service.create(owner, image);
         await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: remote.url }), /does not match/);
         await service.uploadOne(owner, localPhotoId);
-        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 0);
+        assert.equal((await photoOf(store, localPhotoId)).references.length, 0);
         await assert.rejects(service.confirmInsertion('bpbReportDraft:2:p2', { localPhotoId, url: remote.url }), /unavailable/);
         await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: 'https://i.ibb.co/other.png' }), /does not match/);
         await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
-        const first = (await store.getBundle(localPhotoId)).photo;
+        const first = (await photoOf(store, localPhotoId));
         await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
-        const last = (await store.getBundle(localPhotoId)).photo;
+        const last = (await photoOf(store, localPhotoId));
         assert.deepEqual(last.references, [{ kind: 'ascent-draft', cid: 1, aid: null, pid: 2, insertedAt: first.references[0].insertedAt }]);
         assert.equal(last.revision, first.revision);
         await service.uploadOne(owner, localPhotoId);
@@ -162,11 +172,11 @@ test('a failed reference write preserves the uploaded photo and retries without 
     await assert.rejects(service.confirmInsertion(owner, { localPhotoId, url: remote.url }), /reference could not be recorded/);
     const store = await openStore();
     try {
-        assert.equal((await store.getBundle(localPhotoId)).photo.remote.state, 'uploaded');
-        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 0);
+        assert.equal((await photoOf(store, localPhotoId)).remote.state, 'uploaded');
+        assert.equal((await photoOf(store, localPhotoId)).references.length, 0);
         fail = false;
         await service.confirmInsertion(owner, { localPhotoId, url: remote.url });
-        assert.equal((await store.getBundle(localPhotoId)).photo.references.length, 1);
+        assert.equal((await photoOf(store, localPhotoId)).references.length, 1);
         assert.equal(uploads, 1);
     } finally { store.close(); }
 });
@@ -207,15 +217,15 @@ test('a malformed real client success retains its journal across service restart
 test('edited child versions must still belong to the original report owner', async () => {
     const { service, store } = await harness(async () => { throw new Error('must not upload'); });
     try {
-        const original = await service.create(owner, image), bundle = await store.getBundle(original.localPhotoId);
+        const original = await service.create(owner, image), bundle = await bundleOf(store, original.localPhotoId);
         const localId = crypto.randomUUID();
         await store.putDraft({ ...bundle,
             photo: Library.createDraft({ localId, title: 'Edited', source: bundle.photo.source, parentLocalId: original.localPhotoId }),
             project: { ...bundle.project, localId } });
         await assert.rejects(service.saveEdit('another-report', { localPhotoId: localId, dataUrl: image.dataUrl }, original.localPhotoId), /unavailable/);
-        const child = (await store.getBundle(localId)).photo;
+        const child = (await photoOf(store, localId));
         await store.putPhoto(Library.markDeleted(bundle.photo));
-        await assert.rejects(store.putReportImage({ localId, owner, dataUrl: image.dataUrl, exported: {}, revision: child.revision, replacesLocalPhotoId: original.localPhotoId }), error => error.name === 'PhotoStoreConflictError');
+        await assert.rejects(store.putReportImage({ localId, owner, dataUrl: image.dataUrl, exported: {}, revision: child.revision, replacesLocalPhotoId: original.localPhotoId }), (error: Error) => error.name === 'PhotoStoreConflictError');
         await assert.rejects(service.saveEdit(owner, { localPhotoId: localId, dataUrl: image.dataUrl }, original.localPhotoId), /unavailable/);
     } finally { store.close(); }
 });
