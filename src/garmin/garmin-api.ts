@@ -120,7 +120,13 @@ export function createGarminClient({ key, fetcher = globalThis.fetch, clock = Da
                 // RegExp.test applies String() itself; it is explicit only for the type checker.
                 if (!id || !/^\d{4}-\d{2}-\d{2}[ T]/.test(String(item.startTimeLocal || ''))) throw new GarminError('response');
                 const localStart = item.startTimeLocal as string;
-                return { id, owner, date: localStart.slice(0, 10), localStart: localStart.slice(0, 19),
+                // The activity's own title, shown only in this device's inbox. Controls,
+                // line breaks and bidi overrides become spaces; joiners stay, so
+                // emoji sequences survive. The bound counts code points, never
+                // splitting a surrogate pair.
+                const name = typeof item.activityName === 'string'
+                    ? Array.from(item.activityName.replace(/[\p{Cc}\s\u200e\u200f\u202a-\u202e\u2066-\u2069]+/gu, ' ').trim()).slice(0, 120).join('').trim() : '';
+                return { id, owner, name, date: localStart.slice(0, 10), localStart: localStart.slice(0, 19),
                     utcStart: typeof item.startTimeGMT === 'string' ? item.startTimeGMT.slice(0, 19) : '',
                     type: String((item.activityType as GarminRecord | undefined)?.typeKey || '').slice(0, 60) };
             });

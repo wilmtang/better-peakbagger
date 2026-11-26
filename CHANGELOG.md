@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A tidier Garmin activity inbox.** Activities are listed newest first, under
+  their Garmin titles, in compact rows. Dismiss any activity straight from the
+  list, even before its peak check, with a one-minute Undo. While activities
+  wait, an info button beside **Open Peakbagger to resume** explains why.
 - **Use peak cards on Provisional Peaks.** Weather, Summit Cloud Cover, Nearby
   snow and the extra planning and map links now also appear on user-submitted
   Provisional Peak pages. They use that page's own summit coordinates,
