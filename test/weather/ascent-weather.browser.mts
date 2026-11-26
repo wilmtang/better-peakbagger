@@ -51,6 +51,11 @@ const setup = ({ html = ascent.replaceAll('Sunday, July 12, 2026', 'Friday, July
     const win = fixture.window, requests: { url: string; init?: RequestInit }[] = [], listeners: Listener[] = [];
     const positionWrites: Values[] = [], modelWrites: Values[] = [];
     if (now !== undefined) win.Date.now = () => now;
+    // The card reads without waiting for the viewport, as the gate does where no
+    // observer exists. A real observer measures against the runner's own window,
+    // so whether a phone-width card intersects depends on the machine; the real
+    // observer is covered by card-read-gate.browser.mts.
+    (win as { IntersectionObserver?: unknown }).IntersectionObserver = undefined;
     configureWindow?.(win);
     const local = { get: async (key: string | string[]) => Array.isArray(key) && key.includes('bpbDeviceSettings') ? {} : key === 'bpbAscentWeatherModel'
         ? (readModels ? readModels() : localModels) : (readPositions ? readPositions() : localPositions), set: async (values: Values) => {
